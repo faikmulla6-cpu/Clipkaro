@@ -40,8 +40,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         setVerification(await api<VerificationStatus>("/auth/verification-status"));
       } catch {
-        // Backend enforcement remains authoritative. Do not sign a valid user
-        // out merely because the status request had a transient network error.
+        // Backend enforcement remains authoritative. Keep the signed-in user,
+        // but do not assume AI processing is unlocked when verification state
+        // could not be confirmed.
         setVerification(null);
       }
     } catch {
@@ -79,8 +80,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setVerification(status);
         return { canProcess: status.can_process };
       } catch {
+        // Authentication succeeded, but verification state is unknown. Route
+        // through the verification screen rather than failing open to creator
+        // compute; the backend remains the final authority either way.
         setVerification(null);
-        return { canProcess: true };
+        return { canProcess: false };
       }
     },
     signup: async (name, email, password, acceptLegal) => {
