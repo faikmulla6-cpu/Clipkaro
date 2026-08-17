@@ -1,0 +1,118 @@
+{
+  "ASR_POLICY_V2_SHA256": "f58d3032436afd63e43884e4380a80bf92af887d05d1d94c4b9cdd01c6d2018a",
+  "annotations": "remove only complete <...>, {...}, [...] dataset metadata",
+  "hinglish": "no transliteration, no numeral normalization, script differences remain lexical errors",
+  "historical_threshold_identifier": "4f5e49ab72cebcf51c58b4f83204b1d9a29e0c607c6b19b5c324806b61f9347e",
+  "punctuation": "remove standard punctuation plus U+0964/U+0965 danda",
+  "thresholds": {
+    "contract_version": "2026-08-11-v1",
+    "minimum_language_match_rate": 0.8,
+    "minimum_qualification_cases_per_language": 2,
+    "minimum_timestamp_valid_rate": 0.95,
+    "negative_controls": [
+      "silence",
+      "noise_only",
+      "tone_only"
+    ],
+    "required_language_families": [
+      "hi",
+      "mr",
+      "hinglish"
+    ],
+    "scenarios": [
+      {
+        "description": "clean corpus baseline",
+        "max_p90_cer": 0.18,
+        "max_p90_wer": 0.28,
+        "max_p95_rtf": 1.5,
+        "min_success_rate": 0.95,
+        "name": "clean",
+        "requires_street_noise": false
+      },
+      {
+        "description": "25% faster speech",
+        "max_p90_cer": 0.24,
+        "max_p90_wer": 0.38,
+        "max_p95_rtf": 1.5,
+        "min_success_rate": 0.8,
+        "name": "fast_125",
+        "requires_street_noise": false
+      },
+      {
+        "description": "45% faster speech",
+        "max_p90_cer": 0.3,
+        "max_p90_wer": 0.48,
+        "max_p95_rtf": 1.5,
+        "min_success_rate": 0.8,
+        "name": "fast_145",
+        "requires_street_noise": false
+      },
+      {
+        "description": "moderate synthetic broadband background noise",
+        "max_p90_cer": 0.28,
+        "max_p90_wer": 0.45,
+        "max_p95_rtf": 1.7,
+        "min_success_rate": 0.8,
+        "name": "background_noise",
+        "requires_street_noise": false
+      },
+      {
+        "description": "real street/traffic noise mixed over speech",
+        "max_p90_cer": 0.32,
+        "max_p90_wer": 0.5,
+        "max_p95_rtf": 1.8,
+        "min_success_rate": 0.8,
+        "name": "street_noise",
+        "requires_street_noise": true
+      },
+      {
+        "description": "8 kHz telephone-band speech",
+        "max_p90_cer": 0.28,
+        "max_p90_wer": 0.45,
+        "max_p95_rtf": 1.6,
+        "min_success_rate": 0.8,
+        "name": "phone_band",
+        "requires_street_noise": false
+      },
+      {
+        "description": "24 kbps AAC compression",
+        "max_p90_cer": 0.27,
+        "max_p90_wer": 0.42,
+        "max_p95_rtf": 1.6,
+        "min_success_rate": 0.8,
+        "name": "low_bitrate",
+        "requires_street_noise": false
+      },
+      {
+        "description": "hard-clipped/overdriven speech",
+        "max_p90_cer": 0.32,
+        "max_p90_wer": 0.5,
+        "max_p95_rtf": 1.7,
+        "min_success_rate": 0.8,
+        "name": "clipped",
+        "requires_street_noise": false
+      },
+      {
+        "description": "short packet-loss style mute gaps",
+        "max_p90_cer": 0.34,
+        "max_p90_wer": 0.52,
+        "max_p95_rtf": 1.7,
+        "min_success_rate": 0.8,
+        "name": "dropouts",
+        "requires_street_noise": false
+      },
+      {
+        "description": "moderate short-room echo",
+        "max_p90_cer": 0.31,
+        "max_p90_wer": 0.48,
+        "max_p95_rtf": 1.7,
+        "min_success_rate": 0.8,
+        "name": "room_echo",
+        "requires_street_noise": false
+      }
+    ]
+  },
+  "unicode": "NFKC then casefold",
+  "version": "2026-08-13-v2",
+  "zero_width": "remove ZWJ/ZWNJ"
+}

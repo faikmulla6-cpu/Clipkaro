@@ -1,0 +1,60 @@
+name: Feature or hardening
+description: Propose a scoped product, reliability, security, or infrastructure change before implementation.
+title: "[Change] "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / opportunity
+      description: Describe the current limitation and why it is worth changing now.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe observable behavior, not implementation details only.
+    validations:
+      required: true
+  - type: dropdown
+    id: risk
+    attributes:
+      label: Risk class
+      options:
+        - Critical - billing, quota, auth, security, legal, data integrity
+        - High - upload, ASR, rendering, background jobs, production deployment
+        - Medium - normal product behavior
+        - Low - docs, internal tooling, cosmetic UI
+    validations:
+      required: true
+  - type: textarea
+    id: scenarios
+    attributes:
+      label: Scenarios to cover
+      description: Happy path, retries, concurrency, failure/recovery, permissions, old accounts/data, direct API bypass, and deployment behavior as applicable.
+    validations:
+      required: true
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Backward compatibility / migrations
+      description: Existing users, DB rows, jobs, sessions, subscriptions, media, APIs, or environment variables that must continue working.
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Include required tests and evidence.
+    validations:
+      required: true
+  - type: textarea
+    id: rollout
+    attributes:
+      label: Rollout / rollback
+      description: How can this be deployed safely and reversed if production behaves differently?
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope discipline
+      options:
+        - label: This issue has one primary outcome and can be implemented in a focused branch/PR.
+          required: true

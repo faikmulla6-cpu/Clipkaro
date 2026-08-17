@@ -1,0 +1,43 @@
+name: PR Governance
+
+on:
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr-governance-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  governance:
+    name: PR Governance
+    # pull_request_target runs trusted base code only. Fork PRs are rejected
+    # explicitly before checkout so the required governance check fails closed.
+    runs-on: [self-hosted, linux, x64, clipkaro-qa]
+    timeout-minutes: 5
+    steps:
+      - name: Reject fork PRs on the persistent runner
+        if: github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          echo "Fork pull requests are not executed on ClipKaro's persistent self-hosted runner."
+          echo "Move the change to a reviewed same-repository branch or use an isolated ephemeral runner."
+          exit 1
+      - name: Checkout trusted base governance code
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+          clean: true
+      - name: Verify trusted self-hosted governance runner
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        run: bash scripts/check-self-hosted-runner.sh --profile governance
+      - name: Validate issue linkage, branch naming and PR evidence sections
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GOVERNANCE_FIRST_PR: "24"
+        run: python3.12 scripts/check_pr_governance.py

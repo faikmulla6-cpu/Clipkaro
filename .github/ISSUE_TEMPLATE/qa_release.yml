@@ -1,0 +1,53 @@
+name: QA or release qualification
+description: Track empirical testing, release certification, or a launch gate with explicit evidence requirements.
+title: "[QA] "
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Decision this QA must answer
+      description: State the launch/product decision that depends on this run.
+    validations:
+      required: true
+  - type: textarea
+    id: exact_target
+    attributes:
+      label: Exact target under test
+      description: Version, commit SHA, model/configuration, environment, hardware class, corpus/fixtures, or other identity needed for reproducibility.
+    validations:
+      required: true
+  - type: textarea
+    id: matrix
+    attributes:
+      label: Test matrix
+      description: Required scenarios, edge cases, negative controls, concurrency/failure cases, and sample counts.
+    validations:
+      required: true
+  - type: textarea
+    id: thresholds
+    attributes:
+      label: Pass/fail thresholds
+      description: Define thresholds before the run. Do not rewrite them after observing results.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Required evidence artifacts
+      description: Logs, JSON/CSV reports, videos, screenshots, JUnit, SHA hashes, resource metrics, etc.
+    validations:
+      required: true
+  - type: textarea
+    id: blockers
+    attributes:
+      label: External blockers / dependencies
+      description: Runner availability, credentials, test media licenses, hardware, provider access, and related issues.
+  - type: checkboxes
+    id: honesty
+    attributes:
+      label: Evidence discipline
+      options:
+        - label: A failed product verdict will be recorded as a real result, not reclassified as QA infrastructure failure.
+          required: true
+        - label: This issue will stay open until the required evidence exists for the exact target under test.
+          required: true

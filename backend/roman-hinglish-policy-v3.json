@@ -1,0 +1,22 @@
+{
+  "ROMAN_HINGLISH_POLICY_V3_SHA256": "2bb7ed2f8e4c32782a030cfba19deb49875c32cdf29ba70ef7ce896f96cdfbe0",
+  "case": "casefold all Latin text",
+  "input_normalization": "V2 safe Unicode NFKC, annotations, punctuation, and spacing",
+  "loanword_rule": "only explicitly listed deterministic transliterator outputs are mapped to their Latin borrowing",
+  "no_transliteration_matching": "no fuzzy matching, phonetic matching, provider-specific mapping, or per-case mapping",
+  "orthographic_canonical_map": {
+    "gayaa": "gaya",
+    "gayee": "gayi",
+    "kainsal": "cancel",
+    "klaaint": "client",
+    "kyaa": "kya",
+    "kyonki": "kyunki",
+    "kyuki": "kyunki",
+    "nahee": "nahi",
+    "naheen": "nahi",
+    "taaiming": "timing"
+  },
+  "romanization": "Devanagari tokens use the deterministic project IAST transliterator then ASCII naturalization",
+  "scoring": "word and character Levenshtein after independent normalization of reference and hypothesis",
+  "version": "2026-08-14-roman-hinglish-v3"
+}

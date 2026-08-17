@@ -1,0 +1,86 @@
+{
+  "schema_version": "clipkaro-landscape-threshold-lock-v1",
+  "contract": {
+    "contract_version": "2026-08-11-v1",
+    "case_count": 10,
+    "policies": [
+      "center",
+      "manual",
+      "dynamic"
+    ],
+    "exports_required": 30,
+    "clip_seconds": 8.0,
+    "samples_per_case": 12,
+    "target_aspect_ratio": "9:16",
+    "source_window_fractions": [
+      0.15,
+      0.58
+    ],
+    "detection": {
+      "minimum_coverage": 0.6,
+      "minimum_observations": 6,
+      "minimum_reliably_scored_cases": 8
+    },
+    "frame_score": {
+      "minimum_face_visibility": 0.9,
+      "maximum_center_error": 0.4
+    },
+    "case_score": {
+      "minimum_frame_pass_rate": 0.9,
+      "minimum_average_visibility": 0.94,
+      "minimum_p10_visibility": 0.8
+    },
+    "decision": {
+      "manual_sufficient_min_case_pass_rate": 0.85,
+      "manual_sufficient_max_dynamic_rescue_rate": 0.2,
+      "tracking_critical_below_manual_pass_rate": 0.8,
+      "tracking_critical_at_dynamic_rescue_rate": 0.25,
+      "dynamic_policy_min_case_pass_rate": 0.9,
+      "multi_face_followup_rate": 0.2
+    },
+    "output_validation": {
+      "video_codec": "h264",
+      "audio_codec": "aac",
+      "minimum_size_bytes": 10000,
+      "minimum_duration_slack_seconds": 1.0,
+      "resolutions": {
+        "720p": [
+          720,
+          1280
+        ],
+        "1080p": [
+          1080,
+          1920
+        ]
+      }
+    },
+    "sources": [
+      {
+        "id": "janno-loide",
+        "filename": "Interview_with_Janno_Loide.webm",
+        "source_page": "https://commons.wikimedia.org/wiki/File:Interview_with_Janno_Loide.webm"
+      },
+      {
+        "id": "rwic-interview-2",
+        "filename": "Rwicinterview2.webm",
+        "source_page": "https://commons.wikimedia.org/wiki/File:Rwicinterview2.webm"
+      },
+      {
+        "id": "rwic-interview-3",
+        "filename": "Rwicinterview3.webm",
+        "source_page": "https://commons.wikimedia.org/wiki/File:Rwicinterview3.webm"
+      },
+      {
+        "id": "gudbranson-interview",
+        "filename": "Erik_Gudbranson_interview.webm",
+        "source_page": "https://commons.wikimedia.org/wiki/File:Erik_Gudbranson_interview.webm"
+      },
+      {
+        "id": "friedel-interview",
+        "filename": "Friedel_Wikipedia_Public_Policy_Initiative_interview_clip.webm",
+        "source_page": "https://commons.wikimedia.org/wiki/File:Friedel_Wikipedia_Public_Policy_Initiative_interview_clip.webm"
+      }
+    ]
+  },
+  "threshold_sha256": "ca8f82a9373c16b546d3542cdecc532c7642e846a570c975e292b6b629e57574"
+}

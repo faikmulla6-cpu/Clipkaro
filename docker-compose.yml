@@ -1,0 +1,25 @@
+services:
+  api:
+    build: ./backend
+    env_file:
+      - ./backend/.env
+    ports: ["8000:8000"]
+    restart: unless-stopped
+    environment:
+      CORS_ORIGINS: http://localhost:3000
+      DATABASE_PATH: /app/storage/clipkaro.db
+      STORAGE_ROOT: /app/storage
+    volumes: ["clipkaro_storage:/app/storage"]
+  web:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: /api/v1
+        BACKEND_URL: http://api:8000
+    ports: ["3000:3000"]
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+volumes:
+  clipkaro_storage:

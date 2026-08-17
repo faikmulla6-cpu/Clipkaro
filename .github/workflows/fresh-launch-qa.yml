@@ -1,0 +1,361 @@
+name: Fresh Launch QA
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fresh-launch-qa-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  certify-780:
+    name: certify-7.8.0
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux, x64, clipkaro-qa]
+    timeout-minutes: 90
+    env:
+      EXPECTED_RELEASE_VERSION: "7.8.0"
+      APP_ENV: test
+      TRANSCRIPTION_BACKEND: fixture
+      PYTHONPATH: .
+      TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+
+    steps:
+      - name: Checkout exact candidate SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          clean: true
+
+      - name: Verify exact clean checkout
+        id: clean_checkout
+        continue-on-error: true
+        shell: bash
+        run: |
+          [[ "$TESTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$TESTED_SHA"
+          test -z "$(git status --porcelain)"
+          git rev-parse HEAD^{tree} > /tmp/clipkaro-tested-tree-${GITHUB_RUN_ID}.txt
+
+      - name: Record Fresh Launch execution environment
+        id: execution_preflight
+        continue-on-error: true
+        run: python3 scripts/check_fresh_launch_execution_environment.py --tested-sha "$TESTED_SHA" --output launch-qa/execution-preflight.json
+
+      - name: Verify self-hosted launch runner prerequisites
+        id: runner_prerequisites
+        continue-on-error: true
+        run: bash scripts/check-self-hosted-runner.sh --profile launch
+
+      - name: Create isolated backend virtualenv
+        id: backend_environment
+        continue-on-error: true
+        working-directory: backend
+        run: |
+          rm -rf .venv-ci
+          python3.12 -m venv .venv-ci
+          echo "$PWD/.venv-ci/bin" >> "$GITHUB_PATH"
+
+      - name: Install backend dependencies
+        id: backend_dependencies
+        continue-on-error: true
+        working-directory: backend
+        run: python -m pip install --upgrade pip && pip install -r requirements-dev.txt
+
+      - name: Check release identity before dependency installation
+        id: release_identity
+        continue-on-error: true
+        working-directory: frontend
+        run: npm run check:release-identity
+
+      - name: Compile Python application, tests and scripts
+        id: python_compile
+        continue-on-error: true
+        working-directory: backend
+        run: python -m compileall -q app tests scripts
+
+      - name: Check Python dependency consistency
+        id: pip_check
+        continue-on-error: true
+        working-directory: backend
+        run: python -m pip check
+
+      - name: Run complete backend test suite
+        id: backend_tests
+        continue-on-error: true
+        working-directory: backend
+        env:
+          APP_ENV: test
+          TRANSCRIPTION_BACKEND: fixture
+          PYTHONPATH: .
+        run: pytest -q --junitxml=pytest-report.xml
+
+      - name: Verify production preflight contract
+        id: production_preflight
+        continue-on-error: true
+        working-directory: backend
+        env:
+          APP_ENV: test
+          TRANSCRIPTION_BACKEND: fixture
+          PYTHONPATH: .
+        run: pytest -q tests/test_production_preflight.py
+
+      - name: Verify production configuration and secret-handling contract
+        id: production_configuration
+        continue-on-error: true
+        working-directory: backend
+        env:
+          APP_ENV: test
+          TRANSCRIPTION_BACKEND: fixture
+          PYTHONPATH: .
+        run: pytest -q tests/test_production_configuration.py
+
+      - name: Install frontend from exact lockfile
+        id: npm_ci
+        continue-on-error: true
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+
+      - name: Check Settings trust contract
+        id: settings_trust
+        continue-on-error: true
+        working-directory: frontend
+        run: npm run check:settings-trust
+
+      - name: Check Analytics truth contract
+        id: analytics_truth
+        continue-on-error: true
+        working-directory: frontend
+        run: npm run check:analytics-truth
+
+      - name: Check Billing lifecycle contract
+        id: billing_lifecycle
+        continue-on-error: true
+        working-directory: frontend
+        run: npm run check:billing-lifecycle
+
+      - name: Check Email verification contract
+        id: email_verification
+        continue-on-error: true
+        working-directory: frontend
+        run: npm run check:email-verification
+
+      - name: Check Security foundation contract
+        id: security_foundation
+        continue-on-error: true
+        working-directory: frontend
+        run: npm run check:security-foundation
+
+      - name: Check Legal and privacy launch contract
+        id: legal_privacy
+        continue-on-error: true
+        working-directory: frontend
+        run: npm run check:legal-privacy
+
+      - name: Check Behavioral learning contract
+        id: behavioral_learning
+        continue-on-error: true
+        working-directory: frontend
+        run: npm run check:behavioral-learning
+
+      - name: Check Landscape reframe contract
+        id: landscape_reframe
+        continue-on-error: true
+        working-directory: frontend
+        run: npm run check:landscape-reframe
+
+      - name: Re-check release identity after locked install
+        id: release_identity_postinstall
+        continue-on-error: true
+        working-directory: frontend
+        run: npm run check:release-identity
+
+      - name: Audit production npm dependencies
+        id: npm_audit
+        continue-on-error: true
+        working-directory: frontend
+        run: npm audit --omit=dev --audit-level=high --json > npm-audit-production.json
+
+      - name: Build optimized Next.js production application
+        id: frontend_build
+        continue-on-error: true
+        working-directory: frontend
+        run: npm run build
+
+      - name: Validate production Compose
+        id: compose_validate
+        continue-on-error: true
+        env:
+          DOMAIN: clipkaro.example
+          ACME_EMAIL: ci@example.com
+          SECRET_KEY: ci-only-secret-key-with-at-least-32-characters
+        run: docker compose -f docker-compose.hostinger.yml config --quiet
+
+      - name: Validate production Caddyfile
+        id: caddy_validate
+        continue-on-error: true
+        run: >-
+          docker run --rm
+          -e DOMAIN=clipkaro.example
+          -e ACME_EMAIL=ci@example.com
+          -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro"
+          caddy:2.10-alpine
+          caddy validate --config /etc/caddy/Caddyfile
+
+      - name: Build production API image
+        id: backend_api_image
+        continue-on-error: true
+        run: docker build --pull --target api -t clipkaro-api:qa-${GITHUB_RUN_ID} backend
+
+      - name: Build production media worker image
+        id: backend_worker_image
+        continue-on-error: true
+        run: docker build --pull --target worker -t clipkaro-worker:qa-${GITHUB_RUN_ID} backend
+
+      - name: Validate production worker WhisperX runtime
+        id: worker_alignment_runtime
+        continue-on-error: true
+        run: >-
+          docker run --rm --entrypoint python
+          clipkaro-worker:qa-${GITHUB_RUN_ID}
+          -c "from app.services.forced_alignment import validate_forced_alignment_runtime; print(validate_forced_alignment_runtime('whisperx', True, enforce_production_policy=True, enforce_pinned_versions=True))"
+
+      - name: Build production frontend image
+        id: frontend_image
+        continue-on-error: true
+        run: docker build --pull -t clipkaro-frontend:qa-${GITHUB_RUN_ID} frontend
+
+      - name: Prove tested source did not change during QA
+        id: source_unchanged_after_checks
+        continue-on-error: true
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$TESTED_SHA"
+          git diff --exit-code
+          git diff --cached --exit-code
+          test "$(git rev-parse HEAD^{tree})" = "$(cat /tmp/clipkaro-tested-tree-${GITHUB_RUN_ID}.txt)"
+
+      - name: Record immutable Docker image identities
+        id: docker_image_identity
+        continue-on-error: true
+        env:
+          API_TAG: clipkaro-api:qa-${{ github.run_id }}
+          WORKER_TAG: clipkaro-worker:qa-${{ github.run_id }}
+          FRONTEND_TAG: clipkaro-frontend:qa-${{ github.run_id }}
+        run: |
+          mkdir -p launch-qa
+          python3 - <<'PY'
+          import json, os, subprocess, sys
+          from pathlib import Path
+
+          tags = {"api": os.environ["API_TAG"], "worker": os.environ["WORKER_TAG"], "frontend": os.environ["FRONTEND_TAG"]}
+          images = {}
+          missing = []
+          for name, tag in tags.items():
+              proc = subprocess.run(["docker", "image", "inspect", tag], capture_output=True, text=True)
+              if proc.returncode:
+                  images[name] = {"tag": tag, "available": False}
+                  missing.append(name)
+                  continue
+              data = json.loads(proc.stdout)[0]
+              image_id = str(data.get("Id") or "")
+              digests = data.get("RepoDigests") or []
+              images[name] = {
+                  "tag": tag,
+                  "available": True,
+                  "image_id": image_id,
+                  "repo_digests": digests,
+                  "repo_digest_or_id": str(digests[0] if digests else image_id),
+                  "created": data.get("Created"),
+                  "architecture": data.get("Architecture"),
+                  "os": data.get("Os"),
+              }
+          payload = {"schema": "clipkaro.launch-docker-images.v1", "images": images}
+          Path("launch-qa/docker-images.json").write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+          if missing:
+              print("Missing built Docker images: " + ", ".join(missing), file=sys.stderr)
+              raise SystemExit(1)
+          PY
+
+      - name: Generate immutable launch QA evidence
+        id: generate_evidence
+        if: always()
+        continue-on-error: true
+        env:
+          QA_WARNINGS: "Real ASR (#21), real landscape framing (#22), main ruleset (#25), and live production deployment/payment (#30) remain separate launch gates."
+        run: >-
+          python3 scripts/generate_launch_qa_report.py generate
+          --expected-version "$EXPECTED_RELEASE_VERSION"
+          --output-dir launch-qa
+          --execution-preflight launch-qa/execution-preflight.json
+          --docker-evidence launch-qa/docker-images.json
+          --check execution_preflight=${{ steps.execution_preflight.outcome }}
+          --check clean_checkout=${{ steps.clean_checkout.outcome }}
+          --check runner_prerequisites=${{ steps.runner_prerequisites.outcome }}
+          --check backend_environment=${{ steps.backend_environment.outcome }}
+          --check backend_dependencies=${{ steps.backend_dependencies.outcome }}
+          --check release_identity=${{ steps.release_identity.outcome }}
+          --check python_compile=${{ steps.python_compile.outcome }}
+          --check pip_check=${{ steps.pip_check.outcome }}
+          --check backend_tests=${{ steps.backend_tests.outcome }}
+          --check production_preflight=${{ steps.production_preflight.outcome }}
+          --check production_configuration=${{ steps.production_configuration.outcome }}
+          --check npm_ci=${{ steps.npm_ci.outcome }}
+          --check settings_trust=${{ steps.settings_trust.outcome }}
+          --check analytics_truth=${{ steps.analytics_truth.outcome }}
+          --check billing_lifecycle=${{ steps.billing_lifecycle.outcome }}
+          --check email_verification=${{ steps.email_verification.outcome }}
+          --check security_foundation=${{ steps.security_foundation.outcome }}
+          --check legal_privacy=${{ steps.legal_privacy.outcome }}
+          --check behavioral_learning=${{ steps.behavioral_learning.outcome }}
+          --check landscape_reframe=${{ steps.landscape_reframe.outcome }}
+          --check release_identity_postinstall=${{ steps.release_identity_postinstall.outcome }}
+          --check npm_audit=${{ steps.npm_audit.outcome }}
+          --check frontend_build=${{ steps.frontend_build.outcome }}
+          --check compose_validate=${{ steps.compose_validate.outcome }}
+          --check caddy_validate=${{ steps.caddy_validate.outcome }}
+          --check backend_api_image=${{ steps.backend_api_image.outcome }}
+          --check backend_worker_image=${{ steps.backend_worker_image.outcome }}
+          --check worker_alignment_runtime=${{ steps.worker_alignment_runtime.outcome }}
+          --check frontend_image=${{ steps.frontend_image.outcome }}
+          --check source_unchanged_after_checks=${{ steps.source_unchanged_after_checks.outcome }}
+          --check docker_image_identity=${{ steps.docker_image_identity.outcome }}
+
+      - name: Upload immutable Fresh Launch QA evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clipkaro-7.8.0-launch-qa-${{ github.run_id }}
+          path: |
+            launch-qa/launch-qa-evidence.json
+            launch-qa/launch-qa-summary.md
+            launch-qa/QA_REPORT.md
+            launch-qa/execution-preflight.json
+            launch-qa/docker-images.json
+            backend/pytest-report.xml
+            frontend/npm-audit-production.json
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Enforce certification decision
+        if: always()
+        run: python3 scripts/generate_launch_qa_report.py enforce --report launch-qa/launch-qa-evidence.json
+
+      - name: Clean persistent runner workspace
+        if: always()
+        run: |
+          rm -rf backend/.venv-ci backend/.pytest_cache frontend/node_modules frontend/.next launch-qa
+          rm -f backend/pytest-report.xml frontend/npm-audit-production.json /tmp/clipkaro-tested-tree-${GITHUB_RUN_ID}.txt
+          docker image rm -f \
+            clipkaro-api:qa-${GITHUB_RUN_ID} \
+            clipkaro-worker:qa-${GITHUB_RUN_ID} \
+            clipkaro-frontend:qa-${GITHUB_RUN_ID} >/dev/null 2>&1 || true

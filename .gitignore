@@ -1,0 +1,70 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+!.env.production.example
+.env.txt
+.env.production
+.env.production.local
+.env.vps
+production.env
+production-*.env
+*.db
+*.sqlite
+*.sqlite3
+__pycache__/
+.pytest_cache/
+*.py[cod]
+.venv/
+backend/.venv/
+node_modules/
+.npm-cache/
+.next/
+out/
+dist/
+build/
+storage/
+backend/storage/
+uploads/
+exports/
+logs/
+backend/storage/models/
+backend/storage/uploads/*
+backend/storage/exports/*
+!backend/storage/uploads/.gitkeep
+!backend/storage/exports/.gitkeep
+*.mp4
+*.wav
+*.m4a
+*.log
+
+# Do not commit packaged copies of the source tree.
+*.zip
+*.7z
+*.rar
+
+# Real speech/noise qualification data is downloaded or supplied at runtime.
+# Do not commit creator recordings, public corpora, or generated benchmark evidence.
+backend/stress_corpus/
+backend/asr-stress-report*.json
+
+# Landscape export QA downloads Creative-Commons interview media and generates
+# 30 evidence exports at runtime. Keep reports/video artifacts out of source.
+backend/landscape_qa/
+backend/landscape-qa-resource.txt
+backend/landscape-qualification-evidence/
+backend/landscape-execution-preflight.json
+backend/landscape-runner-hardware.txt
+
+frontend/.env.local
+backend/.env
+
+# Fresh Launch QA evidence is an immutable workflow artifact, not tracked release source.
+launch-qa/
+launch-qa-attempt/
+backend/pytest-report.xml
+frontend/npm-audit-production.json
+# Local/private backend environment copies must never enter release artifacts.
+backend.env
+backend/.env.*
+!backend/.env.example

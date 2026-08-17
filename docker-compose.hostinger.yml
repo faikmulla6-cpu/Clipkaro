@@ -1,0 +1,300 @@
+services:
+  api:
+    build:
+      context: ./backend
+      target: api
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
+      PRODUCTION_CREDENTIALS_ROTATED: ${PRODUCTION_CREDENTIALS_ROTATED:-false}
+      CORS_ORIGINS: https://${DOMAIN:?Set DOMAIN in .env}
+      SEED_DEMO_USER: "false"
+      DATABASE_PATH: /app/storage/clipkaro.db
+      STORAGE_ROOT: /app/storage
+      # Python/Starlette multipart uploads may spool before route-level size
+      # validation. Keep those files on the writable storage volume rather than
+      # the deliberately small /tmp tmpfs so valid near-500 MiB uploads work.
+      TMPDIR: /app/storage/tmp
+      FILE_EXPIRY_HOURS: ${FILE_EXPIRY_HOURS:-24}
+      # Production API is enqueue-only for Whisper/FFmpeg/Groq work.
+      # Mirror the worker alignment policy so bad production config fails fast.
+      JOB_EXECUTION_MODE: worker
+      WORKER_STALE_AFTER_SECONDS: ${WORKER_STALE_AFTER_SECONDS:-30}
+      PREFLIGHT_NETWORK_TIMEOUT_SECONDS: ${PREFLIGHT_NETWORK_TIMEOUT_SECONDS:-8}
+      REQUIRE_ASR_CONSENSUS: ${REQUIRE_ASR_CONSENSUS:-false}
+      ALIGNMENT_BACKEND: ${ALIGNMENT_BACKEND:-native}
+      REQUIRE_FORCED_ALIGNMENT: ${REQUIRE_FORCED_ALIGNMENT:-false}
+      # Uploads are quarantined and streamed to this private ClamAV sidecar before project/job creation.
+      UPLOAD_SCAN_REQUIRED: ${UPLOAD_SCAN_REQUIRED:-true}
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: 3310
+      CLAMAV_TIMEOUT_SECONDS: ${CLAMAV_TIMEOUT_SECONDS:-30}
+      CLAMAV_CHUNK_KB: ${CLAMAV_CHUNK_KB:-256}
+      # Revocable sessions + password reset controls.
+      PASSWORD_RESET_TOKEN_MINUTES: ${PASSWORD_RESET_TOKEN_MINUTES:-30}
+      PASSWORD_RESET_RESEND_COOLDOWN_SECONDS: ${PASSWORD_RESET_RESEND_COOLDOWN_SECONDS:-60}
+      PASSWORD_RESET_MAX_SENDS_PER_HOUR: ${PASSWORD_RESET_MAX_SENDS_PER_HOUR:-5}
+      # Public legal/operator/grievance particulars. These are deliberately API-only
+      # deployment values; the API publishes them through /legal/config.
+      LEGAL_OPERATOR_NAME: ${LEGAL_OPERATOR_NAME:-}
+      LEGAL_OPERATOR_ADDRESS: ${LEGAL_OPERATOR_ADDRESS:-}
+      LEGAL_CONTACT_EMAIL: ${LEGAL_CONTACT_EMAIL:-}
+      PRIVACY_CONTACT_EMAIL: ${PRIVACY_CONTACT_EMAIL:-}
+      CUSTOMER_CARE_EMAIL: ${CUSTOMER_CARE_EMAIL:-}
+      CUSTOMER_CARE_PHONE: ${CUSTOMER_CARE_PHONE:-}
+      GRIEVANCE_OFFICER_NAME: ${GRIEVANCE_OFFICER_NAME:-}
+      GRIEVANCE_EMAIL: ${GRIEVANCE_EMAIL:-}
+      GRIEVANCE_PHONE: ${GRIEVANCE_PHONE:-}
+      LEGAL_GSTIN: ${LEGAL_GSTIN:-}
+      LEGAL_PAN: ${LEGAL_PAN:-}
+      # Email verification gates creator AI compute. SMTP credentials are API-only.
+      EMAIL_VERIFICATION_REQUIRED: ${EMAIL_VERIFICATION_REQUIRED:-true}
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:-https://${DOMAIN}}
+      FRONTEND_URL: ${FRONTEND_URL:-https://${DOMAIN}}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      RESEND_TIMEOUT_SECONDS: ${RESEND_TIMEOUT_SECONDS:-15}
+      EMAIL_VERIFICATION_TOKEN_MINUTES: ${EMAIL_VERIFICATION_TOKEN_MINUTES:-60}
+      EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS: ${EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS:-60}
+      EMAIL_VERIFICATION_MAX_SENDS_PER_HOUR: ${EMAIL_VERIFICATION_MAX_SENDS_PER_HOUR:-5}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-ClipKaro AI}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
+      SMTP_USE_SSL: ${SMTP_USE_SSL:-false}
+      SMTP_TIMEOUT_SECONDS: ${SMTP_TIMEOUT_SECONDS:-15}
+      RAZORPAY_MODE: ${RAZORPAY_MODE:-live}
+      ALLOW_LIVE_RAZORPAY_IN_DEVELOPMENT: "false"
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+      # Creation-time Stage-1 routing policy lives on the authenticated API.
+      HINGLISH_ASR_PROVIDER: ${HINGLISH_ASR_PROVIDER:-legacy}
+      ROMAN_HINGLISH_ENABLED: ${ROMAN_HINGLISH_ENABLED:-false}
+      ROMAN_HINGLISH_POLICY: ${ROMAN_HINGLISH_POLICY:-v3}
+      ROMAN_HINGLISH_DISPLAY_POLICY: ${ROMAN_HINGLISH_DISPLAY_POLICY:-v1}
+      HINGLISH_STAGE1_ENABLED: ${HINGLISH_STAGE1_ENABLED:-false}
+      HINGLISH_STAGE1_USER_IDS: ${HINGLISH_STAGE1_USER_IDS:-}
+    volumes:
+      - clipkaro_storage:/app/storage
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: ${API_PIDS_LIMIT:-128}
+    mem_limit: ${API_MEMORY_LIMIT:-1g}
+    cpus: ${API_CPU_LIMIT:-1.25}
+    ulimits:
+      nofile:
+        soft: 4096
+        hard: 4096
+      nproc:
+        soft: 128
+        hard: 128
+    stop_grace_period: 30s
+    networks:
+      - app_net
+      - scanner_net
+    depends_on:
+      clamav:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ./backend
+      # The launch default stays lightweight/API-first. Operators who deliberately
+      # enable the legacy local faster-whisper/WhisperX path must also build the
+      # heavyweight worker image so runtime capabilities match ASR_MODE.
+      target: ${WORKER_IMAGE_TARGET:-api}
+    command: ["python", "-m", "app.worker"]
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      SEED_DEMO_USER: "false"
+      DATABASE_PATH: /app/storage/clipkaro.db
+      STORAGE_ROOT: /app/storage
+      MODEL_CACHE_DIR: /app/storage/models
+      FILE_EXPIRY_HOURS: ${FILE_EXPIRY_HOURS:-24}
+      JOB_EXECUTION_MODE: worker
+      WORKER_POLL_SECONDS: ${WORKER_POLL_SECONDS:-0.75}
+      WORKER_HEARTBEAT_SECONDS: ${WORKER_HEARTBEAT_SECONDS:-5}
+      WORKER_STALE_AFTER_SECONDS: ${WORKER_STALE_AFTER_SECONDS:-30}
+      WORKER_PROVIDER_PROBE_SECONDS: ${WORKER_PROVIDER_PROBE_SECONDS:-300}
+      PREFLIGHT_NETWORK_TIMEOUT_SECONDS: ${PREFLIGHT_NETWORK_TIMEOUT_SECONDS:-8}
+      ASR_MODE: ${ASR_MODE:-api}
+      ASR_PRIMARY_PROVIDER: ${ASR_PRIMARY_PROVIDER:-groq}
+      ASR_FALLBACK_PROVIDER: ${ASR_FALLBACK_PROVIDER:-cloudflare}
+      GROQ_ASR_MODEL: ${GROQ_ASR_MODEL:-whisper-large-v3}
+      CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:-}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
+      CLOUDFLARE_ASR_MODEL: ${CLOUDFLARE_ASR_MODEL:-@cf/openai/whisper-large-v3-turbo}
+      # Stage-1 route is already persisted by the API; the worker needs only
+      # the provider credentials/policy code to execute that durable decision.
+      ELEVENLABS_API_KEYS: ${ELEVENLABS_API_KEYS:-}
+      ELEVENLABS_ASR_CHUNK_SECONDS: ${ELEVENLABS_ASR_CHUNK_SECONDS:-300}
+      ELEVENLABS_ASR_TIMEOUT_SECONDS: ${ELEVENLABS_ASR_TIMEOUT_SECONDS:-120}
+      ROMAN_HINGLISH_ENABLED: ${ROMAN_HINGLISH_ENABLED:-false}
+      ROMAN_HINGLISH_POLICY: ${ROMAN_HINGLISH_POLICY:-v3}
+      ROMAN_HINGLISH_DISPLAY_POLICY: ${ROMAN_HINGLISH_DISPLAY_POLICY:-v1}
+      ASR_PROVIDER_TIMEOUT_SECONDS: ${ASR_PROVIDER_TIMEOUT_SECONDS:-45}
+      ASR_PROVIDER_MAX_ATTEMPTS: ${ASR_PROVIDER_MAX_ATTEMPTS:-2}
+      ASR_API_MAX_AUDIO_MINUTES: ${ASR_API_MAX_AUDIO_MINUTES:-60}
+      ASR_API_MAX_CHUNK_MB: ${ASR_API_MAX_CHUNK_MB:-24}
+      ASR_API_MAX_CHUNKS: ${ASR_API_MAX_CHUNKS:-24}
+      ASR_CHUNK_SECONDS: ${ASR_CHUNK_SECONDS:-600}
+      ASR_CHUNK_OVERLAP_SECONDS: ${ASR_CHUNK_OVERLAP_SECONDS:-2}
+      # Legacy-only controls remain available with ASR_MODE=local.
+      WHISPER_MODEL: ${WHISPER_MODEL:-medium}
+      WHISPER_SECONDARY_MODEL: ${WHISPER_SECONDARY_MODEL:-small}
+      REQUIRE_ASR_CONSENSUS: ${REQUIRE_ASR_CONSENSUS:-false}
+      ALIGNMENT_BACKEND: ${ALIGNMENT_BACKEND:-native}
+      REQUIRE_FORCED_ALIGNMENT: ${REQUIRE_FORCED_ALIGNMENT:-false}
+      # One source is processed at a time on the current SQLite/single-worker deployment.
+      ASR_CONCURRENCY: ${ASR_CONCURRENCY:-1}
+      ASR_CPU_THREADS: ${ASR_CPU_THREADS:-4}
+      ASR_WORKERS: ${ASR_WORKERS:-1}
+      RENDER_CONCURRENCY: ${RENDER_CONCURRENCY:-1}
+      MEDIA_PROCESS_TIMEOUT_SECONDS: ${MEDIA_PROCESS_TIMEOUT_SECONDS:-1800}
+      MEDIA_FFMPEG_THREADS: ${MEDIA_FFMPEG_THREADS:-2}
+      # AI provider credentials exist only in the non-network media worker.
+      GROQ_RANKING_ENABLED: ${GROQ_RANKING_ENABLED:-true}
+      GROQ_RANKING_MODEL: ${GROQ_RANKING_MODEL:-openai/gpt-oss-120b}
+      GROQ_RANKING_FALLBACK_MODEL: ${GROQ_RANKING_FALLBACK_MODEL:-openai/gpt-oss-20b}
+      GROQ_RANKING_TIMEOUT_SECONDS: ${GROQ_RANKING_TIMEOUT_SECONDS:-18}
+      GROQ_RANKING_CANDIDATES: ${GROQ_RANKING_CANDIDATES:-16}
+      GROQ_API_KEYS: ${GROQ_API_KEYS:-}
+      GROQ_API_KEY_1: ${GROQ_API_KEY_1:-}
+      GROQ_API_KEY_2: ${GROQ_API_KEY_2:-}
+      GROQ_API_KEY_3: ${GROQ_API_KEY_3:-}
+      GROQ_API_KEY_4: ${GROQ_API_KEY_4:-}
+      GROQ_API_KEY_5: ${GROQ_API_KEY_5:-}
+    volumes:
+      - clipkaro_storage:/app/storage
+    read_only: true
+    tmpfs:
+      - /tmp:size=768m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: ${WORKER_PIDS_LIMIT:-256}
+    mem_limit: ${WORKER_MEMORY_LIMIT:-4g}
+    cpus: ${WORKER_CPU_LIMIT:-3.0}
+    ulimits:
+      nofile:
+        soft: 4096
+        hard: 4096
+      nproc:
+        soft: 256
+        hard: 256
+    shm_size: 768m
+    stop_grace_period: 60s
+    # Backend image's HTTP healthcheck targets Uvicorn; this container has no HTTP listener.
+    healthcheck:
+      disable: true
+    # Separate bridge supplies outbound internet for Groq/model downloads but has
+    # no API/web/Caddy/ClamAV peers. Heavy media code is not on the app network.
+    networks:
+      - worker_egress
+    depends_on:
+      api:
+        condition: service_healthy
+
+  clamav:
+    # Track only the 1.5 feature line so security patches land without an
+    # unreviewed future feature-release jump. The current line contains 1.5.3.
+    image: clamav/clamav:1.5
+    restart: unless-stopped
+    user: "clamav"
+    entrypoint: /init-unprivileged
+    environment:
+      # Official image maps CLAMD_CONF_* values into clamd.conf at startup.
+      # Keep the stream/file ceilings above ClipKaro's 500 MB upload maximum.
+      CLAMD_CONF_StreamMaxLength: ${CLAMAV_STREAM_MAX_LENGTH:-550M}
+      CLAMD_CONF_MaxFileSize: ${CLAMAV_MAX_FILE_SIZE:-550M}
+      CLAMD_CONF_MaxScanSize: ${CLAMAV_MAX_SCAN_SIZE:-550M}
+      CLAMD_CONF_User: clamav
+      FRESHCLAM_CHECKS: ${CLAMAV_FRESHCLAM_CHECKS:-24}
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: ${CLAMAV_PIDS_LIMIT:-128}
+    # Official guidance is 3 GiB minimum / 4 GiB preferred. Default to the
+    # documented floor on a single VPS; larger hosts can override to 4g.
+    mem_limit: ${CLAMAV_MEMORY_LIMIT:-3g}
+    cpus: ${CLAMAV_CPU_LIMIT:-1.0}
+    tmpfs:
+      - /tmp:size=768m,mode=1777
+      - /run:size=64m,mode=0755
+    networks:
+      - scanner_net
+      - clamav_egress
+    # No host ports. API reaches clamd only through scanner_net; a separate
+    # ClamAV-only egress bridge lets FreshClam update signatures from the internet.
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: /api/v1
+        BACKEND_URL: http://api:8000
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      BACKEND_URL: http://api:8000
+    read_only: true
+    tmpfs:
+      - /tmp:size=96m,mode=1777
+      - /app/.next/cache:size=192m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: ${WEB_PIDS_LIMIT:-128}
+    mem_limit: ${WEB_MEMORY_LIMIT:-768m}
+    cpus: ${WEB_CPU_LIMIT:-0.75}
+    networks:
+      - app_net
+    depends_on:
+      api:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL in .env}
+    ports:
+      - "80:80"
+      - "443:443/udp"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - app_net
+    depends_on:
+      web:
+        condition: service_healthy
+
+networks:
+  app_net:
+  scanner_net:
+    internal: true
+  worker_egress:
+  clamav_egress:
+
+volumes:
+  clipkaro_storage:
+  caddy_data:
+  caddy_config:

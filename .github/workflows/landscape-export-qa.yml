@@ -1,0 +1,142 @@
+name: Landscape Export QA
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/landscape-export-qa.yml"
+      - "backend/landscape-threshold-lock.json"
+      - "backend/app/services/landscape_export_qa.py"
+      - "backend/app/services/landscape_qualification.py"
+      - "backend/scripts/check_landscape_execution_environment.py"
+      - "backend/scripts/finalize_landscape_qualification.py"
+      - "backend/scripts/landscape_export_qa.py"
+      - "backend/scripts/write_landscape_threshold_lock.py"
+      - "backend/tests/test_landscape_export_qa.py"
+      - "backend/tests/test_landscape_qualification_contract.py"
+      - "backend/app/services/rendering.py"
+      - "backend/app/services/crop_tracking.py"
+      - "scripts/run-real-landscape-qualification.sh"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: landscape-export-qa-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  landscape-export-qa:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux, x64, clipkaro-qa]
+    timeout-minutes: 120
+    env:
+      TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      APP_ENV: development
+      TRANSCRIPTION_BACKEND: fixture
+      MEDIA_FFMPEG_THREADS: "2"
+      MEDIA_PROCESS_TIMEOUT_SECONDS: "300"
+      PYTHONPATH: .
+      # Optional non-secret host path containing the five locked real source files.
+      LANDSCAPE_SOURCE_DIR: ${{ vars.LANDSCAPE_SOURCE_DIR }}
+
+    steps:
+      - name: Checkout exact candidate SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          clean: true
+
+      - name: Verify exact clean candidate
+        run: |
+          test "$(git rev-parse HEAD)" = "$TESTED_SHA"
+          git diff --exit-code
+          git diff --cached --exit-code
+
+      - name: Verify trusted landscape QA runner
+        run: bash scripts/check-self-hosted-runner.sh --profile landscape
+
+      - name: Create isolated backend virtualenv
+        working-directory: backend
+        run: |
+          rm -rf .venv-ci
+          python3.12 -m venv .venv-ci
+          echo "$PWD/.venv-ci/bin" >> "$GITHUB_PATH"
+
+      - name: Install backend and visual-QA dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+          pip install opencv-python-headless==4.12.0.88
+          python -m pip check
+
+      - name: Validate locked crop and qualification contracts
+        working-directory: backend
+        env:
+          APP_ENV: test
+          TRANSCRIPTION_BACKEND: fixture
+          PYTHONPATH: .
+        run: >-
+          pytest -q
+          tests/test_landscape_export_qa.py
+          tests/test_landscape_qualification_contract.py
+          tests/test_rendering.py
+
+      - name: Run exact-SHA 30 real landscape exports
+        id: qa
+        continue-on-error: true
+        run: bash scripts/run-real-landscape-qualification.sh
+
+      - name: Print final landscape qualification evidence
+        if: always()
+        run: |
+          if [ -f backend/landscape-qualification-evidence/landscape-qualification-summary.md ]; then
+            cat backend/landscape-qualification-evidence/landscape-qualification-summary.md
+          fi
+
+      - name: Upload immutable landscape qualification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: landscape-export-qa-${{ env.TESTED_SHA }}
+          path: |
+            backend/landscape_qa/landscape-export-qa-report.json
+            backend/landscape_qa/landscape-export-qa-summary.md
+            backend/landscape_qa/exports/*.mp4
+            backend/landscape-qualification-evidence/landscape-qualification-evidence.json
+            backend/landscape-qualification-evidence/landscape-qualification-summary.md
+            backend/landscape-qualification-evidence/threshold-lock-before.json
+            backend/landscape-qualification-evidence/threshold-lock-after.json
+            backend/landscape-execution-preflight.json
+            backend/landscape-runner-hardware.txt
+            backend/landscape-qa-resource.txt
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Enforce complete trustworthy qualification
+        if: always()
+        run: |
+          test "${{ steps.qa.outcome }}" = "success"
+          python backend/scripts/finalize_landscape_qualification.py \
+            --evidence-dir backend/landscape-qualification-evidence \
+            --report backend/landscape_qa/landscape-export-qa-report.json \
+            --preflight backend/landscape-execution-preflight.json \
+            --resource backend/landscape-qa-resource.txt \
+            --threshold-before backend/landscape-qualification-evidence/threshold-lock-before.json \
+            --threshold-after backend/landscape-qualification-evidence/threshold-lock-after.json \
+            --enforce
+
+      - name: Clean landscape QA workspace
+        if: always()
+        run: >-
+          rm -rf
+          backend/.venv-ci
+          backend/.pytest_cache
+          backend/landscape_qa
+          backend/landscape-qualification-evidence
+          backend/landscape-execution-preflight.json
+          backend/landscape-runner-hardware.txt
+          backend/landscape-qa-resource.txt

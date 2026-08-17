@@ -1,0 +1,32 @@
+from app.services.caption_layout import build_caption_cards, validate_cards
+
+
+def words(text: str, step: float = .34):
+    return [{"start": i * step, "end": i * step + .25, "text": token, "confidence": .9}
+            for i, token in enumerate(text.split())]
+
+
+def test_long_hinglish_is_wrapped_into_two_safe_lines():
+    cards = build_caption_cards(words("mera moral hi khatam kar diya ab engineering ke upar baat karte hain"))
+    assert cards
+    assert all(len(card.lines) <= 2 for card in cards)
+    assert all(len(line) <= 32 for card in cards for line in card.lines)
+    assert not [e for e in validate_cards(cards) if "overflow" in e]
+
+
+def test_pause_creates_phrase_boundary():
+    stream = words("aap kya karte hain")
+    stream += [{"start": 3.0, "end": 3.3, "text": "engineering"}]
+    assert len(build_caption_cards(stream)) == 2
+
+
+def test_invalid_word_timestamps_are_removed():
+    stream = [{"start": 1, "end": 1, "text": "sir"}, {"start": 2, "end": 2.4, "text": "hello"}]
+    cards = build_caption_cards(stream)
+    assert [w["text"] for card in cards for w in card.words] == ["hello"]
+
+
+def test_balanced_break_prefers_hinglish_conjunction():
+    card = build_caption_cards(words("main samajh gaya lekin tum abhi bhi nahi samjhe"), max_words=12)[0]
+    assert len(card.lines) == 2
+    assert card.lines[1].startswith("lekin")

@@ -1,0 +1,3 @@
+# Legacy local/qualification ASR only. Never required by ASR_MODE=api.
+-r requirements.txt
+faster-whisper==1.2.1

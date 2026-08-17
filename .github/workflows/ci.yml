@@ -1,0 +1,110 @@
+name: ClipKaro CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: clipkaro-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend CI
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux, x64, clipkaro-qa]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          clean: true
+      - name: Verify trusted self-hosted backend runner
+        run: bash scripts/check-self-hosted-runner.sh --profile ci-backend
+      - name: Create isolated backend virtualenv
+        working-directory: backend
+        run: |
+          rm -rf .venv-ci
+          python3.12 -m venv .venv-ci
+          echo "$PWD/.venv-ci/bin" >> "$GITHUB_PATH"
+      - name: Install backend dependencies
+        working-directory: backend
+        run: python -m pip install --upgrade pip && pip install -r requirements-dev.txt
+      - name: Run backend tests
+        working-directory: backend
+        env:
+          APP_ENV: test
+          TRANSCRIPTION_BACKEND: fixture
+          PYTHONPATH: .
+        run: pytest -q
+      - name: Clean backend job workspace
+        if: always()
+        run: rm -rf backend/.venv-ci backend/.pytest_cache backend/**/__pycache__
+
+  frontend:
+    name: Frontend CI
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux, x64, clipkaro-qa]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          clean: true
+      - name: Verify trusted self-hosted frontend runner
+        run: bash scripts/check-self-hosted-runner.sh --profile ci-frontend
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+      - name: Check Settings trust contract
+        working-directory: frontend
+        run: npm run check:settings-trust
+      - name: Check Analytics truth contract
+        working-directory: frontend
+        run: npm run check:analytics-truth
+      - name: Check Billing lifecycle contract
+        working-directory: frontend
+        run: npm run check:billing-lifecycle
+      - name: Check Email verification contract
+        working-directory: frontend
+        run: npm run check:email-verification
+      - name: Check Security foundation contract
+        working-directory: frontend
+        run: npm run check:security-foundation
+      - name: Check Legal & privacy launch contract
+        working-directory: frontend
+        run: npm run check:legal-privacy
+      - name: Check Behavioral learning contract
+        working-directory: frontend
+        run: npm run check:behavioral-learning
+      - name: Check Landscape reframe trust contract
+        working-directory: frontend
+        run: npm run check:landscape-reframe
+      - name: Check Release identity contract
+        working-directory: frontend
+        run: npm run check:release-identity
+      - name: Validate production Compose
+        env:
+          DOMAIN: clipkaro.example
+          ACME_EMAIL: ci@example.com
+          SECRET_KEY: ci-only-secret-key-with-at-least-32-characters
+        run: docker compose -f docker-compose.hostinger.yml config --quiet
+      - name: Validate production Caddyfile
+        run: >-
+          docker run --rm
+          -e DOMAIN=clipkaro.example
+          -e ACME_EMAIL=ci@example.com
+          -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro"
+          caddy:2.10-alpine
+          caddy validate --config /etc/caddy/Caddyfile
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+      - name: Clean frontend job workspace
+        if: always()
+        run: rm -rf frontend/node_modules frontend/.next

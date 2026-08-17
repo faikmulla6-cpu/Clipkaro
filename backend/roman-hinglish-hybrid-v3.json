@@ -1,0 +1,14 @@
+{
+  "ROMAN_HINGLISH_HYBRID_V3_SHA256": "60ccbff0f65eb1a273661c6191f02ff7a1430d9036ac4482f589e4108c3d7506",
+  "alignment": "SequenceMatcher deterministic global opcode alignment, autojunk disabled",
+  "ambiguous_or_overlapping_operations": "keep base",
+  "base": "ElevenLabs canonical tokens remain authoritative",
+  "deletion_limit": 2,
+  "forbidden": "no LLM, fuzzy matching, semantic rewrite, reference, score, provider ranking, or provider calls",
+  "insertion_limit": 2,
+  "secondaries": "Sarvam and Shunya must have exactly matching aligned operation",
+  "single_secondary_correction": "disallowed",
+  "substitution_limit": 3,
+  "timestamps": "retain native base words where available; replacements inherit only base-span interval; insertions use derived_gap only",
+  "version": "2026-08-14-roman-hinglish-hybrid-v3"
+}

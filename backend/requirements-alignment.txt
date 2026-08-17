@@ -1,0 +1,9 @@
+# Legacy local-ASR worker-only forced-alignment profile.
+# API mode intentionally does not install this file.
+-r requirements-local-asr.txt
+# CPU-only wheels avoid pulling CUDA runtimes on an x86_64 CPU VPS.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.8.0+cpu
+torchaudio==2.8.0+cpu
+torchvision==0.23.0+cpu
+whisperx==3.8.6

@@ -1,0 +1,6 @@
+# Optional candidate-ASR screening dependencies only.
+# Do NOT install this file in the production API/worker images unless an
+# explicitly approved candidate qualification requires it. Production routing
+# does not depend on NVIDIA Riva/Parakeet.
+-r requirements-dev.txt
+nvidia-riva-client==2.27.0

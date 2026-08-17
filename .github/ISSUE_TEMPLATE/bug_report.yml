@@ -1,0 +1,79 @@
+name: Bug report
+description: Report a reproducible ClipKaro defect with enough evidence to implement and regression-test it.
+title: "[Bug] "
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Problem
+      description: What is broken, and what user/business outcome is affected?
+      placeholder: Describe the observed failure and why it matters.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Primary area
+      options:
+        - Billing / Razorpay
+        - Karo Minutes / export quotas
+        - Authentication / sessions / email
+        - Upload / malware scanning
+        - ASR / transcription
+        - Ranking / AI providers
+        - Rendering / media / captions
+        - Frontend / Creator Studio
+        - Database / concurrency
+        - Security / privacy / legal
+        - Deployment / CI / infrastructure
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - P0 - money, security, data loss, public outage
+        - P1 - core creator flow broken or materially incorrect
+        - P2 - degraded experience with workaround
+        - P3 - minor / cosmetic
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      placeholder: "1. ...\n2. ...\n3. ..."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Logs, request IDs, screenshots, failing tests, affected SHA/version. Remove secrets and personal data.
+  - type: textarea
+    id: invariants
+    attributes:
+      label: Critical invariants that must not regress
+      description: Especially call out billing, quota, auth, security, legal, or data-integrity invariants touched by the fix.
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Concrete outcomes and regression tests required before the issue can close.
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed passwords, API secrets, payment credentials, personal data, and private media from this issue.
+          required: true

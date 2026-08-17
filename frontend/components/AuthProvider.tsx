@@ -1,0 +1,120 @@
+"use client";
+
+import { api, postJSON, User, VerificationStatus } from "@/lib/api";
+import { LEGAL_VERSION } from "@/lib/legal";
+import { usePathname, useRouter } from "next/navigation";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+
+type AuthActionResult = {
+  canProcess: boolean;
+  verificationEmailSent?: boolean;
+};
+
+type AuthContextValue = {
+  user: User | null;
+  verification: VerificationStatus | null;
+  loading: boolean;
+  refresh: () => Promise<void>;
+  login: (email: string, password: string) => Promise<AuthActionResult>;
+  signup: (name: string, email: string, password: string, acceptLegal: boolean) => Promise<AuthActionResult>;
+  logout: () => Promise<void>;
+};
+
+const AuthContext = createContext<AuthContextValue | null>(null);
+const publicPaths = [
+  "/", "/login", "/signup", "/verify-email", "/forgot-password", "/reset-password",
+  "/terms", "/privacy", "/refund-policy", "/acceptable-use", "/copyright", "/legal-notice",
+];
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [verification, setVerification] = useState<VerificationStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const path = usePathname();
+  const router = useRouter();
+
+  const refresh = useCallback(async () => {
+    try {
+      const nextUser = await api<User>("/auth/me");
+      setUser(nextUser);
+      try {
+        setVerification(await api<VerificationStatus>("/auth/verification-status"));
+      } catch {
+        // Backend enforcement remains authoritative. Do not sign a valid user
+        // out merely because the status request had a transient network error.
+        setVerification(null);
+      }
+    } catch {
+      setUser(null);
+      setVerification(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  useEffect(() => {
+    if (loading) return;
+    const isPublic = publicPaths.includes(path);
+    if (!user && !isPublic) {
+      router.replace(`/login?next=${encodeURIComponent(path)}`);
+      return;
+    }
+    if (user && !isPublic && verification?.required && !verification.can_process) {
+      router.replace("/verify-email");
+    }
+  }, [loading, user, verification, path, router]);
+
+  const value = useMemo<AuthContextValue>(() => ({
+    user,
+    verification,
+    loading,
+    refresh,
+    login: async (email, password) => {
+      const response = await postJSON<{ user: User }>("/auth/login", { email, password });
+      setUser(response.user);
+      try {
+        const status = await api<VerificationStatus>("/auth/verification-status");
+        setVerification(status);
+        return { canProcess: status.can_process };
+      } catch {
+        setVerification(null);
+        return { canProcess: true };
+      }
+    },
+    signup: async (name, email, password, acceptLegal) => {
+      const response = await postJSON<{
+        user: User;
+        verification_email_sent: boolean;
+        verification: VerificationStatus;
+      }>("/auth/signup", {
+        name,
+        email,
+        password,
+        accept_legal: acceptLegal,
+        legal_version: LEGAL_VERSION,
+      });
+      setUser(response.user);
+      setVerification(response.verification);
+      return {
+        canProcess: response.verification.can_process,
+        verificationEmailSent: response.verification_email_sent,
+      };
+    },
+    logout: async () => {
+      await api("/auth/logout", { method: "POST" });
+      setUser(null);
+      setVerification(null);
+      router.push("/");
+    },
+  }), [user, verification, loading, refresh, router]);
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export function useAuth() {
+  const value = useContext(AuthContext);
+  if (!value) throw new Error("useAuth must be inside AuthProvider");
+  return value;
+}

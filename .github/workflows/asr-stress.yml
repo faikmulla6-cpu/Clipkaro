@@ -1,0 +1,387 @@
+name: ASR Stress Qualification
+
+on:
+  workflow_dispatch:
+    inputs:
+      street_noise_url:
+        description: "Optional direct URL to a real street/traffic recording; blank uses the pinned public-domain fixture"
+        required: false
+        default: ""
+        type: string
+      cases_per_language:
+        description: "Number of cases per Hindi, Marathi and Hinglish family"
+        required: true
+        default: "3"
+        type: string
+      whisper_model:
+        description: "Primary production Whisper model"
+        required: true
+        default: "medium"
+        type: choice
+        options:
+          - small
+          - medium
+  pull_request:
+    paths:
+      - "backend/asr-verdict-trigger.txt"
+
+jobs:
+  qualify-asr:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux, x64, clipkaro-qa]
+    timeout-minutes: 240
+    permissions:
+      contents: read
+    env:
+      PRIMARY_MODEL: ${{ github.event_name == 'workflow_dispatch' && inputs.whisper_model || 'medium' }}
+      CASES_PER_LANGUAGE: ${{ github.event_name == 'workflow_dispatch' && inputs.cases_per_language || '2' }}
+      MIN_CASE_SECONDS: ${{ github.event_name == 'workflow_dispatch' && '40' || '34' }}
+      APP_ENV: development
+      TRANSCRIPTION_BACKEND: faster-whisper
+      WHISPER_SECONDARY_MODEL: small
+      REQUIRE_ASR_CONSENSUS: "true"
+      # Exercise the same forced-alignment path used by the production worker.
+      ALIGNMENT_BACKEND: whisperx
+      REQUIRE_FORCED_ALIGNMENT: "true"
+      AUTO_LANGUAGE_BIAS: india
+      HINDI_CAPTION_SCRIPT: roman
+      ASR_CONCURRENCY: "1"
+      ASR_CPU_THREADS: "4"
+      ASR_WORKERS: "1"
+      MEDIA_FFMPEG_THREADS: "2"
+      PYTHONPATH: .
+      TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          clean: true
+
+      - name: Verify exact clean candidate SHA
+        run: |
+          test "$(git rev-parse HEAD)" = "$TESTED_SHA"
+          git diff --exit-code
+          git diff --cached --exit-code
+          test -z "$(git status --porcelain --untracked-files=no)"
+
+      - name: Lock ASR thresholds before inference
+        working-directory: backend
+        run: >-
+          python3 scripts/write_asr_threshold_lock.py
+          --phase before
+          --output asr-qualification-evidence/threshold-lock-before.json
+
+      - name: Record ASR host execution preflight
+        continue-on-error: true
+        run: >-
+          python3 backend/scripts/check_asr_execution_environment.py
+          --output backend/asr-execution-preflight.json
+
+      - name: Verify trusted heavyweight ASR runner
+        run: bash scripts/check-self-hosted-runner.sh --profile asr
+
+      - name: Create isolated backend virtualenv
+        working-directory: backend
+        run: |
+          rm -rf .venv-ci
+          python3.12 -m venv .venv-ci
+          echo "$PWD/.venv-ci/bin" >> "$GITHUB_PATH"
+
+      - name: Install production ASR and alignment dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+          pip install -r requirements-alignment.txt
+          python -m pip check
+          # Only the heavyweight acoustic workflow needs Arrow/HTTP range IO.
+          # These provide an independent Hub-Parquet path when datasets-server is down.
+          pip install "fsspec[http]==2026.7.0" pyarrow==25.0.0
+
+      - name: Validate installed ASR execution runtime
+        working-directory: backend
+        run: >-
+          python scripts/check_asr_execution_environment.py
+          --check-runtime
+          --output asr-execution-preflight.json
+
+      - name: Validate pinned WhisperX production runtime
+        working-directory: backend
+        run: >-
+          python -c "from app.services.forced_alignment import validate_forced_alignment_runtime; print(validate_forced_alignment_runtime('whisperx', True, enforce_production_policy=True, enforce_pinned_versions=True))"
+
+      - name: Record runner hardware and ASR/alignment versions
+        working-directory: backend
+        run: |
+          {
+            echo "github_event=${GITHUB_EVENT_NAME}"
+            echo "primary_model=${PRIMARY_MODEL}"
+            echo "cases_per_language=${CASES_PER_LANGUAGE}"
+            echo "min_case_seconds=${MIN_CASE_SECONDS}"
+            uname -a
+            echo
+            lscpu
+            echo
+            free -h
+            echo
+            ffmpeg -version | head -n 3
+            python --version
+            echo "tested_sha=$(git -C .. rev-parse HEAD)"
+            echo "threshold_sha256=$(python scripts/write_asr_threshold_lock.py --phase before --output /tmp/clipkaro-threshold-check.json)"
+            python - <<'PY'
+          import importlib.metadata as metadata
+          for package in ("faster-whisper", "whisperx", "torch", "torchaudio", "torchvision"):
+              print(f"{package}={metadata.version(package)}")
+          PY
+            rm -f /tmp/clipkaro-threshold-check.json
+          } > asr-runner-hardware.txt
+          cat asr-runner-hardware.txt
+
+      - name: Cache Whisper model files
+        uses: actions/cache@v4
+        with:
+          path: backend/storage/models
+          key: asr-models-${{ runner.os }}-${{ env.PRIMARY_MODEL }}-small-fw-1.2.1-wx-3.8.6
+
+      - name: Fetch Hindi and Marathi FLEURS cases
+        working-directory: backend
+        run: >-
+          python scripts/fetch_fleurs_stress_corpus.py
+          --output-dir stress_corpus
+          --cases-per-language "${CASES_PER_LANGUAGE}"
+          --min-seconds "${MIN_CASE_SECONDS}"
+
+      - name: Fetch and import real MUCS Hinglish cases
+        working-directory: backend
+        run: >-
+          python scripts/import_mucs_hinglish_corpus.py
+          --output-dir stress_corpus
+          --cases "${CASES_PER_LANGUAGE}"
+          --min-seconds "${MIN_CASE_SECONDS}"
+
+      - name: Fetch pinned real-world noise pack
+        working-directory: backend
+        run: python scripts/fetch_public_asr_noise_pack.py --output-dir stress_corpus/noise
+
+      - name: Replace traffic fixture with caller-supplied recording
+        if: github.event_name == 'workflow_dispatch' && inputs.street_noise_url != ''
+        working-directory: backend
+        env:
+          STREET_NOISE_URL: ${{ inputs.street_noise_url }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import requests
+          url = os.environ["STREET_NOISE_URL"].strip()
+          if not url.startswith(("https://", "http://")):
+              raise SystemExit("street_noise_url must be an http(s) URL")
+          target = Path("stress_corpus/noise/traffic.ogg")
+          with requests.get(url, stream=True, timeout=120) as response:
+              response.raise_for_status()
+              with target.open("wb") as handle:
+                  for chunk in response.iter_content(1024 * 1024):
+                      if chunk:
+                          handle.write(chunk)
+          if target.stat().st_size < 10_000:
+              raise SystemExit("Street-noise fixture is unexpectedly small")
+          PY
+
+      - name: Verify qualification manifest uses auto language detection
+        working-directory: backend
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path("stress_corpus/manifest.json")
+          payload = json.loads(path.read_text(encoding="utf-8"))
+          cases = payload["cases"]
+          bad = [row.get("id") for row in cases if str(row.get("language_hint") or "auto").lower() not in {"", "auto"}]
+          if bad:
+              raise SystemExit("Qualification contains forced language hints: " + ", ".join(map(str, bad)))
+          print(f"auto_language_cases={len(cases)}")
+          PY
+
+      - name: Run full production-style acoustic qualification
+        id: core
+        continue-on-error: true
+        working-directory: backend
+        env:
+          WHISPER_MODEL: ${{ env.PRIMARY_MODEL }}
+        run: |
+          set +e
+          /usr/bin/time -v -o asr-core-resource.txt \
+            python scripts/asr_stress_benchmark.py \
+              --manifest stress_corpus/manifest.json \
+              --street-noise stress_corpus/noise/traffic.ogg \
+              --model "${PRIMARY_MODEL}" \
+              --mode qualification \
+              --min-cases-per-language "${CASES_PER_LANGUAGE}" \
+              --output asr-stress-report.json
+          status=$?
+          cat asr-core-resource.txt
+          exit $status
+
+      - name: Sweep café and fan real-world noise
+        id: environments
+        continue-on-error: true
+        working-directory: backend
+        env:
+          WHISPER_MODEL: ${{ env.PRIMARY_MODEL }}
+        run: |
+          set +e
+          overall=0
+          for noise in cafe fan; do
+            echo "=== real_noise=${noise} ==="
+            /usr/bin/time -v -o "asr-${noise}-resource.txt" \
+              python scripts/asr_stress_benchmark.py \
+                --manifest stress_corpus/manifest.json \
+                --street-noise "stress_corpus/noise/${noise}.ogg" \
+                --model "${PRIMARY_MODEL}" \
+                --mode smoke \
+                --scenarios street_noise \
+                --min-cases-per-language "${CASES_PER_LANGUAGE}" \
+                --output "asr-${noise}-report.json"
+            code=$?
+            cat "asr-${noise}-resource.txt"
+            if [ $code -ne 0 ]; then overall=1; fi
+          done
+          exit $overall
+
+      - name: Build explicit-language fallback manifest
+        working-directory: backend
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          source = Path("stress_corpus/manifest.json")
+          payload = json.loads(source.read_text(encoding="utf-8"))
+          for row in payload["cases"]:
+              language = str(row.get("language") or "").lower()
+              if language == "hi": row["language_hint"] = "hi"
+              elif language == "mr": row["language_hint"] = "mr"
+              else: row["language_hint"] = "hinglish"
+          Path("stress_corpus/manifest-hinted.json").write_text(
+              json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+          )
+          PY
+
+      - name: Verify explicit-language creator override path
+        id: hinted
+        continue-on-error: true
+        working-directory: backend
+        env:
+          WHISPER_MODEL: ${{ env.PRIMARY_MODEL }}
+        run: |
+          set +e
+          /usr/bin/time -v -o asr-hinted-resource.txt \
+            python scripts/asr_stress_benchmark.py \
+              --manifest stress_corpus/manifest-hinted.json \
+              --street-noise stress_corpus/noise/traffic.ogg \
+              --model "${PRIMARY_MODEL}" \
+              --mode smoke \
+              --scenarios clean,street_noise \
+              --min-cases-per-language "${CASES_PER_LANGUAGE}" \
+              --output asr-hinted-report.json
+          status=$?
+          cat asr-hinted-resource.txt
+          exit $status
+
+      - name: Run real-model FIFO concurrency soak
+        id: concurrency
+        continue-on-error: true
+        working-directory: backend
+        env:
+          WHISPER_MODEL: ${{ env.PRIMARY_MODEL }}
+        run: |
+          set +e
+          /usr/bin/time -v -o asr-concurrency-resource.txt \
+            python scripts/asr_concurrency_soak.py \
+              --manifest stress_corpus/manifest.json \
+              --model "${PRIMARY_MODEL}" \
+              --output asr-concurrency-report.json
+          status=$?
+          cat asr-concurrency-resource.txt
+          exit $status
+
+      - name: Print compact ASR verdict
+        if: always()
+        working-directory: backend
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          def load(name):
+              path = Path(name)
+              return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+
+          core = load("asr-stress-report.json")
+          cafe = load("asr-cafe-report.json")
+          fan = load("asr-fan-report.json")
+          hinted = load("asr-hinted-report.json")
+          concurrency = load("asr-concurrency-report.json")
+          noise = load("stress_corpus/noise/noise-manifest.json")
+
+          verdict = {
+              "core_production_ready": core and core.get("production_ready"),
+              "core_scenarios": core and core.get("summary", {}).get("scenarios"),
+              "negative_controls": core and core.get("negative_controls"),
+              "cafe_noise_passed": cafe and cafe.get("selected_scenarios_passed"),
+              "fan_noise_passed": fan and fan.get("selected_scenarios_passed"),
+              "hinted_override_passed": hinted and hinted.get("selected_scenarios_passed"),
+              "concurrency_passed": concurrency and concurrency.get("passed"),
+              "concurrency_checks": concurrency and concurrency.get("checks"),
+              "noise_sources": noise and noise.get("sources"),
+          }
+          print("ASR_VERDICT_JSON_START")
+          print(json.dumps(verdict, ensure_ascii=False, indent=2))
+          print("ASR_VERDICT_JSON_END")
+          PY
+
+      - name: Lock ASR thresholds after inference
+        if: always()
+        working-directory: backend
+        run: >-
+          python3 scripts/write_asr_threshold_lock.py
+          --phase after
+          --output asr-qualification-evidence/threshold-lock-after.json
+
+      - name: Generate immutable ASR qualification evidence
+        if: always()
+        working-directory: backend
+        run: python3 scripts/finalize_asr_qualification.py --evidence-dir asr-qualification-evidence
+
+      - name: Upload qualification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: asr-real-verdict-${{ env.PRIMARY_MODEL }}
+          path: |
+            backend/asr-qualification-evidence/asr-qualification-evidence.json
+            backend/asr-qualification-evidence/asr-qualification-summary.md
+            backend/asr-qualification-evidence/threshold-lock-before.json
+            backend/asr-qualification-evidence/threshold-lock-after.json
+            backend/asr-execution-preflight.json
+            backend/asr-*-report.json
+            backend/asr-*-resource.txt
+            backend/asr-runner-hardware.txt
+            backend/stress_corpus/manifest.json
+            backend/stress_corpus/manifest-hinted.json
+            backend/stress_corpus/noise/noise-manifest.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Enforce immutable real-ASR verdict
+        if: always()
+        working-directory: backend
+        run: python3 scripts/finalize_asr_qualification.py --evidence-dir asr-qualification-evidence --enforce
+
+      - name: Clean heavyweight ASR workspace
+        if: always()
+        run: |
+          rm -rf backend/.venv-ci backend/.pytest_cache backend/stress_corpus backend/asr-qualification-evidence
+          rm -f backend/asr-execution-preflight.json backend/asr-*-report.json backend/asr-*-resource.txt backend/asr-runner-hardware.txt

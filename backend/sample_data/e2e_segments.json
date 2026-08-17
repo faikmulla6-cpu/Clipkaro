@@ -1,0 +1,16 @@
+{
+  "language": "en",
+  "segments": [
+    {"start": 8, "end": 21, "text": "Today I am building the brain function for my personal AI assistant Borax, and the first question is what should the system remember?"},
+    {"start": 21, "end": 36, "text": "Most people make this mistake: they put every responsibility into one giant file, and then the assistant becomes impossible to maintain."},
+    {"start": 36, "end": 52, "text": "The better approach is a clear three-step system. First understand the request, second select the right capability, and third verify the result."},
+    {"start": 75, "end": 90, "text": "Here is the surprising part. A useful AI assistant does not need to be the largest model; it needs reliable memory, tools, and recovery."},
+    {"start": 90, "end": 108, "text": "That single design decision can save hours of debugging and lets every component improve without breaking the entire application."},
+    {"start": 142, "end": 158, "text": "If you are creating your own Jarvis-style assistant, stop chasing features for a moment and build one dependable workflow from beginning to end."},
+    {"start": 158, "end": 178, "text": "When that workflow can accept an instruction, take an action, report progress, and recover from failure, you have created the foundation."},
+    {"start": 220, "end": 237, "text": "The secret is not more code. The secret is separating the brain, memory, tools, permissions, and user interface into modules."},
+    {"start": 237, "end": 256, "text": "This makes the assistant faster on a normal laptop and gives you a clear place to fix a problem when something goes wrong."},
+    {"start": 310, "end": 327, "text": "Before you call the project finished, test the complete experience like a real user: start the server, upload a file, and verify the output."},
+    {"start": 327, "end": 347, "text": "That final verification is what turns an interesting demo into a product people can trust."}
+  ]
+}
