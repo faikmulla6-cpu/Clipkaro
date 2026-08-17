@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   postgres-validation:
-    name: PostgreSQL 18 migration and concurrency
+    name: PostgreSQL 18 migration, auth and concurrency
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
@@ -32,10 +32,17 @@ jobs:
           --health-timeout=5s
           --health-retries=10
     env:
+      DATABASE_BACKEND: postgres
       DATABASE_URL: postgresql://clipkaro:clipkaro_ci_only@127.0.0.1:5432/clipkaro_test
       POSTGRES_TEST_URL: postgresql://clipkaro:clipkaro_ci_only@127.0.0.1:5432/clipkaro_test
+      POSTGRES_POOL_MIN_SIZE: 0
+      POSTGRES_POOL_MAX_SIZE: 4
+      POSTGRES_STATEMENT_CACHE_SIZE: 0
       APP_ENV: test
       TRANSCRIPTION_BACKEND: fixture
+      EMAIL_VERIFICATION_REQUIRED: true
+      FRONTEND_URL: https://clipkaro.pro
+      APP_PUBLIC_URL: https://clipkaro.pro
       PYTHONPATH: .
     steps:
       - uses: actions/checkout@v4
@@ -75,8 +82,8 @@ jobs:
                   required_tables = {
                       'users', 'projects', 'videos', 'transcripts', 'clips', 'exports',
                       'jobs', 'usage', 'usage_reservations', 'billing_checkouts',
-                      'billing_webhook_state', 'auth_sessions', 'upload_sessions',
-                      'security_rate_limits'
+                      'billing_webhook_state', 'auth_sessions', 'email_verifications',
+                      'password_resets', 'upload_sessions', 'security_rate_limits'
                   }
                   rows = await conn.fetch("SELECT tablename FROM pg_tables WHERE schemaname='public'")
                   actual = {r['tablename'] for r in rows}
@@ -96,6 +103,10 @@ jobs:
         working-directory: backend
         run: pytest -q tests/test_postgres_integration.py
 
+      - name: Run PostgreSQL signup, login, resend and verification flow
+        working-directory: backend
+        run: pytest -q tests/test_postgres_auth_flow.py
+
   container-builds:
     name: Cloud Run container builds
     runs-on: ubuntu-latest
@@ -109,11 +120,50 @@ jobs:
       - name: Build lightweight Cloud Run API image
         run: docker build --target api -t clipkaro-api:ci backend
 
-      - name: Build Cloud Run media job image
+      - name: Build API-first Cloud Run media job image
         run: docker build --target media -t clipkaro-media:ci backend
 
       - name: Verify API image starts from expected entrypoint
-        run: docker image inspect clipkaro-api:ci --format '{{json .Config.Cmd}}'
+        run: test "$(docker image inspect clipkaro-api:ci --format '{{json .Config.Cmd}}')" = '["python","-m","app.cloudrun_api"]'
 
       - name: Verify media image starts from expected entrypoint
-        run: docker image inspect clipkaro-media:ci --format '{{json .Config.Cmd}}'
+        run: test "$(docker image inspect clipkaro-media:ci --format '{{json .Config.Cmd}}')" = '["python","-m","app.media_job"]'
+
+      - name: Verify production media image excludes local Whisper runtime
+        run: |
+          docker run --rm --entrypoint python clipkaro-media:ci -c "import importlib.util; assert importlib.util.find_spec('whisperx') is None; assert importlib.util.find_spec('faster_whisper') is None"
+
+  frontend-validation:
+    name: Hostinger Next.js auth frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEXT_PUBLIC_API_URL: /api/v1
+      BACKEND_URL: https://backend.example.invalid
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          clean: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+
+      - name: Check email verification contract
+        working-directory: frontend
+        run: npm run check:email-verification
+
+      - name: Check security foundation contract
+        working-directory: frontend
+        run: npm run check:security-foundation
+
+      - name: Build production Next.js frontend
+        working-directory: frontend
+        run: npm run build
