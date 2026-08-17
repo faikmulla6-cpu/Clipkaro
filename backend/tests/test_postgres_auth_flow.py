@@ -24,6 +24,7 @@ def _csrf(client: TestClient) -> dict[str, str]:
 def test_postgres_signup_login_resend_and_verify(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = get_settings()
     original_cooldown = settings.email_verification_resend_cooldown_seconds
+    original_app_env = settings.app_env
     captured_tokens: list[str] = []
 
     async def fake_send(_recipient: str, _name: str, token: str) -> str:
@@ -39,7 +40,12 @@ def test_postgres_signup_login_resend_and_verify(monkeypatch: pytest.MonkeyPatch
     password = "Secure123"
 
     try:
+        # Start the app in its isolated test profile so unrelated production
+        # provider gates stay out of this integration test. Then enable normal
+        # verification enforcement exactly as the existing auth suite does.
         with TestClient(app) as client:
+            settings.app_env = "development"
+
             signup = client.post(
                 "/api/v1/auth/signup",
                 json={"name": "Postgres Creator", "email": email, "password": password},
@@ -56,6 +62,7 @@ def test_postgres_signup_login_resend_and_verify(monkeypatch: pytest.MonkeyPatch
             status = client.get("/api/v1/auth/verification-status")
             assert status.status_code == 200, status.text
             assert status.json()["verified"] is False
+            assert status.json()["can_process"] is False
 
             logout = client.post("/api/v1/auth/logout", headers=_csrf(client))
             assert logout.status_code == 204, logout.text
@@ -95,6 +102,7 @@ def test_postgres_signup_login_resend_and_verify(monkeypatch: pytest.MonkeyPatch
             assert final_status.json()["verified"] is True
             assert final_status.json()["can_process"] is True
     finally:
+        settings.app_env = original_app_env
         settings.email_verification_resend_cooldown_seconds = original_cooldown
         _requests.clear()
         _auth_requests.clear()
