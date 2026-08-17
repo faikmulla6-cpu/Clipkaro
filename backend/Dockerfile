@@ -11,22 +11,31 @@ COPY app ./app
 RUN mkdir -p /app/storage/uploads /app/storage/exports /app/storage/models \
     && chown -R 10001:10001 /app /home/clipkaro
 
-# Cloud Run media image owns all native render/scan dependencies.
-FROM runtime-base AS worker
+# Native media tools required by the serverless Cloud Run Job. This stage does
+# NOT install local Whisper/WhisperX: production ASR stays API-first.
+FROM runtime-base AS media-base
 USER root
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg libass9 tesseract-ocr fonts-noto-core fonts-liberation2 clamav \
     && rm -rf /var/lib/apt/lists/*
 COPY assets ./assets
-COPY requirements-alignment.txt .
+RUN chown -R 10001:10001 /app
+USER 10001:10001
+
+# Production Cloud Run Job executes exactly one JOB_ID and exits. It owns
+# scanning, FFmpeg, captions, rendering and provider API calls without a VPS.
+FROM media-base AS media
+CMD ["python", "-m", "app.media_job"]
+
+# Legacy/local-ASR worker target retained only for deliberate qualification or
+# an explicitly selected ASR_MODE=local deployment. Never used by API mode.
+FROM media-base AS worker
+USER root
+COPY requirements-local-asr.txt requirements-alignment.txt ./
 RUN python -m pip install --no-cache-dir -r requirements-alignment.txt \
     && python -m pip check
 USER 10001:10001
 CMD ["python", "-m", "app.worker"]
-
-# Production Cloud Run Job executes exactly one JOB_ID and exits.
-FROM worker AS media
-CMD ["python", "-m", "app.media_job"]
 
 # Keep API as the default target so local/dev docker builds remain lightweight.
 FROM runtime-base AS api
