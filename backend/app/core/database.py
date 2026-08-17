@@ -3,10 +3,17 @@ from __future__ import annotations
 import asyncio
 import logging
 import sqlite3
+import re
+from contextlib import asynccontextmanager
 from collections.abc import Awaitable, Callable, Iterable
 from typing import Any, TypeVar
 
 import aiosqlite
+
+try:  # Local SQLite development must not require PostgreSQL client loading.
+    import asyncpg
+except ImportError:  # pragma: no cover - exercised by minimal local installs.
+    asyncpg = None
 
 from .config import get_settings
 
@@ -15,6 +22,118 @@ T = TypeVar("T")
 logger = logging.getLogger("clipkaro.database")
 _LOCK_MESSAGES = ("database is locked", "database table is locked", "database schema is locked")
 _LOCK_PRIMARY_CODES = {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}
+POSTGRES_SCHEMA_REVISION = "20260817_01"
+_postgres_pool: Any = None
+
+
+class _PostgresCursor:
+    def __init__(self, rows: list[Any] | None = None) -> None:
+        self._rows = rows or []
+
+    async def fetchone(self) -> Any | None:
+        return self._rows[0] if self._rows else None
+
+    async def fetchall(self) -> list[Any]:
+        return list(self._rows)
+
+
+def _postgres_query(query: str) -> str:
+    """Translate the small legacy helper dialect without touching literals.
+
+    This is intentionally bounded. SQLite-only schema/trigger SQL is never sent
+    through this path; PostgreSQL schema changes are owned by Alembic.
+    """
+    sql = query.strip()
+    upper = sql.upper()
+    if upper.startswith("PRAGMA "):
+        raise RuntimeError("SQLite PRAGMA is not valid in PostgreSQL mode.")
+    if upper.startswith("INSERT OR IGNORE "):
+        sql = re.sub(r"^INSERT\s+OR\s+IGNORE", "INSERT", sql, flags=re.IGNORECASE)
+        sql = f"{sql} ON CONFLICT DO NOTHING"
+    elif upper.startswith("INSERT OR REPLACE INTO BILLING_PLANS"):
+        sql = re.sub(r"^INSERT\s+OR\s+REPLACE", "INSERT", sql, flags=re.IGNORECASE)
+        sql += " ON CONFLICT(plan_key) DO UPDATE SET provider_plan_id=EXCLUDED.provider_plan_id, amount=EXCLUDED.amount, currency=EXCLUDED.currency, created_at=EXCLUDED.created_at"
+    sql = sql.replace("MAX(source_minutes,?)", "GREATEST(source_minutes,?)")
+    sql = sql.replace("MAX(exports_used,?)", "GREATEST(exports_used,?)")
+    sql = sql.replace("MAX(billing_webhook_state.last_event_created_at,excluded.last_event_created_at)", "GREATEST(billing_webhook_state.last_event_created_at,excluded.last_event_created_at)")
+    sql = sql.replace("MAX(billing_webhook_state.terminal,excluded.terminal)", "GREATEST(billing_webhook_state.terminal,excluded.terminal)")
+    index = 0
+    quoted = False
+    output: list[str] = []
+    position = 0
+    while position < len(sql):
+        char = sql[position]
+        if char == "'":
+            output.append(char)
+            if quoted and position + 1 < len(sql) and sql[position + 1] == "'":
+                output.append("'")
+                position += 2
+                continue
+            quoted = not quoted
+        elif char == "?" and not quoted:
+            index += 1
+            output.append(f"${index}")
+        else:
+            output.append(char)
+        position += 1
+    return "".join(output)
+
+
+class _PostgresConnection:
+    def __init__(self, connection: Any) -> None:
+        self.raw = connection
+
+    async def execute(self, query: str, params: tuple[Any, ...] = ()) -> _PostgresCursor:
+        sql = _postgres_query(query)
+        if sql.lstrip().upper().startswith(("SELECT", "WITH")) or " RETURNING " in sql.upper():
+            return _PostgresCursor(list(await self.raw.fetch(sql, *params)))
+        await self.raw.execute(sql, *params)
+        return _PostgresCursor()
+
+    async def executemany(self, query: str, rows: Iterable[tuple[Any, ...]]) -> None:
+        await self.raw.executemany(_postgres_query(query), list(rows))
+
+
+async def _get_postgres_pool() -> Any:
+    global _postgres_pool
+    if _postgres_pool is not None:
+        return _postgres_pool
+    settings = get_settings()
+    if asyncpg is None:
+        raise RuntimeError("PostgreSQL mode requires the asyncpg package.")
+    if not settings.database_url.strip():
+        raise RuntimeError("DATABASE_URL is required for PostgreSQL mode.")
+    _postgres_pool = await asyncpg.create_pool(
+        dsn=settings.database_url,
+        min_size=max(0, int(settings.postgres_pool_min_size)),
+        max_size=max(1, int(settings.postgres_pool_max_size)),
+        command_timeout=max(1.0, float(settings.postgres_command_timeout_seconds)),
+        statement_cache_size=max(0, int(settings.postgres_statement_cache_size)),
+        server_settings={"application_name": "clipkaro"},
+    )
+    return _postgres_pool
+
+
+async def close_database() -> None:
+    global _postgres_pool
+    if _postgres_pool is not None:
+        await _postgres_pool.close()
+        _postgres_pool = None
+
+
+@asynccontextmanager
+async def distributed_advisory_lock(key: str):
+    """Serialize a sensitive cross-instance operation in PostgreSQL mode."""
+    if get_settings().normalized_database_backend != "postgres":
+        yield
+        return
+    pool = await _get_postgres_pool()
+    async with pool.acquire() as connection:
+        await connection.execute("SELECT pg_advisory_lock(hashtextextended($1, 0))", key)
+        try:
+            yield
+        finally:
+            await connection.execute("SELECT pg_advisory_unlock(hashtextextended($1, 0))", key)
 
 
 class UsageQuotaExceeded(RuntimeError):
@@ -490,6 +609,17 @@ async def _open_connection() -> aiosqlite.Connection:
 
 async def init_db() -> None:
     settings = get_settings()
+    if settings.normalized_database_backend == "postgres":
+        pool = await _get_postgres_pool()
+        async with pool.acquire() as connection:
+            revision = await connection.fetchval(
+                "SELECT version_num FROM alembic_version LIMIT 1"
+            )
+        if revision != POSTGRES_SCHEMA_REVISION:
+            raise RuntimeError(
+                "PostgreSQL schema is not current. Run `alembic upgrade head` before starting ClipKaro."
+            )
+        return
     settings.database_path.parent.mkdir(parents=True, exist_ok=True)
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
     settings.export_dir.mkdir(parents=True, exist_ok=True)
@@ -521,7 +651,7 @@ async def init_db() -> None:
 
 
 async def run_in_transaction(
-    operation: Callable[[aiosqlite.Connection], Awaitable[T]],
+    operation: Callable[[Any], Awaitable[T]],
     *,
     mode: str = "IMMEDIATE",
     operation_name: str = "transaction",
@@ -533,6 +663,12 @@ async def run_in_transaction(
     then fail halfway through lock acquisition. The callback must not commit or
     call this helper recursively on the same logical transaction.
     """
+    if get_settings().normalized_database_backend == "postgres":
+        pool = await _get_postgres_pool()
+        async with pool.acquire() as raw:
+            async with raw.transaction():
+                return await operation(_PostgresConnection(raw))
+
     transaction_mode = mode.upper()
     if transaction_mode not in {"DEFERRED", "IMMEDIATE", "EXCLUSIVE"}:
         raise ValueError("SQLite transaction mode must be DEFERRED, IMMEDIATE, or EXCLUSIVE.")
@@ -583,6 +719,12 @@ async def execute_many(query: str, rows: Iterable[tuple[Any, ...]]) -> None:
 
 
 async def fetch_one(query: str, params: tuple[Any, ...] = ()) -> dict[str, Any] | None:
+    if get_settings().normalized_database_backend == "postgres":
+        pool = await _get_postgres_pool()
+        async with pool.acquire() as connection:
+            row = await connection.fetchrow(_postgres_query(query), *params)
+            return dict(row) if row else None
+
     async def _read() -> dict[str, Any] | None:
         db = await _open_connection()
         db.row_factory = aiosqlite.Row
@@ -597,6 +739,11 @@ async def fetch_one(query: str, params: tuple[Any, ...] = ()) -> dict[str, Any] 
 
 
 async def fetch_all(query: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
+    if get_settings().normalized_database_backend == "postgres":
+        pool = await _get_postgres_pool()
+        async with pool.acquire() as connection:
+            return [dict(row) for row in await connection.fetch(_postgres_query(query), *params)]
+
     async def _read_all() -> list[dict[str, Any]]:
         db = await _open_connection()
         db.row_factory = aiosqlite.Row

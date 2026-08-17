@@ -155,6 +155,8 @@ async def init_legal_compliance() -> None:
     is deliberately below FastAPI: a stale frontend or direct route cannot create
     a paid checkout without the current acceptance.
     """
+    if get_settings().normalized_database_backend == "postgres":
+        return
     await execute(
         """CREATE TABLE IF NOT EXISTS legal_acceptances (
              id TEXT PRIMARY KEY,

@@ -1,5 +1,8 @@
 const path = require('path');
 
+if (process.env.NODE_ENV === "production" && !process.env.BACKEND_URL) {
+  throw new Error("BACKEND_URL is required for the production Hostinger proxy.");
+}
 const backendUrl = (process.env.BACKEND_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
 
 const nextConfig = {

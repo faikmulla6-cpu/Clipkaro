@@ -92,6 +92,29 @@ def production_boot_configuration_issues() -> list[str]:
         issues.append("SEED_DEMO_USER_ENABLED")
     if settings.allow_live_razorpay_in_development:
         issues.append("LIVE_RAZORPAY_DEVELOPMENT_OPT_IN_ENABLED")
+    if settings.normalized_database_backend != "postgres":
+        issues.append("PRODUCTION_DATABASE_NOT_POSTGRES")
+    database_url = _clean(settings.database_url)
+    if not database_url.startswith(("postgresql://", "postgres://")) or _placeholder(database_url):
+        issues.append("DATABASE_URL_INVALID_OR_MISSING")
+    if settings.normalized_storage_backend != "gcs":
+        issues.append("PRODUCTION_STORAGE_NOT_GCS")
+    if _placeholder(settings.gcs_bucket) or "://" in _clean(settings.gcs_bucket):
+        issues.append("GCS_BUCKET_INVALID_OR_MISSING")
+    if settings.normalized_job_backend != "cloud_run_job":
+        issues.append("PRODUCTION_JOB_BACKEND_NOT_CLOUD_RUN")
+    if any(_placeholder(value) for value in (
+        settings.gcp_project_id, settings.gcp_region, settings.cloud_run_media_job_name,
+    )):
+        issues.append("CLOUD_RUN_JOB_CONFIGURATION_MISSING")
+    if _clean(settings.frontend_url).rstrip("/") != "https://clipkaro.pro":
+        issues.append("FRONTEND_URL_NOT_CLIPKARO_PRO")
+    if set(settings.allowed_origins) != {"https://clipkaro.pro"}:
+        issues.append("CORS_ORIGINS_NOT_LOCKED")
+    if not _mailbox_ok(settings.email_from) or "resend.dev" in _clean(settings.email_from).lower():
+        issues.append("EMAIL_FROM_NOT_EXPLICIT")
+    if settings.normalized_razorpay_mode != "live":
+        issues.append("RAZORPAY_MODE_NOT_LIVE")
     return issues
 
 
@@ -159,4 +182,8 @@ def production_configuration_summary() -> dict[str, object]:
         ),
         "provider_credentials_checked_by_worker_preflight": True,
         "credentials_rotation_confirmed": bool(settings.production_credentials_rotated),
+        "database_backend": settings.normalized_database_backend,
+        "storage_backend": settings.normalized_storage_backend,
+        "job_backend": settings.normalized_job_backend,
+        "serverless_mode": settings.production_serverless_mode,
     }

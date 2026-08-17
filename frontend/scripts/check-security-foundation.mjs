@@ -19,6 +19,9 @@ const frontendDocker = read("frontend/Dockerfile");
 const worker = read("backend/app/worker.py");
 const jobs = read("backend/app/services/jobs.py");
 const main = read("backend/app/main.py");
+const mediaJob = read("backend/app/media_job.py");
+const cloudUploads = read("backend/app/api/cloud_uploads.py");
+const migration = read("backend/migrations/versions/20260817_01_no_vps_schema.py");
 
 requireText(authProvider, '"/forgot-password"', "forgot-password route must stay public");
 requireText(authProvider, '"/reset-password"', "reset-password route must stay public");
@@ -61,7 +64,11 @@ requireText(worker, "claim_next_job", "worker must atomically claim durable jobs
 requireText(worker, "run_claimed_job", "worker must reconstruct jobs from persisted state");
 requireText(jobs, "job_payloads", "heavy job inputs must survive API/worker restarts");
 requireText(jobs, "job_claims", "worker ownership must be persisted");
-requireText(main, "Production requires JOB_EXECUTION_MODE=worker", "production API must fail closed if worker isolation is disabled");
+requireText(main, "production_serverless_mode", "production API must fail closed unless PostgreSQL, GCS, and Cloud Run Jobs are selected");
+requireText(mediaJob, "claim_job(job_id", "Cloud Run execution must claim only its supplied durable job");
+requireText(mediaJob, "TemporaryDirectory", "Cloud Run media must use bounded disposable scratch storage");
+requireText(cloudUploads, '"/uploads/{session_id}/complete"', "direct upload completion must be server verified");
+requireText(migration, "uq_active_checkout_per_user", "PostgreSQL must prevent cross-instance duplicate checkout state");
 
 // Count YAML environment keys, not `${VAR:-default}` interpolations on the same line.
 if (yamlKeyCount(compose, "GROQ_API_KEYS") !== 1) {

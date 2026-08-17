@@ -86,7 +86,7 @@ async def upload_project(
 
     # Development/tests retain BackgroundTasks. Production worker mode makes
     # this a no-op because the durable queue is consumed by `python -m app.worker`.
-    dispatch_job(tasks, project_routes._process_project, job_id, project_id, video_id, user, route["asr_route"])
+    await dispatch_job(tasks, project_routes._process_project, job_id, project_id, video_id, user, route["asr_route"])
     await project_routes.audit(
         user["id"], "project.uploaded", "project", project_id,
         {"bytes": size, "security_scan": scan.get("status"), "scan_engine": scan.get("engine")},

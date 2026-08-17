@@ -15,10 +15,26 @@ from app.services.auth import current_user
 from app.services.jobs import create_job, dispatch_job
 from app.services.hinglish_stage1_routing import resolve_stage1_route
 from app.services.storage_paths import confined_upload_path
+from app.services.storage import get_storage_provider, validate_object_key
 
 
 router = APIRouter()
 MAX_REPROCESS_ATTEMPTS_PER_24H = 3
+
+
+async def _source_available(video: dict | None, user_id: str) -> bool:
+    if not video or str(video.get("status") or "") == "expired":
+        return False
+    settings = get_settings()
+    if settings.normalized_storage_backend == "gcs":
+        try:
+            key = validate_object_key(str(video.get("file_path") or ""), expected_prefix=f"users/{user_id}")
+            metadata = await get_storage_provider().stat(key)
+            return bool(metadata and (not video.get("object_generation") or metadata.generation == str(video["object_generation"])))
+        except (ValueError, RuntimeError):
+            return False
+    path = confined_upload_path(video.get("file_path"))
+    return bool(path and path.is_file())
 
 
 async def _mark_project_enqueue_failed(project_id: str, reason: str) -> None:
@@ -74,7 +90,7 @@ async def _enqueue_project_job(
             "ClipKaro could not enqueue this processing job safely. Retry from the project page.",
         )
         raise
-    dispatch_job(
+    await dispatch_job(
         tasks, project_routes._process_project,
         job_id, project_id, video["id"], user, route["asr_route"], bool(force_transcribe),
     )
@@ -103,11 +119,7 @@ async def project_detail(project_id: str, tasks: BackgroundTasks, user: dict = D
     project["pipeline_version"] = project_routes.PIPELINE_VERSION
     project["transcript_state"] = state
     source = await fetch_one("SELECT file_path,status FROM videos WHERE id=?", (project["video_id"],))
-    source_available = bool(
-        source
-        and str(source.get("status") or "") != "expired"
-        and Path(str(source.get("file_path") or "")).is_file()
-    )
+    source_available = await _source_available(source, str(user["id"]))
     project["source_available"] = source_available
     if not state["current"] and project.get("status") not in {"queued", "processing"}:
         video = await fetch_one("SELECT * FROM videos WHERE id=?", (project["video_id"],))
@@ -169,8 +181,7 @@ async def reprocess_project(
     )
     if not video:
         raise HTTPException(404, "Project not found.")
-    source_path = confined_upload_path(video.get("file_path"))
-    if str(video.get("status") or "") == "expired" or source_path is None or not source_path.is_file():
+    if not await _source_available(video, str(user["id"])):
         raise HTTPException(410, "The retained source video has expired. Upload the source again to re-analyse it.")
     project_state = await fetch_one("SELECT status FROM projects WHERE id=? AND user_id=?", (project_id, user["id"]))
     if project_state and project_state.get("status") in {"queued", "processing"}:
@@ -234,8 +245,7 @@ async def export_clip(
             video = await fetch_one("SELECT * FROM videos WHERE id=?", (clip["video_id"],))
             if not video:
                 raise HTTPException(409, "This project no longer has a source video to upgrade.")
-            source_path = confined_upload_path(video.get("file_path"))
-            if str(video.get("status") or "") == "expired" or source_path is None or not source_path.is_file():
+            if not await _source_available(video, str(user["id"])):
                 raise HTTPException(
                     410,
                     "The source video has expired from private media storage. Upload it again to upgrade this project.",
@@ -264,8 +274,7 @@ async def export_clip(
     video = await fetch_one("SELECT * FROM videos WHERE id=?", (clip["video_id"],))
     if not video:
         raise HTTPException(409, "This clip no longer has a source video to render.")
-    source_path = confined_upload_path(video.get("file_path"))
-    if str(video.get("status") or "") == "expired" or source_path is None or not source_path.is_file():
+    if not await _source_available(video, str(user["id"])):
         raise HTTPException(410, "The source video has expired from private media storage. Upload it again to create a new export.")
     brand = None
     if body.brand_kit_id:
@@ -274,13 +283,17 @@ async def export_clip(
             (body.brand_kit_id, user["id"]),
         )
     export_id = str(uuid.uuid4())
+    cloud_storage = settings.normalized_storage_backend == "gcs"
+    output_key = f"users/{user['id']}/exports/{export_id}/clip.mp4"
     output = settings.export_dir / f"{export_id}.mp4"
+    output_record = output_key if cloud_storage else str(output)
     created = project_routes.utcnow()
     expires = (project_routes.now() + timedelta(hours=settings.file_expiry_hours)).isoformat()
     await execute(
-        "INSERT INTO exports VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, NULL, ?, ?)",
+        """INSERT INTO exports(id,clip_id,user_id,output_path,resolution,aspect_ratio,caption_style,watermark,
+           status,progress,error,created_at,expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, NULL, ?, ?)""",
         (
-            export_id, clip_id, user["id"], str(output), body.resolution,
+            export_id, clip_id, user["id"], output_record, body.resolution,
             body.aspect_ratio, body.caption_style, int(body.watermark), created, expires,
         ),
     )
@@ -295,9 +308,10 @@ async def export_clip(
         # The exports DELETE trigger releases only a still-reserved export slot,
         # so an enqueue outage cannot silently consume the user's quota.
         await execute("DELETE FROM exports WHERE id=?", (export_id,))
-        output.unlink(missing_ok=True)
+        if not cloud_storage:
+            output.unlink(missing_ok=True)
         raise
-    dispatch_job(
+    await dispatch_job(
         tasks, project_routes._render_export,
         job_id, export_id, clip, video, body, output, brand,
     )

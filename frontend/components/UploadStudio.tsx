@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { AccountSettings, API_URL, api } from "@/lib/api";
 
 const UPLOAD_URL = `${API_URL}/projects/upload`;
+const DIRECT_GCS_UPLOAD = process.env.NEXT_PUBLIC_UPLOAD_MODE === "direct_gcs";
 const SUPPORTED_VIDEO_EXTENSIONS = new Set(["mp4", "mov", "webm", "mkv"]);
 const GENERIC_VIDEO_MIME_TYPES = new Set(["", "application/octet-stream", "application/x-matroska", "application/matroska"]);
 
@@ -30,6 +31,9 @@ type Preflight = {
   recommendation: string;
 };
 
+type UploadSession = { upload_session_id: string; method: "PUT"; upload_url: string; headers: Record<string, string>; expires_at: string };
+type UploadCompletion = { project_id: string; job_id: string; status: string };
+
 const stages = [
   ["validating", "Check video"],
   ["audio", "Prepare audio"],
@@ -48,6 +52,7 @@ export function UploadStudio() {
   const [language, setLanguage] = useState<AccountSettings["default_language"]>("auto");
   const [category, setCategory] = useState<AccountSettings["creator_category"]>("auto");
   const input = useRef<HTMLInputElement>(null);
+  const activeUpload = useRef<XMLHttpRequest | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -98,39 +103,57 @@ export function UploadStudio() {
     };
   }
 
-  function upload() {
+  function send(xhr: XMLHttpRequest, body: XMLHttpRequestBodyInit): Promise<XMLHttpRequest> {
+    activeUpload.current = xhr;
+    return new Promise<XMLHttpRequest>((resolve, reject) => {
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) setUploadProgress(Math.round((event.loaded / event.total) * 100));
+      };
+      xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve(xhr) : reject(new Error(xhr.responseText || "Upload failed."));
+      xhr.onerror = () => reject(new Error("Could not reach private media storage."));
+      xhr.onabort = () => reject(new Error("Upload cancelled."));
+      xhr.send(body);
+    }).finally(() => { activeUpload.current = null; });
+  }
+
+  async function upload() {
     if (!file) return;
     setBusy(true);
     setError("");
-    const form = new FormData();
-    form.append("file", file);
-    form.append("title", (document.getElementById("project-title") as HTMLInputElement)?.value || file.name.replace(/\.[^.]+$/, ""));
-    form.append("language", language);
-    form.append("category", category);
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", UPLOAD_URL);
-    xhr.withCredentials = true;
-    const csrf = document.cookie.split("; ").find((item) => item.startsWith("csrf_token="))?.split("=")[1];
-    if (csrf) xhr.setRequestHeader("X-CSRF-Token", decodeURIComponent(csrf));
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable) setUploadProgress(Math.round((event.loaded / event.total) * 100));
-    };
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        const project = JSON.parse(xhr.responseText);
+    setUploadProgress(0);
+    const title = (document.getElementById("project-title") as HTMLInputElement)?.value || file.name.replace(/\.[^.]+$/, "");
+    try {
+      if (DIRECT_GCS_UPLOAD) {
+        const contentType = file.type || "application/octet-stream";
+        const session = await api<UploadSession>("/uploads/init", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filename: file.name, content_type: contentType, size: file.size, title, language, category }),
+        });
+        const xhr = new XMLHttpRequest();
+        xhr.open(session.method, session.upload_url);
+        Object.entries(session.headers).forEach(([name, value]) => xhr.setRequestHeader(name, value));
+        await send(xhr, file);
+        const completed = await api<UploadCompletion>(`/uploads/${session.upload_session_id}/complete`, { method: "POST" });
+        setJob({ status: "queued", progress: 0, stage: "queued", message: "Your video is in the processing queue", project_id: completed.project_id });
+        watch(completed.job_id, completed.project_id);
+      } else {
+        const form = new FormData();
+        form.append("file", file); form.append("title", title); form.append("language", language); form.append("category", category);
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", UPLOAD_URL); xhr.withCredentials = true;
+        const csrf = document.cookie.split("; ").find((item) => item.startsWith("csrf_token="))?.split("=")[1];
+        if (csrf) xhr.setRequestHeader("X-CSRF-Token", decodeURIComponent(csrf));
+        const response = await send(xhr, form);
+        const project = JSON.parse(response.responseText);
         setJob({ status: "queued", progress: 0, stage: "queued", message: "Your video is in the processing queue", project_id: project.id });
         watch(project.job_id, project.id);
-      } else {
-        try { setError(JSON.parse(xhr.responseText).detail); }
-        catch { setError("Upload failed. Please try again."); }
-        setBusy(false);
       }
-    };
-    xhr.onerror = () => {
-      setError("Could not reach the processing server.");
+    } catch (cause) {
+      let message = cause instanceof Error ? cause.message : "Upload failed. Please try again.";
+      try { message = JSON.parse(message).detail || message; } catch { /* plain network diagnostic */ }
+      setError(message);
       setBusy(false);
-    };
-    xhr.send(form);
+    }
   }
 
   const activeIndex = job ? stages.findIndex((stage) => stage[0] === job.stage) : -1;
@@ -172,7 +195,7 @@ export function UploadStudio() {
         <div className="field"><label>Content type</label><select id="category" value={category} onChange={(event) => setCategory(event.target.value as AccountSettings["creator_category"])}><option value="auto">Let AI decide</option><option value="education">Education</option><option value="podcast">Podcast</option><option value="business">Business</option><option value="motivation">Motivation</option><option value="spiritual">Spiritual</option><option value="local-business">Local business</option></select></div>
       </div>}
 
-      {busy && uploadProgress < 100 && <div className="processing-box"><div><Loader2 className="spin" size={20}/><div><b>Uploading securely</b><span>{uploadProgress}% transferred</span></div><strong>{uploadProgress}%</strong></div><div className="progress large"><span style={{ width: `${uploadProgress}%` }}/></div></div>}
+      {busy && uploadProgress < 100 && <div className="processing-box"><div><Loader2 className="spin" size={20}/><div><b>Uploading securely</b><span>{uploadProgress}% transferred</span></div><strong>{uploadProgress}%</strong><button type="button" className="secondary-btn" onClick={() => activeUpload.current?.abort()}>Cancel</button></div><div className="progress large"><span style={{ width: `${uploadProgress}%` }}/></div></div>}
       {error && <div className="error-banner"><AlertCircle size={18}/><span>{error}</span></div>}
       <div className="studio-actions"><span><Check size={15}/> I own or have permission to use this video.</span><button className="primary-btn" disabled={!file || busy || preflight?.ready === false} onClick={upload}><Sparkles size={17}/> {preflight?.ready === false ? "Fix processing engine first" : "Find my best moments"} <ChevronRight size={17}/></button></div>
       <div className="how-grid">{[["01", "Upload privately", "Your original stays yours."], ["02", "Watch AI work", "Live stages, no mystery spinner."], ["03", "Choose & polish", "Edit only the moments you want."]].map((item) => <div key={item[0]}><span>{item[0]}</span><div><b>{item[1]}</b><p>{item[2]}</p></div></div>)}</div>

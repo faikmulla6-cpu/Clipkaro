@@ -229,13 +229,22 @@ async def production_preflight() -> dict[str, Any]:
     """Return a secret-safe, fail-closed production and paid-launch readiness report."""
     settings = get_settings()
     is_production = settings.app_env.strip().lower() == "production"
+    cloud_job_mode = is_production and settings.normalized_job_backend == "cloud_run_job"
 
     # Independent network/disk probes run concurrently and are bounded by their own timeouts.
-    storage_task = asyncio.to_thread(_probe_storage, settings.storage_root)
+    storage_task = (
+        asyncio.sleep(0, result=bool(settings.gcs_bucket.strip()))
+        if cloud_job_mode
+        else asyncio.to_thread(_probe_storage, settings.storage_root)
+    )
     if is_production:
-        clamav_task = _cached_probe(
-            "clamav", probe_clamav_readiness, ttl_seconds=10.0,
-            fallback={"configured": True, "reachable": False, "code": "probe_failed"},
+        clamav_task = (
+            asyncio.sleep(0, result={"configured": True, "reachable": True, "code": "delegated_to_media_job"})
+            if cloud_job_mode
+            else _cached_probe(
+                "clamav", probe_clamav_readiness, ttl_seconds=10.0,
+                fallback={"configured": True, "reachable": False, "code": "probe_failed"},
+            )
         )
         smtp_task = _cached_probe(
             "smtp", lambda: probe_smtp_readiness(live=True), ttl_seconds=60.0,
@@ -249,7 +258,11 @@ async def production_preflight() -> dict[str, Any]:
         clamav_task = probe_clamav_readiness()
         smtp_task = probe_smtp_readiness(live=False)
         razorpay_task = probe_razorpay_readiness(live=False)
-    worker_task = _safe_worker_snapshot() if isolated_worker_enabled() else asyncio.sleep(0, result=None)
+    worker_task = (
+        asyncio.sleep(0, result=None)
+        if cloud_job_mode
+        else (_safe_worker_snapshot() if isolated_worker_enabled() else asyncio.sleep(0, result=None))
+    )
     storage_ok, clamav, smtp, razorpay, worker = await asyncio.gather(
         storage_task, clamav_task, smtp_task, razorpay_task, worker_task
     )
@@ -257,11 +270,14 @@ async def production_preflight() -> dict[str, Any]:
     components: dict[str, dict[str, Any]] = {}
     processing_problems: list[str] = []
 
-    media_ok = ffmpeg_available()
+    # The public API image intentionally has no media toolchain. In Cloud Run
+    # Jobs mode these capabilities live in the immutable media-job image and
+    # are verified by its build/smoke gate, not by probing the API container.
+    media_ok = cloud_job_mode or ffmpeg_available()
     components["ffmpeg"] = _component(
         "pass" if media_ok else "fail", required=True,
-        code="ready" if media_ok else "missing",
-        detail="FFmpeg and FFprobe are available." if media_ok else "FFmpeg or FFprobe is unavailable.",
+        code="delegated_to_media_job" if cloud_job_mode else ("ready" if media_ok else "missing"),
+        detail="FFmpeg and FFprobe are delegated to the Cloud Run media-job image." if cloud_job_mode else ("FFmpeg and FFprobe are available." if media_ok else "FFmpeg or FFprobe is unavailable."),
     )
     if not media_ok:
         processing_problems.append("FFmpeg/FFprobe is unavailable.")
@@ -269,7 +285,7 @@ async def production_preflight() -> dict[str, Any]:
     components["storage"] = _component(
         "pass" if storage_ok else "fail", required=True,
         code="ready" if storage_ok else "not_writable",
-        detail="Persistent storage passed a write/fsync/delete probe." if storage_ok else "Persistent storage is not writable.",
+        detail="A private GCS bucket is configured for media-job storage." if cloud_job_mode and storage_ok else ("Persistent storage passed a write/fsync/delete probe." if storage_ok else "Persistent storage is not writable."),
     )
     if not storage_ok:
         processing_problems.append("Persistent media storage is not writable.")
@@ -280,16 +296,37 @@ async def production_preflight() -> dict[str, Any]:
         "pass" if clamav_ok else ("fail" if clamav_required else "disabled"),
         required=clamav_required,
         code="ready" if clamav_ok else str(clamav.get("code") or "unavailable"),
-        detail="ClamAV accepted a side-effect-free health ping." if clamav_ok else (
+        detail="Malware scanning is delegated to the Cloud Run media-job image." if cloud_job_mode and clamav_ok else ("ClamAV accepted a side-effect-free health ping." if clamav_ok else (
             "Required upload malware scanning is unavailable." if clamav_required else "Upload malware scanning is disabled in this environment."
-        ),
+        )),
     )
     if clamav_required and not clamav_ok:
         processing_problems.append("Required ClamAV upload scanning is unavailable.")
 
-    worker_components, worker_problems = _worker_components(worker)
-    components.update(worker_components)
-    processing_problems.extend(worker_problems)
+    if cloud_job_mode:
+        components["worker"] = _component(
+            "pass", required=True, code="cloud_run_job_configured",
+            detail="Per-request media processing is delegated to the configured Cloud Run Job; no permanent worker heartbeat is expected.",
+        )
+        components["whisper"] = _component(
+            "disabled" if settings.normalized_asr_mode == "api" else "pass",
+            required=settings.normalized_asr_mode != "api",
+            code="api_asr_mode" if settings.normalized_asr_mode == "api" else "delegated_to_media_job",
+            detail="Media runtime readiness is verified in the Cloud Run media-job image.",
+        )
+        components["alignment"] = _component(
+            "pass" if settings.require_forced_alignment else "disabled",
+            required=bool(settings.require_forced_alignment), code="delegated_to_media_job",
+            detail="Forced-alignment runtime is delegated to the Cloud Run media-job image.",
+        )
+        components["groq"] = _component(
+            "disabled" if not settings.groq_ranking_enabled else "warn", required=False,
+            code="media_job_runtime", detail="Provider runtime is evaluated by each isolated media-job execution.",
+        )
+    else:
+        worker_components, worker_problems = _worker_components(worker)
+        components.update(worker_components)
+        processing_problems.extend(worker_problems)
     if settings.normalized_asr_mode == "api":
         heartbeat_caps = worker.get("capabilities") if isinstance(worker, dict) and isinstance(worker.get("capabilities"), dict) else {}
         heartbeat_asr = heartbeat_caps.get("asr") if isinstance(heartbeat_caps.get("asr"), dict) else {}

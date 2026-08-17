@@ -20,6 +20,8 @@ def test_default_production_shape_fails_closed_without_real_values() -> None:
         "production_credentials_rotated", "resend_api_key", "email_from", "smtp_host", "smtp_from_email", "smtp_username",
         "smtp_password", "razorpay_key_id", "razorpay_key_secret", "razorpay_webhook_secret",
         "groq_ranking_enabled", "groq_api_keys", "groq_api_key_1",
+        "database_backend", "database_url", "storage_backend", "gcs_bucket", "job_backend",
+        "gcp_project_id", "gcp_region", "cloud_run_media_job_name", "frontend_url", "razorpay_mode",
     )
     original = {name: getattr(settings, name) for name in names}
     try:
@@ -61,6 +63,8 @@ def test_realistic_private_configuration_passes_offline_shape_checks() -> None:
         "production_credentials_rotated", "resend_api_key", "email_from", "smtp_host", "smtp_from_email", "smtp_username",
         "smtp_password", "razorpay_key_id", "razorpay_key_secret", "razorpay_webhook_secret",
         "groq_ranking_enabled", "groq_api_keys", "groq_api_key_1",
+        "database_backend", "database_url", "storage_backend", "gcs_bucket", "job_backend",
+        "gcp_project_id", "gcp_region", "cloud_run_media_job_name", "frontend_url", "razorpay_mode",
     )
     original = {name: getattr(settings, name) for name in names}
     try:
@@ -82,6 +86,16 @@ def test_realistic_private_configuration_passes_offline_shape_checks() -> None:
         settings.groq_ranking_enabled = True
         settings.groq_api_keys = ""
         settings.groq_api_key_1 = "gsk_test_private_key_shape_only"
+        settings.database_backend = "postgres"
+        settings.database_url = "postgresql://clipkaro:private@db.example.net/clipkaro?sslmode=require"
+        settings.storage_backend = "gcs"
+        settings.gcs_bucket = "clipkaro-private-production"
+        settings.job_backend = "cloud_run_job"
+        settings.gcp_project_id = "clipkaro-production"
+        settings.gcp_region = "asia-south1"
+        settings.cloud_run_media_job_name = "clipkaro-media"
+        settings.frontend_url = "https://clipkaro.pro"
+        settings.razorpay_mode = "live"
         assert production_configuration.paid_launch_configuration_issues() == []
         summary = production_configuration.production_configuration_summary()
     finally:

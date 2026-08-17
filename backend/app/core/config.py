@@ -12,6 +12,12 @@ class Settings(BaseSettings):
     api_prefix: str = "/api/v1"
     secret_key: str = "development-only-change-me"
     access_token_minutes: int = 10080
+    database_backend: str = "sqlite"
+    database_url: str = ""
+    postgres_pool_min_size: int = 0
+    postgres_pool_max_size: int = 4
+    postgres_statement_cache_size: int = 0
+    postgres_command_timeout_seconds: float = 30.0
     database_path: Path = Path("./storage/clipkaro.db")
     # SQLite waits briefly for a writer before returning SQLITE_BUSY, then the
     # database layer retries the whole operation/transaction with backoff.
@@ -19,6 +25,11 @@ class Settings(BaseSettings):
     sqlite_lock_max_attempts: int = 4
     sqlite_lock_retry_base_ms: int = 50
     storage_root: Path = Path("./storage")
+    storage_backend: str = "local"
+    gcs_bucket: str = ""
+    gcs_upload_url_ttl_seconds: int = 900
+    gcs_download_url_ttl_seconds: int = 300
+    gcs_signing_service_account: str = ""
     max_upload_mb: int = 500
     max_video_minutes: int = 15
     file_expiry_hours: int = 24
@@ -91,6 +102,12 @@ class Settings(BaseSettings):
     # validates/enqueues work. Development/tests keep BackgroundTasks for a fast,
     # deterministic local loop. Supported values: background, worker.
     job_execution_mode: str = "background"
+    job_backend: str = "local"
+    gcp_project_id: str = ""
+    gcp_region: str = ""
+    cloud_run_media_job_name: str = ""
+    cloud_run_job_timeout_seconds: float = 15.0
+    job_claim_stale_seconds: int = 1800
     worker_poll_seconds: float = 0.75
     # Worker liveness is persisted in SQLite so the API can distinguish an idle
     # healthy worker from a dead container without sharing process memory.
@@ -207,6 +224,36 @@ class Settings(BaseSettings):
         if mode not in {"test", "live"}:
             raise RuntimeError("RAZORPAY_MODE must be 'test' or 'live'.")
         return mode
+
+    @property
+    def normalized_database_backend(self) -> str:
+        backend = self.database_backend.strip().lower()
+        if backend not in {"sqlite", "postgres"}:
+            raise RuntimeError("DATABASE_BACKEND must be 'sqlite' or 'postgres'.")
+        return backend
+
+    @property
+    def normalized_storage_backend(self) -> str:
+        backend = self.storage_backend.strip().lower()
+        if backend not in {"local", "gcs"}:
+            raise RuntimeError("STORAGE_BACKEND must be 'local' or 'gcs'.")
+        return backend
+
+    @property
+    def normalized_job_backend(self) -> str:
+        backend = self.job_backend.strip().lower()
+        if backend not in {"local", "cloud_run_job"}:
+            raise RuntimeError("JOB_BACKEND must be 'local' or 'cloud_run_job'.")
+        return backend
+
+    @property
+    def production_serverless_mode(self) -> bool:
+        return (
+            self.app_env.strip().lower() == "production"
+            and self.normalized_database_backend == "postgres"
+            and self.normalized_storage_backend == "gcs"
+            and self.normalized_job_backend == "cloud_run_job"
+        )
 
     @property
     def razorpay_key_is_test(self) -> bool:

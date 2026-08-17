@@ -6,6 +6,8 @@ from pathlib import Path
 from app.core.database import execute, fetch_all
 from app.services.media_delivery import remove_orphaned_previews, remove_preview_files
 from app.services.storage_paths import confined_export_path, confined_upload_path
+from app.core.config import get_settings
+from app.services.storage import get_storage_provider, validate_object_key
 
 logger = logging.getLogger("clipkaro.cleanup")
 
@@ -27,8 +29,15 @@ async def cleanup_expired() -> int:
         (timestamp,),
     )
     removed = 0
+    cloud = get_settings().normalized_storage_backend == "gcs"
+    storage = get_storage_provider() if cloud else None
     for item in files:
         try:
+            if cloud:
+                key = validate_object_key(str(item.get("file_path") or ""), expected_prefix="users/")
+                removed += int(await storage.delete(key))
+                await execute("UPDATE videos SET status='expired' WHERE id=?", (item["id"],))
+                continue
             path = confined_upload_path(item.get("file_path"))
             if path is None:
                 logger.error("Refused out-of-storage expired source deletion video_id=%s", item.get("id"))
@@ -46,6 +55,11 @@ async def cleanup_expired() -> int:
 
     for item in exports:
         try:
+            if cloud:
+                key = validate_object_key(str(item.get("output_path") or ""), expected_prefix="users/")
+                removed += int(await storage.delete(key))
+                await execute("UPDATE exports SET status='expired' WHERE id=?", (item["id"],))
+                continue
             path = confined_export_path(item.get("output_path"))
             if path is None:
                 logger.error("Refused out-of-storage expired export deletion export_id=%s", item.get("id"))
@@ -64,6 +78,8 @@ async def cleanup_expired() -> int:
     # cascade removes the video row immediately, so sweep proxy files whose
     # owning video no longer exists rather than leaving private cache orphans.
     try:
+        if cloud:
+            return removed
         live_videos = await fetch_all("SELECT id FROM videos")
         removed += remove_orphaned_previews({str(item["id"]) for item in live_videos})
     except OSError as exc:

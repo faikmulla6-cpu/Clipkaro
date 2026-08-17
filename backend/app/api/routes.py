@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from sse_starlette.sse import EventSourceResponse
 from app.core.config import get_settings
 from app.core.database import execute, fetch_all, fetch_one, run_in_transaction
@@ -23,6 +23,7 @@ from app.services.caption_layout import build_caption_cards
 from app.services.caption_styles import public_caption_styles
 from app.services.transcription import transcribe
 from app.services.source_caption_detection import detect_burned_captions
+from app.services.storage import get_storage_provider, validate_object_key
 from app.services.roman_hindi import add_roman_display_text
 from app.services.pipeline_provenance import PIPELINE_VERSION, stamp_segments, transcript_state
 from app.services.semantic_ranker import find_best_clips
@@ -234,10 +235,11 @@ async def _process_project(
     user: dict,
     asr_route: str = "legacy",
     force_transcribe: bool = False,
+    source_override: Path | None = None,
 ) -> None:
     video = await fetch_one("SELECT * FROM videos WHERE id=?", (video_id,))
     try:
-        source_path = confined_upload_path((video or {}).get("file_path"))
+        source_path = source_override or confined_upload_path((video or {}).get("file_path"))
         if source_path is None or not source_path.is_file():
             raise ValueError("The source video is unavailable in ClipKaro private storage.")
         # Durable worker retries can occur after an API request succeeded but
@@ -306,6 +308,8 @@ async def _process_project(
         await execute("UPDATE projects SET progress=38,stage='transcribing',updated_at=? WHERE id=?", (utcnow(), project_id))
         project_settings=await fetch_one("SELECT language FROM projects WHERE id=?",(project_id,))
         language_hint=(project_settings or {}).get("language","auto")
+        # Legacy source contract was: await transcribe(Path(video["file_path"])
+        # Cloud jobs supply an equivalent bounded scratch path without changing routing.
         language, segments = await transcribe(source_path, get_settings().whisper_model, language_hint, request_id=job_id, asr_route=asr_route)
         for segment in segments:
             segment["processing_job_id"] = job_id
@@ -376,6 +380,16 @@ async def patch_project(project_id:str,body:ProjectPatch,user:dict=Depends(curre
 async def delete_project(project_id:str,user:dict=Depends(current_user)) -> Response:
     video=await fetch_one("SELECT v.* FROM videos v JOIN projects p ON p.id=v.project_id WHERE p.id=? AND p.user_id=?",(project_id,user["id"]))
     if not video: raise HTTPException(404,"Project not found.")
+    if get_settings().normalized_storage_backend == "gcs":
+        storage = get_storage_provider()
+        source_key = validate_object_key(str(video.get("file_path") or ""), expected_prefix=f"users/{user['id']}/projects/{project_id}")
+        await storage.delete(source_key, generation=video.get("object_generation"))
+        exports=await fetch_all("SELECT e.id,e.output_path,e.object_generation FROM exports e JOIN clips c ON c.id=e.clip_id WHERE c.video_id=?",(video["id"],))
+        for item in exports:
+            key = validate_object_key(str(item.get("output_path") or ""), expected_prefix=f"users/{user['id']}/exports/{item['id']}")
+            await storage.delete(key, generation=item.get("object_generation"))
+        await execute("DELETE FROM projects WHERE id=?",(project_id,)); await audit(user["id"],"project.deleted","project",project_id)
+        return Response(status_code=204)
     source_path = confined_upload_path(video.get("file_path"))
     if source_path is not None:
         source_path.unlink(missing_ok=True)
@@ -473,7 +487,7 @@ async def clip_captions(clip_id:str,user:dict=Depends(current_user))->dict:
                                 "confidence":w.get("confidence",1)} for w in card.words]} for card in cards]}
 
 
-async def _render_export(job_id:str,export_id:str,clip:dict,video:dict,request:ExportRequest,output:Path,brand:dict|None)->None:
+async def _render_export(job_id:str,export_id:str,clip:dict,video:dict,request:ExportRequest,output:Path,brand:dict|None,source_override:Path|None=None)->None:
     srt=output.with_suffix(".srt")
     try:
         await update_job(job_id,12,"preparing","Preparing crop, captions and brand style")
@@ -495,7 +509,7 @@ async def _render_export(job_id:str,export_id:str,clip:dict,video:dict,request:E
                               reference,clip["start_time"])
         await update_job(job_id,35,"rendering","Rendering your social-ready video")
         await execute("UPDATE exports SET progress=35 WHERE id=?",(export_id,))
-        source_path = confined_upload_path(video.get("file_path"))
+        source_path = source_override or confined_upload_path(video.get("file_path"))
         if source_path is None or not source_path.is_file():
             raise RuntimeError("The source video is unavailable in ClipKaro private storage.")
         scan=await detect_burned_captions(source_path,float(video.get("duration") or clip["end_time"]))
@@ -552,8 +566,15 @@ async def export_status(export_id:str,user:dict=Depends(current_user))->ExportOu
 
 
 @router.get("/exports/{export_id}/download")
-async def download_export(export_id:str,user:dict=Depends(current_user))->FileResponse:
+async def download_export(export_id:str,user:dict=Depends(current_user)):
     row=await fetch_one("SELECT * FROM exports WHERE id=? AND user_id=?",(export_id,user["id"]))
+    settings = get_settings()
+    if row and row["status"] == "ready" and not _export_is_expired(row) and settings.normalized_storage_backend == "gcs":
+        key = validate_object_key(str(row.get("output_path") or ""), expected_prefix=f"users/{user['id']}/exports/{export_id}")
+        url = await get_storage_provider().signed_download_url(
+            key, filename="clipkaro-short.mp4", ttl_seconds=min(300, max(60, settings.gcs_download_url_ttl_seconds)),
+        )
+        return RedirectResponse(url, status_code=307, headers={"Cache-Control": "private, no-store"})
     output_path = confined_export_path((row or {}).get("output_path"))
     if not row or row["status"]!="ready" or _export_is_expired(row) or output_path is None or not output_path.is_file():
         raise HTTPException(404,"Export is not ready or has expired.")

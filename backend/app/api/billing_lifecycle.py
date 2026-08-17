@@ -13,7 +13,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from app.core.config import get_settings
-from app.core.database import execute, fetch_one, run_in_transaction
+from app.core.database import distributed_advisory_lock, execute, fetch_one, run_in_transaction
 from app.services.auth import current_user
 from app.services.billing import (
     PAID_PLANS,
@@ -58,6 +58,8 @@ async def _require_new_paid_commitment_ready(user_id: str) -> None:
 
 async def init_subscription_lifecycle() -> None:
     """Create durable pending-plan state without requiring a destructive migration."""
+    if get_settings().normalized_database_backend == "postgres":
+        return
     await execute(
         """CREATE TABLE IF NOT EXISTS subscription_plan_changes (
              user_id TEXT PRIMARY KEY,
@@ -601,7 +603,7 @@ async def billing_checkout(body: dict, user: dict = Depends(current_user)) -> di
     # Serialize checkout creation per user. This prevents a double-click, HTTP
     # retry or two browser tabs from creating multiple recurring subscriptions
     # before the first provider reference is durably stored.
-    async with _checkout_locks[str(user["id"])]:
+    async with _checkout_locks[str(user["id"])], distributed_advisory_lock(f"checkout:{user['id']}"):
         fresh = await fetch_one("SELECT * FROM users WHERE id=?", (user["id"],)) or user
         fresh_plan = str(fresh.get("plan") or "free")
         fresh_reference = str(fresh.get("billing_reference") or "")
@@ -612,6 +614,11 @@ async def billing_checkout(body: dict, user: dict = Depends(current_user)) -> di
 
         catalog = PLAN_CATALOG[plan]
         kind = "one_time" if catalog["billing"] == "one_time" else "subscription"
+        await execute(
+            """UPDATE billing_checkouts SET status='expired'
+               WHERE user_id=? AND plan=? AND kind=? AND status IN ('created','authorized') AND created_at<?""",
+            (fresh["id"], plan, kind, (utc_now() - timedelta(minutes=15)).isoformat()),
+        )
         reusable = await _recent_reusable_checkout(str(fresh["id"]), plan, kind)
         if reusable:
             await _audit(

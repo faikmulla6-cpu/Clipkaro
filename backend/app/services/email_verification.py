@@ -90,6 +90,8 @@ def _audit_values(user_id: str, event: str, metadata: dict | None = None) -> tup
 
 
 async def init_email_verification() -> None:
+    if get_settings().normalized_database_backend == "postgres":
+        return
     """Install the verification schema and safely migrate existing accounts.
 
     Existing ClipKaro accounts predate email verification. The column-add
