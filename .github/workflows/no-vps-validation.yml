@@ -1,0 +1,119 @@
+name: No-VPS Production Validation
+
+on:
+  push:
+    branches: [cloudrun-no-vps]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: clipkaro-no-vps-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  postgres-validation:
+    name: PostgreSQL 18 migration and concurrency
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: clipkaro
+          POSTGRES_PASSWORD: clipkaro_ci_only
+          POSTGRES_DB: clipkaro_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U clipkaro -d clipkaro_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DATABASE_URL: postgresql://clipkaro:clipkaro_ci_only@127.0.0.1:5432/clipkaro_test
+      POSTGRES_TEST_URL: postgresql://clipkaro:clipkaro_ci_only@127.0.0.1:5432/clipkaro_test
+      APP_ENV: test
+      TRANSCRIPTION_BACKEND: fixture
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          clean: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Install backend test dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Apply Alembic migration to PostgreSQL 18
+        working-directory: backend
+        run: alembic upgrade head
+
+      - name: Verify Alembic revision and critical schema objects
+        working-directory: backend
+        run: |
+          python - <<'PY'
+          import asyncio
+          import asyncpg
+          import os
+
+          async def main():
+              conn = await asyncpg.connect(os.environ['DATABASE_URL'])
+              try:
+                  revision = await conn.fetchval('SELECT version_num FROM alembic_version')
+                  assert revision == '20260817_01', revision
+                  required_tables = {
+                      'users', 'projects', 'videos', 'transcripts', 'clips', 'exports',
+                      'jobs', 'usage', 'usage_reservations', 'billing_checkouts',
+                      'billing_webhook_state', 'auth_sessions', 'upload_sessions',
+                      'security_rate_limits'
+                  }
+                  rows = await conn.fetch("SELECT tablename FROM pg_tables WHERE schemaname='public'")
+                  actual = {r['tablename'] for r in rows}
+                  missing = required_tables - actual
+                  assert not missing, f'Missing tables: {sorted(missing)}'
+                  trigger_count = await conn.fetchval(
+                      "SELECT count(*) FROM pg_trigger WHERE NOT tgisinternal AND tgname LIKE 'trg_%'"
+                  )
+                  assert trigger_count >= 8, trigger_count
+              finally:
+                  await conn.close()
+
+          asyncio.run(main())
+          PY
+
+      - name: Run real cross-connection PostgreSQL quota concurrency test
+        working-directory: backend
+        run: pytest -q tests/test_postgres_integration.py
+
+  container-builds:
+    name: Cloud Run container builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          clean: true
+
+      - name: Build lightweight Cloud Run API image
+        run: docker build --target api -t clipkaro-api:ci backend
+
+      - name: Build Cloud Run media job image
+        run: docker build --target media -t clipkaro-media:ci backend
+
+      - name: Verify API image starts from expected entrypoint
+        run: docker image inspect clipkaro-api:ci --format '{{json .Config.Cmd}}'
+
+      - name: Verify media image starts from expected entrypoint
+        run: docker image inspect clipkaro-media:ci --format '{{json .Config.Cmd}}'
