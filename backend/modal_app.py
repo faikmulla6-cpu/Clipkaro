@@ -119,7 +119,9 @@ def api():
     timeout=3600,
     cpu=2.0,
     memory=4096,
-    ephemeral_disk=10240,
+    # Modal currently provides a 512 GiB default ephemeral-disk quota. ClipKaro
+    # only needs scratch space for bounded media jobs, so do not request a custom
+    # larger quota unless workload evidence proves it necessary.
     max_containers=20,
     min_containers=0,
     scaledown_window=15,
