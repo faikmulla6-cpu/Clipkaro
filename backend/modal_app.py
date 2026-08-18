@@ -27,6 +27,10 @@ RUNTIME_ENV = {
     "JOB_EXECUTION_PROVIDER": "modal",
     "MODAL_APP_NAME": APP_NAME,
     "MODAL_MEDIA_FUNCTION": "run_media_job",
+    # Legacy preflight still expects a non-empty cloud bucket compatibility
+    # marker. The concrete storage provider remains S3 and is actively probed
+    # below before the public API is returned.
+    "GCS_BUCKET": "CLIPKAROBILLION",
     "FRONTEND_URL": "https://clipkaro.pro",
     "APP_PUBLIC_URL": "https://clipkaro.pro",
     "CORS_ORIGINS": "https://clipkaro.pro",
@@ -93,6 +97,14 @@ production_secret = modal.Secret.from_name(SECRET_NAME)
 @modal.concurrent(max_inputs=40, target_inputs=20)
 @modal.asgi_app()
 def api():
+    # Fail closed on a bad B2/S3 credential, endpoint, or bucket before exposing
+    # the FastAPI app. This is an authenticated HEAD-bucket probe; no user media
+    # is read, written or deleted.
+    from app.services.storage import get_storage_provider
+
+    if not asyncio.run(get_storage_provider().probe()):
+        raise RuntimeError("Production object storage readiness check failed.")
+
     from app.main import app as fastapi_app
 
     return fastapi_app
