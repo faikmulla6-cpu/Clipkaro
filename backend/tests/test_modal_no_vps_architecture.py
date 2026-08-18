@@ -25,16 +25,21 @@ def test_modal_provider_selectors_are_explicit(monkeypatch) -> None:
         settings.job_backend = original_jobs
 
 
-def test_s3_presigned_upload_is_private_and_content_type_bound(monkeypatch) -> None:
+def test_s3_presigned_upload_and_bucket_probe(monkeypatch) -> None:
     captured = {}
 
     class FakeS3:
+        def head_bucket(self, **kwargs):
+            captured["head_bucket"] = kwargs
+            return {"ResponseMetadata": {"HTTPStatusCode": 200}}
+
         def generate_presigned_url(self, operation, **kwargs):
             captured["operation"] = operation
             captured.update(kwargs)
             return "https://signed.example.invalid/upload"
 
     import boto3
+
     monkeypatch.setattr(boto3, "client", lambda *args, **kwargs: FakeS3())
     monkeypatch.setenv("S3_ENDPOINT_URL", "https://s3.example.invalid")
     monkeypatch.setenv("S3_REGION", "region-1")
@@ -43,12 +48,16 @@ def test_s3_presigned_upload_is_private_and_content_type_bound(monkeypatch) -> N
     monkeypatch.setenv("S3_SECRET_ACCESS_KEY", "secret-key-value-1234567890")
 
     provider = S3StorageProvider()
-    url = asyncio.run(provider.signed_upload_url(
-        "quarantine/u1/session/video.mp4",
-        content_type="video/mp4",
-        ttl_seconds=900,
-    ))
+    assert asyncio.run(provider.probe()) is True
+    url = asyncio.run(
+        provider.signed_upload_url(
+            "quarantine/u1/session/video.mp4",
+            content_type="video/mp4",
+            ttl_seconds=900,
+        )
+    )
     assert url.startswith("https://")
+    assert captured["head_bucket"] == {"Bucket": "private-bucket"}
     assert captured["operation"] == "put_object"
     assert captured["Params"] == {
         "Bucket": "private-bucket",
@@ -73,7 +82,12 @@ def test_modal_launcher_spawns_only_the_durable_job_id(monkeypatch) -> None:
         spawn = FakeSpawn()
 
     import modal
-    monkeypatch.setattr(modal.Function, "from_name", lambda *args, **kwargs: FakeFunction())
+
+    monkeypatch.setattr(
+        modal.Function,
+        "from_name",
+        lambda *args, **kwargs: FakeFunction(),
+    )
     monkeypatch.setenv("MODAL_APP_NAME", "clipkaro-production")
     monkeypatch.setenv("MODAL_MEDIA_FUNCTION", "run_media_job")
     call_id = asyncio.run(ModalJobLauncher().launch("job-123"))
@@ -84,9 +98,18 @@ def test_modal_launcher_spawns_only_the_durable_job_id(monkeypatch) -> None:
 def test_modal_s3_production_boot_does_not_require_gcp(monkeypatch) -> None:
     settings = get_settings()
     names = (
-        "app_env", "secret_key", "database_backend", "database_url",
-        "storage_backend", "job_backend", "frontend_url", "app_public_url",
-        "cors_origins", "email_from", "razorpay_mode", "seed_demo_user",
+        "app_env",
+        "secret_key",
+        "database_backend",
+        "database_url",
+        "storage_backend",
+        "job_backend",
+        "frontend_url",
+        "app_public_url",
+        "cors_origins",
+        "email_from",
+        "razorpay_mode",
+        "seed_demo_user",
         "allow_live_razorpay_in_development",
     )
     original = {name: getattr(settings, name) for name in names}
