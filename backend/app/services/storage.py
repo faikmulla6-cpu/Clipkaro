@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import mimetypes
+import os
 import re
 import shutil
 from dataclasses import dataclass
@@ -40,6 +41,26 @@ def validate_object_key(key: str, *, expected_prefix: str | None = None) -> str:
     return value
 
 
+def object_storage_provider_name() -> str:
+    """Return the concrete cloud object provider without changing local-dev contracts.
+
+    `STORAGE_BACKEND=gcs` remains the compatibility selector for the existing
+    serverless code path. Modal deployments set `OBJECT_STORAGE_PROVIDER=s3`,
+    which swaps only the provider adapter while preserving the established
+    upload/session/business contracts.
+    """
+    configured = os.environ.get("OBJECT_STORAGE_PROVIDER", "").strip().lower()
+    if configured:
+        if configured not in {"gcs", "s3"}:
+            raise RuntimeError("OBJECT_STORAGE_PROVIDER must be 'gcs' or 's3'.")
+        return configured
+    return "gcs" if get_settings().normalized_storage_backend == "gcs" else "local"
+
+
+def cloud_object_storage_enabled() -> bool:
+    return get_settings().normalized_storage_backend == "gcs" and object_storage_provider_name() in {"gcs", "s3"}
+
+
 class LocalStorageProvider:
     def __init__(self, root: Path | None = None) -> None:
         self.root = (root or get_settings().storage_root).resolve()
@@ -74,10 +95,10 @@ class LocalStorageProvider:
         return existed
 
     async def signed_upload_url(self, key: str, *, content_type: str, ttl_seconds: int) -> str:
-        raise RuntimeError("Signed browser upload is available only with STORAGE_BACKEND=gcs.")
+        raise RuntimeError("Signed browser upload is available only with cloud object storage.")
 
     async def signed_download_url(self, key: str, *, filename: str, ttl_seconds: int) -> str:
-        raise RuntimeError("Signed browser download is available only with STORAGE_BACKEND=gcs.")
+        raise RuntimeError("Signed browser download is available only with cloud object storage.")
 
 
 class GCSStorageProvider:
@@ -150,5 +171,125 @@ class GCSStorageProvider:
         return await asyncio.to_thread(self._signed, self._blob(key), method="GET", ttl_seconds=ttl_seconds, disposition=f'attachment; filename="{safe_name}"')
 
 
+class S3StorageProvider:
+    """Private S3-compatible storage adapter used by Backblaze B2 on Modal.
+
+    Durable database state continues to store object keys, never public URLs.
+    Browser access is authorized only with short-lived SigV4 URLs.
+    """
+
+    def __init__(self) -> None:
+        endpoint = os.environ.get("S3_ENDPOINT_URL", "").strip().rstrip("/")
+        region = os.environ.get("S3_REGION", "").strip()
+        bucket = os.environ.get("S3_BUCKET_NAME", "").strip()
+        key_id = os.environ.get("S3_ACCESS_KEY_ID", "").strip()
+        secret = os.environ.get("S3_SECRET_ACCESS_KEY", "").strip()
+        if not endpoint.startswith("https://"):
+            raise RuntimeError("S3_ENDPOINT_URL must be an HTTPS endpoint.")
+        if not all((region, bucket, key_id, secret)):
+            raise RuntimeError("S3-compatible storage configuration is incomplete.")
+        import boto3
+        from botocore.config import Config
+        self.bucket = bucket
+        self.client = boto3.client(
+            "s3",
+            endpoint_url=endpoint,
+            region_name=region,
+            aws_access_key_id=key_id,
+            aws_secret_access_key=secret,
+            config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
+        )
+
+    @staticmethod
+    def _generation(response: dict) -> str:
+        version = str(response.get("VersionId") or "").strip()
+        if version:
+            return "version:" + version
+        etag = str(response.get("ETag") or "").strip().strip('"')
+        return "etag:" + etag if etag else ""
+
+    async def stat(self, key: str) -> ObjectMetadata | None:
+        safe_key = validate_object_key(key)
+        try:
+            response = await asyncio.to_thread(self.client.head_object, Bucket=self.bucket, Key=safe_key)
+        except Exception as exc:
+            status = getattr(getattr(exc, "response", None), "get", lambda *_: {}) ("ResponseMetadata", {}).get("HTTPStatusCode") if getattr(exc, "response", None) else None
+            code = str((getattr(exc, "response", {}) or {}).get("Error", {}).get("Code", ""))
+            if status == 404 or code in {"404", "NoSuchKey", "NotFound"}:
+                return None
+            raise
+        return ObjectMetadata(
+            safe_key,
+            int(response.get("ContentLength") or 0),
+            str(response.get("ContentType") or "application/octet-stream"),
+            self._generation(response),
+        )
+
+    async def download(self, key: str, destination: Path, *, generation: str | None = None) -> None:
+        safe_key = validate_object_key(key)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        extra = {"VersionId": generation.removeprefix("version:")} if generation and generation.startswith("version:") else None
+        if extra:
+            await asyncio.to_thread(self.client.download_file, self.bucket, safe_key, str(destination), ExtraArgs=extra)
+        else:
+            await asyncio.to_thread(self.client.download_file, self.bucket, safe_key, str(destination))
+
+    async def upload(self, source: Path, key: str, *, content_type: str) -> ObjectMetadata:
+        safe_key = validate_object_key(key)
+        await asyncio.to_thread(
+            self.client.upload_file,
+            str(source), self.bucket, safe_key,
+            ExtraArgs={"ContentType": content_type},
+        )
+        metadata = await self.stat(safe_key)
+        if metadata is None:
+            raise RuntimeError("S3 upload completed without readable metadata.")
+        return metadata
+
+    async def delete(self, key: str, *, generation: str | None = None) -> bool:
+        safe_key = validate_object_key(key)
+        current = await self.stat(safe_key)
+        if current is None:
+            return False
+        if generation and current.generation and generation != current.generation:
+            return False
+        kwargs = {"Bucket": self.bucket, "Key": safe_key}
+        if generation and generation.startswith("version:"):
+            kwargs["VersionId"] = generation.removeprefix("version:")
+        await asyncio.to_thread(self.client.delete_object, **kwargs)
+        return True
+
+    async def signed_upload_url(self, key: str, *, content_type: str, ttl_seconds: int) -> str:
+        safe_key = validate_object_key(key)
+        return await asyncio.to_thread(
+            self.client.generate_presigned_url,
+            "put_object",
+            Params={"Bucket": self.bucket, "Key": safe_key, "ContentType": content_type},
+            ExpiresIn=max(60, min(int(ttl_seconds), 3600)),
+            HttpMethod="PUT",
+        )
+
+    async def signed_download_url(self, key: str, *, filename: str, ttl_seconds: int) -> str:
+        safe_key = validate_object_key(key)
+        safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", filename)[:120] or "clipkaro-short.mp4"
+        return await asyncio.to_thread(
+            self.client.generate_presigned_url,
+            "get_object",
+            Params={
+                "Bucket": self.bucket,
+                "Key": safe_key,
+                "ResponseContentDisposition": f'attachment; filename="{safe_name}"',
+            },
+            ExpiresIn=max(60, min(int(ttl_seconds), 3600)),
+            HttpMethod="GET",
+        )
+
+
 def get_storage_provider() -> StorageProvider:
-    return GCSStorageProvider() if get_settings().normalized_storage_backend == "gcs" else LocalStorageProvider()
+    settings = get_settings()
+    if settings.normalized_storage_backend != "gcs":
+        return LocalStorageProvider()
+    provider = object_storage_provider_name()
+    if provider == "s3":
+        return S3StorageProvider()
+    return GCSStorageProvider()

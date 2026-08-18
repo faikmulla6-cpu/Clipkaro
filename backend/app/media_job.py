@@ -87,14 +87,18 @@ async def _run(job: dict, scratch: Path) -> None:
     raise RuntimeError("Unsupported media job kind.")
 
 
-async def main() -> int:
-    job_id = os.environ.get("JOB_ID", "").strip()
+async def run_job(job_id: str, *, execution_id: str = "", worker_prefix: str = "serverless") -> int:
+    """Execute one durable media job from any isolated serverless runtime.
+
+    Cloud Run keeps its environment-variable entrypoint; Modal calls this
+    function directly with the same PostgreSQL claim/idempotency authority.
+    """
+    job_id = str(job_id or "").strip()
     if not job_id:
         raise RuntimeError("JOB_ID is required; no other execution override is accepted.")
     await init_db()
     await init_job_queue()
-    execution_id = os.environ.get("CLOUD_RUN_EXECUTION", "").strip()
-    worker_id = f"cloud-run:{socket.gethostname()}:{os.getpid()}"
+    worker_id = f"{worker_prefix}:{socket.gethostname()}:{os.getpid()}"
     job = await claim_job(job_id, worker_id, execution_id=execution_id)
     if not job:
         await close_database()
@@ -120,6 +124,12 @@ async def main() -> int:
         await asyncio.gather(heartbeat, return_exceptions=True)
         await release_claim(job_id)
         await close_database()
+
+
+async def main() -> int:
+    job_id = os.environ.get("JOB_ID", "").strip()
+    execution_id = os.environ.get("CLOUD_RUN_EXECUTION", "").strip()
+    return await run_job(job_id, execution_id=execution_id, worker_prefix="cloud-run")
 
 
 if __name__ == "__main__":

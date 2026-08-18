@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from typing import Any, Protocol
 
 from app.core.config import get_settings
@@ -12,6 +13,15 @@ class JobLaunchError(RuntimeError):
 
 class JobLauncher(Protocol):
     async def launch(self, job_id: str) -> str | None: ...
+
+
+def job_execution_provider_name() -> str:
+    configured = os.environ.get("JOB_EXECUTION_PROVIDER", "").strip().lower()
+    if configured:
+        if configured not in {"cloud_run", "modal"}:
+            raise RuntimeError("JOB_EXECUTION_PROVIDER must be 'cloud_run' or 'modal'.")
+        return configured
+    return "cloud_run" if get_settings().normalized_job_backend == "cloud_run_job" else "local"
 
 
 class LocalJobLauncher:
@@ -46,5 +56,33 @@ class CloudRunJobLauncher:
         return str(getattr(getattr(operation, "operation", None), "name", "") or "") or None
 
 
+class ModalJobLauncher:
+    """Spawn one durable Modal Function execution for a PostgreSQL job row."""
+
+    async def launch(self, job_id: str) -> str | None:
+        app_name = os.environ.get("MODAL_APP_NAME", "clipkaro-production").strip()
+        function_name = os.environ.get("MODAL_MEDIA_FUNCTION", "run_media_job").strip()
+        environment = os.environ.get("MODAL_ENVIRONMENT", "").strip() or None
+        if not app_name or not function_name:
+            raise JobLaunchError("Modal media function configuration is incomplete.")
+        try:
+            import modal
+            function = modal.Function.from_name(
+                app_name,
+                function_name,
+                environment_name=environment,
+            )
+            call = await function.spawn.aio(job_id)
+            return str(getattr(call, "object_id", "") or "") or None
+        except Exception as exc:
+            raise JobLaunchError("Modal media function launch failed.") from exc
+
+
 def get_job_launcher() -> JobLauncher:
-    return CloudRunJobLauncher() if get_settings().normalized_job_backend == "cloud_run_job" else LocalJobLauncher()
+    settings = get_settings()
+    if settings.normalized_job_backend != "cloud_run_job":
+        return LocalJobLauncher()
+    provider = job_execution_provider_name()
+    if provider == "modal":
+        return ModalJobLauncher()
+    return CloudRunJobLauncher()
