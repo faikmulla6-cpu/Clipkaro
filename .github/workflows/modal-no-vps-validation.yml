@@ -16,7 +16,7 @@ jobs:
   backend-validation:
     name: Modal adapters and PostgreSQL contracts
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:18
@@ -61,6 +61,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
+          python -m pip check
 
       - name: Compile Modal and backend sources
         working-directory: backend
@@ -76,9 +77,12 @@ jobs:
           pytest -q tests/test_postgres_integration.py
           pytest -q tests/test_postgres_auth_flow.py
 
-      - name: Run Modal/B2 architecture tests
+      - name: Run Modal B2 and production-gate regressions
         working-directory: backend
-        run: pytest -q tests/test_modal_no_vps_architecture.py
+        run: |
+          pytest -q tests/test_modal_no_vps_architecture.py
+          pytest -q tests/test_production_configuration.py
+          pytest -q tests/test_production_preflight.py
 
       - name: Run preserved no-VPS architecture tests
         working-directory: backend
