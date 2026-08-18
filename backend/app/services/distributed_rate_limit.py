@@ -15,6 +15,9 @@ async def consume_rate_limit(identity: str, *, group: str, limit: int, window_se
     now = datetime.now(timezone.utc)
 
     async def consume(db) -> bool:
+        # asyncpg expects Python datetime objects for timestamptz parameters.
+        # Passing ISO strings worked with SQLite but fails against PostgreSQL
+        # before the SQL casts can run, so keep the values strongly typed here.
         cursor = await db.execute(
             """INSERT INTO security_rate_limits(bucket_key,window_started_at,request_count,updated_at)
                VALUES (?, ?, 1, ?)
@@ -27,7 +30,7 @@ async def consume_rate_limit(identity: str, *, group: str, limit: int, window_se
                    ELSE security_rate_limits.window_started_at END,
                  updated_at=EXCLUDED.updated_at
                RETURNING request_count""",
-            (key, now.isoformat(), now.isoformat(), now.isoformat(), window_seconds, now.isoformat(), window_seconds),
+            (key, now, now, now, window_seconds, now, window_seconds),
         )
         row = await cursor.fetchone()
         return bool(row and int(row["request_count"]) <= limit)
