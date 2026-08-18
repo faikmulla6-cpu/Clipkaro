@@ -14,7 +14,7 @@ from app.core.database import execute, fetch_one, run_in_transaction
 from app.services.auth import current_user
 from app.services.hinglish_stage1_routing import resolve_stage1_route
 from app.services.job_launcher import JobLaunchError, get_job_launcher
-from app.services.storage import get_storage_provider
+from app.services.storage import cloud_object_storage_enabled, get_storage_provider
 from app.services.video import upload_type_supported
 
 router = APIRouter()
@@ -50,8 +50,8 @@ async def init_cloud_uploads() -> None:
 @router.post("/uploads/init", status_code=201)
 async def initialize_upload(body: UploadInitRequest, user: dict = Depends(current_user)) -> dict[str, Any]:
     settings = get_settings()
-    if settings.normalized_storage_backend != "gcs":
-        raise HTTPException(409, "Direct cloud upload is enabled only in GCS mode.")
+    if not cloud_object_storage_enabled():
+        raise HTTPException(409, "Direct cloud upload is not enabled for this environment.")
     filename = Path(body.filename).name
     content_type = body.content_type.strip().lower()
     if not upload_type_supported(filename, content_type) or content_type not in _ALLOWED_MIME:
