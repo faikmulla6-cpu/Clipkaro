@@ -55,7 +55,9 @@ SOURCE_IGNORE = [
 api_image = (
     modal.Image.debian_slim(python_version="3.12")
     .pip_install_from_requirements("requirements.txt")
-    .add_local_dir(".", "/root/clipkaro", ignore=SOURCE_IGNORE)
+    # copy=True is required because workdir/env are additional image steps.
+    # It also keeps production source immutable inside the deployed image.
+    .add_local_dir(".", "/root/clipkaro", ignore=SOURCE_IGNORE, copy=True)
     .workdir("/root/clipkaro")
     .env(RUNTIME_ENV)
 )
@@ -75,7 +77,8 @@ media_image = (
     # remains fail-closed if ClamAV cannot inspect an uploaded media object.
     .run_commands("freshclam --stdout")
     .pip_install_from_requirements("requirements.txt")
-    .add_local_dir(".", "/root/clipkaro", ignore=SOURCE_IGNORE)
+    # copy=True is required because workdir/env are additional image steps.
+    .add_local_dir(".", "/root/clipkaro", ignore=SOURCE_IGNORE, copy=True)
     .workdir("/root/clipkaro")
     .env(RUNTIME_ENV)
 )
