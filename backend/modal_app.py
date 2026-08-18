@@ -16,8 +16,8 @@ APP_NAME = "clipkaro-production"
 SECRET_NAME = "clipkaro-production"
 
 # Existing backend selectors remain compatibility gates for the validated
-# no-VPS code path. Concrete providers are selected by the provider-neutral
-# OBJECT_STORAGE_PROVIDER/JOB_EXECUTION_PROVIDER environment variables.
+# no-VPS code path. Concrete providers are selected independently so the
+# preserved GCP implementation and the Modal/B2 implementation can coexist.
 RUNTIME_ENV = {
     "APP_ENV": "production",
     "DATABASE_BACKEND": "postgres",
@@ -27,7 +27,6 @@ RUNTIME_ENV = {
     "JOB_EXECUTION_PROVIDER": "modal",
     "MODAL_APP_NAME": APP_NAME,
     "MODAL_MEDIA_FUNCTION": "run_media_job",
-    "MODAL_ENVIRONMENT": "main",
     "FRONTEND_URL": "https://clipkaro.pro",
     "APP_PUBLIC_URL": "https://clipkaro.pro",
     "CORS_ORIGINS": "https://clipkaro.pro",
@@ -68,8 +67,8 @@ media_image = (
         "clamav",
         "clamav-freshclam",
     )
-    # Production scanning is fail-closed. A deployment must not bake a media
-    # image without an initial ClamAV signature database.
+    # Build an initial signature set into the immutable image. Runtime scanning
+    # remains fail-closed if ClamAV cannot inspect an uploaded media object.
     .run_commands("freshclam --stdout")
     .pip_install_from_requirements("requirements.txt")
     .add_local_dir(".", "/root/clipkaro", ignore=SOURCE_IGNORE)
@@ -77,7 +76,9 @@ media_image = (
     .env(RUNTIME_ENV)
 )
 
-app = modal.App(APP_NAME)
+# Source is already included explicitly in both images. Disable Modal's default
+# source automount so deployment contents stay deterministic and minimal.
+app = modal.App(APP_NAME, include_source=False)
 production_secret = modal.Secret.from_name(SECRET_NAME)
 
 
@@ -93,6 +94,7 @@ production_secret = modal.Secret.from_name(SECRET_NAME)
 @modal.asgi_app()
 def api():
     from app.main import app as fastapi_app
+
     return fastapi_app
 
 
@@ -109,5 +111,12 @@ def api():
 )
 def run_media_job(job_id: str) -> int:
     from app.media_job import run_job
+
     execution_id = f"modal:{modal.current_function_call_id()}"
-    return asyncio.run(run_job(job_id, execution_id=execution_id, worker_prefix="modal"))
+    return asyncio.run(
+        run_job(
+            job_id,
+            execution_id=execution_id,
+            worker_prefix="modal",
+        )
+    )
