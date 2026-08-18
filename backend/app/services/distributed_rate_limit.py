@@ -13,11 +13,13 @@ async def consume_rate_limit(identity: str, *, group: str, limit: int, window_se
         return True
     key = hashlib.sha256(f"{group}:{identity}".encode()).hexdigest()
     now = datetime.now(timezone.utc)
+    now_text = now.isoformat()
 
     async def consume(db) -> bool:
-        # asyncpg expects Python datetime objects for timestamptz parameters.
-        # Passing ISO strings worked with SQLite but fails against PostgreSQL
-        # before the SQL casts can run, so keep the values strongly typed here.
+        # The persisted rate-limit timestamp columns use the legacy text shape,
+        # while PostgreSQL infers explicit ?::timestamptz comparison parameters
+        # as native timestamptz. Keep insert/update values as ISO text and pass
+        # real datetime objects only to the explicitly cast comparison slots.
         cursor = await db.execute(
             """INSERT INTO security_rate_limits(bucket_key,window_started_at,request_count,updated_at)
                VALUES (?, ?, 1, ?)
@@ -30,7 +32,7 @@ async def consume_rate_limit(identity: str, *, group: str, limit: int, window_se
                    ELSE security_rate_limits.window_started_at END,
                  updated_at=EXCLUDED.updated_at
                RETURNING request_count""",
-            (key, now, now, now, window_seconds, now, window_seconds),
+            (key, now_text, now_text, now, window_seconds, now, window_seconds),
         )
         row = await cursor.fetchone()
         return bool(row and int(row["request_count"]) <= limit)
