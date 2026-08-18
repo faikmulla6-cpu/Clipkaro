@@ -47,7 +47,7 @@ async def init_cloud_uploads() -> None:
     )
 
 
-@router.post("/uploads/init", status_code=201)
+@router.post("/uploads/init")
 async def initialize_upload(body: UploadInitRequest, user: dict = Depends(current_user)) -> dict[str, Any]:
     settings = get_settings()
     if not cloud_object_storage_enabled():
@@ -76,7 +76,7 @@ async def initialize_upload(body: UploadInitRequest, user: dict = Depends(curren
     return {"upload_session_id": session_id, "method": "PUT", "upload_url": signed_url, "headers": {"Content-Type": content_type}, "expires_at": expires.isoformat()}
 
 
-@router.post("/uploads/{session_id}/complete", status_code=202)
+@router.post("/uploads/{session_id}/complete")
 async def complete_upload(session_id: str, user: dict = Depends(current_user)) -> dict[str, Any]:
     session = await fetch_one("SELECT * FROM upload_sessions WHERE id=? AND user_id=?", (session_id, user["id"]))
     if not session:
