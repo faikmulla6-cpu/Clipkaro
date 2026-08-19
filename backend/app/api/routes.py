@@ -646,8 +646,8 @@ async def analytics(user:dict=Depends(current_user))->dict:
       (SELECT COALESCE(SUM(v.duration),0) FROM videos v JOIN projects p ON p.id=v.project_id WHERE p.user_id=?) seconds_processed""",
       (user["id"],user["id"],user["id"],user["id"],user["id"]))
     categories=await fetch_all("SELECT category,COUNT(*) count FROM projects WHERE user_id=? GROUP BY category ORDER BY count DESC",(user["id"],))
-    activity=await fetch_all("""SELECT substr(created_at,1,10) day,COUNT(*) exports FROM exports WHERE user_id=? AND status='ready'
-      GROUP BY substr(created_at,1,10) ORDER BY day DESC LIMIT 14""",(user["id"],))
+    activity=await fetch_all("""SELECT substr(CAST(created_at AS TEXT),1,10) AS "day",COUNT(*) AS exports FROM exports WHERE user_id=? AND status='ready'
+      GROUP BY 1 ORDER BY 1 DESC LIMIT 14""",(user["id"],))
     usage=await get_usage_for(user)
     seconds = summary.pop("seconds_processed")
     return {"summary":{**summary,"avg_score":round(summary["avg_score"],1),"minutes_processed":round(seconds/60,1)},
