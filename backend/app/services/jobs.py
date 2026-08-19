@@ -200,7 +200,9 @@ async def claim_job(job_id: str, worker_id: str, *, execution_id: str = "") -> d
     timestamp = utcnow()
 
     async def _claim(db) -> dict[str, Any] | None:
-        suffix = " FOR UPDATE" if get_settings().normalized_database_backend == "postgres" else ""
+        # Lock only the real jobs row. PostgreSQL rejects FOR UPDATE against the
+        # nullable side of the LEFT JOIN used for optional payloads.
+        suffix = " FOR UPDATE OF j" if get_settings().normalized_database_backend == "postgres" else ""
         cursor = await db.execute(
             """SELECT j.*,COALESCE(p.payload_json,'{}') payload_json
                FROM jobs j LEFT JOIN job_payloads p ON p.job_id=j.id

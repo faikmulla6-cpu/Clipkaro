@@ -246,8 +246,7 @@ export default function Editor() {
   if (!clip || !project) return <AppShell title="Creator studio"><div className="screen-loader inline"><div className="loader-mark">✦</div><p>Loading the real video preview…</p></div></AppShell>;
 
   const selectedBrandKit = brandKits.find(kit => kit.id === brandKitId);
-  const effectiveCaptionPosition = sourceHasCaptions && captionPosition === "bottom" ? "above" : captionPosition;
-  const positionClass = `position-${effectiveCaptionPosition}`;
+  const positionClass = `position-${captionPosition}`;
   const selectedCaptionStyle = captionStyles.find(style => style.id === captionStyle);
   const previewStyle = selectedCaptionStyle ? {
     "--caption-font-family": `${selectedCaptionStyle.font_family}, sans-serif`,
@@ -316,7 +315,7 @@ export default function Editor() {
           </div>
 
           {activeTab === "style" && <>
-            {sourceHasCaptions && <div className="editor-section"><p className="field-note"><b>Existing subtitles detected.</b> Source pixels stay unchanged; ClipKaro captions are placed above them.</p></div>}
+            {sourceHasCaptions && <div className="editor-section"><p className="field-note"><b>Existing subtitles detected.</b> Source pixels stay unchanged. Lower, Above and Centre now follow your selection exactly; choose a position that avoids overlap.</p></div>}
             <div className="editor-section"><label>Hook text</label><textarea value={hook} onChange={event => setHook(event.target.value)} maxLength={120} /><div className="input-count">{hook.length}/120</div></div>
             {brandKits.length > 0 && <div className="editor-section"><label><Palette size={13}/> Brand kit</label><select value={brandKitId} onChange={event => { const id = event.target.value; setBrandKitId(id); const kit = brandKits.find(item => item.id === id); if (kit && styles.some(style => style[0] === kit.caption_preset)) setCaptionStyle(kit.caption_preset); }}><option value="">No brand kit</option>{brandKits.map(kit => <option key={kit.id} value={kit.id}>{kit.name}{kit.is_default ? " · Default" : ""}</option>)}</select><p className="field-note">Applies your saved wordmark, brand color and preferred caption personality to this export.</p></div>}
             <div className="editor-section"><label>Caption personality — preview changes instantly</label><div className="style-options">{styles.map(style => <button type="button" className={captionStyle === style[0] ? "active" : ""} onClick={() => setCaptionStyle(style[0])} key={style[0]}><span className={`style-swatch ${style[0]}`}>Aa</span><div><b>{style[1]}</b><small>{style[2]}</small></div>{captionStyle === style[0] && <Check size={14} />}</button>)}</div></div>
