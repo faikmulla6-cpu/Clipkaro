@@ -137,14 +137,13 @@ async def _render_export_durable(
             expected_prefix=f"users/{job['user_id']}/exports/{export['id']}",
         )
         expected_size = output.stat().st_size
-        existing = await storage.stat(output_key)
 
-        if existing and existing.size == expected_size and _video_mp4(existing.content_type):
-            stored = existing
-        else:
-            if existing:
-                await storage.delete(output_key, generation=existing.generation or None)
-            stored = await storage.upload(output, output_key, content_type="video/mp4")
+        # A non-ready export may have an orphan from an interrupted attempt.
+        # Delete it first so the durable object always matches this exact render.
+        existing = await storage.stat(output_key)
+        if existing:
+            await storage.delete(output_key, generation=existing.generation or None)
+        stored = await storage.upload(output, output_key, content_type="video/mp4")
 
         verified = await storage.stat(output_key)
         if verified is None or verified.size != expected_size or not _video_mp4(verified.content_type):
@@ -276,15 +275,34 @@ async def run_job(job_id: str, *, execution_id: str = "", worker_prefix: str = "
         return 0
     except Exception as exc:
         category = str(exc) if str(exc) in {"MEDIA_VALIDATION_FAILED", "EXPORT_FAILED"} else "PROVIDER_TEMPORARY_FAILURE"
+
+        # If publication already succeeded, preserve the downloadable artifact
+        # and recover only the terminal job event instead of downgrading it.
+        if job.get("export_id"):
+            current_export = await fetch_one("SELECT status FROM exports WHERE id=?", (job["export_id"],))
+            if current_export and current_export.get("status") == "ready":
+                try:
+                    await update_job(job_id, 100, "ready", "Your Short is ready to download", "completed")
+                    return 0
+                except Exception:
+                    logger.exception("Could not recover completed export job_id=%s", job_id)
+                    return 1
+
+        if job.get("project_id"):
+            current_project = await fetch_one("SELECT status FROM projects WHERE id=?", (job["project_id"],))
+            if current_project and current_project.get("status") == "ready":
+                try:
+                    await update_job(job_id, 100, "ready", "Project processing is complete", "completed")
+                    return 0
+                except Exception:
+                    logger.exception("Could not recover completed project job_id=%s", job_id)
+                    return 1
+
         await update_job(job_id, int(job.get("progress") or 0), "failed", "Media processing failed", "failed", category)
         if job.get("project_id"):
             await execute("UPDATE projects SET status='failed',stage='failed',error=? WHERE id=?", (category, job["project_id"]))
         if job.get("export_id"):
-            current_export = await fetch_one("SELECT status FROM exports WHERE id=?", (job["export_id"],))
-            # Never downgrade an already verified durable export because a
-            # non-render side effect failed after publication.
-            if not current_export or current_export.get("status") != "ready":
-                await execute("UPDATE exports SET status='failed',error=? WHERE id=?", (category, job["export_id"]))
+            await execute("UPDATE exports SET status='failed',error=? WHERE id=?", (category, job["export_id"]))
         return 1
     finally:
         heartbeat.cancel()
