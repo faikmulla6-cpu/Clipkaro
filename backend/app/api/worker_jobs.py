@@ -9,10 +9,10 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
 from app.api import routes as project_routes
 from app.core.config import get_settings
-from app.core.database import execute, fetch_all, fetch_one
+from app.core.database import UsageQuotaExceeded, distributed_advisory_lock, execute, fetch_all, fetch_one
 from app.schemas.api import AnalyseRequest, ExportOut, ExportRequest, ProjectOut
 from app.services.auth import current_user
-from app.services.jobs import create_job, dispatch_job
+from app.services.jobs import create_job, dispatch_job, update_job
 from app.services.hinglish_stage1_routing import resolve_stage1_route
 from app.services.storage_paths import confined_upload_path
 from app.services.storage import get_storage_provider, validate_object_key
@@ -20,6 +20,7 @@ from app.services.storage import get_storage_provider, validate_object_key
 
 router = APIRouter()
 MAX_REPROCESS_ATTEMPTS_PER_24H = 3
+BRAND_KIT_PLANS = {"creator", "growth", "pro", "agency"}
 
 
 async def _source_available(video: dict | None, user_id: str) -> bool:
@@ -35,6 +36,16 @@ async def _source_available(video: dict | None, user_id: str) -> bool:
             return False
     path = confined_upload_path(video.get("file_path"))
     return bool(path and path.is_file())
+
+
+async def _active_export_for_clip(clip_id: str, user_id: str) -> dict | None:
+    return await fetch_one(
+        """SELECT e.id,e.status,j.id job_id FROM exports e
+           LEFT JOIN jobs j ON j.export_id=e.id AND j.kind='render_export'
+           WHERE e.clip_id=? AND e.user_id=? AND e.status IN ('queued','processing')
+           ORDER BY e.created_at DESC LIMIT 1""",
+        (clip_id, user_id),
+    )
 
 
 async def _mark_project_enqueue_failed(project_id: str, reason: str) -> None:
@@ -263,56 +274,95 @@ async def export_clip(
             f"This project used an older AI pipeline ({state['reason']}). Automatic reprocessing has started; export the new verified clips when ready.",
         )
 
-    limits = await project_routes.get_usage_for(user)
-    if limits.exports_remaining <= 0:
-        raise HTTPException(402, "Monthly export limit reached. Upgrade to keep creating.")
-    if body.resolution == "1080p" and user["plan"] == "free":
-        raise HTTPException(403, "1080p export is included with every paid ClipKaro plan.")
-    if not body.watermark and user["plan"] == "free":
-        raise HTTPException(403, "Watermark-free export is included with every paid ClipKaro plan.")
+    # Serialize export creation for this user+clip across all API containers.
+    # The reservation trigger remains the quota authority; this lock prevents
+    # rapid double taps, retries, or two open tabs from reserving duplicate
+    # renders before either request can observe the other.
+    lock_key = f"clipkaro:export:{user['id']}:{clip_id}"
+    async with distributed_advisory_lock(lock_key):
+        active_export = await _active_export_for_clip(clip_id, str(user["id"]))
+        if active_export:
+            raise HTTPException(
+                409,
+                "This Short is already rendering. Wait for it to finish before starting another render.",
+            )
 
-    video = await fetch_one("SELECT * FROM videos WHERE id=?", (clip["video_id"],))
-    if not video:
-        raise HTTPException(409, "This clip no longer has a source video to render.")
-    if not await _source_available(video, str(user["id"])):
-        raise HTTPException(410, "The source video has expired from private media storage. Upload it again to create a new export.")
-    brand = None
-    if body.brand_kit_id:
-        brand = await fetch_one(
-            "SELECT * FROM brand_kits WHERE id=? AND user_id=?",
-            (body.brand_kit_id, user["id"]),
-        )
-    export_id = str(uuid.uuid4())
-    cloud_storage = settings.normalized_storage_backend == "gcs"
-    output_key = f"users/{user['id']}/exports/{export_id}/clip.mp4"
-    output = settings.export_dir / f"{export_id}.mp4"
-    output_record = output_key if cloud_storage else str(output)
-    created = project_routes.utcnow()
-    expires = (project_routes.now() + timedelta(hours=settings.file_expiry_hours)).isoformat()
-    await execute(
-        """INSERT INTO exports(id,clip_id,user_id,output_path,resolution,aspect_ratio,caption_style,watermark,
-           status,progress,error,created_at,expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, NULL, ?, ?)""",
-        (
-            export_id, clip_id, user["id"], output_record, body.resolution,
-            body.aspect_ratio, body.caption_style, int(body.watermark), created, expires,
-        ),
-    )
-    try:
-        # Persist the complete render request before the job becomes visible to
-        # the isolated worker. User customization therefore survives restarts.
-        job_id = await create_job(
-            user["id"], "render_export", export_id=export_id,
-            payload={"request": body.model_dump(mode="json")},
-        )
-    except Exception:
-        # The exports DELETE trigger releases only a still-reserved export slot,
-        # so an enqueue outage cannot silently consume the user's quota.
-        await execute("DELETE FROM exports WHERE id=?", (export_id,))
-        if not cloud_storage:
-            output.unlink(missing_ok=True)
-        raise
-    await dispatch_job(
-        tasks, project_routes._render_export,
-        job_id, export_id, clip, video, body, output, brand,
-    )
-    return ExportOut(id=export_id, job_id=job_id, status="queued", expires_at=expires)
+        limits = await project_routes.get_usage_for(user)
+        active_plan = limits.plan
+        if limits.exports_remaining <= 0:
+            raise HTTPException(402, "Your Short export limit is reached or currently reserved by another render.")
+        if body.resolution == "1080p" and active_plan == "free":
+            raise HTTPException(403, "1080p export is included with every paid ClipKaro plan.")
+
+        # Entitlements are server-authoritative. Free exports always carry the
+        # ClipKaro watermark even if a modified client sends watermark=false;
+        # paid plans may choose it, but the normal UI defaults it off.
+        effective_watermark = True if active_plan == "free" else bool(body.watermark)
+        effective_body = body.model_copy(update={"watermark": effective_watermark})
+
+        video = await fetch_one("SELECT * FROM videos WHERE id=?", (clip["video_id"],))
+        if not video:
+            raise HTTPException(409, "This clip no longer has a source video to render.")
+        if not await _source_available(video, str(user["id"])):
+            raise HTTPException(410, "The source video has expired from private media storage. Upload it again to create a new export.")
+
+        brand = None
+        if effective_body.brand_kit_id:
+            if active_plan not in BRAND_KIT_PLANS:
+                raise HTTPException(403, "Brand kits start on the Creator plan.")
+            brand = await fetch_one(
+                "SELECT * FROM brand_kits WHERE id=? AND user_id=?",
+                (effective_body.brand_kit_id, user["id"]),
+            )
+            if not brand:
+                raise HTTPException(404, "Brand kit not found.")
+
+        export_id = str(uuid.uuid4())
+        cloud_storage = settings.normalized_storage_backend == "gcs"
+        output_key = f"users/{user['id']}/exports/{export_id}/clip.mp4"
+        output = settings.export_dir / f"{export_id}.mp4"
+        output_record = output_key if cloud_storage else str(output)
+        created = project_routes.utcnow()
+        expires = (project_routes.now() + timedelta(hours=settings.file_expiry_hours)).isoformat()
+        try:
+            await execute(
+                """INSERT INTO exports(id,clip_id,user_id,output_path,resolution,aspect_ratio,caption_style,watermark,
+                   status,progress,error,created_at,expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, NULL, ?, ?)""",
+                (
+                    export_id, clip_id, user["id"], output_record, effective_body.resolution,
+                    effective_body.aspect_ratio, effective_body.caption_style, int(effective_body.watermark), created, expires,
+                ),
+            )
+        except UsageQuotaExceeded as exc:
+            raise HTTPException(402, str(exc)) from exc
+
+        try:
+            # Persist the normalized, entitlement-safe request before the job
+            # becomes visible to the isolated worker. Customization therefore
+            # survives restarts without trusting client-only state.
+            job_id = await create_job(
+                user["id"], "render_export", export_id=export_id,
+                payload={"request": effective_body.model_dump(mode="json")},
+            )
+        except Exception:
+            # The exports DELETE trigger releases only a still-reserved export slot,
+            # so an enqueue outage cannot silently consume the user's quota.
+            await execute("DELETE FROM exports WHERE id=?", (export_id,))
+            if not cloud_storage:
+                output.unlink(missing_ok=True)
+            raise
+
+        try:
+            await dispatch_job(
+                tasks, project_routes._render_export,
+                job_id, export_id, clip, video, effective_body, output, brand,
+            )
+        except Exception as exc:
+            # A launcher failure must immediately return the reserved slot and
+            # must not leave a queued job that the UI can mistake for progress.
+            message = "ClipKaro could not start the render worker. Your Short slot was not consumed."
+            await execute("UPDATE exports SET status='failed',error=? WHERE id=?", (message, export_id))
+            await update_job(job_id, 0, "failed", message, "failed", "PROVIDER_TEMPORARY_FAILURE")
+            raise HTTPException(503, message) from exc
+
+        return ExportOut(id=export_id, job_id=job_id, status="queued", expires_at=expires)
