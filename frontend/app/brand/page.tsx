@@ -27,8 +27,11 @@ export default function Brand() {
   const [busy, setBusy] = useState("");
   const canUseBrandKit = BRAND_KIT_PLANS.has(String(user?.plan || "free").toLowerCase());
 
-  const load = () => api<Kit[]>("/brand-kits").then(setKits);
-  useEffect(() => { load().catch((err) => setError(err instanceof Error ? err.message : "Could not load brand kits.")); }, []);
+  const load = async () => {
+    const result = await api<Kit[]>("/brand-kits");
+    setKits(Array.isArray(result) ? result : []);
+  };
+  useEffect(() => { void load().catch((err) => setError(err instanceof Error ? err.message : "Could not load brand kits.")); }, []);
 
   async function create(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
