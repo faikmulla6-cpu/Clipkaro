@@ -2,6 +2,7 @@
 
 import { AppShell } from "@/components/AppShell";
 import { API_URL, api } from "@/lib/api";
+import { recordDownload } from "@/lib/behavior";
 import { AlertCircle, CheckCircle2, Clock3, Download, FileVideo, Loader2, RefreshCw, XCircle } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
@@ -20,6 +21,14 @@ type ExportRow = {
   error?: string | null;
 };
 
+type ExportStatus = {
+  id: string;
+  status: string;
+  progress: number;
+  download_url?: string | null;
+  expires_at: string;
+};
+
 function createdLabel(value: string) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
@@ -36,6 +45,8 @@ export default function Exports() {
   const [rows, setRows] = useState<ExportRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [downloadNotice, setDownloadNotice] = useState("");
+  const [downloadingId, setDownloadingId] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -53,8 +64,34 @@ export default function Exports() {
 
   useEffect(() => { void load(); }, [load]);
 
+  async function downloadExport(exportId: string) {
+    if (!exportId || downloadingId) return;
+    setDownloadingId(exportId);
+    setDownloadNotice("");
+    try {
+      // Re-check the authoritative status immediately before navigation. This
+      // keeps an expired/still-finishing export inside ClipKaro instead of
+      // exposing a raw API error page to the creator.
+      const state = await api<ExportStatus>(`/exports/${exportId}`);
+      if (state.status !== "ready" || !state.download_url) {
+        setRows(current => current.map(row => row.id === exportId ? { ...row, status: state.status, progress: state.progress } : row));
+        setDownloadNotice(state.status === "expired"
+          ? "This private download has expired. Your export history is still preserved."
+          : "This Short is still finishing securely. Try Download again in a moment.");
+        return;
+      }
+      recordDownload(exportId);
+      window.location.assign(`${API_URL}/exports/${exportId}/download`);
+    } catch (cause) {
+      setDownloadNotice(cause instanceof Error ? cause.message : "The download could not be prepared yet.");
+    } finally {
+      setDownloadingId("");
+    }
+  }
+
   return (
     <AppShell title="Exports" subtitle="Your rendered Shorts and private downloads in one place.">
+      {downloadNotice && <div className="floating-error">{downloadNotice}</div>}
       {loading ? (
         <div className="screen-loader inline" role="status">
           <Loader2 className="spin" size={24} />
@@ -77,6 +114,7 @@ export default function Exports() {
         <div className="panel" style={{ padding: 0, overflow: "hidden" }}>
           {rows.map((item, index) => {
             const ready = item.status === "ready";
+            const preparing = downloadingId === item.id;
             return (
               <div
                 className="export-history-row"
@@ -108,9 +146,9 @@ export default function Exports() {
                 </div>
                 <div className="export-history-action">
                   {ready ? (
-                    <a className="primary-btn small" href={`${API_URL}/exports/${item.id}/download`}>
-                      <Download size={15} />Download MP4
-                    </a>
+                    <button className="primary-btn small" type="button" disabled={preparing} onClick={() => void downloadExport(item.id)}>
+                      {preparing ? <Loader2 className="spin" size={15} /> : <Download size={15} />}{preparing ? "Preparing…" : "Download MP4"}
+                    </button>
                   ) : (
                     <button className="secondary-btn small" type="button" disabled style={{ opacity: .55 }}>
                       <Clock3 size={14} />{item.status === "expired" ? "Expired" : "Unavailable"}
