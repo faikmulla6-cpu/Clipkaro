@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "./AuthProvider";
+import styles from "./AuthForm.module.css";
 import { ArrowRight, Check, Eye, EyeOff, Loader2, LockKeyhole, Mail, User } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -56,7 +57,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
   }
 
   return (
-    <div className="auth-page">
+    <div key={mode} className={`auth-page ${styles.pageEnter}`}>
       <div className="auth-visual">
         <Link href="/" className="auth-brand">✦ ClipKaro AI</Link>
         <div className="auth-story">
@@ -73,8 +74,8 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
       </div>
 
       <div className="auth-panel">
-        <div className="auth-card">
-          <Link href="/" className="auth-mobile-logo">✦ ClipKaro AI</Link>
+        <div className={`auth-card ${styles.cardEnter}`}>
+          <Link href="/" className={`auth-mobile-logo ${styles.brandEnter}`}>✦ ClipKaro AI</Link>
           <span className="auth-kicker">{mode === "login" ? "WELCOME BACK" : "START CREATING"}</span>
           <h2>{mode === "login" ? "Sign in to your studio" : "Create your free account"}</h2>
           <p>
