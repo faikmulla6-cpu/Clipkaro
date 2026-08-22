@@ -10,7 +10,24 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" data-scroll-behavior="smooth">
-      <body><AuthProvider>{children}</AuthProvider></body>
+      <body>
+        <style>{`
+          .price {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            flex-wrap: wrap;
+          }
+          .price small {
+            display: inline-block;
+            margin-left: 0 !important;
+            letter-spacing: 0 !important;
+            line-height: 1.2;
+            white-space: nowrap;
+          }
+        `}</style>
+        <AuthProvider>{children}</AuthProvider>
+      </body>
     </html>
   );
 }
