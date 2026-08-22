@@ -160,8 +160,11 @@ def test_modal_app_keeps_api_and_media_as_separate_functions() -> None:
 def test_export_mobile_safety_contract_is_single_flight_and_server_authoritative() -> None:
     root = Path(__file__).resolve().parents[1]
     worker = (root / "app/api/worker_jobs.py").read_text(encoding="utf-8")
+    routes = (root / "app/api/routes.py").read_text(encoding="utf-8")
     media = (root / "app/media_job.py").read_text(encoding="utf-8")
+    rendering = (root / "app/services/rendering.py").read_text(encoding="utf-8")
     editor = (root.parent / "frontend/app/editor/[clipId]/page.tsx").read_text(encoding="utf-8")
+    exports_page = (root.parent / "frontend/app/exports/page.tsx").read_text(encoding="utf-8")
 
     # API-side serialization is the cross-container authority against rapid
     # double taps, retries and multiple open tabs reserving duplicate Shorts.
@@ -173,13 +176,35 @@ def test_export_mobile_safety_contract_is_single_flight_and_server_authoritative
     assert 'effective_watermark = True if active_plan == "free" else bool(body.watermark)' in worker
     assert 'payload={"request": effective_body.model_dump(mode="json")}' in worker
 
-    # The durable Modal renderer must preserve the creator's explicit position.
+    # If job creation or Modal launch fails, the export reaches failed rather
+    # than being deleted while a quota reservation is still attached to it.
+    assert 'UPDATE exports SET status=\'failed\',error=? WHERE id=?' in worker
+    assert 'DELETE FROM exports WHERE id=?' not in worker
+
+    # Both durable Modal and legacy/local rendering preserve explicit creator
+    # placement. Existing subtitles can inform the UI, never silently move it.
     assert "request.caption_position," in media
     assert "Creator choice is authoritative" in media
+    assert "effective_position=" not in routes
+    assert "request.focus_x, request.caption_position" in routes
 
-    # Mobile UI also guards the first few milliseconds before React state can
-    # disable the button and verifies readiness before navigating to a download.
+    # Centre is a true centre for every Studio personality, including India Pop,
+    # rather than accidentally falling through to the lower safe-area rule.
+    assert "def _caption_y_center" in rendering
+    assert 'if caption_position == "center":' in rendering
+    assert "return height // 2" in rendering
+    assert rendering.count("_caption_y_center(height, style, caption_position)") >= 2
+
+    # Database reservation triggers own usage settlement. Legacy render/process
+    # paths must not double-increment the already reserved counters.
+    assert "UPDATE usage SET exports_used=exports_used+1" not in routes
+    assert "UPDATE usage SET source_minutes=source_minutes+?" not in routes
+
+    # Mobile UI guards the first few milliseconds before React state disables
+    # buttons, ignores stale job streams, and checks readiness before download.
     assert "renderStartRef.current" in editor
     assert "activeJobRef.current !== jobId" in editor
     assert "downloadReadyExport" in editor
     assert 'user.plan === "free"' in editor
+    assert "downloadExport" in exports_page
+    assert 'api<ExportStatus>(`/exports/${exportId}`)' in exports_page
