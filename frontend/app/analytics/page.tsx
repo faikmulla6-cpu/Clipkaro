@@ -27,9 +27,30 @@ type AnalyticsData = {
   activity: { day: string; exports: number }[];
 };
 
+type ExportHistory = {
+  id: string;
+  status: string;
+  created_at?: string | null;
+};
+
 function dayLabel(day: string) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
   return match ? `${match[3]}/${match[2]}` : day;
+}
+
+function historicalExportActivity(exports: ExportHistory[]) {
+  const completed = exports.filter((item) => item.status === "ready" || item.status === "expired");
+  const byDay = new Map<string, number>();
+  for (const item of completed) {
+    const day = String(item.created_at || "").slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(day)) byDay.set(day, (byDay.get(day) || 0) + 1);
+  }
+  const activity = [...byDay.entries()]
+    .sort(([left], [right]) => right.localeCompare(left))
+    .slice(0, 14)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([day, count]) => ({ day, exports: count }));
+  return { completedCount: completed.length, activity };
 }
 
 export default function Analytics() {
@@ -41,8 +62,16 @@ export default function Analytics() {
     setLoading(true);
     setError("");
     try {
-      const result = await api<AnalyticsData>("/analytics");
-      setData(result);
+      const [result, exports] = await Promise.all([
+        api<AnalyticsData>("/analytics"),
+        api<ExportHistory[]>("/exports"),
+      ]);
+      const history = historicalExportActivity(exports);
+      setData({
+        ...result,
+        summary: { ...result.summary, exports: history.completedCount },
+        activity: history.activity,
+      });
     } catch (err) {
       setData(null);
       setError(err instanceof Error ? err.message : "Analytics could not be loaded.");
@@ -91,7 +120,7 @@ export default function Analytics() {
         {[
           [Video, "Projects", s.projects, "All-time"],
           [Sparkles, "Average potential", s.avg_score, "Across AI moments"],
-          [Download, "Exports", s.exports, `${data.usage.exports_remaining} remaining`],
+          [Download, "Historical exports", s.exports, "Includes expired downloads"],
           [Clock3, "Minutes processed", s.minutes_processed, "Source content"],
         ].map(([Icon, label, value, note]: any) => (
           <div className="stat-card" key={label}>
@@ -109,11 +138,11 @@ export default function Analytics() {
         <div className="panel">
           <div className="panel-head">
             <h3>Publishing output</h3>
-            <span className="trend">Completed exports only</span>
+            <span className="trend">Completed export history</span>
           </div>
 
           {hasActivity ? (
-            <div className="chart modern" aria-label="Completed export activity">
+            <div className="chart modern" aria-label="Completed export history">
               {data.activity.map((item) => {
                 const height = item.exports === 0 ? 0 : Math.max(8, Math.round((item.exports / maxExports) * 100));
                 return (
@@ -131,12 +160,8 @@ export default function Analytics() {
           ) : (
             <div className="empty-state" style={{ border: 0, background: "transparent", padding: "46px 20px" }}>
               <div className="empty-icon"><Download size={24} /></div>
-              <h3>{s.exports === 0 ? "No exports yet" : "No recent exports"}</h3>
-              <p>
-                {s.exports === 0
-                  ? "Your publishing activity will appear here after your first completed Short export."
-                  : "You have completed exports in your history, but there is no activity in the recent export-day series."}
-              </p>
+              <h3>No completed exports yet</h3>
+              <p>Your publishing history will appear here after your first completed Short export. Expired download files still remain part of historical export analytics.</p>
             </div>
           )}
         </div>
@@ -144,13 +169,13 @@ export default function Analytics() {
         <div className="panel">
           <div className="panel-head"><h3>Plan efficiency</h3></div>
           <div className="metric-list">
-            <div><span>Source minutes</span><b>{data.usage.source_minutes}</b></div>
-            <div><span>Exports used</span><b>{data.usage.exports_used}/{data.usage.exports_limit}</b></div>
-            <div><span>Moment-to-export</span><b>{s.clips ? Math.round((s.exports / s.clips) * 100) : 0}%</b></div>
+            <div><span>Source minutes this plan period</span><b>{data.usage.source_minutes}</b></div>
+            <div><span>Exports used this plan period</span><b>{data.usage.exports_used}/{data.usage.exports_limit}</b></div>
+            <div><span>Historical moment-to-export</span><b>{s.clips ? Math.round((s.exports / s.clips) * 100) : 0}%</b></div>
           </div>
           <div className="insight">
             <TrendingUp size={18} />
-            <p>Render only selected moments. That cost-control rule is active across your workspace.</p>
+            <p>Plan-period usage resets with billing rules; historical completed exports remain visible separately above.</p>
           </div>
         </div>
       </div>
