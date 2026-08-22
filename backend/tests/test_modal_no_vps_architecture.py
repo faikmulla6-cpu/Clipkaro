@@ -155,3 +155,31 @@ def test_modal_app_keeps_api_and_media_as_separate_functions() -> None:
     assert "modal.current_function_call_id()" in source
     assert "ffmpeg" in source and "clamav" in source and "libass9" in source
     assert 'modal.Secret.from_name(SECRET_NAME)' in source
+
+
+def test_export_mobile_safety_contract_is_single_flight_and_server_authoritative() -> None:
+    root = Path(__file__).resolve().parents[1]
+    worker = (root / "app/api/worker_jobs.py").read_text(encoding="utf-8")
+    media = (root / "app/media_job.py").read_text(encoding="utf-8")
+    editor = (root.parent / "frontend/app/editor/[clipId]/page.tsx").read_text(encoding="utf-8")
+
+    # API-side serialization is the cross-container authority against rapid
+    # double taps, retries and multiple open tabs reserving duplicate Shorts.
+    assert "distributed_advisory_lock(lock_key)" in worker
+    assert "_active_export_for_clip" in worker
+    assert "This Short is already rendering" in worker
+
+    # Entitlements are normalized before the durable job payload is persisted.
+    assert 'effective_watermark = True if active_plan == "free" else bool(body.watermark)' in worker
+    assert 'payload={"request": effective_body.model_dump(mode="json")}' in worker
+
+    # The durable Modal renderer must preserve the creator's explicit position.
+    assert "request.caption_position," in media
+    assert "Creator choice is authoritative" in media
+
+    # Mobile UI also guards the first few milliseconds before React state can
+    # disable the button and verifies readiness before navigating to a download.
+    assert "renderStartRef.current" in editor
+    assert "activeJobRef.current !== jobId" in editor
+    assert "downloadReadyExport" in editor
+    assert 'user.plan === "free"' in editor
