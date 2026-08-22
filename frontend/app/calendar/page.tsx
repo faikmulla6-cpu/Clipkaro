@@ -32,8 +32,8 @@ export default function Calendar() {
     setError("");
     try {
       const [calendar, completedExports] = await Promise.all([api<Post[]>("/calendar"), api<Export[]>("/exports")]);
-      setPosts(calendar);
-      setExports(completedExports.filter((item) => item.status === "ready"));
+      setPosts(Array.isArray(calendar) ? calendar : []);
+      setExports(Array.isArray(completedExports) ? completedExports.filter((item) => item.status === "ready") : []);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Calendar could not be loaded.");
     } finally {
@@ -54,6 +54,13 @@ export default function Calendar() {
       return { day, date: new Date(month.getFullYear(), month.getMonth(), day), outside: false };
     });
   }, [month]);
+
+  const monthPosts = useMemo(() => posts
+    .filter((post) => {
+      const date = new Date(post.scheduled_for);
+      return date.getFullYear() === month.getFullYear() && date.getMonth() === month.getMonth();
+    })
+    .sort((a, b) => new Date(a.scheduled_for).getTime() - new Date(b.scheduled_for).getTime()), [posts, month]);
 
   async function schedule(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -117,10 +124,16 @@ export default function Calendar() {
 
       {loading ? <div className="screen-loader inline" role="status"><Loader2 className="spin" size={24}/><p>Loading your calendar…</p></div> : error && !show ? (
         <div className="empty-state"><div className="empty-icon"><AlertCircle/></div><h3>Calendar unavailable</h3><p>{error}</p><button className="primary-btn" type="button" onClick={() => void load()}><RefreshCw size={15}/>Retry</button></div>
-      ) : <div className="calendar-grid">
-        <div>MON</div><div>TUE</div><div>WED</div><div>THU</div><div>FRI</div><div>SAT</div><div>SUN</div>
-        {cells.map((cell, index) => <section className={cell.outside ? "outside" : ""} key={index}><span>{cell.day}</span>{posts.filter((post) => { const date = new Date(post.scheduled_for); return date.getFullYear() === cell.date.getFullYear() && date.getMonth() === cell.date.getMonth() && date.getDate() === cell.date.getDate(); }).map((post) => <article className={`cal-post ${post.platform}`} key={post.id}>{post.platform === "instagram" ? <Instagram size={12}/> : <Clock3 size={12}/>}<b>{post.caption.slice(0, 22)}</b><small>{new Date(post.scheduled_for).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</small><button type="button" className="cal-delete" disabled={busyDelete === post.id} onClick={() => void remove(post.id)} aria-label="Remove calendar draft">{busyDelete === post.id ? <Loader2 className="spin" size={10}/> : <Trash2 size={10}/>}</button></article>)}</section>)}
-      </div>}
+      ) : <>
+        <div className="calendar-grid">
+          <div>MON</div><div>TUE</div><div>WED</div><div>THU</div><div>FRI</div><div>SAT</div><div>SUN</div>
+          {cells.map((cell, index) => <section className={cell.outside ? "outside" : ""} key={index}><span>{cell.day}</span>{posts.filter((post) => { const date = new Date(post.scheduled_for); return date.getFullYear() === cell.date.getFullYear() && date.getMonth() === cell.date.getMonth() && date.getDate() === cell.date.getDate(); }).map((post) => <article className={`cal-post ${post.platform}`} key={post.id}>{post.platform === "instagram" ? <Instagram size={12}/> : <Clock3 size={12}/>}<b>{post.caption.slice(0, 22)}</b><small>{new Date(post.scheduled_for).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</small><button type="button" className="cal-delete" disabled={busyDelete === post.id} onClick={() => void remove(post.id)} aria-label="Remove calendar draft">{busyDelete === post.id ? <Loader2 className="spin" size={10}/> : <Trash2 size={10}/>}</button></article>)}</section>)}
+        </div>
+        {monthPosts.length > 0 && <div className="calendar-agenda"><h3>Planned this month</h3>{monthPosts.map((post) => {
+          const date = new Date(post.scheduled_for);
+          return <article className="calendar-agenda-item" key={`agenda-${post.id}`}><div className="calendar-agenda-date"><span>{date.toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}</span></div><div className="calendar-agenda-copy"><b>{post.caption}</b><span>{post.platform} · {date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div><button type="button" className="calendar-agenda-remove" disabled={busyDelete === post.id} onClick={() => void remove(post.id)} aria-label="Remove calendar draft">{busyDelete === post.id ? <Loader2 className="spin" size={14}/> : <Trash2 size={14}/>}</button></article>;
+        })}</div>}
+      </>}
     </AppShell>
   );
 }
