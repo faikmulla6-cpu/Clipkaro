@@ -5,14 +5,20 @@ from pathlib import Path
 
 import pytest
 
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.core.database import _postgres_query
 from app.services.job_launcher import CloudRunJobLauncher, LocalJobLauncher
 from app.services.storage import LocalStorageProvider, validate_object_key
 
 
-def test_backend_selection_defaults_keep_local_development() -> None:
-    settings = get_settings()
+def test_backend_selection_defaults_keep_local_development(monkeypatch) -> None:
+    # This is a contract for code defaults, not for the CI job's production-like
+    # environment. The workflow deliberately exports PostgreSQL/GCS/Cloud Run
+    # settings for integration coverage, so isolate those variables before
+    # constructing a fresh Settings instance.
+    for name in ("DATABASE_BACKEND", "STORAGE_BACKEND", "JOB_BACKEND", "APP_ENV"):
+        monkeypatch.delenv(name, raising=False)
+    settings = Settings(_env_file=None)
     assert settings.normalized_database_backend == "sqlite"
     assert settings.normalized_storage_backend == "local"
     assert settings.normalized_job_backend == "local"
@@ -111,6 +117,11 @@ def test_serverless_source_contracts_are_present() -> None:
     assert "send_window_started_at TEXT NOT NULL" in migration
     assert "suggestion_rank INTEGER NOT NULL" in migration
     assert "documents_json TEXT NOT NULL" in migration
-    assert "FROM worker AS media" in dockerfile
+    # The current serverless image keeps API dependencies lightweight and builds
+    # media directly from media-base. The legacy local-ASR worker is deliberately
+    # a separate optional target rather than the parent of production media.
+    assert "FROM runtime-base AS api" in dockerfile
+    assert "FROM media-base AS media" in dockerfile
+    assert 'CMD ["python", "-m", "app.media_job"]' in dockerfile
     assert 'NEXT_PUBLIC_UPLOAD_MODE === "direct_gcs"' in frontend
     assert "/uploads/init" in frontend and "/complete" in frontend
