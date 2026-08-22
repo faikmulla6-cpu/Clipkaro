@@ -344,13 +344,18 @@ async def export_clip(
                 user["id"], "render_export", export_id=export_id,
                 payload={"request": effective_body.model_dump(mode="json")},
             )
-        except Exception:
-            # The exports DELETE trigger releases only a still-reserved export slot,
-            # so an enqueue outage cannot silently consume the user's quota.
-            await execute("DELETE FROM exports WHERE id=?", (export_id,))
+        except Exception as exc:
+            # The export row must reach a terminal failed state so the database
+            # reservation trigger refunds the Short atomically. Deleting a
+            # queued row directly would orphan its reservation on PostgreSQL.
+            message = "ClipKaro could not create the render job. Your Short slot was not consumed."
+            try:
+                await execute("UPDATE exports SET status='failed',error=? WHERE id=?", (message, export_id))
+            except Exception:
+                project_routes.logger.exception("Could not release export reservation export_id=%s", export_id)
             if not cloud_storage:
                 output.unlink(missing_ok=True)
-            raise
+            raise exc
 
         try:
             await dispatch_job(
