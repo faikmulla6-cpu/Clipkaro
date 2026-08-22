@@ -113,6 +113,7 @@ export default function Analytics() {
   const s = data.summary;
   const hasActivity = data.activity.some((item) => item.exports > 0);
   const maxExports = Math.max(1, ...data.activity.map((item) => item.exports));
+  const exportsPerMoment = s.clips ? (s.exports / s.clips).toFixed(1) : "0.0";
 
   return (
     <AppShell title="Analytics" subtitle="Understand output, quality and cost—not vanity metrics.">
@@ -171,7 +172,7 @@ export default function Analytics() {
           <div className="metric-list">
             <div><span>Source minutes this plan period</span><b>{data.usage.source_minutes}</b></div>
             <div><span>Exports used this plan period</span><b>{data.usage.exports_used}/{data.usage.exports_limit}</b></div>
-            <div><span>Historical moment-to-export</span><b>{s.clips ? Math.round((s.exports / s.clips) * 100) : 0}%</b></div>
+            <div><span>Historical exports per moment</span><b>{exportsPerMoment}×</b></div>
           </div>
           <div className="insight">
             <TrendingUp size={18} />
