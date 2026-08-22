@@ -293,8 +293,8 @@ async def _process_project(
         # A successful project's source minutes were already finalized when it
         # was first processed. Explicit language correction must not charge the
         # same uploaded source twice. If the earlier attempt never finalized,
-        # the SQLite reservation trigger below still performs the authoritative
-        # quota check when the video returns to ``validated``.
+        # the reservation trigger below still performs the authoritative quota
+        # check when the video returns to ``validated``.
         if not force_transcribe and source_minutes > limits.processing_minutes_remaining + 1e-6:
             raise ValueError(
                 f"You have {limits.processing_minutes_remaining:g} Karo Minutes left in this billing period, "
@@ -334,12 +334,9 @@ async def _process_project(
         clips = await _persist_suggestions(video, segments, language)
         if not clips: raise ValueError("We found speech, but no complete 20–90 second moments. Try a longer source video.")
         await update_job(job_id, 92, "finishing", f"Preparing {len(clips)} clip previews")
-        limits = await get_usage_for(user)
-        if video.get("status") != "ready":
-            await execute(
-                "UPDATE usage SET source_minutes=source_minutes+? WHERE user_id=? AND month=?",
-                (float(metadata["duration"])/60, user["id"], limits.period_key),
-            )
+        # Karo Minutes are reserved at the validated transition and finalized by
+        # the database when the video reaches ready. Never increment them here;
+        # doing so would double-charge the same source in local/legacy execution.
         await execute("UPDATE videos SET status='ready' WHERE id=?", (video_id,))
         await execute("UPDATE projects SET status='ready',progress=100,stage='ready',error=NULL,updated_at=? WHERE id=?", (utcnow(),project_id))
         await update_job(job_id,100,"ready",f"{len(clips)} high-potential moments are ready","completed")
@@ -513,26 +510,22 @@ async def _render_export(job_id:str,export_id:str,clip:dict,video:dict,request:E
         if source_path is None or not source_path.is_file():
             raise RuntimeError("The source video is unavailable in ClipKaro private storage.")
         scan=await detect_burned_captions(source_path,float(video.get("duration") or clip["end_time"]))
-        source_has_captions=scan["detected"] or any(bool(item.get("source_has_burned_captions")) for item in segments)
-        effective_position="above" if source_has_captions and request.caption_position=="bottom" else request.caption_position
+        # Existing burned-in subtitles are advisory context only. Lower, Above
+        # and Centre are creator-authoritative and render exactly as selected.
         await render_short_limited(
             source_path, output, clip["start_time"], clip["end_time"],
             srt if srt.exists() else None, request.hook_text or clip["hook"], request.watermark,
             request.resolution, request.aspect_ratio, request.caption_style,
             (brand or {}).get("logo_text") or "", (brand or {}).get("primary_color") or "#DFFF57",
-            request.focus_x, effective_position, [item.model_dump() for item in request.crop_keyframes],
+            request.focus_x, request.caption_position, [item.model_dump() for item in request.crop_keyframes],
             scan.get("band_start") if scan["detected"] else None,
         )
         await update_job(job_id,92,"optimizing","Optimizing MP4 for fast social upload")
         await execute("UPDATE exports SET status='ready',progress=100 WHERE id=?",(export_id,))
         await execute("UPDATE clips SET status='exported',updated_at=? WHERE id=?",(utcnow(),clip["id"]))
-        export_user = await fetch_one("SELECT * FROM users WHERE id=?", (clip["user_id"],))
-        if export_user:
-            export_limits = await get_usage_for(export_user)
-            await execute(
-                "UPDATE usage SET exports_used=exports_used+1 WHERE user_id=? AND month=?",
-                (clip["user_id"], export_limits.period_key),
-            )
+        # Export quota was reserved atomically when the exports row was created;
+        # the ready transition finalizes that reservation. Never increment it a
+        # second time here.
         await update_job(job_id,100,"ready","Your Short is ready to download","completed")
         await audit(clip["user_id"],"export.completed","export",export_id)
     except Exception as exc:
@@ -595,7 +588,8 @@ async def brand_kits(user:dict=Depends(current_user))->list[dict]: return await 
 
 @router.post("/brand-kits",status_code=201)
 async def create_brand_kit(body:BrandKitRequest,user:dict=Depends(current_user))->dict:
-    if user["plan"] not in {"creator","growth","pro","agency"}: raise HTTPException(403,"Brand kits start on the Creator plan.")
+    limits = await get_usage_for(user)
+    if limits.plan not in {"creator","growth","pro","agency"}: raise HTTPException(403,"Brand kits start on the Creator plan.")
     kit_id=str(uuid.uuid4()); timestamp=utcnow()
     if body.is_default: await execute("UPDATE brand_kits SET is_default=0 WHERE user_id=?",(user["id"],))
     await execute("INSERT INTO brand_kits VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
