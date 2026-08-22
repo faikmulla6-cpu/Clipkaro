@@ -69,7 +69,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
             ))}
           </div>
         </div>
-        <div className="auth-quote">“The product should feel like I clicked once and got my Shorts.”</div>
+        <div className="auth-quote"><b>Product principle:</b> Click once. Get your Shorts.</div>
       </div>
 
       <div className="auth-panel">
@@ -80,7 +80,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
           <p>
             {mode === "login"
               ? "Your projects, exports and brand presets are waiting."
-              : "No card needed. Verify your email, then your first AI preview is free."}
+              : "No card needed. Verify your email and start with the Free plan."}
           </p>
 
           <form onSubmit={submit}>
@@ -121,7 +121,6 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
               {busy ? <Loader2 className="spin" size={17}/> : <>{mode === "login" ? "Sign in" : "Create account"}<ArrowRight size={16}/></>}
             </button>
           </form>
-
 
           <div className="auth-switch">
             {mode === "login"
