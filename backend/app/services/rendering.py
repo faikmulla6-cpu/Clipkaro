@@ -209,6 +209,15 @@ def _india_pop_round_rect(width: int, height: int, radius: int) -> str:
     )
 
 
+def _caption_y_center(height: int, style: dict[str, Any], caption_position: str) -> int:
+    """Resolve the creator's vertical caption choice identically for every style."""
+    if caption_position == "center":
+        return height // 2
+    if caption_position == "above":
+        return round(height * float(style["above_safe_ratio"]))
+    return round(height * (1 - float(style["bottom_safe_ratio"])))
+
+
 def _build_india_pop_ass(words: list[dict[str, Any]], ass: Path, width: int, height: int,
                          style: dict[str, Any], caption_position: str,
                          font_name: str | None) -> None:
@@ -227,8 +236,7 @@ def _build_india_pop_ass(words: list[dict[str, Any]], ass: Path, width: int, hei
     border = max(1, round(width * float(style["outline_width_width_ratio"])))
     inset = round(width * float(style["horizontal_inset_ratio"]))
     resolved_font = font_name or str(style["font_family"])
-    y_center = round(height * (float(style["above_safe_ratio"]) if caption_position == "above"
-                               else 1 - float(style["bottom_safe_ratio"])))
+    y_center = _caption_y_center(height, style, caption_position)
     header = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {width}
@@ -319,8 +327,7 @@ def _build_studio_personality_ass(words: list[dict[str, Any]], ass: Path, width:
     font = font_name or str(style["font_family"])
     shadow = 3 if style_id == "kinetic" else 4 if style_id == "bold" else 0
     back = outline if style_id in {"kinetic", "bold"} else "&H00000000"
-    y_center = round(height * (float(style["above_safe_ratio"]) if caption_position == "above"
-                               else 1 - float(style["bottom_safe_ratio"])))
+    y_center = _caption_y_center(height, style, caption_position)
     header = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {width}
