@@ -3,6 +3,9 @@ import Link from "next/link";
 import { Logo } from "@/components/Logo";
 import { LEGAL_LINKS } from "@/lib/legal";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default function Home() {
   return <div className="landing">
     <nav className="landing-nav"><Logo /><div className="nav-links"><a href="#how">How it works</a><a href="#features">Features</a><a href="#pricing">Pricing</a></div><div className="nav-ctas"><Link href="/login" className="text-btn">Log in</Link><Link href="/signup" className="primary-btn">Start free <ArrowRight size={15}/></Link></div></nav>
