@@ -18,11 +18,12 @@ function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function parseSuccessfulResponse<T>(response: Response): Promise<T> {
+async function parseSuccessfulResponse<T>(response: Response, allowEmpty: boolean): Promise<T> {
   if (response.status === 204) return undefined as T;
 
   const text = await response.text();
   if (!text.trim()) {
+    if (allowEmpty) return undefined as T;
     throw new Error("ClipKaro received an empty response from the server.");
   }
 
@@ -36,13 +37,14 @@ async function parseSuccessfulResponse<T>(response: Response): Promise<T> {
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   const method = (init?.method || "GET").toUpperCase();
+  const isRead = method === "GET" || method === "HEAD";
 
-  if (typeof document !== "undefined" && !["GET", "HEAD"].includes(method)) {
+  if (typeof document !== "undefined" && !isRead) {
     const csrf = document.cookie.split("; ").find(x => x.startsWith("csrf_token="))?.split("=")[1];
     if (csrf) headers.set("X-CSRF-Token", decodeURIComponent(csrf));
   }
 
-  const attempts = method === "GET" || method === "HEAD" ? 2 : 1;
+  const attempts = isRead ? 2 : 1;
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -74,7 +76,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     if (response.status === 204) return undefined as T;
 
     try {
-      return await parseSuccessfulResponse<T>(response);
+      return await parseSuccessfulResponse<T>(response, !isRead);
     } catch (cause) {
       lastError = cause instanceof Error ? cause : new Error("ClipKaro received an invalid response from the server.");
       if (attempt + 1 < attempts) {
