@@ -96,19 +96,24 @@ export default function Calendar() {
   }
 
   return (
-    <AppShell title="Content calendar" subtitle="Plan completed exports without losing momentum." action={<button className="primary-btn small" type="button" onClick={() => setShow(true)}><Plus size={14}/>Schedule export</button>}>
+    <AppShell title="Content calendar" subtitle="Plan completed Shorts. Calendar drafts do not publish automatically." action={<button className="primary-btn small" type="button" onClick={() => setShow(true)}><Plus size={14}/>Plan a Short</button>}>
+      <div className="calendar-note" style={{ marginTop: 0, marginBottom: 18 }}><CalendarDays/><div><b>Planning only — nothing is auto-published</b><p>ClipKaro stores calendar drafts for your workflow. Publishing requires a separate social account connection and explicit authorization.</p></div></div>
+
       {show && <div className="modal-backdrop"><form className="schedule-modal" onSubmit={schedule}>
-        <div className="panel-head"><h3>Schedule a completed export</h3><button type="button" className="icon-btn" onClick={() => setShow(false)} aria-label="Close"><X/></button></div>
-        <div className="field"><label>Export</label><select name="export_id" required><option value="">Choose an export</option>{exports.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></div>
-        <div className="form-row"><div className="field"><label>Platform</label><select name="platform"><option value="youtube">YouTube Shorts</option><option value="instagram">Instagram Reels</option><option value="tiktok">TikTok</option><option value="linkedin">LinkedIn</option></select></div><div className="field"><label>Date and time</label><input name="scheduled_for" type="datetime-local" min={localInputMin()} required/></div></div>
-        <div className="field"><label>Post caption</label><textarea name="caption" placeholder="Write the value of this clip…" required/></div>
+        <div className="panel-head"><h3>Plan a completed Short</h3><button type="button" className="icon-btn" onClick={() => setShow(false)} aria-label="Close"><X/></button></div>
+        <div className="field"><label>Completed export</label><select name="export_id" required><option value="">Choose an export</option>{exports.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></div>
+        <div className="form-row"><div className="field"><label>Target platform</label><select name="platform"><option value="youtube">YouTube Shorts</option><option value="instagram">Instagram Reels</option><option value="tiktok">TikTok</option><option value="linkedin">LinkedIn</option></select></div><div className="field"><label>Planned date and time</label><input name="scheduled_for" type="datetime-local" min={localInputMin()} required/></div></div>
+        <div className="field"><label>Post caption draft</label><textarea name="caption" placeholder="Write the value of this clip…" required/></div>
         <div className="field"><label>Hashtags</label><input name="hashtags" placeholder="#shorts #creator"/></div>
-        {!exports.length && <div className="form-error">Finish an export before scheduling it.</div>}
+        <div className="calendar-note" style={{ margin: 0 }}><CalendarDays size={18}/><div><b>This creates a calendar draft only</b><p>It will not publish to the selected platform by itself.</p></div></div>
+        {!exports.length && <div className="form-error">Complete a fresh export before adding a calendar draft. Expired downloads cannot be scheduled.</div>}
         {error && <div className="form-error">{error}</div>}
-        <button className="primary-btn" disabled={!exports.length}>Add to calendar</button>
+        <button className="primary-btn" disabled={!exports.length}>Add draft to calendar</button>
       </form></div>}
 
       <div className="calendar-head"><div><button type="button" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}><ChevronLeft/></button><h2>{month.toLocaleDateString("en-IN", { month: "long", year: "numeric" })}</h2><button type="button" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}><ChevronRight/></button></div><button className="secondary-btn small" type="button" onClick={() => setMonth(firstDayOfMonth())}>Today</button></div>
+
+      {!loading && !error && posts.length === 0 && <div className="empty-state compact" style={{ marginBottom: 18 }}><div className="empty-icon"><CalendarDays/></div><h3>No Shorts planned yet</h3><p>Choose a completed export and add a date when you want to publish it. ClipKaro will keep it as a draft until you use an authorized publishing connection.</p><button className="primary-btn" type="button" disabled={!exports.length} onClick={() => setShow(true)}><Plus size={15}/>{exports.length ? "Plan your first Short" : "Complete an export first"}</button></div>}
 
       {loading ? <div className="screen-loader inline" role="status"><Loader2 className="spin" size={24}/><p>Loading your calendar…</p></div> : error && !show ? (
         <div className="empty-state"><div className="empty-icon"><AlertCircle/></div><h3>Calendar unavailable</h3><p>{error}</p><button className="primary-btn" type="button" onClick={() => void load()}><RefreshCw size={15}/>Retry</button></div>
@@ -116,7 +121,6 @@ export default function Calendar() {
         <div>MON</div><div>TUE</div><div>WED</div><div>THU</div><div>FRI</div><div>SAT</div><div>SUN</div>
         {cells.map((cell, index) => <section className={cell.outside ? "outside" : ""} key={index}><span>{cell.day}</span>{posts.filter((post) => { const date = new Date(post.scheduled_for); return date.getFullYear() === cell.date.getFullYear() && date.getMonth() === cell.date.getMonth() && date.getDate() === cell.date.getDate(); }).map((post) => <article className={`cal-post ${post.platform}`} key={post.id}>{post.platform === "instagram" ? <Instagram size={12}/> : <Clock3 size={12}/>}<b>{post.caption.slice(0, 22)}</b><small>{new Date(post.scheduled_for).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</small><button type="button" className="cal-delete" disabled={busyDelete === post.id} onClick={() => void remove(post.id)} aria-label="Remove calendar draft">{busyDelete === post.id ? <Loader2 className="spin" size={10}/> : <Trash2 size={10}/>}</button></article>)}</section>)}
       </div>}
-      <div className="calendar-note"><CalendarDays/><div><b>Publishing connections stay opt-in</b><p>Calendar items are drafts until you connect and authorize an owned social account.</p></div></div>
     </AppShell>
   );
 }
