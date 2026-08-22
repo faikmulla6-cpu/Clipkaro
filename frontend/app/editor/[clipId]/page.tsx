@@ -2,6 +2,7 @@
 
 import { AppShell } from "@/components/AppShell";
 import { ErrorState } from "@/components/ErrorState";
+import { useAuth } from "@/components/AuthProvider";
 import { API_URL, api, patchJSON, postJSON } from "@/lib/api";
 import { newBehaviorSession, recordDownload, trackClipBehavior } from "@/lib/behavior";
 import {
@@ -17,7 +18,8 @@ type Clip = {
 };
 type Project = { id: string; title: string; duration: number; clips: Clip[] };
 type ExportResponse = { id: string; job_id: string; status: string; expires_at: string };
-type Job = { status: string; progress: number; message: string; error?: string; export_id?: string };
+type ExportStatus = { id: string; status: string; progress: number; download_url?: string | null; expires_at: string };
+type Job = { id?: string; status: string; progress: number; message: string; error?: string; export_id?: string };
 type TimedWord = { start: number; end: number; text: string; confidence?: number };
 type CaptionCard = { start: number; end: number; lines: string[]; words: TimedWord[] };
 type CaptionTrack = { language: string; clip_start: number; clip_end: number; words: TimedWord[]; cards: CaptionCard[]; source_has_burned_captions?: boolean; source_caption_band?: number | null };
@@ -38,9 +40,15 @@ const clamp = (value: number, min: number, max: number) => Math.min(Math.max(val
 export default function Editor() {
   const { clipId } = useParams<{ clipId: string }>();
   const projectId = useSearchParams().get("project");
+  const { user } = useAuth();
   const videoRef = useRef<HTMLVideoElement>(null);
   const behaviorSessionRef = useRef("");
   const previewLogged = useRef(false);
+  const renderStartRef = useRef(false);
+  const activeJobRef = useRef("");
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const pollTimerRef = useRef<number | null>(null);
+  const lastPlanRef = useRef<string | null>(null);
   if (!behaviorSessionRef.current) behaviorSessionRef.current = newBehaviorSession();
   const [project, setProject] = useState<Project | null>(null);
   const [clip, setClip] = useState<Clip | null>(null);
@@ -60,6 +68,8 @@ export default function Editor() {
   const [watermark, setWatermark] = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>("style");
   const [saving, setSaving] = useState(false);
+  const [startingRender, setStartingRender] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [job, setJob] = useState<Job | null>(null);
   const [exportId, setExportId] = useState("");
   const [error, setError] = useState("");
@@ -70,6 +80,18 @@ export default function Editor() {
   const [captionStyles, setCaptionStyles] = useState<CaptionStyle[]>([]);
   const [brandKits, setBrandKits] = useState<BrandKit[]>([]);
   const [brandKitId, setBrandKitId] = useState("");
+
+  const freePlan = user?.plan === "free";
+  const renderBusy = startingRender || (!!job && !["completed", "failed"].includes(job.status));
+
+  const stopJobWatch = useCallback(() => {
+    eventSourceRef.current?.close();
+    eventSourceRef.current = null;
+    if (pollTimerRef.current !== null) {
+      window.clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  }, []);
 
   const load = useCallback(async () => {
     if (!projectId) { setLoadError("The project reference is missing from this editor link."); return; }
@@ -97,6 +119,13 @@ export default function Editor() {
     }).catch(() => setBrandKits([]));
   }, []);
   useEffect(() => {
+    if (!user || lastPlanRef.current === user.plan) return;
+    // Free is always watermarked. Paid plans start watermark-free, while still
+    // allowing a creator to opt into the ClipKaro mark if they want it.
+    setWatermark(user.plan === "free");
+    lastPlanRef.current = user.plan;
+  }, [user]);
+  useEffect(() => {
     if (!clip) return;
     trackClipBehavior(clip.id, "selected", {
       sessionId: behaviorSessionRef.current,
@@ -104,6 +133,7 @@ export default function Editor() {
       surface: "editor",
     });
   }, [clip?.id]);
+  useEffect(() => () => stopJobWatch(), [stopJobWatch]);
 
   const captionWords = useMemo(() => transcript.trim().split(/\s+/).filter(Boolean), [transcript]);
   const captionState = useMemo(() => {
@@ -208,24 +238,54 @@ export default function Editor() {
 
   function pollJob(jobId: string) {
     const timer = window.setInterval(async () => {
+      if (activeJobRef.current !== jobId) {
+        window.clearInterval(timer);
+        return;
+      }
       try {
-        const state = await api<Job>(`/jobs/${jobId}`); setJob(state);
-        if (["completed", "failed"].includes(state.status)) window.clearInterval(timer);
-      } catch { /* SSE retry or next poll handles transient restarts. */ }
+        const state = await api<Job>(`/jobs/${jobId}`);
+        if (activeJobRef.current !== jobId) return;
+        setJob(state);
+        if (["completed", "failed"].includes(state.status)) {
+          window.clearInterval(timer);
+          if (pollTimerRef.current === timer) pollTimerRef.current = null;
+        }
+      } catch { /* The next poll handles transient API/container restarts. */ }
     }, 1000);
+    pollTimerRef.current = timer;
     return timer;
   }
 
   function watchJob(jobId: string) {
+    stopJobWatch();
+    activeJobRef.current = jobId;
     const source = new EventSource(`${API_URL}/jobs/${jobId}/events`, { withCredentials: true });
-    let fallback: number | undefined;
-    source.addEventListener("progress", event => setJob(JSON.parse((event as MessageEvent).data)));
-    source.addEventListener("done", event => { setJob(JSON.parse((event as MessageEvent).data)); source.close(); if (fallback) clearInterval(fallback); });
-    source.onerror = () => { source.close(); fallback = pollJob(jobId); };
+    eventSourceRef.current = source;
+    source.addEventListener("progress", event => {
+      if (activeJobRef.current !== jobId) return;
+      setJob(JSON.parse((event as MessageEvent).data));
+    });
+    source.addEventListener("done", event => {
+      if (activeJobRef.current !== jobId) return;
+      setJob(JSON.parse((event as MessageEvent).data));
+      source.close();
+      if (eventSourceRef.current === source) eventSourceRef.current = null;
+      if (pollTimerRef.current !== null) {
+        window.clearInterval(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
+    });
+    source.onerror = () => {
+      source.close();
+      if (eventSourceRef.current === source) eventSourceRef.current = null;
+      if (activeJobRef.current === jobId && pollTimerRef.current === null) pollJob(jobId);
+    };
   }
 
   async function render() {
-    if (!clip) return;
+    if (!clip || renderStartRef.current || renderBusy) return;
+    renderStartRef.current = true;
+    setStartingRender(true);
     setError("");
     try {
       await save(false);
@@ -235,10 +295,32 @@ export default function Editor() {
         hook_text: hook, watermark, brand_kit_id: brandKitId || null,
       });
       setExportId(output.id);
-      setJob({ status: "queued", progress: 0, message: "Waiting for the render worker" });
+      setJob({ id: output.job_id, status: "queued", progress: 0, message: "Waiting for the render worker", export_id: output.id });
       watchJob(output.job_id);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The export could not start.");
+    } finally {
+      renderStartRef.current = false;
+      setStartingRender(false);
+    }
+  }
+
+  async function downloadReadyExport() {
+    if (!exportId || downloading) return;
+    setDownloading(true);
+    setError("");
+    try {
+      const state = await api<ExportStatus>(`/exports/${exportId}`);
+      if (state.status !== "ready" || !state.download_url) {
+        setError("Your Short is still finishing securely. Try Download again in a moment.");
+        return;
+      }
+      recordDownload(exportId);
+      window.location.assign(`${API_URL}/exports/${exportId}/download`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The download could not be prepared yet.");
+    } finally {
+      setDownloading(false);
     }
   }
 
@@ -269,8 +351,8 @@ export default function Editor() {
   const showHook = playhead - start < 4.5;
   return (
     <AppShell title="Creator studio" subtitle={project.title} action={<>
-      <button className="secondary-btn small" onClick={() => save()} disabled={saving}>{saving ? <Loader2 className="spin" size={14} /> : <Save size={14} />}Save</button>
-      <button className="primary-btn small" onClick={render} disabled={!!job && !["completed", "failed"].includes(job.status)}><Sparkles size={14} />Export Short</button>
+      <button className="secondary-btn small" onClick={() => save()} disabled={saving || renderBusy}>{saving ? <Loader2 className="spin" size={14} /> : <Save size={14} />}Save</button>
+      <button className="primary-btn small" onClick={render} disabled={renderBusy}>{renderBusy ? <Loader2 className="spin" size={14} /> : <Sparkles size={14} />}{startingRender ? "Starting…" : renderBusy ? "Rendering…" : "Export Short"}</button>
     </>}>
       <div className="editor-shell">
         <aside className="editor-tools">
@@ -315,7 +397,7 @@ export default function Editor() {
           </div>
 
           {activeTab === "style" && <>
-            {sourceHasCaptions && <div className="editor-section"><p className="field-note"><b>Existing subtitles detected.</b> Source pixels stay unchanged. Lower, Above and Centre now follow your selection exactly; choose a position that avoids overlap.</p></div>}
+            {sourceHasCaptions && <div className="editor-section"><p className="field-note"><b>Existing subtitles detected.</b> Source pixels stay unchanged. Lower, Above and Centre follow your selection exactly; choose a position that avoids overlap.</p></div>}
             <div className="editor-section"><label>Hook text</label><textarea value={hook} onChange={event => setHook(event.target.value)} maxLength={120} /><div className="input-count">{hook.length}/120</div></div>
             {brandKits.length > 0 && <div className="editor-section"><label><Palette size={13}/> Brand kit</label><select value={brandKitId} onChange={event => { const id = event.target.value; setBrandKitId(id); const kit = brandKits.find(item => item.id === id); if (kit && styles.some(style => style[0] === kit.caption_preset)) setCaptionStyle(kit.caption_preset); }}><option value="">No brand kit</option>{brandKits.map(kit => <option key={kit.id} value={kit.id}>{kit.name}{kit.is_default ? " · Default" : ""}</option>)}</select><p className="field-note">Applies your saved wordmark, brand color and preferred caption personality to this export.</p></div>}
             <div className="editor-section"><label>Caption personality — preview changes instantly</label><div className="style-options">{styles.map(style => <button type="button" className={captionStyle === style[0] ? "active" : ""} onClick={() => setCaptionStyle(style[0])} key={style[0]}><span className={`style-swatch ${style[0]}`}>Aa</span><div><b>{style[1]}</b><small>{style[2]}</small></div>{captionStyle === style[0] && <Check size={14} />}</button>)}</div></div>
@@ -333,14 +415,14 @@ export default function Editor() {
           {activeTab === "export" && <>
             <div className="editor-section"><label>Export quality</label><select value={resolution} onChange={event => setResolution(event.target.value)}><option value="720p">720p · Fast and efficient</option><option value="1080p">1080p · Any paid plan</option></select></div>
             <div className="export-summary"><span>Format <b>{ratio}</b></span><span>Duration <b>{Math.round(end - start)}s</b></span><span>Captions <b>{styles.find(style => style[0] === captionStyle)?.[1]}</b></span><span>Focus <b>{focusX}%</b></span><span>Brand <b>{selectedBrandKit?.name || "None"}</b></span></div>
-            <div className="toggle-row"><div><b>ClipKaro watermark</b><span>Required only on Free</span></div><button className={watermark ? "on" : ""} onClick={() => setWatermark(!watermark)}><i /></button></div>
-            <button className="primary-btn render-panel-button" onClick={render}><Sparkles size={15} /> Render verified Short</button>
+            <div className="toggle-row"><div><b>ClipKaro watermark</b><span>{freePlan ? "Required on Free" : "Optional on your paid plan"}</span></div><button className={watermark ? "on" : ""} aria-pressed={watermark} disabled={freePlan} onClick={() => { if (!freePlan) setWatermark(value => !value); }}><i /></button></div>
+            <button className="primary-btn render-panel-button" onClick={render} disabled={renderBusy}>{renderBusy ? <Loader2 className="spin" size={15} /> : <Sparkles size={15} />} {startingRender ? "Starting securely…" : renderBusy ? "Rendering Short…" : "Render verified Short"}</button>
           </>}
         </aside>
       </div>
 
       {error && <div className={`floating-error ${error === "Saved" ? "success" : ""}`}>{error}</div>}
-      {job && <div className="export-drawer"><div className="export-icon">{job.status === "completed" ? <Check /> : job.status === "failed" ? <span>!</span> : <Loader2 className="spin" />}</div><div><b>{job.status === "completed" ? "Your Short is ready" : job.status === "failed" ? job.error || job.message : job.message}</b><span>{job.status === "completed" ? "The downloaded MP4 matches this crop and caption style" : `${job.progress}% complete`}</span><div className="progress"><i style={{ width: `${job.progress}%` }} /></div></div>{job.status === "completed" && <a className="primary-btn" href={`${API_URL}/exports/${exportId}/download`} onClick={() => recordDownload(exportId)}><Download size={15} />Download MP4</a>}</div>}
+      {job && <div className="export-drawer"><div className="export-icon">{job.status === "completed" ? <Check /> : job.status === "failed" ? <span>!</span> : <Loader2 className="spin" />}</div><div><b>{job.status === "completed" ? "Your Short is ready" : job.status === "failed" ? job.error || job.message : job.message}</b><span>{job.status === "completed" ? "The downloaded MP4 matches this crop and caption style" : `${job.progress}% complete`}</span><div className="progress"><i style={{ width: `${job.progress}%` }} /></div></div>{job.status === "completed" && <button className="primary-btn" type="button" onClick={downloadReadyExport} disabled={downloading}>{downloading ? <Loader2 className="spin" size={15} /> : <Download size={15} />}{downloading ? "Preparing…" : "Download MP4"}</button>}</div>}
     </AppShell>
   );
 }
