@@ -41,7 +41,8 @@ export default function Exports() {
     setLoading(true);
     setError("");
     try {
-      setRows(await api<ExportRow[]>("/exports"));
+      const result = await api<ExportRow[]>("/exports");
+      setRows(Array.isArray(result) ? result : []);
     } catch (cause) {
       setRows([]);
       setError(cause instanceof Error ? cause.message : "Exports could not be loaded.");
@@ -78,6 +79,7 @@ export default function Exports() {
             const ready = item.status === "ready";
             return (
               <div
+                className="export-history-row"
                 key={item.id}
                 style={{
                   display: "grid",
@@ -94,17 +96,17 @@ export default function Exports() {
                 </div>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    <b style={{ fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>{item.title || "ClipKaro Short"}</b>
+                    <b className="export-history-title" style={{ fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>{item.title || "ClipKaro Short"}</b>
                     <span className={ready ? "ready-pill" : item.status === "failed" ? "failed-pill" : "ready-pill"} style={!ready && item.status !== "failed" ? { color: "#6f746f", background: "#f1f3f0" } : undefined}>
                       {statusIcon(item.status)}{item.status === "ready" ? "Ready" : item.status === "expired" ? "Expired" : item.status === "failed" ? "Failed" : `${item.progress || 0}%`}
                     </span>
                   </div>
-                  <div style={{ marginTop: 5, color: "var(--muted)", fontSize: 11 }}>
+                  <div className="export-history-meta" style={{ marginTop: 5, color: "var(--muted)", fontSize: 11 }}>
                     {item.project_title || "Project"} · {item.resolution || "720p"} · {item.aspect_ratio || "9:16"} · {createdLabel(item.created_at)}
                   </div>
                   {item.error && <div style={{ marginTop: 5, color: "var(--red)", fontSize: 11 }}>{item.error}</div>}
                 </div>
-                <div>
+                <div className="export-history-action">
                   {ready ? (
                     <a className="primary-btn small" href={`${API_URL}/exports/${item.id}/download`}>
                       <Download size={15} />Download MP4
