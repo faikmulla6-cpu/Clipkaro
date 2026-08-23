@@ -7,7 +7,7 @@ import "./sidebar-polish.css";
 import { AuthProvider } from "@/components/AuthProvider";
 
 const brandIcon = "/assets/clipkaro-icon.png?v=2";
-const tabIcon = "/assets/clipkaro-tab-icon.svg?v=2";
+const tabIcon = "/assets/clipkaro-tab-icon.svg?v=3";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://clipkaro.pro"),
