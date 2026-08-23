@@ -28,6 +28,7 @@ input:-webkit-autofill,input:-webkit-autofill:hover,input:-webkit-autofill:focus
 
 .secondary-btn{color:var(--ink)}
 .drop-zone .secondary-btn{min-width:150px;min-height:46px;color:var(--ink)!important;background:#fff!important;justify-content:center;box-shadow:0 5px 16px rgba(20,49,33,.06)}
+.auth-switch button{border:0;background:none;color:var(--green);font-weight:800;padding:0}
 
 .primary-btn,.secondary-btn,.icon-btn,.project-card,.panel,.stat-card,.command-primary,.command-secondary,.side-nav a,.new-project{
   transition:transform .18s ease,box-shadow .2s ease,border-color .2s ease,background-color .2s ease,opacity .2s ease;
@@ -39,12 +40,17 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   outline-offset:2px;
 }
 
+.landing,.auth-page{animation:publicRouteIn .34s cubic-bezier(.22,1,.36,1) both}
 .app-shell{animation:studioRouteIn .3s cubic-bezier(.22,1,.36,1) both}
 .page-content{min-width:0}
 
 .sidebar-backdrop{animation:studioBackdropIn .2s ease both}
 .sidebar-open{box-shadow:24px 0 60px rgba(11,36,25,.18)}
 
+@keyframes publicRouteIn{
+  from{opacity:.55;transform:translateY(4px)}
+  to{opacity:1;transform:none}
+}
 @keyframes studioRouteIn{
   from{opacity:.72;transform:translateY(5px)}
   to{opacity:1;transform:none}
@@ -62,6 +68,6 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 
 @media(prefers-reduced-motion:reduce){
   html{scroll-behavior:auto!important}
-  .app-shell,.sidebar-backdrop{animation:none!important}
+  .landing,.auth-page,.app-shell,.sidebar-backdrop{animation:none!important}
   .primary-btn,.secondary-btn,.icon-btn,.project-card,.panel,.stat-card,.command-primary,.command-secondary,.side-nav a,.new-project{transition:none!important}
 }
