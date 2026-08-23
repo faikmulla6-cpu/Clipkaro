@@ -57,7 +57,7 @@ export default function Projects() {
       action={<Link href="/upload" className="primary-btn small"><Plus size={14}/>New project</Link>}
     >
       <div className="project-toolbar">
-        <div className="search-box"><Search size={16}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search projects…"/></div>
+        <div className="search-box"><Search size={16}/><input type="search" aria-label="Search projects" autoComplete="off" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search projects…"/></div>
         <div className="filter-tabs">{["All", "Ready", "Processing", "Exported"].map((item) => (
           <button key={item} type="button" onClick={() => setFilter(item)} className={filter === item ? "active" : ""}>{item}</button>
         ))}</div>
