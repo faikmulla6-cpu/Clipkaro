@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "./AuthProvider";
+import { Logo } from "./Logo";
 import styles from "./AuthForm.module.css";
 import { ArrowRight, Check, Eye, EyeOff, Loader2, LockKeyhole, Mail, User } from "lucide-react";
 import Link from "next/link";
@@ -59,7 +60,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
   return (
     <div key={mode} className={`auth-page ${styles.pageEnter}`}>
       <div className="auth-visual">
-        <Link href="/" className="auth-brand">✦ ClipKaro AI</Link>
+        <div className="auth-brand"><Logo light /></div>
         <div className="auth-story">
           <span className="eyebrow dark">INDIA&apos;S CREATOR COPILOT</span>
           <h1>One upload.<br/><em>A month of moments.</em></h1>
@@ -75,7 +76,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
 
       <div className="auth-panel">
         <div className={`auth-card ${styles.cardEnter}`}>
-          <Link href="/" className={`auth-mobile-logo ${styles.brandEnter}`}>✦ ClipKaro AI</Link>
+          <div className={`auth-mobile-logo ${styles.brandEnter}`}><Logo /></div>
           <span className="auth-kicker">{mode === "login" ? "WELCOME BACK" : "START CREATING"}</span>
           <h2>{mode === "login" ? "Sign in to your studio" : "Create your free account"}</h2>
           <p>
@@ -84,23 +85,23 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
               : "No card needed. Verify your email and start with the Free plan."}
           </p>
 
-          <form onSubmit={submit}>
+          <form onSubmit={submit} autoComplete="on">
             {mode === "signup" && (
               <label>
                 <span>Your name</span>
-                <div className="input-icon"><User size={16}/><input name="name" placeholder="Your name" required minLength={2}/></div>
+                <div className="input-icon"><User size={16}/><input name="name" autoComplete="name" placeholder="Your name" required minLength={2}/></div>
               </label>
             )}
             <label>
               <span>Email address</span>
-              <div className="input-icon"><Mail size={16}/><input name="email" type="email" placeholder="you@example.com" required/></div>
+              <div className="input-icon"><Mail size={16}/><input name="email" type="email" inputMode="email" autoComplete="email" placeholder="you@example.com" required/></div>
             </label>
             <label>
               <span>Password</span>
               <div className="input-icon">
                 <LockKeyhole size={16}/>
-                <input name="password" type={show ? "text" : "password"} placeholder="At least 8 characters" required minLength={8} pattern="(?=.*[A-Z])(?=.*[0-9]).{8,}" title="Use at least 8 characters, including one uppercase letter and one number."/>
-                <button type="button" onClick={() => setShow(!show)}>{show ? <EyeOff size={16}/> : <Eye size={16}/>}</button>
+                <input name="password" type={show ? "text" : "password"} autoComplete={mode === "login" ? "current-password" : "new-password"} placeholder="At least 8 characters" required minLength={8} pattern="(?=.*[A-Z])(?=.*[0-9]).{8,}" title="Use at least 8 characters, including one uppercase letter and one number."/>
+                <button type="button" aria-label={show ? "Hide password" : "Show password"} onClick={() => setShow(!show)}>{show ? <EyeOff size={16}/> : <Eye size={16}/>}</button>
               </div>
               {mode === "signup" && <small>Use 8+ characters with at least one uppercase letter and one number.</small>}
             </label>
@@ -117,8 +118,8 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
             {mode === "login" && (
               <div className="auth-switch"><Link href="/forgot-password">Forgot your password?</Link></div>
             )}
-            {error && <div className="form-error">{error}</div>}
-            <button className="primary-btn auth-submit" disabled={busy}>
+            {error && <div className="form-error" role="alert">{error}</div>}
+            <button type="submit" className="primary-btn auth-submit" disabled={busy}>
               {busy ? <Loader2 className="spin" size={17}/> : <>{mode === "login" ? "Sign in" : "Create account"}<ArrowRight size={16}/></>}
             </button>
           </form>
