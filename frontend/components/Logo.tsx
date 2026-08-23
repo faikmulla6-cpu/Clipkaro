@@ -1,11 +1,26 @@
-import { Sparkles } from "lucide-react";
 import Link from "next/link";
+import { TransitionLink } from "./TransitionLink";
 
-export function Logo({ light = false }: { light?: boolean }) {
-  return (
-    <Link href="/" className={`logo ${light ? "logo-light" : ""}`}>
-      <span className="logo-mark"><Sparkles size={18} strokeWidth={2.5} /></span>
-      <span>ClipKaro<span className="logo-ai">AI</span></span>
-    </Link>
+type LogoProps = {
+  light?: boolean;
+  transition?: boolean;
+  href?: string;
+};
+
+export function Logo({ light = false, transition = false, href = "/" }: LogoProps) {
+  const className = `logo ${light ? "logo-light" : ""}`;
+  const content = (
+    <>
+      <span className="logo-mark" aria-hidden="true">
+        <img className="logo-icon" src="/assets/clipkaro-icon.png" alt="" />
+      </span>
+      <span className="logo-wordmark">ClipKaro<span className="logo-ai">AI</span></span>
+    </>
   );
+
+  if (transition) {
+    return <TransitionLink href={href} className={className} aria-label="ClipKaro AI home">{content}</TransitionLink>;
+  }
+
+  return <Link href={href} className={className} aria-label="ClipKaro AI home">{content}</Link>;
 }

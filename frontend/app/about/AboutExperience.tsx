@@ -21,7 +21,9 @@ import {
   Zap,
 } from "lucide-react";
 import { Logo } from "@/components/Logo";
+import { TransitionLink } from "@/components/TransitionLink";
 import styles from "./about.module.css";
+import polish from "./about-polish.module.css";
 
 const processSteps = [
   {
@@ -95,12 +97,41 @@ const engineeringChallenges = [
   },
 ];
 
+const reliabilityCases = [
+  {
+    problem: "Interrupted processing",
+    response: "Explicit job state + retry boundaries",
+    text: "Long-running media work is tracked as durable state so a temporary failure can be handled deliberately instead of leaving a creator with a mystery spinner.",
+  },
+  {
+    problem: "Duplicate actions",
+    response: "Idempotent export + usage rules",
+    text: "Retries and repeated clicks are treated as engineering cases to absorb safely, not as reasons to double-count creator usage or create duplicate final outputs.",
+  },
+  {
+    problem: "Heavy rendering",
+    response: "Isolated media workers",
+    text: "Encoding and media processing are kept away from everyday product requests so opening a project, reviewing a moment and managing an account remain responsive.",
+  },
+  {
+    problem: "Private creator media",
+    response: "Controlled, time-limited delivery",
+    text: "Source files and finished exports use deliberately constrained access paths so creator media does not become permanently public just because it moved through a web workflow.",
+  },
+];
+
 const principles = [
   ["Creators stay in control.", "AI can recommend. The creator decides what represents their voice."],
   ["Privacy belongs in the architecture.", "Trust is a product decision, not a paragraph added after launch."],
   ["Reliability is a feature.", "A beautiful interface means very little if the final export cannot be trusted."],
   ["AI should remove repetition, not creativity.", "The goal is to give creators more time for judgment, storytelling and publishing."],
   ["Build for the full workflow.", "Upload, intelligence, review, styling, rendering and delivery should feel like one product."],
+];
+
+const futureSignals = [
+  ["Understand context", "AI should recognise what matters before asking the creator to edit."],
+  ["Protect creator choice", "Recommendations can accelerate the workflow without taking authorship away."],
+  ["Publish with confidence", "The final file, usage state and delivery path should be as dependable as the interface."],
 ];
 
 export function AboutExperience() {
@@ -120,7 +151,7 @@ export function AboutExperience() {
           }
         });
       },
-      { threshold: 0.13, rootMargin: "0px 0px -8% 0px" },
+      { threshold: 0.12, rootMargin: "0px 0px -7% 0px" },
     );
 
     items.forEach((item) => observer.observe(item));
@@ -128,9 +159,9 @@ export function AboutExperience() {
   }, []);
 
   return (
-    <main className={styles.page}>
-      <nav className={styles.nav}>
-        <Logo light />
+    <main className={`${styles.page} ${polish.page}`}>
+      <nav className={`${styles.nav} ${polish.nav}`}>
+        <Logo light transition />
         <div className={styles.navLinks} aria-label="About page sections">
           <a href="#mission">Mission</a>
           <a href="#technology">Technology</a>
@@ -142,12 +173,12 @@ export function AboutExperience() {
         </Link>
       </nav>
 
-      <section className={styles.hero}>
+      <section className={`${styles.hero} ${polish.hero}`}>
         <div className={styles.heroGlow} aria-hidden="true" />
-        <div className={styles.heroGrid}>
-          <div className={styles.heroCopy}>
+        <div className={`${styles.heroGrid} ${polish.heroGrid}`}>
+          <div className={`${styles.heroCopy} ${polish.heroCopy}`}>
             <span className={styles.kicker}><Sparkles size={14} /> About ClipKaro</span>
-            <h1>
+            <h1 className={polish.heroTitle}>
               We&apos;re building a faster way to turn long-form video into
               <span> short-form content worth publishing.</span>
             </h1>
@@ -156,23 +187,30 @@ export function AboutExperience() {
               podcasters and businesses who want to find the strongest moments inside their
               content without spending hours manually searching, cutting and captioning.
             </p>
+            <div className={polish.heroSignals} aria-label="ClipKaro product priorities">
+              <span>AI video intelligence</span>
+              <span>Creator-controlled</span>
+              <span>Built with India in mind</span>
+            </div>
             <div className={styles.heroActions}>
               <a href="#mission" className={styles.primaryAction}>Explore our story <ArrowRight size={17} /></a>
-              <Link href="/" className={styles.secondaryAction}>Visit ClipKaro</Link>
+              <TransitionLink href="/" className={styles.secondaryAction}>Visit ClipKaro</TransitionLink>
             </div>
           </div>
 
-          <div className={styles.logoStage} aria-label="ClipKaro brand mark">
+          <div className={`${styles.logoStage} ${polish.logoStage}`} aria-label="ClipKaro brand mark">
             <div className={styles.logoOrbit} aria-hidden="true" />
             <div className={styles.logoHalo} aria-hidden="true" />
-            <img src="/assets/clipkaro-icon.png" alt="ClipKaro logo icon" className={styles.brandIcon} />
+            <div className={polish.brandFrame}>
+              <img src="/assets/clipkaro-icon.png" alt="ClipKaro logo icon" className={`${styles.brandIcon} ${polish.brandIcon}`} />
+            </div>
             <span className={styles.stageLabel}>AI · VIDEO · CREATOR INTELLIGENCE</span>
           </div>
         </div>
         <div className={styles.scrollCue}>Scroll to see how the product was built <span>↓</span></div>
       </section>
 
-      <section className={styles.statement} id="mission">
+      <section className={`${styles.statement} ${polish.lightSection}`} id="mission">
         <div className={styles.statementInner} data-about-reveal>
           <span className={styles.sectionIndex}>01 / WHY</span>
           <h2>Creating a 60-second Short shouldn&apos;t require hours of searching through a 60-minute video.</h2>
@@ -185,7 +223,7 @@ export function AboutExperience() {
         </div>
       </section>
 
-      <section className={styles.originSection}>
+      <section className={`${styles.originSection} ${polish.originSection}`}>
         <div className={styles.originGrid}>
           <div className={styles.stickyTitle} data-about-reveal>
             <span className={styles.sectionIndex}>02 / THE ORIGIN</span>
@@ -225,7 +263,7 @@ export function AboutExperience() {
         </div>
       </section>
 
-      <section className={styles.timelineSection} id="technology">
+      <section className={`${styles.timelineSection} ${polish.darkSection}`} id="technology">
         <div className={styles.sectionLead} data-about-reveal>
           <span className={styles.sectionIndex}>03 / ONE SHORT</span>
           <h2>What happens behind one click.</h2>
@@ -269,7 +307,7 @@ export function AboutExperience() {
         </div>
       </section>
 
-      <section className={styles.realitySection}>
+      <section className={`${styles.realitySection} ${polish.realitySection}`}>
         <div className={styles.realityIntro} data-about-reveal>
           <span className={styles.sectionIndex}>04 / ENGINEERING REALITY</span>
           <h2>AI is only useful when the system around it is reliable.</h2>
@@ -291,9 +329,27 @@ export function AboutExperience() {
             );
           })}
         </div>
+
+        <div className={polish.reliabilityBlock} data-about-reveal>
+          <div className={polish.reliabilityHeading}>
+            <span>HOW THE HARD PARTS ARE TACKLED</span>
+            <h3>Failure modes become product rules.</h3>
+            <p>ClipKaro is designed around the idea that reliability should be visible in the outcome, not exposed as complexity in the interface.</p>
+          </div>
+          <div className={polish.reliabilityGrid}>
+            {reliabilityCases.map((item, index) => (
+              <article className={polish.reliabilityCase} key={item.problem}>
+                <span>0{index + 1}</span>
+                <small>{item.problem}</small>
+                <strong>{item.response}</strong>
+                <p>{item.text}</p>
+              </article>
+            ))}
+          </div>
+        </div>
       </section>
 
-      <section className={styles.indiaSection}>
+      <section className={`${styles.indiaSection} ${polish.indiaSection}`}>
         <div className={styles.languageVisual} data-about-reveal>
           <span className={styles.languageChip}>Hindi</span>
           <span className={styles.languageChip}>English</span>
@@ -316,7 +372,7 @@ export function AboutExperience() {
         </div>
       </section>
 
-      <section className={styles.principlesSection} id="principles">
+      <section className={`${styles.principlesSection} ${polish.principlesSection}`} id="principles">
         <div className={styles.principlesTitle} data-about-reveal>
           <span className={styles.sectionIndex}>06 / OUR PRINCIPLES</span>
           <h2>How we decide what belongs in ClipKaro.</h2>
@@ -332,8 +388,8 @@ export function AboutExperience() {
         </div>
       </section>
 
-      <section className={styles.founderSection} id="founder">
-        <div className={styles.founderImageWrap} data-about-reveal>
+      <section className={`${styles.founderSection} ${polish.founderSection}`} id="founder">
+        <div className={`${styles.founderImageWrap} ${polish.founderImageWrap}`} data-about-reveal>
           <div className={styles.founderImageGlow} aria-hidden="true" />
           <img src="/assets/faik-founder.jpg" alt="Faik Hameed Mulla, Founder and Owner of ClipKaro" className={styles.founderImage} />
           <div className={styles.founderImageCaption}>
@@ -367,6 +423,12 @@ export function AboutExperience() {
             in front of the creator, and a product that earns trust through what it actually does.
           </p>
 
+          <div className={polish.founderChips} aria-label="Founder focus areas">
+            <span>AI / ML systems</span>
+            <span>Full-stack products</span>
+            <span>Creator technology</span>
+          </div>
+
           <div className={styles.socialLinks}>
             <a href="https://www.instagram.com/clipkaro.pro/" target="_blank" rel="noreferrer">
               <Instagram size={18} /> <span><small>CLIPKARO</small>@clipkaro.pro</span> <ArrowRight size={15} />
@@ -378,7 +440,7 @@ export function AboutExperience() {
         </div>
       </section>
 
-      <section className={styles.futureSection}>
+      <section className={`${styles.futureSection} ${polish.futureSection}`}>
         <div className={styles.futureInner} data-about-reveal>
           <span className={styles.sectionIndex}>08 / WHAT COMES NEXT</span>
           <h2>The future of content creation isn&apos;t more editing. It&apos;s better creative decisions.</h2>
@@ -388,7 +450,16 @@ export function AboutExperience() {
             understand content, style and intent well enough to become a more capable production
             partner—while the creator remains in control.
           </p>
-          <div className={styles.futureLine}>
+          <div className={polish.futureGrid}>
+            {futureSignals.map(([title, text], index) => (
+              <article key={title}>
+                <span>0{index + 1}</span>
+                <strong>{title}</strong>
+                <p>{text}</p>
+              </article>
+            ))}
+          </div>
+          <div className={`${styles.futureLine} ${polish.futureLine}`}>
             <span>Your long-form content already contains the moments.</span>
             <strong>ClipKaro helps you find them.</strong>
           </div>
@@ -396,13 +467,13 @@ export function AboutExperience() {
         </div>
       </section>
 
-      <footer className={styles.footer}>
+      <footer className={`${styles.footer} ${polish.footer}`}>
         <div className={styles.footerBrand}>
-          <Logo light />
+          <Logo light transition />
           <p>AI-assisted short-form creation, built for real creator workflows.</p>
         </div>
         <div className={styles.footerLinks}>
-          <Link href="/">Home</Link>
+          <TransitionLink href="/">Home</TransitionLink>
           <Link href="/pricing">Pricing</Link>
           <Link href="/privacy">Privacy</Link>
           <Link href="/terms">Terms</Link>
