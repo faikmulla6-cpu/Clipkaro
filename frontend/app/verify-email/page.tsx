@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "@/components/AuthProvider";
+import { Logo } from "@/components/Logo";
 import { postJSON } from "@/lib/api";
 import { CheckCircle2, Loader2, MailCheck, RefreshCw, ShieldCheck } from "lucide-react";
 import Link from "next/link";
@@ -35,7 +36,6 @@ export default function VerifyEmailPage() {
     const token = fragment.get("token");
     if (!token) return;
 
-    // Remove the raw secret from browser history before making the API call.
     window.history.replaceState(null, "", "/verify-email");
     setState("verifying");
     setMessage("Verifying this email…");
@@ -44,9 +44,6 @@ export default function VerifyEmailPage() {
         setVerifiedEmail(result.email);
         setState("verified");
         setMessage(result.message);
-        // Always refresh. The token can finish before AuthProvider has loaded
-        // the session; refreshing closes that race and updates the current
-        // account if this browser is signed into the verified address.
         await refresh();
       })
       .catch((error) => {
@@ -95,7 +92,7 @@ export default function VerifyEmailPage() {
   return (
     <div className="auth-page">
       <div className="auth-visual">
-        <Link href="/" className="auth-brand">✦ ClipKaro AI</Link>
+        <div className="auth-brand"><Logo light /></div>
         <div className="auth-story">
           <span className="eyebrow dark">PROTECTING YOUR AI QUOTA</span>
           <h1>One real creator.<br/><em>One protected account.</em></h1>
@@ -110,14 +107,14 @@ export default function VerifyEmailPage() {
 
       <div className="auth-panel">
         <div className="auth-card">
-          <Link href="/" className="auth-mobile-logo">✦ ClipKaro AI</Link>
+          <div className="auth-mobile-logo"><Logo /></div>
           <span className="auth-kicker">EMAIL VERIFICATION</span>
 
           {state === "verifying" ? (
             <>
               <h2>Checking your link</h2>
               <p>We&apos;re confirming that this email belongs to you.</p>
-              <button className="primary-btn auth-submit" disabled><Loader2 className="spin" size={17}/> Verifying…</button>
+              <button type="button" className="primary-btn auth-submit" disabled><Loader2 className="spin" size={17}/> Verifying…</button>
             </>
           ) : success ? (
             <>
@@ -140,7 +137,7 @@ export default function VerifyEmailPage() {
 
               {user ? (
                 <>
-                  <button className="primary-btn auth-submit" onClick={resend} disabled={resending || cooldown > 0}>
+                  <button type="button" className="primary-btn auth-submit" onClick={resend} disabled={resending || cooldown > 0}>
                     {resending
                       ? <><Loader2 className="spin" size={17}/> Sending…</>
                       : <><RefreshCw size={17}/> {cooldown > 0 ? `Resend in ${cooldown}s` : "Resend verification email"}</>}
