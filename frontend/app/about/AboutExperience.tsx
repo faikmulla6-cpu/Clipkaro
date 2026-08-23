@@ -24,6 +24,7 @@ import { Logo } from "@/components/Logo";
 import { TransitionLink } from "@/components/TransitionLink";
 import styles from "./about.module.css";
 import polish from "./about-polish.module.css";
+import story from "./about-story.module.css";
 
 const processSteps = [
   {
@@ -139,27 +140,51 @@ export function AboutExperience() {
     const items = Array.from(document.querySelectorAll<HTMLElement>("[data-about-reveal]"));
     if (!("IntersectionObserver" in window)) {
       items.forEach((item) => item.classList.add(styles.visible));
-      return;
+    } else {
+      const observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              (entry.target as HTMLElement).classList.add(styles.visible);
+              observer.unobserve(entry.target);
+            }
+          });
+        },
+        { threshold: 0.12, rootMargin: "0px 0px -7% 0px" },
+      );
+
+      items.forEach((item) => observer.observe(item));
+      return () => observer.disconnect();
     }
+  }, []);
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            (entry.target as HTMLElement).classList.add(styles.visible);
-            observer.unobserve(entry.target);
-          }
-        });
-      },
-      { threshold: 0.12, rootMargin: "0px 0px -7% 0px" },
-    );
+  useEffect(() => {
+    let frame = 0;
+    const updateProgress = () => {
+      frame = 0;
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      const ratio = max > 0 ? Math.min(1, Math.max(0, window.scrollY / max)) : 0;
+      document.documentElement.style.setProperty("--ck-about-progress", `${ratio * 100}%`);
+    };
+    const onScroll = () => {
+      if (!frame) frame = window.requestAnimationFrame(updateProgress);
+    };
 
-    items.forEach((item) => observer.observe(item));
-    return () => observer.disconnect();
+    updateProgress();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+      document.documentElement.style.removeProperty("--ck-about-progress");
+    };
   }, []);
 
   return (
     <main className={`${styles.page} ${polish.page}`}>
+      <div className={story.progress} aria-hidden="true"><span /></div>
+
       <nav className={`${styles.nav} ${polish.nav}`}>
         <Logo light transition />
         <div className={styles.navLinks} aria-label="About page sections">
@@ -173,7 +198,7 @@ export function AboutExperience() {
         </Link>
       </nav>
 
-      <section className={`${styles.hero} ${polish.hero}`}>
+      <section className={`${styles.hero} ${polish.hero} ${story.heroPacing}`}>
         <div className={styles.heroGlow} aria-hidden="true" />
         <div className={`${styles.heroGrid} ${polish.heroGrid}`}>
           <div className={`${styles.heroCopy} ${polish.heroCopy}`}>
@@ -210,7 +235,7 @@ export function AboutExperience() {
         <div className={styles.scrollCue}>Scroll to see how the product was built <span>↓</span></div>
       </section>
 
-      <section className={`${styles.statement} ${polish.lightSection}`} id="mission">
+      <section className={`${styles.statement} ${polish.lightSection} ${story.sectionPacing}`} id="mission">
         <div className={styles.statementInner} data-about-reveal>
           <span className={styles.sectionIndex}>01 / WHY</span>
           <h2>Creating a 60-second Short shouldn&apos;t require hours of searching through a 60-minute video.</h2>
@@ -223,7 +248,7 @@ export function AboutExperience() {
         </div>
       </section>
 
-      <section className={`${styles.originSection} ${polish.originSection}`}>
+      <section className={`${styles.originSection} ${polish.originSection} ${story.sectionPacing}`}>
         <div className={styles.originGrid}>
           <div className={styles.stickyTitle} data-about-reveal>
             <span className={styles.sectionIndex}>02 / THE ORIGIN</span>
@@ -263,7 +288,7 @@ export function AboutExperience() {
         </div>
       </section>
 
-      <section className={`${styles.timelineSection} ${polish.darkSection}`} id="technology">
+      <section className={`${styles.timelineSection} ${polish.darkSection} ${story.sectionPacing}`} id="technology">
         <div className={styles.sectionLead} data-about-reveal>
           <span className={styles.sectionIndex}>03 / ONE SHORT</span>
           <h2>What happens behind one click.</h2>
@@ -293,7 +318,8 @@ export function AboutExperience() {
           </div>
         </div>
 
-        <div className={styles.processGrid}>
+        <div className={story.railHint}>The workflow</div>
+        <div className={`${styles.processGrid} ${story.horizontalRail} ${story.processRail}`}>
           {processSteps.map((step) => {
             const Icon = step.icon;
             return (
@@ -307,7 +333,7 @@ export function AboutExperience() {
         </div>
       </section>
 
-      <section className={`${styles.realitySection} ${polish.realitySection}`}>
+      <section className={`${styles.realitySection} ${polish.realitySection} ${story.sectionPacing}`}>
         <div className={styles.realityIntro} data-about-reveal>
           <span className={styles.sectionIndex}>04 / ENGINEERING REALITY</span>
           <h2>AI is only useful when the system around it is reliable.</h2>
@@ -317,7 +343,9 @@ export function AboutExperience() {
             mobile workflows, accurate usage and exports that need to finish exactly once.
           </p>
         </div>
-        <div className={styles.challengeGrid}>
+
+        <div className={story.railHint}>Engineering realities</div>
+        <div className={`${styles.challengeGrid} ${story.horizontalRail} ${story.challengeRail}`}>
           {engineeringChallenges.map((item) => {
             const Icon = item.icon;
             return (
@@ -336,7 +364,8 @@ export function AboutExperience() {
             <h3>Failure modes become product rules.</h3>
             <p>ClipKaro is designed around the idea that reliability should be visible in the outcome, not exposed as complexity in the interface.</p>
           </div>
-          <div className={polish.reliabilityGrid}>
+          <div className={story.railHint}>Reliability rules</div>
+          <div className={`${polish.reliabilityGrid} ${story.horizontalRail} ${story.reliabilityRail}`}>
             {reliabilityCases.map((item, index) => (
               <article className={polish.reliabilityCase} key={item.problem}>
                 <span>0{index + 1}</span>
@@ -349,15 +378,15 @@ export function AboutExperience() {
         </div>
       </section>
 
-      <section className={`${styles.indiaSection} ${polish.indiaSection}`}>
-        <div className={styles.languageVisual} data-about-reveal>
+      <section className={`${styles.indiaSection} ${polish.indiaSection} ${story.sectionPacing} ${story.indiaLayout}`}>
+        <div className={`${styles.languageVisual} ${story.indiaVisual}`} data-about-reveal>
           <span className={styles.languageChip}>Hindi</span>
           <span className={styles.languageChip}>English</span>
           <span className={`${styles.languageChip} ${styles.languageChipStrong}`}>Hinglish</span>
           <div className={styles.transcriptLine}>"Aaj ka <b>biggest lesson</b> ye tha..."</div>
           <div className={styles.captionResult}>AAJ KA <strong>BIGGEST LESSON</strong><br/>YE THA...</div>
         </div>
-        <div className={styles.indiaCopy} data-about-reveal>
+        <div className={`${styles.indiaCopy} ${story.indiaCopy}`} data-about-reveal>
           <span className={styles.sectionIndex}>05 / BUILT WITH INDIA IN MIND</span>
           <h2>Natural language rarely stays inside one box.</h2>
           <p>
@@ -372,12 +401,12 @@ export function AboutExperience() {
         </div>
       </section>
 
-      <section className={`${styles.principlesSection} ${polish.principlesSection}`} id="principles">
+      <section className={`${styles.principlesSection} ${polish.principlesSection} ${story.sectionPacing}`} id="principles">
         <div className={styles.principlesTitle} data-about-reveal>
           <span className={styles.sectionIndex}>06 / OUR PRINCIPLES</span>
           <h2>How we decide what belongs in ClipKaro.</h2>
         </div>
-        <div className={styles.principleList}>
+        <div className={`${styles.principleList} ${story.compactPrinciples}`}>
           {principles.map(([title, text], index) => (
             <div className={styles.principleRow} key={title} data-about-reveal>
               <span>0{index + 1}</span>
@@ -388,8 +417,8 @@ export function AboutExperience() {
         </div>
       </section>
 
-      <section className={`${styles.founderSection} ${polish.founderSection}`} id="founder">
-        <div className={`${styles.founderImageWrap} ${polish.founderImageWrap}`} data-about-reveal>
+      <section className={`${styles.founderSection} ${polish.founderSection} ${story.sectionPacing} ${story.founderLayout}`} id="founder">
+        <div className={`${styles.founderImageWrap} ${polish.founderImageWrap} ${story.founderMedia}`} data-about-reveal>
           <div className={styles.founderImageGlow} aria-hidden="true" />
           <img src="/assets/faik-founder.jpg" alt="Faik Hameed Mulla, Founder and Owner of ClipKaro" className={styles.founderImage} />
           <div className={styles.founderImageCaption}>
@@ -398,7 +427,7 @@ export function AboutExperience() {
           </div>
         </div>
 
-        <div className={styles.founderCopy} data-about-reveal>
+        <div className={`${styles.founderCopy} ${story.founderCopy}`} data-about-reveal>
           <span className={styles.sectionIndex}>07 / FOUNDER</span>
           <h2>Built by a creator who wanted the tool to exist.</h2>
           <p className={styles.founderLead}>
@@ -412,16 +441,35 @@ export function AboutExperience() {
             ClipKaro, that work came together around one clear problem: make sophisticated video
             intelligence feel simple enough to become part of a creator&apos;s everyday workflow.
           </p>
-          <p>
-            While pursuing his studies in Artificial Intelligence and Machine Learning, Faik has
-            continued building across AI agents, financial intelligence, workflow automation and
-            creator technology. His approach is centred on combining intelligence with dependable
-            engineering rather than treating AI as a standalone feature.
-          </p>
-          <p>
-            ClipKaro reflects that philosophy: complex systems behind the scenes, clear decisions
-            in front of the creator, and a product that earns trust through what it actually does.
-          </p>
+
+          <div className={story.founderDesktopDetails}>
+            <p>
+              While pursuing his studies in Artificial Intelligence and Machine Learning, Faik has
+              continued building across AI agents, financial intelligence, workflow automation and
+              creator technology. His approach is centred on combining intelligence with dependable
+              engineering rather than treating AI as a standalone feature.
+            </p>
+            <p>
+              ClipKaro reflects that philosophy: complex systems behind the scenes, clear decisions
+              in front of the creator, and a product that earns trust through what it actually does.
+            </p>
+          </div>
+
+          <details className={story.founderMobileDetails}>
+            <summary>More about the founder</summary>
+            <div>
+              <p>
+                While pursuing his studies in Artificial Intelligence and Machine Learning, Faik has
+                continued building across AI agents, financial intelligence, workflow automation and
+                creator technology. His approach is centred on combining intelligence with dependable
+                engineering rather than treating AI as a standalone feature.
+              </p>
+              <p>
+                ClipKaro reflects that philosophy: complex systems behind the scenes, clear decisions
+                in front of the creator, and a product that earns trust through what it actually does.
+              </p>
+            </div>
+          </details>
 
           <div className={polish.founderChips} aria-label="Founder focus areas">
             <span>AI / ML systems</span>
@@ -429,7 +477,7 @@ export function AboutExperience() {
             <span>Creator technology</span>
           </div>
 
-          <div className={styles.socialLinks}>
+          <div className={`${styles.socialLinks} ${story.socialStack}`}>
             <a href="https://www.instagram.com/clipkaro.pro/" target="_blank" rel="noreferrer">
               <Instagram size={18} /> <span><small>CLIPKARO</small>@clipkaro.pro</span> <ArrowRight size={15} />
             </a>
@@ -440,8 +488,8 @@ export function AboutExperience() {
         </div>
       </section>
 
-      <section className={`${styles.futureSection} ${polish.futureSection}`}>
-        <div className={styles.futureInner} data-about-reveal>
+      <section className={`${styles.futureSection} ${polish.futureSection} ${story.sectionPacing}`}>
+        <div className={`${styles.futureInner} ${story.futureCopy}`} data-about-reveal>
           <span className={styles.sectionIndex}>08 / WHAT COMES NEXT</span>
           <h2>The future of content creation isn&apos;t more editing. It&apos;s better creative decisions.</h2>
           <p>
@@ -450,7 +498,7 @@ export function AboutExperience() {
             understand content, style and intent well enough to become a more capable production
             partner—while the creator remains in control.
           </p>
-          <div className={polish.futureGrid}>
+          <div className={`${polish.futureGrid} ${story.futureFlow}`}>
             {futureSignals.map(([title, text], index) => (
               <article key={title}>
                 <span>0{index + 1}</span>
@@ -459,7 +507,7 @@ export function AboutExperience() {
               </article>
             ))}
           </div>
-          <div className={`${styles.futureLine} ${polish.futureLine}`}>
+          <div className={`${styles.futureLine} ${polish.futureLine} ${story.futureLineCompact}`}>
             <span>Your long-form content already contains the moments.</span>
             <strong>ClipKaro helps you find them.</strong>
           </div>
