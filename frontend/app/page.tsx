@@ -1,16 +1,30 @@
 import { ArrowRight, Check, Clapperboard, Languages, Play, Scissors, ShieldCheck, Sparkles, Subtitles, Upload, WandSparkles, Zap } from "lucide-react";
 import Link from "next/link";
 import { Logo } from "@/components/Logo";
+import { MobileLandingMenu } from "@/components/MobileLandingMenu";
 import { TransitionLink } from "@/components/TransitionLink";
 import { LEGAL_LINKS } from "@/lib/legal";
+import home from "./home-polish.module.css";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export default function Home() {
   return <div className="landing">
-    <nav className="landing-nav"><Logo /><div className="nav-links"><a href="#how">How it works</a><a href="#features">Features</a><a href="#pricing">Pricing</a><TransitionLink href="/about">About</TransitionLink></div><div className="nav-ctas"><Link href="/login" className="text-btn">Log in</Link><Link href="/signup" className="primary-btn">Start free <ArrowRight size={15}/></Link></div></nav>
-    <div className="mobile-home-nav" aria-label="Homepage navigation"><a href="#how">How it works</a><a href="#features">Features</a><a href="#pricing">Pricing</a><TransitionLink href="/about" className="mobile-home-about">About</TransitionLink></div>
+    <nav className="landing-nav">
+      <Logo />
+      <div className={`nav-links ${home.desktopNavigation}`}>
+        <a href="#how">How it works</a>
+        <a href="#features">Features</a>
+        <a href="#pricing">Pricing</a>
+        <TransitionLink href="/about">About</TransitionLink>
+      </div>
+      <div className={`nav-ctas ${home.desktopNavigation}`}>
+        <Link href="/login" className="text-btn">Log in</Link>
+        <Link href="/signup" className="primary-btn">Start free <ArrowRight size={15}/></Link>
+      </div>
+      <MobileLandingMenu />
+    </nav>
     <section className="hero"><span className="eyebrow"><Sparkles size={13}/> Built for Indian creators</span><h1>Turn long videos into <span className="lime-underline">scroll-stopping Shorts</span></h1><p>Upload once. ClipKaro AI finds your strongest moments, explains why they work, adds creator-grade captions, and produces platform-ready clips.</p><div className="hero-actions"><Link className="primary-btn" href="/signup"><Upload size={17}/> Create your first Short</Link><a className="secondary-btn" href="#how"><Play size={15}/> See how it works</a></div><div className="hero-note">No card required · Start free · Upload content you own</div>
       <div className="hero-product"><div className="mock-window"><div className="mock-side"><div className="mini-logo">✦ ClipKaro</div><div className="mock-nav"><span>Overview</span><span>Upload video</span><span>My projects</span><span>Analytics</span></div></div><div className="mock-body"><div className="mock-title"><div><h3>Your best moments are ready</h3><small>5 clips found in “How I grew my channel”</small></div><span className="mock-export-label" aria-hidden="true">Export selected</span></div><div className="mock-stats"><div className="mock-stat"><span>Moments found</span><b>05</b></div><div className="mock-stat"><span>Best moment score</span><b>94</b></div><div className="mock-stat"><span>Minutes saved</span><b>47</b></div></div>{["The mistake almost every creator makes", "My simple 3-step growth system"].map((t,i)=><div className="clip-row" key={t}><div className="clip-thumb"><Play size={18}/></div><div className="clip-copy"><b>{t}</b><span>{i?'06:18 – 06:57':'02:10 – 02:46'} · Educational insight</span></div><div className="score">{i?'89':'94'}</div></div>)}</div></div></div>
     </section>
