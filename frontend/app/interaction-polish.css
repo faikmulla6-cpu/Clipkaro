@@ -1,0 +1,67 @@
+/* Cross-page interaction polish and Android form hardening. */
+
+html,body{max-width:100%;overflow-x:hidden}
+
+input,textarea,select,button{color-scheme:light}
+input,textarea,select{color:var(--ink);background-color:#fff}
+input::placeholder,textarea::placeholder{color:#8a918b;opacity:1}
+input[type="checkbox"],input[type="radio"]{accent-color:var(--green)}
+
+.search-box input,.input-icon input{
+  min-width:0;
+  color:var(--ink)!important;
+  background:transparent!important;
+  -webkit-text-fill-color:var(--ink)!important;
+  caret-color:var(--green);
+}
+.search-box input::placeholder,.input-icon input::placeholder{
+  color:#8a918b!important;
+  -webkit-text-fill-color:#8a918b!important;
+  opacity:1!important;
+}
+
+input:-webkit-autofill,input:-webkit-autofill:hover,input:-webkit-autofill:focus{
+  -webkit-text-fill-color:var(--ink)!important;
+  box-shadow:0 0 0 1000px #fff inset!important;
+  transition:background-color 9999s ease-out 0s;
+}
+
+.secondary-btn{color:var(--ink)}
+.drop-zone .secondary-btn{min-width:150px;min-height:46px;color:var(--ink)!important;background:#fff!important;justify-content:center;box-shadow:0 5px 16px rgba(20,49,33,.06)}
+
+.primary-btn,.secondary-btn,.icon-btn,.project-card,.panel,.stat-card,.command-primary,.command-secondary,.side-nav a,.new-project{
+  transition:transform .18s ease,box-shadow .2s ease,border-color .2s ease,background-color .2s ease,opacity .2s ease;
+}
+.primary-btn:active,.secondary-btn:active,.command-primary:active,.command-secondary:active,.new-project:active{transform:scale(.985)}
+
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{
+  outline:3px solid rgba(22,95,67,.22);
+  outline-offset:2px;
+}
+
+.app-shell{animation:studioRouteIn .3s cubic-bezier(.22,1,.36,1) both}
+.page-content{min-width:0}
+
+.sidebar-backdrop{animation:studioBackdropIn .2s ease both}
+.sidebar-open{box-shadow:24px 0 60px rgba(11,36,25,.18)}
+
+@keyframes studioRouteIn{
+  from{opacity:.72;transform:translateY(5px)}
+  to{opacity:1;transform:none}
+}
+@keyframes studioBackdropIn{from{opacity:0}to{opacity:1}}
+
+@media(hover:hover){
+  .project-card:hover,.panel:hover,.stat-card:hover{border-color:#dce5da}
+  .side-nav a:hover{background:#f5f9f3;color:#315742}
+}
+
+@media(max-width:900px){
+  .app-shell{animation-duration:.24s}
+}
+
+@media(prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto!important}
+  .app-shell,.sidebar-backdrop{animation:none!important}
+  .primary-btn,.secondary-btn,.icon-btn,.project-card,.panel,.stat-card,.command-primary,.command-secondary,.side-nav a,.new-project{transition:none!important}
+}
