@@ -34,10 +34,12 @@ export function MobileLandingMenu() {
 
   return (
     <div className={styles.mobileOnly}>
+      <Link href="/signup" className={styles.quickStart}>Start free <ArrowRight size={15}/></Link>
       <button
         type="button"
         className={styles.menuButton}
         aria-label={open ? "Close navigation" : "Open navigation"}
+        aria-controls="mobile-landing-navigation"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
@@ -46,7 +48,7 @@ export function MobileLandingMenu() {
 
       <div className={`${styles.scrim} ${open ? styles.open : ""}`} onClick={() => setOpen(false)} aria-hidden="true" />
 
-      <div className={`${styles.sheet} ${open ? styles.open : ""}`} aria-hidden={!open}>
+      <div id="mobile-landing-navigation" className={`${styles.sheet} ${open ? styles.open : ""}`} aria-hidden={!open}>
         <div className={styles.sheetTop}>
           <span>Explore ClipKaro</span>
           <small>AI video intelligence for real creator workflows.</small>
