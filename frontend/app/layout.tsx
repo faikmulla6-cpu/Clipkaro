@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import "./mobile-audit.css";
 import "./brand.css";
+import "./interaction-polish.css";
 import { AuthProvider } from "@/components/AuthProvider";
 
 const brandIcon = "/assets/clipkaro-icon.png?v=2";
@@ -35,7 +36,7 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: "#07110d",
-  colorScheme: "light dark",
+  colorScheme: "light",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
@@ -86,13 +87,6 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
             }
           }
         `}</style>
-        <div className="ck-route-transition" aria-hidden="true">
-          <div className="ck-route-transition-brand">
-            <img src="/assets/clipkaro-icon.png" alt="" />
-            <span>ClipKaro<b>AI</b></span>
-          </div>
-          <div className="ck-route-transition-note">Creator intelligence · moving with context</div>
-        </div>
         <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
