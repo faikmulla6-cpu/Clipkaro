@@ -7,6 +7,7 @@ import "./sidebar-polish.css";
 import { AuthProvider } from "@/components/AuthProvider";
 
 const brandIcon = "/assets/clipkaro-icon.png?v=2";
+const tabIcon = "/assets/clipkaro-tab-icon.svg?v=1";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://clipkaro.pro"),
@@ -15,8 +16,8 @@ export const metadata: Metadata = {
   applicationName: "ClipKaro AI",
   manifest: "/site.webmanifest",
   icons: {
-    icon: [{ url: brandIcon, type: "image/png" }],
-    shortcut: brandIcon,
+    icon: [{ url: tabIcon, type: "image/svg+xml" }],
+    shortcut: tabIcon,
     apple: brandIcon,
   },
   openGraph: {
