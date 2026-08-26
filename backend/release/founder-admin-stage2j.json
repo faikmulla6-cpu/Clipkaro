@@ -1,0 +1,24 @@
+{
+  "stage": "2J",
+  "status": "PREPARED_NOT_ACTIVATED",
+  "component": "clipkaro-founder-admin-api",
+  "source_branch": "feature/founder-admin-api",
+  "source_sha": "3b7d3afe55bc21ca3a002becd2e62fdd0f70ffe9",
+  "protected_refs": {
+    "main": "43d808f15983854206ae76de1e1e02f21556d4ee",
+    "modal-no-vps": "ceaaf3731975a5f9083e76190dfc1ad4eda52b17",
+    "release/clipkaro-launch-v1.0.0": "ceaaf3731975a5f9083e76190dfc1ad4eda52b17"
+  },
+  "contract": {
+    "mode": "read_only",
+    "http_methods": ["GET"],
+    "endpoint_count": 9,
+    "authentication": "dedicated_server_to_server_bearer_token"
+  },
+  "safe_defaults": {
+    "ADMIN_API_ENABLED": false,
+    "ADMIN_API_SERVICE_TOKEN": ""
+  },
+  "activation_requires_explicit_final_approval": true,
+  "production_deployment_authorized": false
+}
