@@ -79,14 +79,43 @@ jobs:
       - name: Verify read-only source boundary
         run: |
           python - <<'PY'
+          import ast
           from pathlib import Path
 
-          source = Path("backend/app/api/founder_admin.py").read_text(encoding="utf-8")
-          forbidden = ("execute(", "execute_many(", "run_in_transaction(", "current_user", "sync_subscription_if_needed")
-          for marker in forbidden:
-              assert marker not in source, marker
-          assert source.count('@router.get(') == 9
-          for method in ("post", "put", "patch", "delete"):
-              assert f'@router.{method}(' not in source
-          print("Founder Admin source remains nine-route GET-only and database-read-only.")
+          path = Path("backend/app/api/founder_admin.py")
+          source = path.read_text(encoding="utf-8")
+          tree = ast.parse(source, filename=str(path))
+
+          database_imports = set()
+          forbidden_imports = set()
+          route_methods = []
+          forbidden_calls = set()
+
+          for node in ast.walk(tree):
+              if isinstance(node, ast.ImportFrom):
+                  imported = {alias.name for alias in node.names}
+                  if node.module == "app.core.database":
+                      database_imports.update(imported)
+                  if "current_user" in imported or "sync_subscription_if_needed" in imported:
+                      forbidden_imports.update(imported & {"current_user", "sync_subscription_if_needed"})
+              elif isinstance(node, ast.Call):
+                  func = node.func
+                  if isinstance(func, ast.Name) and func.id in {
+                      "execute", "execute_many", "run_in_transaction", "current_user", "sync_subscription_if_needed"
+                  }:
+                      forbidden_calls.add(func.id)
+              elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                  for decorator in node.decorator_list:
+                      if not isinstance(decorator, ast.Call) or not isinstance(decorator.func, ast.Attribute):
+                          continue
+                      owner = decorator.func.value
+                      if isinstance(owner, ast.Name) and owner.id == "router":
+                          route_methods.append(decorator.func.attr.lower())
+
+          assert database_imports == {"fetch_all", "fetch_one"}, database_imports
+          assert not forbidden_imports, forbidden_imports
+          assert not forbidden_calls, forbidden_calls
+          assert route_methods.count("get") == 9, route_methods
+          assert not ({"post", "put", "patch", "delete"} & set(route_methods)), route_methods
+          print("Founder Admin AST confirms nine GET-only routes and fetch-only database access.")
           PY
