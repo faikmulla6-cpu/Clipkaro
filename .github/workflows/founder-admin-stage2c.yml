@@ -11,11 +11,13 @@ on:
       - "backend/app/api/founder_admin.py"
       - "backend/app/api/behavioral_learning.py"
       - "backend/tests/test_founder_admin_api.py"
+      - "backend/tests/test_founder_admin_contract_manifest.py"
       - "backend/tests/test_api.py"
       - "backend/tests/test_behavioral_learning.py"
       - "backend/.env.example"
       - "backend/.env.modal.example"
       - "docs/FOUNDER_ADMIN_API.md"
+      - "docs/founder-admin-contract-v1.json"
       - ".github/workflows/founder-admin-stage2c.yml"
 
 permissions:
@@ -98,8 +100,8 @@ jobs:
           print("Read-only source contract verified")
           PY
 
-      - name: Run focused Founder Admin tests
-        run: python -m pytest tests/test_founder_admin_api.py -v
+      - name: Run focused Founder Admin and contract tests
+        run: python -m pytest tests/test_founder_admin_api.py tests/test_founder_admin_contract_manifest.py -v
 
   regression:
     name: Stage 2C backend regression / Python 3.12
