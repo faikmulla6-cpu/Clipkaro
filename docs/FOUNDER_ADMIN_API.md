@@ -16,10 +16,12 @@ Founder browser
     -> Founder Console server
     -> Authorization: Bearer <ADMIN_API_SERVICE_TOKEN>
     -> ClipKaro /api/v1/admin/*
-    -> SELECT-only database reads
+    -> read-only Founder Admin route handlers
 ```
 
-Customer `current_user` authentication is intentionally not reused. Normal customer authentication can reconcile subscription state; Stage 2C must never trigger customer-side writes merely because the founder viewed a dashboard.
+Customer `current_user` authentication is intentionally not reused. Normal customer authentication can reconcile subscription state; Stage 2C must never trigger customer entitlement/billing writes merely because the founder viewed a dashboard.
+
+The Founder Admin route module itself imports only `fetch_one` and `fetch_all` from the database layer and performs no business-data writes. In production, ClipKaro's existing global security middleware may still update its `security_rate_limits` bookkeeping table for the request. That operational anti-abuse counter is the only expected database mutation caused by a Founder Admin GET; users, plans, projects, jobs, usage, billing, media and audit business records remain untouched by these handlers.
 
 ## Read-only endpoints
 
@@ -53,13 +55,13 @@ Audit metadata is parsed and sensitive key names are redacted before returning i
 
 ## Billing semantics
 
-`verified_revenue_*` values come only from local `billing_checkouts` rows whose status is `verified`.
+`verified_revenue_*` values currently come only from local `billing_checkouts` rows whose status is `verified`. Treat this as **verified checkout value**, not complete accounting revenue: subscription renewals may be represented in webhook/payment-event history without creating a new checkout row, so this metric can undercount total recurring collections.
 
-`estimated_local_mrr_paise` is an operational estimate based on current local recurring-plan entitlements and the server-side plan catalog. The read-only endpoint does **not** call Razorpay and does not reconcile provider state. It must therefore never be presented as audited accounting or live provider truth.
+`estimated_local_mrr_paise` is an operational estimate based on current local recurring-plan entitlements and the server-side plan catalog. The read-only endpoint does **not** call Razorpay and does not reconcile provider state. Neither metric should be presented as audited accounting or live provider truth.
 
 ## System-health semantics
 
-Stage 2C system health performs database reads only. It does not call external providers and does not create storage probes, jobs, billing syncs, or migrations. External provider probes remain explicitly `not_run`.
+Stage 2C system health performs application database reads only. It does not call external providers and does not create storage probes, jobs, billing syncs, or migrations. External provider probes remain explicitly `not_run`.
 
 ## Activation gate
 
@@ -75,4 +77,4 @@ Do not enable this API in production until all of the following are complete:
 
 ## Later controlled actions
 
-Retries, suspensions, quota grants, subscription reconciliation, cancellations, refunds, job resets, or any other write action are not part of Stage 2C. A later stage must add action-specific authorization, confirmation, idempotency, and audit logging before any write capability is exposed.
+Retries, suspensions, quota grants, subscription reconciliation, cancellations, refunds, job resets, or any other business write action are not part of Stage 2C. A later stage must add action-specific authorization, confirmation, idempotency, and audit logging before any write capability is exposed.
