@@ -22,6 +22,7 @@ _PLACEHOLDER_MARKERS = (
 )
 _EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 _PHONE_RE = re.compile(r"^\+?[0-9][0-9\s().-]{7,20}$")
+_TRUE_VALUES = {"1", "true", "yes", "on"}
 
 
 def _clean(value: object) -> str:
@@ -102,6 +103,14 @@ def _modal_configuration_ok() -> bool:
     )
 
 
+def _founder_admin_enabled() -> bool:
+    return _env("ADMIN_API_ENABLED").lower() in _TRUE_VALUES
+
+
+def _founder_admin_service_token_ok() -> bool:
+    return _secret_ok(_env("ADMIN_API_SERVICE_TOKEN"), minimum=48)
+
+
 def production_boot_configuration_issues() -> list[str]:
     """Critical production boot requirements; contains codes only, never values."""
     settings = get_settings()
@@ -162,6 +171,22 @@ def production_boot_configuration_issues() -> list[str]:
         issues.append("EMAIL_FROM_NOT_EXPLICIT")
     if settings.normalized_razorpay_mode != "live":
         issues.append("RAZORPAY_MODE_NOT_LIVE")
+
+    # Founder Admin is opt-in. Leaving it disabled has zero launch impact. Once
+    # explicitly enabled in production, boot must fail closed unless its
+    # dedicated server-to-server secret meets the same strength policy enforced
+    # by the runtime guard. Values are never included in blocker output.
+    if _founder_admin_enabled():
+        admin_token = _env("ADMIN_API_SERVICE_TOKEN")
+        if not _founder_admin_service_token_ok():
+            issues.append("FOUNDER_ADMIN_SERVICE_TOKEN_WEAK")
+        elif admin_token in {
+            _clean(settings.secret_key),
+            _clean(settings.razorpay_key_secret),
+            _clean(settings.razorpay_webhook_secret),
+        }:
+            issues.append("FOUNDER_ADMIN_SERVICE_TOKEN_REUSED")
+
     return issues
 
 
@@ -224,4 +249,8 @@ def production_configuration_summary() -> dict[str, object]:
         "job_backend": settings.normalized_job_backend,
         "job_execution_provider": _job_execution_provider(),
         "serverless_mode": settings.production_serverless_mode,
+        "founder_admin_enabled": _founder_admin_enabled(),
+        "founder_admin_service_token_ready": (
+            not _founder_admin_enabled() or _founder_admin_service_token_ok()
+        ),
     }
