@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import re
 from pathlib import Path
@@ -35,8 +36,17 @@ def main() -> None:
     require(methods == {"get"}, f"Founder Admin route methods changed: {sorted(methods)}")
     require(len(re.findall(r"@router\.get\s*\(", source)) == 9, "Founder Admin must expose exactly nine GET routes")
 
-    for forbidden in ("execute(", "execute_many(", "run_in_transaction(", "current_user", "sync_subscription_if_needed"):
-        require(forbidden not in source, f"forbidden write/customer-auth dependency present: {forbidden}")
+    tree = ast.parse(source)
+    forbidden_calls = {"execute", "execute_many", "run_in_transaction", "sync_subscription_if_needed"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module == "app.core.database":
+            imported = {alias.name for alias in node.names}
+            require(imported <= {"fetch_one", "fetch_all"}, f"Founder Admin imported non-read database helper(s): {sorted(imported)}")
+        if isinstance(node, ast.ImportFrom):
+            imported = {alias.name for alias in node.names}
+            require("current_user" not in imported, "Founder Admin must not import customer current_user auth")
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            require(node.func.id not in forbidden_calls, f"forbidden write/customer-state call present: {node.func.id}")
 
     generator = (BACKEND / "scripts" / "generate_founder_admin_token.py").read_text(encoding="utf-8")
     require("secrets.token_urlsafe(64)" in generator, "token generator must use cryptographic randomness")
