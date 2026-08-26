@@ -32,9 +32,9 @@ jobs:
     env:
       APP_ENV: test
       DATABASE_BACKEND: sqlite
-      DATABASE_PATH: ${{ runner.temp }}/clipkaro-founder-admin-stage2f.db
+      DATABASE_PATH: /tmp/clipkaro-founder-admin-stage2f.db
       STORAGE_BACKEND: local
-      STORAGE_ROOT: ${{ runner.temp }}/clipkaro-founder-admin-stage2f-storage
+      STORAGE_ROOT: /tmp/clipkaro-founder-admin-stage2f-storage
       JOB_BACKEND: local
       JOB_EXECUTION_MODE: background
       SEED_DEMO_USER: "true"
