@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.api.founder_admin import router as founder_admin_router
 from app.core.database import fetch_one
 from app.services.auth import current_user, require_role
 from app.services.behavioral_learning import (
@@ -91,3 +92,10 @@ async def record_download_event(export_id: str, user: dict = Depends(current_use
 @router.get("/admin/learning/summary")
 async def admin_learning_summary(_: dict = Depends(require_role("admin"))) -> dict:
     return await learning_diagnostics()
+
+
+# Stage 2C founder operations are kept as a separate router with independent
+# server-to-server authentication. Registering it through this already-mounted
+# API router avoids changing the public app bootstrap while the feature remains
+# disabled by default through ADMIN_API_ENABLED=false.
+router.include_router(founder_admin_router)
