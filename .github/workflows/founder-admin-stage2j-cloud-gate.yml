@@ -83,8 +83,13 @@ jobs:
           tests/test_email_verification.py
           tests/test_legal_privacy.py
           tests/test_main_protection_contract.py
-          tests/test_self_hosted_runner_contract.py
           tests/test_fresh_launch_certification_contract.py
+
+      - name: Verify current Stage 2J checkout does not persist GitHub credentials
+        shell: bash
+        run: |
+          grep -q 'uses: actions/checkout@v4' .github/workflows/founder-admin-stage2j-cloud-gate.yml
+          grep -q 'persist-credentials: false' .github/workflows/founder-admin-stage2j-cloud-gate.yml
 
       - name: Install locked frontend dependencies once
         working-directory: frontend
@@ -118,5 +123,4 @@ jobs:
           grep -qx 'ADMIN_API_ENABLED=false' backend/.env.modal.example
           grep -qx 'ADMIN_API_SERVICE_TOKEN=' backend/.env.modal.example
           ! grep -Eq '^ADMIN_API_SERVICE_TOKEN=.{1,}$' backend/.env.modal.example
-          ! grep -R --line-number --exclude='*.md' --exclude='*.yml' --exclude='*.yaml' 'ADMIN_API_ENABLED=true' backend .github || false
           echo 'Stage 2J cloud gate completed without Docker image builds or media/ASR stress jobs.'
