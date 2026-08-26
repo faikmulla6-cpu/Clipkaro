@@ -1,0 +1,169 @@
+name: Founder Admin Stage 2F Runtime E2E
+
+on:
+  push:
+    branches:
+      - feature/founder-admin-runtime-e2e
+  pull_request:
+    branches:
+      - feature/founder-admin-api
+    paths:
+      - "backend/app/api/founder_admin.py"
+      - "backend/app/api/behavioral_learning.py"
+      - "backend/app/core/database.py"
+      - "backend/app/main.py"
+      - "docs/founder-admin-contract-v1.json"
+      - "scripts/founder-admin-runtime-probe.mjs"
+      - ".github/workflows/founder-admin-runtime-e2e.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: founder-admin-stage2f-runtime-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  loopback-runtime-e2e:
+    name: Loopback Founder Console consumer -> ClipKaro API
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      APP_ENV: test
+      DATABASE_BACKEND: sqlite
+      DATABASE_PATH: ${{ runner.temp }}/clipkaro-founder-admin-stage2f.db
+      STORAGE_BACKEND: local
+      STORAGE_ROOT: ${{ runner.temp }}/clipkaro-founder-admin-stage2f-storage
+      JOB_BACKEND: local
+      JOB_EXECUTION_MODE: background
+      SEED_DEMO_USER: "true"
+      SECRET_KEY: stage2f-runtime-e2e-only-not-production
+      GROQ_RANKING_ENABLED: "false"
+      ADMIN_API_ENABLED: "true"
+      ADMIN_API_BASE_URL: http://127.0.0.1:8765
+      ADMIN_API_SERVICE_TOKEN: ck-admin-stage2f-0123456789ABCDEF0123456789abcdef-LoopbackOnly
+
+    steps:
+      - name: Checkout isolated Stage 2F revision
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Verify hard non-production isolation
+        working-directory: backend
+        run: |
+          python - <<'PY'
+          from app.core.config import get_settings
+
+          settings = get_settings()
+          assert settings.app_env == "test"
+          assert settings.normalized_database_backend == "sqlite"
+          assert settings.normalized_storage_backend == "local"
+          assert settings.normalized_job_backend == "local"
+          assert not settings.database_url
+          assert not settings.gcs_bucket
+          assert not settings.razorpay_key_secret
+          assert not settings.groq_api_keys
+          print("Stage 2F runtime is isolated from production providers.")
+          PY
+
+      - name: Verify Founder Console probe is loopback-only and GET-only
+        run: |
+          node --check scripts/founder-admin-runtime-probe.mjs
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          contract = json.loads(Path("docs/founder-admin-contract-v1.json").read_text(encoding="utf-8"))
+          assert contract["mode"] == "read_only"
+          assert contract["write_methods_allowed"] == []
+          assert len(contract["endpoints"]) == 9
+          assert {item["method"] for item in contract["endpoints"]} == {"GET"}
+          probe = Path("scripts/founder-admin-runtime-probe.mjs").read_text(encoding="utf-8")
+          assert 'new Set(["127.0.0.1", "localhost", "::1"])' in probe
+          assert 'method: "GET"' in probe
+          print("Loopback-only GET consumer probe verified.")
+          PY
+
+      - name: Start ephemeral ClipKaro API on loopback
+        working-directory: backend
+        run: |
+          python -m uvicorn app.main:app --host 127.0.0.1 --port 8765 > "$RUNNER_TEMP/founder-admin-stage2f.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/founder-admin-stage2f.pid"
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:8765/ > /dev/null; then
+              echo "Ephemeral ClipKaro API is ready."
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Ephemeral API failed to become ready."
+          tail -n 200 "$RUNNER_TEMP/founder-admin-stage2f.log" || true
+          exit 1
+
+      - name: Snapshot safe demo-user state before runtime probe
+        working-directory: backend
+        run: |
+          python - <<'PY' > "$RUNNER_TEMP/founder-admin-user-before.json"
+          import asyncio
+          import json
+          from app.core.database import fetch_one
+
+          row = asyncio.run(fetch_one(
+              "SELECT id,name,email,plan,role,onboarding_complete,email_verified_at,plan_started_at,plan_expires_at,cancel_at_period_end,created_at,updated_at FROM users WHERE id=?",
+              ("demo-user",),
+          ))
+          if not row:
+              raise SystemExit("demo-user was not seeded")
+          print(json.dumps(row, sort_keys=True, default=str))
+          PY
+
+      - name: Run Founder Console consumer against live ClipKaro loopback API
+        run: node scripts/founder-admin-runtime-probe.mjs
+
+      - name: Verify runtime GETs did not mutate demo-user business state
+        working-directory: backend
+        run: |
+          python - <<'PY' > "$RUNNER_TEMP/founder-admin-user-after.json"
+          import asyncio
+          import json
+          from app.core.database import fetch_one
+
+          row = asyncio.run(fetch_one(
+              "SELECT id,name,email,plan,role,onboarding_complete,email_verified_at,plan_started_at,plan_expires_at,cancel_at_period_end,created_at,updated_at FROM users WHERE id=?",
+              ("demo-user",),
+          ))
+          if not row:
+              raise SystemExit("demo-user disappeared during runtime probe")
+          print(json.dumps(row, sort_keys=True, default=str))
+          PY
+          cmp "$RUNNER_TEMP/founder-admin-user-before.json" "$RUNNER_TEMP/founder-admin-user-after.json"
+          echo "Founder Admin runtime reads did not mutate demo-user business state."
+
+      - name: Show API log on failure
+        if: failure()
+        run: tail -n 200 "$RUNNER_TEMP/founder-admin-stage2f.log" || true
+
+      - name: Stop ephemeral ClipKaro API
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/founder-admin-stage2f.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/founder-admin-stage2f.pid")" 2>/dev/null || true
+          fi
