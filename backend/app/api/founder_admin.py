@@ -174,8 +174,8 @@ async def admin_overview() -> dict[str, Any]:
         "jobs": {
             "queued": await _count("SELECT COUNT(*) AS count FROM jobs WHERE status='queued'"),
             "processing": await _count("SELECT COUNT(*) AS count FROM jobs WHERE status='processing'"),
-            "completed_24h": await _count("SELECT COUNT(*) AS count FROM jobs WHERE status='completed' AND COALESCE(completed_at,updated_at)>=?", (cutoff_24h,)),
-            "failed_24h": await _count("SELECT COUNT(*) AS count FROM jobs WHERE status='failed' AND COALESCE(failed_at,updated_at)>=?", (cutoff_24h,)),
+            "completed_24h": await _count("SELECT COUNT(*) AS count FROM jobs WHERE status='completed' AND updated_at>=?", (cutoff_24h,)),
+            "failed_24h": await _count("SELECT COUNT(*) AS count FROM jobs WHERE status='failed' AND updated_at>=?", (cutoff_24h,)),
         },
         "exports": {
             "ready_24h": await _count("SELECT COUNT(*) AS count FROM exports WHERE status='ready' AND created_at>=?", (cutoff_24h,)),
@@ -252,8 +252,7 @@ async def admin_user_detail(user_id: str) -> dict[str, Any]:
         (user_id,),
     )
     recent_jobs = await fetch_all(
-        """SELECT id,project_id,export_id,kind,status,progress,stage,message,error,failure_category,
-                  attempt_count,started_at,heartbeat_at,completed_at,failed_at,created_at,updated_at
+        """SELECT id,project_id,export_id,kind,status,progress,stage,message,error,created_at,updated_at
            FROM jobs WHERE user_id=? ORDER BY updated_at DESC LIMIT 10""",
         (user_id,),
     )
@@ -316,8 +315,7 @@ async def admin_jobs(
     total = await _count(f"SELECT COUNT(*) AS count FROM jobs j{where}", tuple(params))
     rows = await fetch_all(
         f"""SELECT j.id,j.user_id,u.email AS user_email,j.project_id,j.export_id,j.kind,j.status,
-                   j.progress,j.stage,j.message,j.error,j.failure_category,j.attempt_count,j.started_at,
-                   j.heartbeat_at,j.completed_at,j.failed_at,j.created_at,j.updated_at
+                   j.progress,j.stage,j.message,j.error,j.created_at,j.updated_at
             FROM jobs j JOIN users u ON u.id=j.user_id{where}
             ORDER BY j.updated_at DESC,j.id DESC LIMIT ? OFFSET ?""",
         tuple([*params, _bounded_limit(limit), _bounded_offset(offset)]),
