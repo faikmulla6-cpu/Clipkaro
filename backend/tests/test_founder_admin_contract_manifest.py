@@ -3,8 +3,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from fastapi import FastAPI
-
 from app.api.founder_admin import router
 
 
@@ -33,14 +31,12 @@ def test_founder_admin_contract_manifest_matches_fastapi_routes() -> None:
     assert len(expected) == 9
     assert {method for _, method in expected} == {"GET"}
 
-    app = FastAPI()
-    app.include_router(router, prefix="/api/v1")
-
     actual: set[tuple[str, str]] = set()
-    for route in app.routes:
-        path = getattr(route, "path", "")
-        if not path.startswith("/api/v1/admin"):
+    for route in router.routes:
+        route_path = getattr(route, "path", "")
+        if not route_path.startswith("/admin"):
             continue
+        path = f"/api/v1{route_path}"
         for method in getattr(route, "methods", set()):
             if method in {"HEAD", "OPTIONS"}:
                 continue
