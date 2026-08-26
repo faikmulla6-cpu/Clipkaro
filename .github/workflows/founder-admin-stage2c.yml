@@ -1,0 +1,137 @@
+name: Founder Admin Stage 2C CI
+
+on:
+  push:
+    branches:
+      - feature/founder-admin-api
+  pull_request:
+    branches:
+      - modal-no-vps
+    paths:
+      - "backend/app/api/founder_admin.py"
+      - "backend/app/api/behavioral_learning.py"
+      - "backend/tests/test_founder_admin_api.py"
+      - "backend/tests/test_api.py"
+      - "backend/tests/test_behavioral_learning.py"
+      - "backend/.env.example"
+      - "backend/.env.modal.example"
+      - "docs/FOUNDER_ADMIN_API.md"
+      - ".github/workflows/founder-admin-stage2c.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: founder-admin-stage2c-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  founder-admin-critical:
+    name: Founder Admin critical / Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    defaults:
+      run:
+        working-directory: backend
+
+    env:
+      APP_ENV: test
+      ADMIN_API_ENABLED: "true"
+      ADMIN_API_SERVICE_TOKEN: ck-admin-ci-0123456789ABCDEF0123456789abcdef-Stage2C-ReadOnly
+
+    steps:
+      - name: Checkout isolated feature revision
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pytest
+
+      - name: Compile Founder Admin module
+        run: python -m py_compile app/api/founder_admin.py
+
+      - name: Verify read-only source contract
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import ast
+
+          path = Path("app/api/founder_admin.py")
+          source = path.read_text(encoding="utf-8")
+          tree = ast.parse(source)
+
+          forbidden_names = {
+              "execute",
+              "execute_many",
+              "run_in_transaction",
+              "current_user",
+              "sync_subscription_if_needed",
+          }
+          imported = set()
+          for node in ast.walk(tree):
+              if isinstance(node, ast.ImportFrom):
+                  imported.update(alias.name for alias in node.names)
+              elif isinstance(node, ast.Import):
+                  imported.update(alias.name for alias in node.names)
+          bad = forbidden_names & imported
+          if bad:
+              raise SystemExit(f"Forbidden Founder Admin imports: {sorted(bad)}")
+
+          for method in ("post", "put", "patch", "delete"):
+              marker = f"@router.{method}("
+              if marker in source.lower():
+                  raise SystemExit(f"Founder Admin must remain GET-only: found {marker}")
+          print("Read-only source contract verified")
+          PY
+
+      - name: Run focused Founder Admin tests
+        run: python -m pytest tests/test_founder_admin_api.py -v
+
+  regression:
+    name: Stage 2C backend regression / Python 3.12
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: founder-admin-critical
+
+    defaults:
+      run:
+        working-directory: backend
+
+    env:
+      APP_ENV: test
+      ADMIN_API_ENABLED: "true"
+      ADMIN_API_SERVICE_TOKEN: ck-admin-ci-0123456789ABCDEF0123456789abcdef-Stage2C-ReadOnly
+
+    steps:
+      - name: Checkout isolated feature revision
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pytest
+
+      - name: Run API and behavioral-learning regression tests
+        run: python -m pytest tests/test_api.py tests/test_behavioral_learning.py -v
