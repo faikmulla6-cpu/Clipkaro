@@ -108,6 +108,8 @@ jobs:
 
       - name: Build production frontend once
         working-directory: frontend
+        env:
+          BACKEND_URL: https://clipkaro-ci-backend.invalid
         run: npm run build
 
       - name: Validate production Compose without building images
