@@ -25,9 +25,9 @@ jobs:
     env:
       APP_ENV: test
       DATABASE_BACKEND: sqlite
-      DATABASE_PATH: ${{ runner.temp }}/stage2g-founder-admin.db
+      DATABASE_PATH: /tmp/stage2g-founder-admin.db
       STORAGE_BACKEND: local
-      STORAGE_ROOT: ${{ runner.temp }}/stage2g-storage
+      STORAGE_ROOT: /tmp/stage2g-storage
       JOB_BACKEND: local
       SEED_DEMO_USER: "false"
       GROQ_RANKING_ENABLED: "false"
