@@ -1,0 +1,26 @@
+{
+  "contract": "clipkaro-founder-admin",
+  "version": 1,
+  "mode": "read_only",
+  "authentication": {
+    "scheme": "Bearer",
+    "configured_token_min_length": 48
+  },
+  "failure_modes": {
+    "disabled": 404,
+    "weak_backend_token": 503,
+    "unauthorized": 401
+  },
+  "write_methods_allowed": [],
+  "endpoints": [
+    {"method": "GET", "path": "/api/v1/admin/overview"},
+    {"method": "GET", "path": "/api/v1/admin/users", "query": ["query", "plan", "limit", "offset"]},
+    {"method": "GET", "path_template": "/api/v1/admin/users/{user_id}"},
+    {"method": "GET", "path": "/api/v1/admin/projects", "query": ["status", "limit", "offset"]},
+    {"method": "GET", "path": "/api/v1/admin/jobs", "query": ["status", "kind", "limit", "offset"]},
+    {"method": "GET", "path": "/api/v1/admin/billing/summary"},
+    {"method": "GET", "path": "/api/v1/admin/usage"},
+    {"method": "GET", "path": "/api/v1/admin/system-health"},
+    {"method": "GET", "path": "/api/v1/admin/audit", "query": ["limit", "offset"]}
+  ]
+}
