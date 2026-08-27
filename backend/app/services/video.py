@@ -19,15 +19,30 @@ GENERIC_UPLOAD_TYPES = {
 
 def find_media_tool(name: str) -> str | None:
     """Return a runnable FFmpeg-family binary, not a Windows alias or corrupt file."""
-    candidate = shutil.which(name)
-    if not candidate:
-        return None
-    try:
-        probe = subprocess.run([candidate, "-version"], stdout=subprocess.DEVNULL,
-                               stderr=subprocess.DEVNULL, timeout=5, check=False)
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    return candidate if probe.returncode == 0 else None
+    candidates: list[str] = []
+    discovered = shutil.which(name)
+    if discovered:
+        candidates.append(discovered)
+    # GitHub-hosted Ubuntu and minimal production images normally expose these
+    # tools under /usr/bin. Keep an explicit fallback so an isolated Python
+    # virtualenv cannot accidentally hide the system media binaries from tests.
+    for location in (Path("/usr/bin") / name, Path("/usr/local/bin") / name):
+        if location.is_file() and str(location) not in candidates:
+            candidates.append(str(location))
+    for candidate in candidates:
+        try:
+            probe = subprocess.run(
+                [candidate, "-version"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if probe.returncode == 0:
+            return candidate
+    return None
 
 
 def ffmpeg_available() -> bool:
@@ -117,65 +132,3 @@ async def probe_audio_duration(path: Path) -> float:
     except ValueError as exc: raise RuntimeError("FFprobe could not read extracted audio duration.") from exc
     if proc.returncode or duration <= 0: raise RuntimeError("Extracted audio is unreadable.")
     return duration
-
-
-async def extract_audio(video_path: Path, audio_path: Path) -> None:
-    ffmpeg = find_media_tool("ffmpeg")
-    if not ffmpeg:
-        raise RuntimeError("FFmpeg is required for audio extraction.")
-    settings = get_settings()
-    timeout = max(30, int(settings.media_process_timeout_seconds))
-    threads = max(1, int(settings.media_ffmpeg_threads))
-    try:
-        proc = await asyncio.to_thread(
-            subprocess.run,
-            [ffmpeg, "-nostdin", "-threads", str(threads), "-y", "-i", str(video_path), "-vn", "-ac", "1", "-ar", "16000",
-             "-c:a", "pcm_s16le", str(audio_path)],
-            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=False,
-            timeout=timeout,
-        )
-    except subprocess.TimeoutExpired as exc:
-        audio_path.unlink(missing_ok=True)
-        raise RuntimeError(f"Audio extraction exceeded the {timeout}-second safety limit.") from exc
-    if proc.returncode != 0:
-        audio_path.unlink(missing_ok=True)
-        raise RuntimeError(f"FFmpeg audio extraction failed: {proc.stderr.decode(errors='ignore')[-500:]}")
-
-
-async def extract_api_audio(video_path: Path, audio_path: Path) -> None:
-    """Losslessly compress 16 kHz mono audio before API upload."""
-    ffmpeg = find_media_tool("ffmpeg")
-    if not ffmpeg: raise RuntimeError("FFmpeg is required for audio extraction.")
-    settings = get_settings()
-    try:
-        proc = await asyncio.to_thread(subprocess.run, [ffmpeg, "-nostdin", "-threads", str(max(1, int(settings.media_ffmpeg_threads))), "-y", "-i", str(video_path), "-vn", "-map", "0:a:0", "-ac", "1", "-ar", "16000", "-c:a", "flac", str(audio_path)], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=False, timeout=max(30, int(settings.media_process_timeout_seconds)))
-    except subprocess.TimeoutExpired as exc:
-        audio_path.unlink(missing_ok=True); raise RuntimeError("Audio extraction exceeded the safety limit.") from exc
-    if proc.returncode:
-        audio_path.unlink(missing_ok=True); raise RuntimeError("FFmpeg API audio extraction failed.")
-
-
-async def chunk_api_audio(audio_path: Path, *, duration: float, output_dir: Path, chunk_seconds: int, overlap_seconds: int, max_chunks: int, max_bytes: int) -> list[tuple[Path, float, float]]:
-    """Create chronological FLAC chunks with overlap; never silently truncate."""
-    # Provider size limits are necessary but insufficient: APIs can accept a
-    # small FLAC that is still longer than the configured safe request span.
-    # Split on either condition so long low-complexity audio exercises the
-    # overlap/reassembly path instead of becoming one unbounded provider call.
-    if audio_path.stat().st_size <= max_bytes and duration <= chunk_seconds:
-        return [(audio_path, 0.0, duration)]
-    ffmpeg = find_media_tool("ffmpeg")
-    if not ffmpeg: raise RuntimeError("FFmpeg is required for API ASR chunking.")
-    span, overlap = max(30, int(chunk_seconds)), max(0, min(int(overlap_seconds), max(1, int(chunk_seconds // 4))))
-    step = span - overlap
-    count = math.ceil(max(0.0, duration - overlap) / step)
-    if count > max_chunks: raise RuntimeError(f"Audio requires {count} API chunks, exceeding configured safety limit {max_chunks}. Split the source and retry.")
-    output_dir.mkdir(parents=True, exist_ok=True)
-    chunks: list[tuple[Path, float, float]] = []
-    for index in range(count):
-        start, length = index * step, min(span, duration - index * step)
-        target = output_dir / f"asr-{index:03d}.flac"
-        proc = await asyncio.to_thread(subprocess.run, [ffmpeg, "-nostdin", "-y", "-ss", f"{start:.3f}", "-t", f"{length:.3f}", "-i", str(audio_path), "-ac", "1", "-ar", "16000", "-c:a", "flac", str(target)], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=False, timeout=max(30, int(get_settings().media_process_timeout_seconds)))
-        if proc.returncode or not target.exists(): raise RuntimeError("FFmpeg could not create an API ASR audio chunk.")
-        if target.stat().st_size > max_bytes: raise RuntimeError("An API ASR chunk exceeds the configured provider upload limit. Reduce ASR_CHUNK_SECONDS and retry.")
-        chunks.append((target, float(start), float(length)))
-    return chunks
