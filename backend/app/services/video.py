@@ -19,15 +19,27 @@ GENERIC_UPLOAD_TYPES = {
 
 def find_media_tool(name: str) -> str | None:
     """Return a runnable FFmpeg-family binary, not a Windows alias or corrupt file."""
-    candidate = shutil.which(name)
-    if not candidate:
-        return None
-    try:
-        probe = subprocess.run([candidate, "-version"], stdout=subprocess.DEVNULL,
-                               stderr=subprocess.DEVNULL, timeout=5, check=False)
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    return candidate if probe.returncode == 0 else None
+    candidates: list[str] = []
+    discovered = shutil.which(name)
+    if discovered:
+        candidates.append(discovered)
+    for location in (Path("/usr/bin") / name, Path("/usr/local/bin") / name):
+        if location.is_file() and str(location) not in candidates:
+            candidates.append(str(location))
+    for candidate in candidates:
+        try:
+            probe = subprocess.run(
+                [candidate, "-version"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if probe.returncode == 0:
+            return candidate
+    return None
 
 
 def ffmpeg_available() -> bool:

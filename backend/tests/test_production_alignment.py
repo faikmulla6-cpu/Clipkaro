@@ -82,9 +82,14 @@ def test_production_docker_compose_splits_api_asr_from_legacy_whisperx() -> None
     base_requirements = _read("backend/requirements.txt")
     compose = _read("docker-compose.hostinger.yml")
     production_env = _read(".env.production.example")
-    assert "FROM runtime-base AS worker" in dockerfile
+    # The serverless architecture installs native media tools once in media-base.
+    # The production media job and the optional legacy/local-ASR worker both
+    # inherit that stage; the API remains lightweight on runtime-base.
+    assert "FROM runtime-base AS media-base" in dockerfile
+    assert "FROM media-base AS media" in dockerfile
+    assert "FROM media-base AS worker" in dockerfile
     assert "FROM runtime-base AS api" in dockerfile
-    assert "COPY requirements-alignment.txt ." in dockerfile
+    assert "COPY requirements-local-asr.txt requirements-alignment.txt ./" in dockerfile
     assert "pip install --no-cache-dir -r requirements-alignment.txt" in dockerfile
     assert "whisperx==3.8.6" in alignment_requirements
     assert "torch==2.8.0+cpu" in alignment_requirements

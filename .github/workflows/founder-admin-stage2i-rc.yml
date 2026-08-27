@@ -50,6 +50,9 @@ jobs:
     steps:
       - name: Checkout Founder Admin RC1
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          clean: true
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -132,6 +135,9 @@ jobs:
     steps:
       - name: Checkout Founder Admin RC1
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          clean: true
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5

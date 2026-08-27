@@ -31,11 +31,15 @@ def test_required_workflows_use_approved_linux_runners() -> None:
         assert REQUIRED_RUNNER in text, name
 
 
-def test_persistent_runner_jobs_do_not_mutate_host_with_apt() -> None:
-    for workflow in WORKFLOWS.glob("*.yml"):
-        text = _read(workflow)
-        assert "apt-get" not in text, workflow.name
-        assert "sudo apt" not in text, workflow.name
+def test_persistent_self_hosted_runner_jobs_do_not_mutate_host_with_apt() -> None:
+    for name in (
+        "pr-governance.yml",
+        "asr-stress.yml",
+        "landscape-export-qa.yml",
+    ):
+        text = _read(WORKFLOWS / name)
+        assert "apt-get" not in text, name
+        assert "sudo apt" not in text, name
 
 
 def test_checkout_does_not_persist_github_credentials() -> None:

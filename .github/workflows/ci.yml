@@ -30,6 +30,10 @@ jobs:
           python-version: '3.12'
           cache: pip
           cache-dependency-path: backend/requirements-dev.txt
+      - name: Install FFmpeg on ephemeral Ubuntu runner
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
       - name: Create isolated backend virtualenv
         working-directory: backend
         run: |
@@ -39,6 +43,12 @@ jobs:
       - name: Install backend dependencies
         working-directory: backend
         run: python -m pip install --upgrade pip && pip install -r requirements-dev.txt
+      - name: Verify hosted media tools
+        run: |
+          command -v ffmpeg
+          command -v ffprobe
+          ffmpeg -version >/dev/null
+          ffprobe -version >/dev/null
       - name: Run backend tests
         working-directory: backend
         env:
@@ -112,6 +122,8 @@ jobs:
           caddy validate --config /etc/caddy/Caddyfile
       - name: Build frontend
         working-directory: frontend
+        env:
+          BACKEND_URL: https://clipkaro-ci-backend.invalid
         run: npm run build
       - name: Clean frontend job workspace
         if: always()

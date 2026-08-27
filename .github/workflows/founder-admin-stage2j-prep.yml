@@ -24,6 +24,9 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          clean: true
 
       - uses: actions/setup-python@v5
         with:
