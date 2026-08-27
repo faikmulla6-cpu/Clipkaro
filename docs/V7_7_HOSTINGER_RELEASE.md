@@ -18,7 +18,7 @@
 
 1. Point the domain `A` record to the VPS IP.
 2. On the VPS, install Docker Engine and the Docker Compose plugin, then clone
-   the GitHub repository: `git clone https://github.com/faikmulla/ClipkaroAI.git`.
+   the GitHub repository: `git clone https://github.com/faikmulla6-cpu/Clipkaro.git`.
 3. Copy `.env.production.example` to `.env` and replace `DOMAIN`, `ACME_EMAIL`,
    and `SECRET_KEY`. Add the live Razorpay values only in this VPS `.env` file.
 4. Run `docker compose -f docker-compose.hostinger.yml up -d --build`.

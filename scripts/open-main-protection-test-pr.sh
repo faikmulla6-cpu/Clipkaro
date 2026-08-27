@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="${1:-faikmulla/ClipkaroAI}"
+REPO="${1:-faikmulla6-cpu/Clipkaro}"
 BRANCH="qa/main-protection-probe-$(date -u +%Y%m%d%H%M%S)"
 PROBE="docs/main-protection-probe.md"
 

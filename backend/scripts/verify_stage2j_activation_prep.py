@@ -28,8 +28,11 @@ def main() -> None:
     require(re.search(r"(?m)^ADMIN_API_SERVICE_TOKEN=\s*$", env_modal) is not None, "production example must not contain an Admin token")
 
     env_dev = (BACKEND / ".env.example").read_text(encoding="utf-8")
+    env_generic = (ROOT / ".env.production.example").read_text(encoding="utf-8")
     require(re.search(r"(?m)^ADMIN_API_ENABLED=false\s*$", env_dev) is not None, "development example must keep Admin API disabled")
     require(re.search(r"(?m)^ADMIN_API_SERVICE_TOKEN=\s*$", env_dev) is not None, "development example must not contain an Admin token")
+    require(re.search(r"(?m)^ADMIN_API_ENABLED=false\s*$", env_generic) is not None, "generic production example must keep Admin API disabled")
+    require(re.search(r"(?m)^ADMIN_API_SERVICE_TOKEN=\s*$", env_generic) is not None, "generic production example must not contain an Admin token")
 
     source = (BACKEND / "app" / "api" / "founder_admin.py").read_text(encoding="utf-8")
     methods = set(re.findall(r"@router\.(get|post|put|patch|delete)\s*\(", source, flags=re.IGNORECASE))

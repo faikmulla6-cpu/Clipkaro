@@ -8,6 +8,10 @@ services:
       APP_ENV: production
       SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
       PRODUCTION_CREDENTIALS_ROTATED: ${PRODUCTION_CREDENTIALS_ROTATED:-false}
+      # Founder Console bridge is API-only and fail-closed. Never pass this token
+      # to the browser or media worker.
+      ADMIN_API_ENABLED: ${ADMIN_API_ENABLED:-false}
+      ADMIN_API_SERVICE_TOKEN: ${ADMIN_API_SERVICE_TOKEN:-}
       CORS_ORIGINS: https://${DOMAIN:?Set DOMAIN in .env}
       SEED_DEMO_USER: "false"
       DATABASE_PATH: /app/storage/clipkaro.db
@@ -109,10 +113,10 @@ services:
   worker:
     build:
       context: ./backend
-      # The launch default stays lightweight/API-first. Operators who deliberately
-      # enable the legacy local faster-whisper/WhisperX path must also build the
-      # heavyweight worker image so runtime capabilities match ASR_MODE.
-      target: ${WORKER_IMAGE_TARGET:-api}
+      # API-backed ASR is still media work: scanning, FFmpeg and rendering require
+      # the media image. Operators who deliberately enable local WhisperX must
+      # select the heavyweight worker target instead.
+      target: ${WORKER_IMAGE_TARGET:-media}
     command: ["python", "-m", "app.worker"]
     restart: unless-stopped
     environment:

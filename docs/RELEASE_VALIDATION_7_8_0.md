@@ -49,7 +49,8 @@ The following checks were executed after the final hardening changes in the sour
 - Caption styles remain distinct and frozen; production uses OS-managed Noto/Liberation fonts rather than distributing font binaries in the release artifact.
 - Request IDs are bounded before reflection and security headers are added to both normal responses and early auth/rate-limit denials.
 - Persisted media/render failures are converted to user-safe diagnostics before database/UI exposure so FFmpeg/provider stderr and absolute host paths stay in server logs rather than customer-facing state.
-- Production Compose defaults to `WORKER_IMAGE_TARGET=api`; local faster-whisper/WhisperX use requires the explicit heavyweight `worker` image target.
+- Production Compose defaults to `WORKER_IMAGE_TARGET=media` for API-backed media work; local faster-whisper/WhisperX use requires the explicit heavyweight `worker` image target.
+- Fresh Launch certifies the same API-first `media` target; heavyweight WhisperX runtime qualification remains isolated to the dedicated self-hosted ASR gate.
 
 ## Validation that still MUST run on a provisioned build/deployment machine
 

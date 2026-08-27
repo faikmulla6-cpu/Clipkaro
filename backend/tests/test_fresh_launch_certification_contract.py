@@ -31,10 +31,10 @@ def _green_inputs(module):
     docker = {
         "images": {
             name: {"image_id": f"sha256:{name}", "repo_digest_or_id": f"sha256:{name}", "os": "linux", "architecture": "amd64"}
-            for name in ("api", "worker", "frontend")
+            for name in ("api", "media", "frontend")
         }
     }
-    workflow = {"run_id": "123", "repository": "faikmulla/ClipkaroAI"}
+    workflow = {"run_id": "123", "repository": module.EXPECTED_REPOSITORY}
     return checks, identity, preflight, pytest_data, npm_data, docker, workflow
 
 
@@ -55,10 +55,27 @@ def test_full_green_contract_is_the_only_certifiable_state() -> None:
     assert failures == []
 
 
+
+def test_wrong_repository_identity_is_blocked() -> None:
+    module = _load_module()
+    checks, identity, preflight, pytest_data, npm_data, docker, workflow = _green_inputs(module)
+    workflow["repository"] = "someone-else/Clipkaro"
+    decision, blockers, _ = module._certification_analysis(
+        identity=identity,
+        checks=checks,
+        execution_preflight=preflight,
+        pytest_data=pytest_data,
+        npm_data=npm_data,
+        docker_images=docker,
+        workflow=workflow,
+    )
+    assert decision == "BLOCKED"
+    assert any(module.EXPECTED_REPOSITORY in item for item in blockers)
+
 def test_missing_mandatory_check_is_blocked_not_certified() -> None:
     module = _load_module()
     checks, identity, preflight, pytest_data, npm_data, docker, workflow = _green_inputs(module)
-    checks.pop("backend_worker_image")
+    checks.pop("backend_media_image")
     decision, blockers, _ = module._certification_analysis(
         identity=identity,
         checks=checks,

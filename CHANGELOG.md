@@ -1,5 +1,19 @@
 # Changelog
 
+## 7.8.0 Stage 2J finalization hardening
+
+- Moved ordinary CI, critical product contracts and Fresh Launch certification onto GitHub-hosted Ubuntu runners while keeping heavyweight empirical QA on the self-hosted runner.
+- Fixed the Fresh Launch repository-identity contract for `faikmulla6-cpu/Clipkaro` and added wrong-repository fail-closed coverage.
+- Split Fresh Launch disk policy between ephemeral hosted image-build certification and heavyweight self-hosted qualification instead of applying the 25 GiB ASR floor to both.
+- Fixed the FFmpeg/FFprobe missing-tool regression test to exercise the media-tool resolver rather than bypassing its production fallback.
+- Upgraded Next.js to `16.3.3` and hardened PostCSS, Nanoid and Sharp lockfile floors to clear the production dependency-audit findings exposed by Ubuntu QA.
+- Made Next generated route typing deterministic for production builds, removed tracked TypeScript compiler cache state, and added a build-hygiene release contract.
+- Extended static release verification and CI/Fresh Launch enforcement so dependency, generated-file and frontend-build hygiene regressions fail closed.
+- Consolidated every `/admin/*` API route under the dedicated Founder service-token router, removed legacy customer-role admin handlers, and mounted Founder Admin explicitly in the application bootstrap.
+- Extended Founder Admin fail-closed defaults to the generic production template/legacy Compose path and hardened audit metadata redaction for token/secret key variants and credential-shaped values.
+- Aligned API-backed media execution with the `media` image target so scanning, FFmpeg and rendering remain available while local WhisperX stays isolated in the heavyweight `worker` target.
+- Fresh Launch now certifies that same `media` target instead of rebuilding the optional heavyweight WhisperX worker, reducing hosted-runner cost/time while preserving WhisperX qualification in the self-hosted ASR gate.
+
 ## 5.0.1 — Hindi Detection Fix
 
 - Fixed colloquial Hindi being accepted as Urdu during automatic detection.

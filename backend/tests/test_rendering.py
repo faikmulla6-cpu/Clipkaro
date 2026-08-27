@@ -23,7 +23,7 @@ def test_production_does_not_invent_word_timestamps():
 
 @pytest.mark.asyncio
 async def test_missing_ffmpeg_returns_actionable_error(monkeypatch, tmp_path: Path):
-    monkeypatch.setattr("app.services.video.shutil.which", lambda _: None)
+    monkeypatch.setattr("app.services.video.find_media_tool", lambda _: None)
     with pytest.raises(RuntimeError, match="FFmpeg and FFprobe were not found"):
         await probe_metadata(tmp_path / "video.mp4")
 

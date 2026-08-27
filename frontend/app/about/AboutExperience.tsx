@@ -478,10 +478,10 @@ export function AboutExperience() {
           </div>
 
           <div className={`${styles.socialLinks} ${story.socialStack}`}>
-            <a href="https://www.instagram.com/clipkaro.pro/" target="_blank" rel="noreferrer">
+            <a href="https://www.instagram.com/clipkaro.pro/" target="_blank" rel="noopener noreferrer">
               <Instagram size={18} /> <span><small>CLIPKARO</small>@clipkaro.pro</span> <ArrowRight size={15} />
             </a>
-            <a href="https://www.instagram.com/myself.fm/" target="_blank" rel="noreferrer">
+            <a href="https://www.instagram.com/myself.fm/" target="_blank" rel="noopener noreferrer">
               <Instagram size={18} /> <span><small>FOUNDER</small>@myself.fm</span> <ArrowRight size={15} />
             </a>
           </div>
@@ -525,7 +525,7 @@ export function AboutExperience() {
           <Link href="/pricing">Pricing</Link>
           <Link href="/privacy">Privacy</Link>
           <Link href="/terms">Terms</Link>
-          <a href="https://www.instagram.com/clipkaro.pro/" target="_blank" rel="noreferrer">Instagram</a>
+          <a href="https://www.instagram.com/clipkaro.pro/" target="_blank" rel="noopener noreferrer">Instagram</a>
         </div>
         <p className={styles.copyright}>© 2026 ClipKaro AI · Built for creators in India and beyond.</p>
       </footer>

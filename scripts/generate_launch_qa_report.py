@@ -21,6 +21,7 @@ MANDATORY_CHECKS = (
     "backend_environment",
     "backend_dependencies",
     "release_identity",
+    "release_static_verifier",
     "python_compile",
     "pip_check",
     "backend_tests",
@@ -36,19 +37,21 @@ MANDATORY_CHECKS = (
     "behavioral_learning",
     "landscape_reframe",
     "release_identity_postinstall",
+    "frontend_build_hygiene",
     "npm_audit",
     "frontend_build",
     "compose_validate",
     "caddy_validate",
     "backend_api_image",
-    "backend_worker_image",
-    "worker_alignment_runtime",
+    "backend_media_image",
+    "media_runtime",
     "frontend_image",
     "source_unchanged_after_checks",
     "docker_image_identity",
 )
 VALID_OUTCOMES = {"success", "failure", "blocked", "skipped"}
 MIN_BACKEND_TESTS = 150
+EXPECTED_REPOSITORY = "faikmulla6-cpu/Clipkaro"
 
 
 def _read(path: str) -> str:
@@ -236,8 +239,8 @@ def _certification_analysis(
 
     if not workflow.get("run_id"):
         blockers.append("GitHub workflow run ID is missing; certification must be tied to an immutable workflow artifact")
-    elif workflow.get("repository") != "faikmulla/ClipkaroAI":
-        blockers.append("GitHub repository identity does not match faikmulla/ClipkaroAI")
+    elif workflow.get("repository") != EXPECTED_REPOSITORY:
+        blockers.append(f"GitHub repository identity does not match {EXPECTED_REPOSITORY}")
 
     if checks.get("backend_tests") == "success":
         if not pytest_data.get("available"):
@@ -257,7 +260,7 @@ def _certification_analysis(
             blockers.append("docker_image_identity reported success but image evidence is missing")
         else:
             images = docker_images.get("images") or {}
-            for name in ("api", "worker", "frontend"):
+            for name in ("api", "media", "frontend"):
                 item = images.get(name) or {}
                 if not item.get("image_id") or not item.get("repo_digest_or_id"):
                     blockers.append(f"Docker identity evidence incomplete for {name} image")
@@ -347,7 +350,7 @@ def generate(args: argparse.Namespace) -> int:
         "certified": decision == "CERTIFIED",
         "decision": decision,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
-        "repository": "faikmulla/ClipkaroAI",
+        "repository": EXPECTED_REPOSITORY,
         "workflow": workflow,
         "identity": identity,
         "mandatory_checks": list(MANDATORY_CHECKS),

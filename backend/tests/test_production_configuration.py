@@ -85,7 +85,7 @@ def test_realistic_private_configuration_passes_offline_shape_checks() -> None:
         settings.razorpay_webhook_secret = "webhook-private-secret-1234567890-abcdefghijk"
         settings.groq_ranking_enabled = True
         settings.groq_api_keys = ""
-        settings.groq_api_key_1 = "gsk_test_private_key_shape_only"
+        settings.groq_api_key_1 = "test-groq-private-key-shape-only-123456"
         settings.database_backend = "postgres"
         settings.database_url = "postgresql://clipkaro:private@db.example.net/clipkaro?sslmode=require"
         settings.storage_backend = "gcs"
@@ -106,7 +106,7 @@ def test_realistic_private_configuration_passes_offline_shape_checks() -> None:
     serialized = repr(summary).lower()
     assert "private-razorpay" not in serialized
     assert "smtp-password" not in serialized
-    assert "gsk_private" not in serialized
+    assert "test-groq-private" not in serialized
 
 
 def test_source_contract_never_commits_private_env_and_has_secure_configurator() -> None:

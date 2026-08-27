@@ -52,7 +52,9 @@ EXCLUDED_SUFFIXES = {
 ALLOWED_ENV_FILES = {
     ".env.production.example",
     "backend/.env.example",
+    "backend/.env.modal.example",
     "frontend/.env.example",
+    "frontend/.env.production.example",
 }
 TEXT_SUFFIXES = {
     "", ".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json",
@@ -72,7 +74,11 @@ GENERIC_SECRET_PATTERNS = [
     ("Razorpay live key id", re.compile(r"rzp_live_[A-Za-z0-9]{10,}")),
     ("Groq key", re.compile(r"gsk_[A-Za-z0-9_-]{20,}")),
     ("Resend key", re.compile(r"(?<![A-Za-z0-9_])re_[A-Za-z0-9_-]{20,}")),
-    ("generic sk key", re.compile(r"(?<![A-Za-z0-9])sk_[A-Za-z0-9_-]{24,}")),
+    ("OpenAI-style key", re.compile(r"(?<![A-Za-z0-9])sk-(?:proj-)?[A-Za-z0-9_-]{20,}")),
+    ("GitHub token", re.compile(r"(?<![A-Za-z0-9_])(?:ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})")),
+    ("Google API key", re.compile(r"(?<![A-Za-z0-9])AIza[0-9A-Za-z_-]{30,}")),
+    ("AWS access key id", re.compile(r"(?<![A-Z0-9])(?:AKIA|ASIA)[A-Z0-9]{16}(?![A-Z0-9])")),
+    ("private key material", re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----")),
 ]
 
 
@@ -181,8 +187,11 @@ def scan_stage(destination: Path) -> list[str]:
             if value in content:
                 issues.append(f"known local secret/identity value from {key} found in {rel}")
         for label, pattern in MACHINE_PATH_PATTERNS:
-            if pattern.search(content):
+            for match in pattern.finditer(content):
+                if obviously_fixture(content, match.start(), match.end()):
+                    continue
                 issues.append(f"developer-machine {label} found in {rel}")
+                break
         for label, pattern in GENERIC_SECRET_PATTERNS:
             for match in pattern.finditer(content):
                 if obviously_fixture(content, match.start(), match.end()):

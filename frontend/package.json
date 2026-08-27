@@ -17,12 +17,13 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "check:release": "npm run check:settings-trust && npm run check:analytics-truth && npm run check:billing-lifecycle && npm run check:email-verification && npm run check:security-foundation && npm run check:legal-privacy && npm run check:behavioral-learning && npm run check:landscape-reframe && npm run check:release-identity"
+    "check:release": "npm run check:settings-trust && npm run check:analytics-truth && npm run check:billing-lifecycle && npm run check:email-verification && npm run check:security-foundation && npm run check:legal-privacy && npm run check:behavioral-learning && npm run check:landscape-reframe && npm run check:release-identity && npm run check:build-hygiene",
+    "check:build-hygiene": "node scripts/check-build-hygiene.mjs"
   },
   "dependencies": {
     "@radix-ui/react-progress": "^1.1.7",
     "lucide-react": "^0.468.0",
-    "next": "16.2.11",
+    "next": "16.3.3",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },
@@ -32,6 +33,8 @@
     "typescript": "^5.7.2"
   },
   "overrides": {
-    "postcss": "^8.5.10"
+    "postcss": "8.5.23",
+    "nanoid": "3.3.18",
+    "sharp": "0.35.4"
   }
 }

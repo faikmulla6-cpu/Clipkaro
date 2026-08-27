@@ -47,7 +47,7 @@ This document is the canonical handoff for taking the repository from a tested l
 - Demo-user seeding defaults off.
 - Provider credentials required for media processing are worker-side in production rather than copied into the public API process.
 - Production preflight reports secret-safe readiness and fails closed on unsafe production configuration. Request IDs are syntax/length bounded before reflection, and security headers are applied consistently even to early middleware denials.
-- Production worker image selection is explicit: `WORKER_IMAGE_TARGET=api` for the default API-provider ASR path, while an intentionally chosen local faster-whisper/WhisperX deployment must rebuild with `WORKER_IMAGE_TARGET=worker`.
+- Production worker image selection is explicit: `WORKER_IMAGE_TARGET=media` for the default API-provider ASR media path, while an intentionally chosen local faster-whisper/WhisperX deployment must rebuild with `WORKER_IMAGE_TARGET=worker`.
 - `scripts/backup-production.sh` creates a consistent SQLite online backup, verifies it and copies it outside the Docker volume. An independent/off-host copy is still required operationally.
 - `scripts/production-smoke.py` performs a secret-free HTTPS/edge/health/header smoke test after deployment.
 
@@ -59,8 +59,11 @@ The launch candidate pins framework/parser versions above the reviewed security 
 - Starlette `1.3.1`
 - python-multipart `0.0.31`
 - PyJWT `2.13.0`
-- Next.js `16.2.11`
+- Next.js `16.3.3`
 - React / ReactDOM `19.2.7` or newer within the lockfile
+- PostCSS `8.5.23` or newer
+- Nanoid `3.3.18` or newer
+- Sharp `0.35.0` or newer (currently locked to `0.35.4`)
 
 The release verifier checks these floors. Dependency advisories change over time, so run a fresh dependency/security audit again immediately before public deployment and during routine maintenance.
 
@@ -152,7 +155,7 @@ Do not enable full public Hinglish automatically. The generic production environ
 
 ## 5. Production commands
 
-Create a private deployment `.env` from `.env.production.example`. Keep `WORKER_IMAGE_TARGET=api` with the launch-default `ASR_MODE=api`. Only a deliberate legacy/local faster-whisper or WhisperX deployment should set `WORKER_IMAGE_TARGET=worker` and rebuild the worker image. Then:
+Create a private deployment `.env` from `.env.production.example`. Keep `WORKER_IMAGE_TARGET=media` with the launch-default `ASR_MODE=api`; the media job still needs scanning/FFmpeg/rendering even though transcription is provider-backed. Only a deliberate legacy/local faster-whisper or WhisperX deployment should set `WORKER_IMAGE_TARGET=worker` and rebuild the worker image. Then:
 
 ```bash
 docker compose -f docker-compose.hostinger.yml config

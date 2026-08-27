@@ -4,7 +4,7 @@ Fresh Launch QA is ClipKaro's build/deployment-candidate certification. It is de
 
 ## Certification rule
 
-`CERTIFIED` is possible only when one exact Git SHA completes the entire mandatory matrix on the trusted Linux x64 `clipkaro-qa` runner. An extracted ZIP, dirty checkout, missing workflow run ID, incomplete check list, unavailable Docker image identity, missing pytest/audit evidence, or runner/dependency/network prerequisite failure yields `BLOCKED`. A valid environment with a red product/build/security check yields `FAIL`.
+`CERTIFIED` is possible only when one exact Git SHA completes the entire mandatory matrix on the declared Fresh Launch runner. The default GitHub workflow uses an ephemeral GitHub-hosted Linux x64 runner; heavyweight empirical ASR/landscape qualification remains on the trusted self-hosted `clipkaro-qa` runner. An extracted ZIP, dirty checkout, missing workflow run ID, incomplete check list, unavailable Docker image identity, missing pytest/audit evidence, or runner/dependency/network prerequisite failure yields `BLOCKED`. A valid environment with a red product/build/security check yields `FAIL`.
 
 The authoritative certification record is the immutable workflow artifact `launch-qa/QA_REPORT.md` plus `launch-qa-evidence.json`. The tracked `docs/QA_REPORT.md` intentionally remains a pending release record until an exact candidate is executed. Rewriting a tracked file to say CERTIFIED after the run would create a new Git SHA that was never tested.
 
@@ -14,9 +14,10 @@ The exact candidate must prove all of the following:
 
 - exact 40-character `TESTED_SHA` equals checked-out `HEAD`
 - clean checkout before execution and unchanged tracked source after execution
-- self-hosted launch-runner prerequisites and outbound dependency/image access
+- launch-runner prerequisites and outbound dependency/image access, using the hosted-runner resource policy for Fresh Launch and the stricter self-hosted policy for heavyweight qualification
 - isolated Python 3.12 environment and locked backend dependency install
 - backend/frontend release identity 7.8.0
+- dependency-free static release/security verifier
 - Python compile and `pip check`
 - complete backend pytest suite with JUnit evidence and zero failures/errors
 - production-preflight regression
@@ -28,8 +29,8 @@ The exact candidate must prove all of the following:
 - production Compose validation
 - production Caddy validation
 - API Docker image build
-- media-worker Docker image build
-- pinned WhisperX/faster-whisper validation inside the built worker
+- production API-first `media` Docker image build
+- media runtime validation for FFmpeg/FFprobe/Tesseract/ClamAV plus proof that local faster-whisper/WhisperX are absent
 - frontend Docker image build
 - immutable identities for all three built images
 - tamper-evident final evidence digest
@@ -48,7 +49,9 @@ The GitHub workflow is the certification authority because it binds evidence to 
 bash scripts/check-self-hosted-runner.sh --profile launch
 ```
 
-The workflow itself additionally writes `launch-qa/execution-preflight.json`, which records the exact Git candidate, host/runtime availability, Docker daemon/Compose access, RAM/disk and required outbound registry reachability.
+The workflow itself additionally writes `launch-qa/execution-preflight.json`, which records the exact Git candidate, host/runtime availability, Docker daemon/Compose access, RAM/disk and required outbound registry reachability. The hosted API-first certification checks only PyPI, npm and Docker Hub endpoints; the PyTorch download host remains exclusive to the heavyweight local-ASR qualification path.
+
+For the ephemeral GitHub-hosted Fresh Launch job, the preflight keeps a **10 GiB free-disk hard floor** and **15+ GiB recommendation**, because this job builds images but does not execute the real-ASR corpus. The self-hosted heavyweight qualification policy remains **25 GiB hard minimum / 40+ GiB recommended**.
 
 ## Current external payment evidence
 

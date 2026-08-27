@@ -40,7 +40,8 @@ must(settings.includes("router.include_router(behavioral_router)"), "behavior AP
 must(api.includes('router.post("/clips/{clip_id}/behavior"'), "clip behavior endpoint is missing");
 must(api.includes('router.post("/exports/{export_id}/download-event"'), "download receipt endpoint is missing");
 must(api.includes("ConfigDict(extra=\"forbid\")"), "behavior API must reject arbitrary payload fields");
-must(api.includes("learning_diagnostics"), "admin diagnostics endpoint is not using privacy-minimized coverage reporting");
+must(reporting.includes("async def learning_diagnostics"), "privacy-minimized learning coverage reporting is missing");
+must(!api.includes('router.get("/admin/'), "behavior API must not expose a customer-role admin surface");
 must(privacyApi.includes('"behavioral_learning"'), "privacy export does not include learning data");
 
 must(projectPage.includes("IntersectionObserver") && projectPage.includes("intersectionRatio >= 0.5"), "impressions are not viewport-qualified");

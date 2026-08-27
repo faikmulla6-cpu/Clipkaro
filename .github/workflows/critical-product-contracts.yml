@@ -34,6 +34,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Run static release verifier
+        run: python scripts/verify-release-static.py
       - name: Create isolated backend virtualenv
         working-directory: backend
         run: |
@@ -100,6 +102,9 @@ jobs:
       - name: Legal and privacy paid-launch contract
         working-directory: frontend
         run: npm run check:legal-privacy
+      - name: Check frontend build hygiene contract
+        working-directory: frontend
+        run: npm run check:build-hygiene
       - name: Clean frontend job workspace
         if: always()
         run: rm -rf frontend/node_modules frontend/.next

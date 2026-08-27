@@ -113,7 +113,7 @@ def validate(env: dict[str, str]) -> list[str]:
     worker_target = get("WORKER_IMAGE_TARGET").lower()
     if asr_mode not in {"api", "local"}:
         b.append("ASR_MODE_INVALID")
-    elif (asr_mode == "api" and worker_target != "api") or (asr_mode == "local" and worker_target != "worker"):
+    elif (asr_mode == "api" and worker_target != "media") or (asr_mode == "local" and worker_target != "worker"):
         b.append("WORKER_IMAGE_TARGET_ASR_MODE_MISMATCH")
 
     if get("HINGLISH_STAGE1_ENABLED").lower() in {"true", "1", "yes", "on"} and not get("HINGLISH_STAGE1_USER_IDS"):

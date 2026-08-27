@@ -111,7 +111,7 @@ The test suite covers scoring, subtitle timing, authentication, usage, upload pe
 
 ### Before public paid launch
 
-The repository is deliberately domain-neutral. Configure the purchased HTTPS domain, real operator/customer-care/grievance particulars, a verified Resend sender (or SMTP fallback), rotated provider credentials, and the Razorpay LIVE webhook secret only in the private production environment. The generic `.env.production.example` fails closed and does not enable the private Hinglish cohort by default.
+The tracked production template targets `https://clipkaro.pro` but remains secret-free and fail-closed. Configure the real operator/customer-care/grievance particulars, a verified Resend sender (or SMTP fallback), rotated provider credentials, and the Razorpay LIVE webhook secret only in the private production environment. Founder Admin and the private Hinglish cohort both remain disabled by default.
 
 
 API-first ASR migration details and provider configuration are in

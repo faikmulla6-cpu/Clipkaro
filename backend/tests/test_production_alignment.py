@@ -128,15 +128,18 @@ def test_asr_models_are_released_before_whisperx_alignment_loads() -> None:
     assert "gc.collect()" in between
 
 
-def test_fresh_launch_qa_builds_api_worker_and_validates_worker_runtime() -> None:
+def test_fresh_launch_qa_builds_exact_api_first_production_images() -> None:
     workflow = _read(".github/workflows/fresh-launch-qa.yml")
     assert "--target api" in workflow
-    assert "--target worker" in workflow
-    assert "worker_alignment_runtime" in workflow
-    assert "validate_forced_alignment_runtime" in workflow
+    assert "--target media" in workflow
+    assert "--target worker" not in workflow
+    assert "media_runtime" in workflow
+    assert "production media runtime validated" in workflow
+    assert "find_spec('faster_whisper') is None" in workflow
+    assert "find_spec('whisperx') is None" in workflow
     assert "--check backend_api_image=" in workflow
-    assert "--check backend_worker_image=" in workflow
-    assert "--check worker_alignment_runtime=" in workflow
+    assert "--check backend_media_image=" in workflow
+    assert "--check media_runtime=" in workflow
 
 
 def test_real_asr_verdict_uses_forced_whisperx_profile() -> None:

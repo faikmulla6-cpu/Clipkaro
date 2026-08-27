@@ -49,3 +49,14 @@ def test_founder_admin_contract_declares_no_write_methods() -> None:
     contract = _load_contract()
     assert contract["write_methods_allowed"] == []
     assert all(item["method"] == "GET" for item in contract["endpoints"])
+
+
+def test_no_legacy_customer_role_admin_routes_remain() -> None:
+    root = Path(__file__).resolve().parents[2]
+    routes_source = (root / "backend/app/api/routes.py").read_text(encoding="utf-8")
+    behavioral_source = (root / "backend/app/api/behavioral_learning.py").read_text(encoding="utf-8")
+    main_source = (root / "backend/app/main.py").read_text(encoding="utf-8")
+
+    assert '@router.get("/admin/' not in routes_source
+    assert '@router.get("/admin/' not in behavioral_source
+    assert "app.include_router(founder_admin_router, prefix=settings.api_prefix)" in main_source

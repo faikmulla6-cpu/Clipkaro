@@ -48,6 +48,7 @@ expected_router_symbols = {
     "media_router",
     "account_security_router",
     "email_verification_router",
+    "founder_admin_router",
     "secure_upload_router",
     "worker_jobs_router",
     "legal_router",
@@ -70,6 +71,18 @@ for api_file in sorted((ROOT / "backend/app/api").glob("*.py")):
     except SyntaxError as exc:
         check(f"API syntax: {api_file.name}", False, str(exc))
         continue
+    router_prefix = ""
+    for statement in tree.body:
+        if not isinstance(statement, ast.Assign):
+            continue
+        if not any(isinstance(target, ast.Name) and target.id == "router" for target in statement.targets):
+            continue
+        if not (isinstance(statement.value, ast.Call) and isinstance(statement.value.func, ast.Name) and statement.value.func.id == "APIRouter"):
+            continue
+        for keyword in statement.value.keywords:
+            if keyword.arg == "prefix" and isinstance(keyword.value, ast.Constant) and isinstance(keyword.value.value, str):
+                router_prefix = keyword.value.value.rstrip("/")
+                break
     for node in ast.walk(tree):
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
@@ -85,7 +98,9 @@ for api_file in sorted((ROOT / "backend/app/api").glob("*.py")):
                 and isinstance(decorator.args[0].value, str)
             ):
                 continue
-            route_map[(decorator.func.attr.upper(), decorator.args[0].value)].append(
+            route_path = decorator.args[0].value
+            full_path = f"{router_prefix}{route_path}" if router_prefix else route_path
+            route_map[(decorator.func.attr.upper(), full_path)].append(
                 f"{api_file.name}:{node.name}"
             )
 duplicates = {key: owners for key, owners in route_map.items() if len(owners) > 1}
@@ -93,6 +108,21 @@ check(
     "no duplicate API method/path registrations",
     not duplicates,
     "; ".join(f"{method} {path} -> {owners}" for (method, path), owners in sorted(duplicates.items())),
+)
+admin_route_owners = {
+    (method, path): owners
+    for (method, path), owners in route_map.items()
+    if path == "/admin" or path.startswith("/admin/")
+}
+non_founder_admin_owners = {
+    key: owners
+    for key, owners in admin_route_owners.items()
+    if any(not owner.startswith("founder_admin.py:") for owner in owners)
+}
+check(
+    "all /admin API routes are owned by founder service-token router",
+    not non_founder_admin_owners,
+    "; ".join(f"{method} {path} -> {owners}" for (method, path), owners in sorted(non_founder_admin_owners.items())),
 )
 canonical_routes = {
     ("POST", "/auth/signup"): "email_verification.py:signup_with_verification",
@@ -131,7 +161,9 @@ check("production Caddy image supports request_body", "image: caddy:2.10" in com
 
 # --- Production fail-closed defaults --------------------------------------
 prod = text(".env.production.example")
-check("production domain is a placeholder", "DOMAIN=REPLACE_WITH_DOMAIN" in prod)
+check("production domain is locked to ClipKaro", "DOMAIN=clipkaro.pro" in prod and "DOMAIN=REPLACE_WITH_DOMAIN" not in prod)
+check("generic production Founder Admin defaults fail closed", "ADMIN_API_ENABLED=false" in prod and re.search(r"(?m)^ADMIN_API_SERVICE_TOKEN=\s*$", prod) is not None)
+check("legacy production Compose passes Founder Admin gate only to API", "ADMIN_API_ENABLED: ${ADMIN_API_ENABLED:-false}" in compose and "ADMIN_API_SERVICE_TOKEN: ${ADMIN_API_SERVICE_TOKEN:-}" in compose and len(re.findall(r"(?m)^\s+ADMIN_API_SERVICE_TOKEN:\s", compose)) == 1)
 check("production frontend URL is locked to ClipKaro", "FRONTEND_URL=https://clipkaro.pro" in prod)
 check("production boot validates HTTPS frontend callback URL", "FRONTEND_URL_NOT_HTTPS" in text("backend/app/services/production_configuration.py"))
 check("local LIVE Razorpay bypass disabled in production example", "ALLOW_LIVE_RAZORPAY_IN_DEVELOPMENT=false" in prod)
@@ -267,18 +299,44 @@ lock = json.loads(text("frontend/package-lock.json"))
 check("Next 16 package scripts do not call removed next lint", "next lint" not in json.dumps(package.get("scripts", {})))
 check("frontend exposes explicit TypeScript release check", package.get("scripts", {}).get("typecheck") == "tsc --noEmit")
 next_declared = package.get("dependencies", {}).get("next", "0.0.0")
-next_locked = lock.get("packages", {}).get("node_modules/next", {}).get("version", "0.0.0")
-react_locked = lock.get("packages", {}).get("node_modules/react", {}).get("version", "0.0.0")
-check("Next.js release floor >= 16.2.11", version_tuple(next_locked) >= (16, 2, 11), f"locked={next_locked}")
+lock_packages = lock.get("packages", {})
+next_locked = lock_packages.get("node_modules/next", {}).get("version", "0.0.0")
+react_locked = lock_packages.get("node_modules/react", {}).get("version", "0.0.0")
+postcss_locked = lock_packages.get("node_modules/postcss", {}).get("version", "0.0.0")
+nanoid_locked = lock_packages.get("node_modules/nanoid", {}).get("version", "0.0.0")
+sharp_locked = lock_packages.get("node_modules/sharp", {}).get("version", "0.0.0")
+check("Next.js security/release floor >= 16.3.3", version_tuple(next_locked) >= (16, 3, 3), f"locked={next_locked}")
 check("package.json/package-lock Next versions agree", version_tuple(next_declared) == version_tuple(next_locked), f"declared={next_declared} locked={next_locked}")
+check("PostCSS security floor >= 8.5.23", version_tuple(postcss_locked) >= (8, 5, 23), f"locked={postcss_locked}")
+check("Nanoid security floor >= 3.3.18", version_tuple(nanoid_locked) >= (3, 3, 18), f"locked={nanoid_locked}")
+check("Sharp security floor >= 0.35.0", version_tuple(sharp_locked) >= (0, 35, 0), f"locked={sharp_locked}")
+required_linux_lock_integrities = (
+    "node_modules/@next/swc-linux-x64-gnu",
+    "node_modules/@next/swc-linux-x64-musl",
+    "node_modules/@img/sharp-linux-x64",
+    "node_modules/@img/sharp-libvips-linux-x64",
+    "node_modules/@img/sharp-linuxmusl-x64",
+    "node_modules/@img/sharp-libvips-linuxmusl-x64",
+)
+check(
+    "Linux CI/Alpine production lock entries retain SHA-512 integrity",
+    all(str(lock_packages.get(name, {}).get("integrity") or "").startswith("sha512-") for name in required_linux_lock_integrities),
+)
 check("React locked version >= 19.2.7", version_tuple(react_locked) >= (19, 2, 7), f"locked={react_locked}")
+next_env = text("frontend/next-env.d.ts")
+check("Next generated type route import is production-deterministic", './.next/types/routes.d.ts' in next_env and './.next/dev/types/routes.d.ts' not in next_env)
+check("TypeScript build cache is ignored", "*.tsbuildinfo" in text(".gitignore"))
+check("generated frontend tsbuildinfo is absent from release source", not (ROOT / "frontend/tsconfig.tsbuildinfo").exists())
 
 # --- Release hygiene -------------------------------------------------------
 check("demo user seeding defaults off in production compose", 'SEED_DEMO_USER: "false"' in compose)
 check("production local LIVE Razorpay opt-in forced off", 'ALLOW_LIVE_RAZORPAY_IN_DEVELOPMENT: "false"' in compose)
 check("worker consumes API ASR by default", "ASR_MODE: ${ASR_MODE:-api}" in compose)
-check("Cloud Run media image target matches production architecture", "FROM worker AS media" in dockerfile and "WORKER_IMAGE_TARGET=media" in prod)
+check("Cloud Run media image target matches production architecture", "FROM media-base AS media" in dockerfile and 'CMD ["python", "-m", "app.media_job"]' in dockerfile and "WORKER_IMAGE_TARGET=media" in prod)
 check("local WhisperX worker target is documented fail-explicit", "WORKER_IMAGE_TARGET=worker" in prod and "ASR_MODE=local" in prod)
+fresh_launch_workflow = text(".github/workflows/fresh-launch-qa.yml")
+check("Fresh Launch builds API-first production media target", "docker build --pull --target media" in fresh_launch_workflow and "docker build --pull --target worker" not in fresh_launch_workflow)
+check("Fresh Launch keeps heavyweight local ASR out of hosted certification", "find_spec('faster_whisper') is None" in fresh_launch_workflow and "find_spec('whisperx') is None" in fresh_launch_workflow)
 prod_env_check = text("scripts/check-production-env.py")
 check("offline production env check enforces live Razorpay mode and disables local opt-in", "RAZORPAY_MODE_NOT_LIVE" in prod_env_check and "LIVE_RAZORPAY_DEVELOPMENT_OPT_IN_ENABLED" in prod_env_check)
 check("offline production env check enforces worker image/ASR mode pairing", "WORKER_IMAGE_TARGET_ASR_MODE_MISMATCH" in prod_env_check)

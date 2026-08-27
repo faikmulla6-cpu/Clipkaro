@@ -34,6 +34,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Run static release verifier
+        run: python scripts/verify-release-static.py
       - name: Create isolated backend virtualenv
         working-directory: backend
         run: |
@@ -106,6 +108,9 @@ jobs:
       - name: Check Release identity contract
         working-directory: frontend
         run: npm run check:release-identity
+      - name: Check frontend build hygiene contract
+        working-directory: frontend
+        run: npm run check:build-hygiene
       - name: Validate production Compose
         env:
           DOMAIN: clipkaro.example

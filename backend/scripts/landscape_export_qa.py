@@ -128,7 +128,7 @@ def _acquire_source(source: dict[str, str], target: Path, source_dir: Path | Non
 def _download(source: dict[str, str], target: Path) -> dict[str, Any]:
     encoded = quote(source["filename"], safe="._-()")
     url = f"https://commons.wikimedia.org/wiki/Special:Redirect/file/{encoded}"
-    headers = {"User-Agent": "ClipKaroAI-Landscape-QA/1.0 (https://clipkaro.pro)"}
+    headers = {"User-Agent": "ClipKaro-Landscape-QA/1.0 (https://clipkaro.pro)"}
     last_error: Exception | None = None
     for attempt in range(3):
         try:

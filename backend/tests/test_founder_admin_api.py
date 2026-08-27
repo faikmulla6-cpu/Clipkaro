@@ -108,7 +108,14 @@ def test_founder_admin_audit_metadata_redacts_secret_fields(admin_client: TestCl
                 "test.secret_metadata",
                 "test",
                 "entity-1",
-                json.dumps({"plan": "creator", "token": "do-not-return", "nested": {"password": "hidden"}}),
+                json.dumps({
+                    "plan": "creator",
+                    "token": "do-not-return",
+                    "access_token": "do-not-return-either",
+                    "client-secret": "also-hidden",
+                    "nested": {"password": "hidden"},
+                    "message": "Bearer abcdefghijklmnopqrstuvwxyz0123456789",
+                }),
                 "2026-08-26T00:00:00+00:00",
             ),
         )
@@ -118,7 +125,10 @@ def test_founder_admin_audit_metadata_redacts_secret_fields(admin_client: TestCl
     item = next(row for row in response.json()["items"] if row["id"] == "admin-audit-redaction-test")
     assert item["metadata"]["plan"] == "creator"
     assert item["metadata"]["token"] == "[redacted]"
+    assert item["metadata"]["access_token"] == "[redacted]"
+    assert item["metadata"]["client-secret"] == "[redacted]"
     assert item["metadata"]["nested"]["password"] == "[redacted]"
+    assert item["metadata"]["message"] == "[redacted]"
 
 
 def test_founder_admin_module_has_no_write_database_dependency():

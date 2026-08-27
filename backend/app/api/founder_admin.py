@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -30,6 +31,14 @@ _SENSITIVE_METADATA_KEYS = {
     "webhook_secret",
     "razorpay_key_secret",
 }
+_SENSITIVE_METADATA_KEY_MARKERS = ("password", "token", "secret", "authorization", "cookie", "api_key", "apikey", "payload")
+_CREDENTIAL_VALUE_PATTERNS = (
+    re.compile(r"\brzp_live_[A-Za-z0-9]{8,}\b"),
+    re.compile(r"\bgsk_[A-Za-z0-9_-]{16,}\b"),
+    re.compile(r"\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b"),
+    re.compile(r"\b(?:ghp_|github_pat_)[A-Za-z0-9_]{20,}\b"),
+    re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/-]{16,}=*"),
+)
 
 
 def _utc_now() -> datetime:
@@ -101,8 +110,8 @@ def _sanitize_metadata(value: Any, *, depth: int = 0) -> Any:
     if isinstance(value, dict):
         result: dict[str, Any] = {}
         for key, item in value.items():
-            normalized = str(key).strip().lower()
-            if normalized in _SENSITIVE_METADATA_KEYS:
+            normalized = re.sub(r"[^a-z0-9_]+", "_", str(key).strip().lower())
+            if normalized in _SENSITIVE_METADATA_KEYS or any(marker in normalized for marker in _SENSITIVE_METADATA_KEY_MARKERS):
                 result[str(key)] = "[redacted]"
             else:
                 result[str(key)] = _sanitize_metadata(item, depth=depth + 1)
@@ -110,7 +119,10 @@ def _sanitize_metadata(value: Any, *, depth: int = 0) -> Any:
     if isinstance(value, list):
         return [_sanitize_metadata(item, depth=depth + 1) for item in value[:50]]
     if isinstance(value, str):
-        return value[:1000]
+        cleaned = value[:1000]
+        if any(pattern.search(cleaned) for pattern in _CREDENTIAL_VALUE_PATTERNS):
+            return "[redacted]"
+        return cleaned
     return value
 
 

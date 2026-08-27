@@ -58,7 +58,7 @@ Do not bypass that check to make a red runner appear healthy.
 4. When running `config.sh`, add the custom label `clipkaro-qa`. For example, preserve GitHub's generated URL/token and add:
 
 ```bash
-./config.sh --url https://github.com/faikmulla/ClipkaroAI --token <SHORT_LIVED_TOKEN> --labels clipkaro-qa
+./config.sh --url https://github.com/faikmulla6-cpu/Clipkaro --token <SHORT_LIVED_TOKEN> --labels clipkaro-qa
 ```
 
 5. Install/start it as a service using the service commands shown by GitHub for the downloaded runner package.

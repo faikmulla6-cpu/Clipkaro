@@ -54,10 +54,10 @@ A 7.8.0 certification requires all of the following on the exact tested SHA:
    - `docker compose -f docker-compose.hostinger.yml config --quiet`
    - production Caddyfile validates with the pinned Caddy image
    - production API Docker image builds from the exact checkout
-   - production media-worker Docker image builds from the exact checkout
-   - built worker validates the pinned WhisperX/faster-whisper runtime before certification
+   - production API-first `media` Docker image builds from the exact checkout
+   - built media image validates FFmpeg/FFprobe/Tesseract/ClamAV and proves local faster-whisper/WhisperX are absent
    - frontend production Docker image builds from the exact checkout
-   - API/worker/frontend Docker image IDs are recorded in immutable evidence
+   - API/media/frontend Docker image IDs are recorded in immutable evidence
 
 6. **Evidence integrity**
    - every mandatory check outcome is written to machine-readable JSON
@@ -91,7 +91,7 @@ No certification result is recorded here yet. After the dedicated workflow produ
 - every frontend trust-contract/build result
 - dependency audit result
 - Compose/Caddy validation result
-- API/worker/frontend image-build results and worker alignment-runtime result
+- API/media/frontend image-build results and media-runtime result
 - any warnings that did not change the pass/fail decision
 
 Until then, **7.8.0 is not certified by this document**.

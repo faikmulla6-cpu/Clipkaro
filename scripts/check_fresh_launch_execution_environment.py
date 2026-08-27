@@ -15,6 +15,28 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# Fresh Launch on GitHub-hosted runners builds the production images but does not
+# execute the heavyweight real-ASR corpus. The observed hosted runner completed
+# all three images with ~12.7 GiB free. Keep a fail-closed 10 GiB floor there,
+# while preserving the 25 GiB hard minimum for self-hosted/heavy qualification.
+GITHUB_HOSTED_MIN_DISK_GIB = 10.0
+GITHUB_HOSTED_RECOMMENDED_DISK_GIB = 15.0
+SELF_HOSTED_MIN_DISK_GIB = 25.0
+SELF_HOSTED_RECOMMENDED_DISK_GIB = 40.0
+
+
+def _disk_policy(github_hosted: bool) -> tuple[float, float]:
+    if github_hosted:
+        return GITHUB_HOSTED_MIN_DISK_GIB, GITHUB_HOSTED_RECOMMENDED_DISK_GIB
+    return SELF_HOSTED_MIN_DISK_GIB, SELF_HOSTED_RECOMMENDED_DISK_GIB
+
+
+def _required_network_hosts(github_hosted: bool) -> tuple[str, ...]:
+    core = ("pypi.org", "files.pythonhosted.org", "registry.npmjs.org", "registry-1.docker.io")
+    if github_hosted:
+        return core
+    return (*core, "download.pytorch.org")
+
 
 def _command(name: str) -> dict[str, Any]:
     path = shutil.which(name)
@@ -137,12 +159,18 @@ def main() -> int:
         blockers.append(f"runner memory below required minimum ({minimum_memory_mib} MiB); found {memory_mib} MiB")
     elif memory_mib < 7400:
         warnings.append(f"GitHub-hosted runner has less than the self-hosted 8 GB-class target; found {memory_mib} MiB")
-    elif memory_mib < 11264:
-        warnings.append(f"12+ GiB visible RAM recommended for worker image/WhisperX qualification; found {memory_mib} MiB")
-    if disk_gib < 25:
-        blockers.append(f"at least 25 GiB free disk required; found {disk_gib:.2f} GiB")
-    elif disk_gib < 40:
-        warnings.append(f"40+ GiB free disk recommended for Docker layers and dependency caches; found {disk_gib:.2f} GiB")
+    elif memory_mib < 11264 and not github_hosted:
+        warnings.append(f"12+ GiB visible RAM recommended for heavyweight WhisperX qualification; found {memory_mib} MiB")
+    minimum_disk_gib, recommended_disk_gib = _disk_policy(github_hosted)
+    if disk_gib < minimum_disk_gib:
+        runner_kind = "GitHub-hosted Fresh Launch" if github_hosted else "self-hosted/heavy QA"
+        blockers.append(
+            f"{runner_kind} requires at least {minimum_disk_gib:g} GiB free disk; found {disk_gib:.2f} GiB"
+        )
+    elif disk_gib < recommended_disk_gib:
+        warnings.append(
+            f"{recommended_disk_gib:g}+ GiB free disk recommended for this runner class; found {disk_gib:.2f} GiB"
+        )
 
     git_identity = _git_identity(args.tested_sha.strip())
     if not git_identity["available"]:
@@ -153,7 +181,7 @@ def main() -> int:
         if not git_identity["clean"]:
             blockers.append("Git working tree is not clean before Fresh Launch QA")
 
-    network_hosts = ("pypi.org", "files.pythonhosted.org", "download.pytorch.org", "registry.npmjs.org", "registry-1.docker.io")
+    network_hosts = _required_network_hosts(github_hosted)
     network = {host: _tcp_probe(host) for host in network_hosts}
     unreachable = [host for host, value in network.items() if not value["reachable"]]
     if unreachable:

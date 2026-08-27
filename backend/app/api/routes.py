@@ -15,7 +15,7 @@ from app.schemas.api import (
     AnalyseRequest, BrandKitRequest, ClipOut, ClipPatch, ExportOut, ExportRequest,
     ProjectPatch, ScheduleRequest, UsageOut, UserOut,
 )
-from app.services.auth import current_user, require_role
+from app.services.auth import current_user
 from app.services.jobs import create_job, event_payload, update_job, utcnow
 from app.services.rendering import create_edited_srt, create_srt, timed_words
 from app.services.render_gate import render_short_limited
@@ -646,11 +646,3 @@ async def analytics(user:dict=Depends(current_user))->dict:
     seconds = summary.pop("seconds_processed")
     return {"summary":{**summary,"avg_score":round(summary["avg_score"],1),"minutes_processed":round(seconds/60,1)},
             "usage":usage.model_dump(),"categories":categories,"activity":list(reversed(activity))}
-
-
-@router.get("/admin/overview")
-async def admin_overview(_:dict=Depends(require_role("admin")))->dict:
-    users=await fetch_one("SELECT COUNT(*) n FROM users"); projects=await fetch_one("SELECT COUNT(*) n FROM projects")
-    jobs=await fetch_all("SELECT status,COUNT(*) count FROM jobs GROUP BY status")
-    exports=await fetch_one("SELECT COUNT(*) n FROM exports WHERE status='ready'")
-    return {"users":users["n"],"projects":projects["n"],"exports":exports["n"],"jobs":jobs}
