@@ -101,13 +101,17 @@ def main() -> int:
 
     linux_x64 = platform.system() == "Linux" and platform.machine().lower() in {"x86_64", "amd64"}
     non_root = not hasattr(os, "geteuid") or os.geteuid() != 0
+    github_hosted = (
+        os.environ.get("GITHUB_ACTIONS", "").lower() == "true"
+        and os.environ.get("RUNNER_ENVIRONMENT", "").lower() == "github-hosted"
+    )
     memory_mib = _visible_memory_mib()
     disk_gib = _free_disk_gib(ROOT)
 
     if not linux_x64:
         blockers.append("Fresh Launch QA host must be Linux x64")
     if not non_root:
-        blockers.append("self-hosted launch runner must use an unprivileged account")
+        blockers.append("launch runner must use an unprivileged account")
     for name in ("git", "python3.12", "node", "npm", "ffmpeg", "ffprobe", "docker"):
         if not commands[name]["available"]:
             blockers.append(f"required command missing: {name}")
@@ -128,8 +132,11 @@ def main() -> int:
     if commands["docker"]["available"] and not compose.get("ok"):
         blockers.append("Docker Compose v2 plugin unavailable")
 
-    if memory_mib < 7400:
-        blockers.append(f"8 GB-class host required (>=7400 MiB visible RAM); found {memory_mib} MiB")
+    minimum_memory_mib = 6500 if github_hosted else 7400
+    if memory_mib < minimum_memory_mib:
+        blockers.append(f"runner memory below required minimum ({minimum_memory_mib} MiB); found {memory_mib} MiB")
+    elif memory_mib < 7400:
+        warnings.append(f"GitHub-hosted runner has less than the self-hosted 8 GB-class target; found {memory_mib} MiB")
     elif memory_mib < 11264:
         warnings.append(f"12+ GiB visible RAM recommended for worker image/WhisperX qualification; found {memory_mib} MiB")
     if disk_gib < 25:
@@ -166,6 +173,8 @@ def main() -> int:
             "python_running_checker": platform.python_version(),
             "memory_mib": memory_mib,
             "free_disk_gib": disk_gib,
+            "runner_environment": os.environ.get("RUNNER_ENVIRONMENT"),
+            "github_hosted": github_hosted,
         },
         "commands": commands,
         "versions": {
