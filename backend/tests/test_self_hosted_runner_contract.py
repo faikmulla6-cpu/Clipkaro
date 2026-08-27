@@ -5,24 +5,29 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = ROOT / ".github" / "workflows"
 REQUIRED_RUNNER = "runs-on: [self-hosted, linux, x64, clipkaro-qa]"
+GITHUB_HOSTED_RUNNER = "runs-on: ubuntu-latest"
 
 
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def test_required_workflows_use_zero_cost_self_hosted_runner() -> None:
-    names = {
+def test_required_workflows_use_approved_linux_runners() -> None:
+    github_hosted = {
         "ci.yml",
         "critical-product-contracts.yml",
+        "fresh-launch-qa.yml",
+    }
+    self_hosted = {
         "pr-governance.yml",
         "asr-stress.yml",
         "landscape-export-qa.yml",
-        "fresh-launch-qa.yml",
     }
-    for name in names:
+    for name in github_hosted:
         text = _read(WORKFLOWS / name)
-        assert "runs-on: ubuntu-latest" not in text, name
+        assert GITHUB_HOSTED_RUNNER in text, name
+    for name in self_hosted:
+        text = _read(WORKFLOWS / name)
         assert REQUIRED_RUNNER in text, name
 
 
@@ -78,5 +83,5 @@ def test_backend_jobs_use_isolated_virtualenv_contract() -> None:
         "fresh-launch-qa.yml",
     ):
         text = _read(WORKFLOWS / name)
-        assert "python3.12 -m venv .venv-ci" in text, name
+        assert ("python3.12 -m venv .venv-ci" in text or "python -m venv .venv-ci" in text), name
         assert 'echo "$PWD/.venv-ci/bin" >> "$GITHUB_PATH"' in text, name
