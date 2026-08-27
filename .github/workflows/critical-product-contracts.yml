@@ -30,6 +30,10 @@ jobs:
           python-version: '3.12'
           cache: pip
           cache-dependency-path: backend/requirements-dev.txt
+      - name: Install FFmpeg on ephemeral Ubuntu runner
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
       - name: Create isolated backend virtualenv
         working-directory: backend
         run: |
