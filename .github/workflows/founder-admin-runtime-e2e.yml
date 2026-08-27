@@ -47,6 +47,9 @@ jobs:
     steps:
       - name: Checkout isolated Stage 2F revision
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          clean: true
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
