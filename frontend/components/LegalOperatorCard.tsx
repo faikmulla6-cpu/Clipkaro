@@ -1,18 +1,36 @@
 "use client";
 
 import { api } from "@/lib/api";
-import { LegalConfig } from "@/lib/legal";
+import { LegalConfig, TRUST_PROFILE } from "@/lib/legal";
 import { CSSProperties, useEffect, useState } from "react";
 
 export function LegalOperatorCard() {
   const [config, setConfig] = useState<LegalConfig | null>(null);
   const [failed, setFailed] = useState(false);
+  const [slow, setSlow] = useState(false);
 
   useEffect(() => {
-    api<LegalConfig>("/legal/config").then(setConfig).catch(() => setFailed(true));
+    let active = true;
+    const slowTimer = window.setTimeout(() => {
+      if (active) setSlow(true);
+    }, 4_000);
+
+    api<LegalConfig>("/legal/config").then((result) => {
+      if (!active) return;
+      setConfig(result);
+      setFailed(false);
+      setSlow(false);
+    }).catch(() => {
+      if (active) setFailed(true);
+    }).finally(() => window.clearTimeout(slowTimer));
+
+    return () => {
+      active = false;
+      window.clearTimeout(slowTimer);
+    };
   }, []);
 
-  if (failed) return <div style={warning}><b>Public operator details could not be loaded.</b><br/>Paid checkout should not be used until customer-care, privacy and grievance details load correctly.</div>;
+  if ((failed || slow) && !config) return <FallbackOperatorCard failed={failed} />;
   if (!config) return <div style={muted}>Loading public operator and support details…</div>;
 
   return <div style={card}>
@@ -31,6 +49,24 @@ export function LegalOperatorCard() {
   </div>;
 }
 
+function FallbackOperatorCard({ failed }: { failed: boolean }) {
+  return <div style={card}>
+    <div style={failed ? warningInline : noticeInline}>
+      <b>{failed ? "Official operator details are temporarily unavailable." : "Official operator details are taking longer than expected."}</b><br/>
+      Public support channels are shown below. Paid checkout remains gated until full operator, principal address, customer-care and grievance particulars are available from the production server.
+    </div>
+    <div><span style={label}>Service</span><b>{TRUST_PROFILE.serviceName}</b></div>
+    <div><span style={label}>Built by</span><b>{TRUST_PROFILE.founderName}, {TRUST_PROFILE.founderTitle}</b></div>
+    <div><span style={label}>Website</span><a href={TRUST_PROFILE.website}>{TRUST_PROFILE.website}</a></div>
+    <div><span style={label}>Customer care</span><a href={`mailto:${TRUST_PROFILE.supportEmail}`}>{TRUST_PROFILE.supportEmail}</a></div>
+    <div><span style={label}>Privacy contact</span><a href={`mailto:${TRUST_PROFILE.privacyEmail}`}>{TRUST_PROFILE.privacyEmail}</a></div>
+    <div><span style={label}>Legal notices</span><a href={`mailto:${TRUST_PROFILE.legalEmail}`}>{TRUST_PROFILE.legalEmail}</a></div>
+    <div><span style={label}>Grievance email</span><a href={`mailto:${TRUST_PROFILE.grievanceEmail}`}>{TRUST_PROFILE.grievanceEmail}</a></div>
+    <div><span style={label}>Response expectation</span><span>{TRUST_PROFILE.supportExpectation}</span></div>
+    <div><span style={label}>Media deletion and retention</span><span>{TRUST_PROFILE.mediaRetention} {TRUST_PROFILE.deletionSummary}</span></div>
+  </div>;
+}
+
 const card: CSSProperties = {
   display: "grid",
   gap: 14,
@@ -41,6 +77,6 @@ const card: CSSProperties = {
   color: "#1f2b25",
 };
 const label: CSSProperties = { display: "block", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", color: "#5f6f66", marginBottom: 3 };
-const warning: CSSProperties = { padding: 18, border: "1px solid #e6a23c", borderRadius: 14, background: "#fff8e8", color: "#5d430f", lineHeight: 1.55 };
 const warningInline: CSSProperties = { padding: 14, border: "1px solid #e6a23c", borderRadius: 12, background: "#fff8e8", color: "#5d430f", lineHeight: 1.55 };
+const noticeInline: CSSProperties = { padding: 14, border: "1px solid #b9d5c7", borderRadius: 12, background: "#effaf3", color: "#1e5d3e", lineHeight: 1.55 };
 const muted: CSSProperties = { padding: 16, color: "#66736d" };
