@@ -1,7 +1,8 @@
-import { ArrowRight, Check, Clapperboard, Languages, Play, Scissors, ShieldCheck, Sparkles, Subtitles, Upload, WandSparkles, Zap } from "lucide-react";
+import { ArrowRight, Check, Clapperboard, Headphones, Languages, LockKeyhole, Play, Scissors, ShieldCheck, Sparkles, Subtitles, Upload, UserRound, WandSparkles, Zap } from "lucide-react";
 import Link from "next/link";
 import { Logo } from "@/components/Logo";
 import { MobileLandingMenu } from "@/components/MobileLandingMenu";
+import { SmoothAnchorLink } from "@/components/SmoothAnchorLink";
 import { TransitionLink } from "@/components/TransitionLink";
 import { LEGAL_LINKS, TRUST_PROFILE } from "@/lib/legal";
 import { SEO_PAGES } from "@/lib/seo-pages";
@@ -15,10 +16,10 @@ export default function Home() {
     <nav className="landing-nav">
       <Logo />
       <div className={`nav-links ${home.desktopNavigation}`}>
-        <a href="#how">How it works</a>
-        <a href="#features">Features</a>
-        <a href="#use-cases">Use cases</a>
-        <a href="#pricing">Pricing</a>
+        <SmoothAnchorLink href="#how">How it works</SmoothAnchorLink>
+        <SmoothAnchorLink href="#features">Features</SmoothAnchorLink>
+        <SmoothAnchorLink href="#use-cases">Use cases</SmoothAnchorLink>
+        <SmoothAnchorLink href="#pricing">Pricing</SmoothAnchorLink>
         <TransitionLink href="/about">About</TransitionLink>
       </div>
       <div className={`nav-ctas ${home.desktopNavigation}`}>
@@ -27,7 +28,7 @@ export default function Home() {
       </div>
       <MobileLandingMenu />
     </nav>
-    <section className="hero"><span className="eyebrow"><Sparkles size={13}/> Built for Indian creators</span><h1>Turn long videos into <span className="lime-underline">scroll-stopping Shorts</span></h1><p>Upload once. ClipKaro AI finds your strongest moments, explains why they work, adds creator-grade captions, and produces platform-ready clips.</p><div className="hero-actions"><Link className="primary-btn" href="/signup"><Upload size={17}/> Create your first Short</Link><a className="secondary-btn" href="#how"><Play size={15}/> See how it works</a></div><div className="hero-note">No card required · Start free · Upload content you own</div>
+    <section className="hero"><span className="eyebrow"><Sparkles size={13}/> Built for Indian creators</span><h1>Turn long videos into <span className="lime-underline">scroll-stopping Shorts</span></h1><p>Upload once. ClipKaro AI finds your strongest moments, explains why they work, adds creator-grade captions, and produces platform-ready clips.</p><div className="hero-actions"><Link className="primary-btn" href="/signup"><Upload size={17}/> Create your first Short</Link><SmoothAnchorLink className="secondary-btn" href="#how"><Play size={15}/> See how it works</SmoothAnchorLink></div><div className="hero-note">No card required · Start free · Upload content you own</div>
       <div className="hero-product"><div className="mock-window"><div className="mock-side"><div className="mini-logo">✦ ClipKaro</div><div className="mock-nav"><span>Overview</span><span>Upload video</span><span>My projects</span><span>Analytics</span></div></div><div className="mock-body"><div className="mock-title"><div><h3>Your best moments are ready</h3><small>5 clips found in “How I grew my channel”</small></div><span className="mock-export-label" aria-hidden="true">Export selected</span></div><div className="mock-stats"><div className="mock-stat"><span>Moments found</span><b>05</b></div><div className="mock-stat"><span>Best moment score</span><b>94</b></div><div className="mock-stat"><span>Minutes saved</span><b>47</b></div></div>{["The mistake almost every creator makes", "My simple 3-step growth system"].map((t,i)=><div className="clip-row" key={t}><div className="clip-thumb"><Play size={18}/></div><div className="clip-copy"><b>{t}</b><span>{i?'06:18 – 06:57':'02:10 – 02:46'} · Educational insight</span></div><div className="score">{i?'89':'94'}</div></div>)}</div></div></div>
     </section>
     <div className="trust-strip">Designed for <b>YouTubers · Coaches · Teachers · Podcasters · Local businesses · Agencies</b></div>
@@ -35,21 +36,32 @@ export default function Home() {
     <section className="section" id="features"><div className="section-heading"><span>Made to save hours</span><h2>Everything needed for your next Short</h2></div><div className="feature-grid">{[[Scissors,"Smart clip finder","Ranks moments by hook, clarity, emotion, value, and clean endings."],[Subtitles,"Burned-in subtitles","Readable two-line captions designed for mobile feeds."],[Languages,"India-first language support","English, Hindi and Marathi are supported. Hinglish is not generally available yet while quality validation continues."],[Zap,"Cost-smart rendering","Videos render only after you choose a moment, keeping plans affordable."],[ShieldCheck,"Rights-safe by design","Upload-first workflow for content you own or have permission to use."],[Sparkles,"Hooks and titles","Each suggestion includes a title, hook, reason, score and best platform."]].map(([I,t,d]:any)=><div className="feature-card" key={t}><div className="feature-icon"><I size={21}/></div><h3>{t}</h3><p>{d}</p></div>)}</div></section>
     <section className="section homepage-use-case-section" id="use-cases"><div className="section-heading"><span>Popular workflows</span><h2>Repurpose the videos creators already have</h2><p>High-intent ClipKaro workflows for YouTube creators, Hindi speakers, podcasters, educators and agencies.</p></div><div className="seo-use-case-grid homepage-use-cases">{SEO_PAGES.slice(0,6).map((item)=><TransitionLink key={item.slug} href={`/${item.slug}`}><Check size={16}/><span>{item.title}</span></TransitionLink>)}</div></section>
     <section className="section pricing-preview" id="pricing"><div className="section-heading"><span>Fair Access Pricing</span><h2>Start small. Grow when you grow.</h2><p>Professional AI clipping from ₹59 without forcing you into a subscription.</p></div><div className="price-grid">{[{n:'Mini Pass',p:'₹59',s:'one-time',d:'For students & small creators',f:['25 Karo Minutes','5 Shorts','1080p · no watermark']},{n:'Growth',p:'₹399',s:'/month',d:'Most popular for serious creators',f:['180 Karo Minutes','50 Shorts','1080p · no watermark'],hot:true},{n:'Pro',p:'₹799',s:'/month',d:'For daily publishing',f:['480 Karo Minutes','150 Shorts','Same strong ClipKaro AI']}].map(x=><div className={`price-card ${x.hot?'featured':''}`} key={x.n}><h3>{x.n}</h3><p>{x.d}</p><div className="price">{x.p}<small>{x.s}</small></div><ul>{x.f.map(y=><li key={y}><Check size={14}/>{y}</li>)}</ul><Link href="/pricing" className="primary-btn">View {x.n}</Link></div>)}</div><p style={{textAlign:"center",marginTop:20,color:"#657169",fontSize:13}}>Mini Pass never auto-renews. Monthly plans renew until cancelled or changed. <Link href="/refund-policy">Refund & cancellation policy</Link>.</p></section>
-    <section className="trust-band">
-      <div>
+    <section className="trust-band" aria-label="ClipKaro trust commitments">
+      <div className="trust-band-heading">
+        <span>Trust before upload</span>
+        <h2>Built by a real founder, with clear support and private media rules.</h2>
+        <p>Before a creator uploads a video or pays, ClipKaro should answer the obvious trust questions directly.</p>
+      </div>
+      <div className="trust-card">
+        <i><UserRound size={20}/></i>
         <span>Founder-led</span>
         <b>{TRUST_PROFILE.founderName}</b>
-        <p>{TRUST_PROFILE.founderTitle}. <Link href="/about#founder">Read about the builder</Link>.</p>
+        <p>{TRUST_PROFILE.founderTitle}. Direct product ownership, public founder story and clear operator details before checkout.</p>
+        <TransitionLink href="/about#founder">Read founder story <ArrowRight size={14}/></TransitionLink>
       </div>
-      <div>
+      <div className="trust-card">
+        <i><Headphones size={20}/></i>
         <span>Support expectation</span>
         <b>48-hour acknowledgement</b>
-        <p>Billing and support questions use the contacts on <Link href="/contact">Contact</Link>.</p>
+        <p>Billing, upload and account questions use visible customer-care contacts with a published response expectation.</p>
+        <TransitionLink href="/contact">Contact support <ArrowRight size={14}/></TransitionLink>
       </div>
-      <div>
+      <div className="trust-card">
+        <i><LockKeyhole size={20}/></i>
         <span>Private media</span>
         <b>Uploads expire automatically</b>
-        <p>Source and export files use a short retention window. <Link href="/privacy">See retention details</Link>.</p>
+        <p>Source videos and exports use a short retention window, with privacy and deletion rules explained plainly.</p>
+        <TransitionLink href="/privacy">See retention details <ArrowRight size={14}/></TransitionLink>
       </div>
     </section>
     <footer className="landing-footer"><div className="footer-inner" style={{alignItems:"flex-start",gap:20,flexWrap:"wrap"}}><div><Logo light/><p>© 2026 ClipKaro AI. Create responsibly. Built for India.</p></div><div style={{display:"flex",gap:12,flexWrap:"wrap",fontSize:12}}><TransitionLink href="/about">About</TransitionLink><Link href="/contact">Contact</Link>{LEGAL_LINKS.map(([label,href])=><Link key={href} href={href}>{label}</Link>)}</div></div></footer>

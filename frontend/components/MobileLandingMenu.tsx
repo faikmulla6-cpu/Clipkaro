@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Menu, X } from "lucide-react";
+import { SmoothAnchorLink } from "./SmoothAnchorLink";
 import { TransitionLink } from "./TransitionLink";
 import styles from "./mobile-landing-menu.module.css";
 
@@ -57,11 +58,11 @@ export function MobileLandingMenu() {
 
         <nav className={styles.links} aria-label="Mobile homepage navigation">
           {sectionLinks.map(([label, href], index) => (
-            <a href={href} key={href} onClick={() => setOpen(false)}>
+            <SmoothAnchorLink href={href} key={href} onClick={() => setOpen(false)}>
               <span>0{index + 1}</span>
               <strong>{label}</strong>
               <ArrowRight size={17} />
-            </a>
+            </SmoothAnchorLink>
           ))}
           <TransitionLink href="/about" onClick={() => setOpen(false)}>
             <span>05</span>
