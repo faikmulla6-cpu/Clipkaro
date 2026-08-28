@@ -1,5 +1,5 @@
 "use client";
-import { BarChart3, Bell, CalendarDays, CircleHelp, CreditCard, FolderKanban, Home, LayoutTemplate, LogOut, Menu, Palette, Plus, Settings, Upload, Video, X } from "lucide-react";
+import { BarChart3, Bell, CalendarDays, CircleHelp, CreditCard, FolderKanban, Home, LayoutTemplate, LogOut, Menu, Palette, Plus, ServerCog, Settings, Upload, Video, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -29,7 +29,7 @@ export function AppShell({ children, title, subtitle, action }: { children: Reac
     <aside id="workspace-navigation" className={`sidebar ${open?"sidebar-open":""}`} aria-label="Workspace navigation">
       <div className="side-top"><Logo/><button type="button" className="icon-btn mobile-only app-menu-button" onClick={()=>setOpen(false)} aria-label="Close workspace menu"><X size={20}/></button></div>
       <Link href="/upload" className="new-project"><Plus size={17}/> Create new Short</Link>
-      <nav className="side-nav"><p className="nav-label">Workspace</p>{nav(workspace)}<p className="nav-label">Creator studio</p>{nav(studio)}<p className="nav-label">Account</p><Link href="/pricing" className={path==="/pricing"?"active":""}><CreditCard size={18}/><span>Plans & billing</span></Link><Link href="/account" className={path==="/account"?"active":""}><Settings size={18}/><span>Settings</span></Link></nav>
+      <nav className="side-nav"><p className="nav-label">Workspace</p>{nav(workspace)}<p className="nav-label">Creator studio</p>{nav(studio)}{user.role==="admin"&&<><p className="nav-label">Internal</p><Link href="/admin" className={path==="/admin"?"active":""}><ServerCog size={18}/><span>Admin queue</span></Link></>}<p className="nav-label">Account</p><Link href="/pricing" className={path==="/pricing"?"active":""}><CreditCard size={18}/><span>Plans & billing</span></Link><Link href="/account" className={path==="/account"?"active":""}><Settings size={18}/><span>Settings</span></Link></nav>
       <div className="usage-card"><div className="usage-row"><span>Karo Minutes</span><b>{usage?`${Math.round(usage.source_minutes)} / ${Math.round(usage.processing_minutes_limit)}`:"—"}</b></div><div className="progress"><span style={{width:`${usage&&usage.processing_minutes_limit?Math.min(usage.source_minutes/usage.processing_minutes_limit*100,100):0}%`}}/></div><p>{usage?`${usage.exports_remaining} Shorts left · ${Math.round(usage.processing_minutes_remaining)} min remaining`:"Loading usage…"}</p><Link href="/pricing">View plans & billing</Link></div>
       <div className="side-footer"><Link href="/help"><CircleHelp size={18}/> Help centre</Link><div className="profile-chip"><div className="avatar">{user.name.slice(0,2).toUpperCase()}</div><div><b>{user.name}</b><span>{user.plan} plan</span></div><button className="logout-icon" title="Sign out" aria-label="Sign out" onClick={logout}><LogOut size={15}/></button></div></div>
     </aside>

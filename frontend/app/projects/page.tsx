@@ -46,6 +46,7 @@ export default function Projects() {
     const matchesFilter = filter === "All"
       || (filter === "Ready" && project.status === "ready")
       || (filter === "Processing" && ["processing", "queued"].includes(project.status))
+      || (filter === "Needs attention" && project.status === "failed")
       || (filter === "Exported" && project.export_count > 0);
     return matchesSearch && matchesFilter;
   }), [data, query, filter]);
@@ -58,7 +59,7 @@ export default function Projects() {
     >
       <div className="project-toolbar">
         <div className="search-box"><Search size={16}/><input type="search" aria-label="Search projects" autoComplete="off" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search projects…"/></div>
-        <div className="filter-tabs">{["All", "Ready", "Processing", "Exported"].map((item) => (
+        <div className="filter-tabs">{["All", "Ready", "Processing", "Needs attention", "Exported"].map((item) => (
           <button key={item} type="button" onClick={() => setFilter(item)} className={filter === item ? "active" : ""}>{item}</button>
         ))}</div>
       </div>
@@ -95,7 +96,7 @@ export default function Projects() {
               ) : project.video_status === "expired" ? (
                 <div className="failed-pill"><Clock3 size={12}/>Source expired · history kept</div>
               ) : project.status === "failed" ? (
-                <div className="failed-pill"><AlertCircle size={12}/>Needs attention</div>
+                <div className="failed-pill" title={project.error || "Processing failed"}><AlertCircle size={12}/>Retry available</div>
               ) : (
                 <div className="ready-row"><span className="ready-pill"><Sparkles size={12}/>Ready</span><small><Clock3 size={11}/>Updated {new Date(project.updated_at).toLocaleDateString()}</small></div>
               )}

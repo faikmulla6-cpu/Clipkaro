@@ -70,6 +70,26 @@ def _export_is_expired(row: dict) -> bool:
         return True
 
 
+def _parse_timestamp(value: object) -> datetime | None:
+    if not value:
+        return None
+    try:
+        text = str(value).replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(text)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
+def _age_seconds(value: object) -> int | None:
+    parsed = _parse_timestamp(value)
+    if not parsed:
+        return None
+    return max(0, int((now() - parsed).total_seconds()))
+
+
 async def audit(user_id: str | None, event: str, entity_type: str = "", entity_id: str = "", metadata: dict | None = None) -> None:
     await execute("INSERT INTO audit_events VALUES (?, ?, ?, ?, ?, ?, ?)",
                   (str(uuid.uuid4()), user_id, event, entity_type, entity_id, json.dumps(metadata or {}), utcnow()))
@@ -539,13 +559,21 @@ async def _render_export(job_id:str,export_id:str,clip:dict,video:dict,request:E
 
 @router.get("/exports")
 async def list_exports(user:dict=Depends(current_user))->list[dict]:
-    rows = await fetch_all("""SELECT e.*,c.title,c.hook,p.title project_title FROM exports e JOIN clips c ON c.id=e.clip_id
-      JOIN videos v ON v.id=c.video_id JOIN projects p ON p.id=v.project_id WHERE e.user_id=? ORDER BY e.created_at DESC""",(user["id"],))
+    rows = await fetch_all("""SELECT e.*,c.title,c.hook,p.title project_title,
+      j.id job_id,j.status job_status,j.stage job_stage,j.message job_message,j.updated_at job_updated_at
+      FROM exports e JOIN clips c ON c.id=e.clip_id
+      JOIN videos v ON v.id=c.video_id JOIN projects p ON p.id=v.project_id
+      LEFT JOIN jobs j ON j.id=(
+        SELECT id FROM jobs WHERE export_id=e.id AND kind='render_export' ORDER BY updated_at DESC LIMIT 1
+      )
+      WHERE e.user_id=? ORDER BY e.created_at DESC""",(user["id"],))
     # The hourly cleanup loop is best-effort. Never advertise an expired private
     # file as ready merely because its physical deletion has not run yet.
     for row in rows:
         if row.get("status") == "ready" and _export_is_expired(row):
             row["status"] = "expired"
+        row["job_age_seconds"] = _age_seconds(row.get("job_updated_at") or row.get("created_at"))
+        row["attention_needed"] = row.get("status") in {"queued", "processing"} and (row.get("job_age_seconds") or 0) > 600
     return rows
 
 
@@ -650,7 +678,26 @@ async def analytics(user:dict=Depends(current_user))->dict:
 
 @router.get("/admin/overview")
 async def admin_overview(_:dict=Depends(require_role("admin")))->dict:
+    from app.services.jobs import worker_runtime_snapshot
     users=await fetch_one("SELECT COUNT(*) n FROM users"); projects=await fetch_one("SELECT COUNT(*) n FROM projects")
     jobs=await fetch_all("SELECT status,COUNT(*) count FROM jobs GROUP BY status")
+    jobs_by_kind=await fetch_all("SELECT kind,status,COUNT(*) count FROM jobs GROUP BY kind,status ORDER BY kind,status")
+    recent_jobs=await fetch_all("""SELECT j.id,j.kind,j.status,j.progress,j.stage,j.message,j.error,j.project_id,j.export_id,
+      j.created_at,j.updated_at,p.title project_title,c.title clip_title,u.email user_email
+      FROM jobs j
+      LEFT JOIN projects p ON p.id=j.project_id
+      LEFT JOIN exports e ON e.id=j.export_id
+      LEFT JOIN clips c ON c.id=e.clip_id
+      LEFT JOIN users u ON u.id=j.user_id
+      WHERE j.kind IN ('process_video','upgrade_pipeline','render_export')
+      ORDER BY j.updated_at DESC LIMIT 40""")
+    stale_seconds=max(60,int(get_settings().job_claim_stale_seconds))
+    for row in recent_jobs:
+        row["age_seconds"]=_age_seconds(row.get("updated_at"))
+        row["stale"] = row.get("status") in {"queued","processing"} and (row.get("age_seconds") or 0) > stale_seconds
     exports=await fetch_one("SELECT COUNT(*) n FROM exports WHERE status='ready'")
-    return {"users":users["n"],"projects":projects["n"],"exports":exports["n"],"jobs":jobs}
+    return {
+      "users":users["n"],"projects":projects["n"],"exports":exports["n"],
+      "jobs":jobs,"jobs_by_kind":jobs_by_kind,"recent_jobs":recent_jobs,
+      "worker":await worker_runtime_snapshot(),"stale_after_seconds":stale_seconds,
+    }

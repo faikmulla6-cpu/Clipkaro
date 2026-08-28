@@ -4,6 +4,7 @@ import { AppShell } from "@/components/AppShell";
 import { API_URL, api } from "@/lib/api";
 import { recordDownload } from "@/lib/behavior";
 import { AlertCircle, CheckCircle2, Clock3, Download, FileVideo, Loader2, RefreshCw, XCircle } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 type ExportRow = {
@@ -19,6 +20,13 @@ type ExportRow = {
   created_at: string;
   expires_at?: string;
   error?: string | null;
+  job_id?: string | null;
+  job_status?: string | null;
+  job_stage?: string | null;
+  job_message?: string | null;
+  job_updated_at?: string | null;
+  job_age_seconds?: number | null;
+  attention_needed?: boolean;
 };
 
 type ExportStatus = {
@@ -39,6 +47,13 @@ function statusIcon(status: string) {
   if (status === "failed") return <XCircle size={16} />;
   if (status === "expired") return <Clock3 size={16} />;
   return <Loader2 className="spin" size={16} />;
+}
+
+function jobAgeLabel(seconds?: number | null) {
+  if (seconds === null || seconds === undefined) return "";
+  if (seconds < 90) return "updated just now";
+  const minutes = Math.floor(seconds / 60);
+  return `last update ${minutes} min ago`;
 }
 
 export default function Exports() {
@@ -115,6 +130,7 @@ export default function Exports() {
           {rows.map((item, index) => {
             const ready = item.status === "ready";
             const preparing = downloadingId === item.id;
+            const pending = item.status === "queued" || item.status === "processing";
             return (
               <div
                 className="export-history-row"
@@ -142,12 +158,23 @@ export default function Exports() {
                   <div className="export-history-meta" style={{ marginTop: 5, color: "var(--muted)", fontSize: 11 }}>
                     {item.project_title || "Project"} · {item.resolution || "720p"} · {item.aspect_ratio || "9:16"} · {createdLabel(item.created_at)}
                   </div>
+                  {item.job_message && pending && <div style={{ marginTop: 5, color: item.attention_needed ? "var(--red)" : "var(--muted)", fontSize: 11 }}>
+                    {item.attention_needed ? "Taking longer than usual: " : ""}{item.job_message}{item.job_age_seconds ? ` · ${jobAgeLabel(item.job_age_seconds)}` : ""}
+                  </div>}
                   {item.error && <div style={{ marginTop: 5, color: "var(--red)", fontSize: 11 }}>{item.error}</div>}
                 </div>
                 <div className="export-history-action">
                   {ready ? (
                     <button className="primary-btn small" type="button" disabled={preparing} onClick={() => void downloadExport(item.id)}>
                       {preparing ? <Loader2 className="spin" size={15} /> : <Download size={15} />}{preparing ? "Preparing…" : "Download MP4"}
+                    </button>
+                  ) : item.status === "failed" ? (
+                    <Link className="primary-btn small" href={`/editor/${item.clip_id}`}>
+                      <RefreshCw size={14} />Retry export
+                    </Link>
+                  ) : pending ? (
+                    <button className="secondary-btn small" type="button" onClick={() => void load()}>
+                      <RefreshCw size={14} />{item.attention_needed ? "Refresh status" : "Still rendering"}
                     </button>
                   ) : (
                     <button className="secondary-btn small" type="button" disabled style={{ opacity: .55 }}>

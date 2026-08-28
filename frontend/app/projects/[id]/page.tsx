@@ -4,7 +4,7 @@ import { AppShell } from "@/components/AppShell";
 import { ErrorState } from "@/components/ErrorState";
 import { API_URL, api, postJSON } from "@/lib/api";
 import { newBehaviorSession, trackClipBehavior } from "@/lib/behavior";
-import { ArrowLeft, ChevronRight, LayoutGrid, List, Pause, Play, Sparkles, Target, WandSparkles } from "lucide-react";
+import { AlertCircle, ArrowLeft, ChevronRight, Clock3, LayoutGrid, List, Pause, Play, RefreshCw, Sparkles, Target, Upload, WandSparkles } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -15,10 +15,30 @@ type Clip = {
   score_breakdown: Record<string, number>; platform: string; transcript_text: string;
 };
 type TranscriptState = { current: boolean; export_safe: boolean; reason: string };
-type Project = { id: string; title: string; status: string; stage?: string; progress?: number; duration: number; language: string; detected_language?: string; clips: Clip[]; transcript_state?: TranscriptState; source_available?: boolean; upgrade_blocked?: string };
+type Project = { id: string; title: string; status: string; stage?: string; progress?: number; duration: number; language: string; detected_language?: string; clips: Clip[]; transcript_state?: TranscriptState; source_available?: boolean; upgrade_blocked?: string; error?: string | null; updated_at?: string | null };
 type ReprocessResponse = { job_id: string };
 const languageNames: Record<string,string> = { en: "English", hi: "Hindi", mr: "Marathi", ur: "Urdu", auto: "Auto", hinglish: "Hinglish" };
 const formatTime = (seconds: number) => `${Math.floor(seconds / 60)}:${String(Math.round(seconds % 60)).padStart(2, "0")}`;
+
+function minutesSince(value?: string | null) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return Math.max(0, Math.floor((Date.now() - parsed.getTime()) / 60000));
+}
+
+function processingMessage(project: Project, staleMinutes: number | null) {
+  if (staleMinutes !== null && staleMinutes >= 10) {
+    return "This is taking longer than normal. Your upload is still saved; refresh once, and if it has not moved, use Retry after ClipKaro marks it failed or upload the source again.";
+  }
+  if (project.stage === "queued" || project.stage === "recovery") {
+    return "Your video is waiting for the media worker. You can leave this page and come back from Projects.";
+  }
+  if (project.stage === "transcribing") {
+    return "ClipKaro is creating timestamped captions. Long videos and mixed-language audio can take a few minutes.";
+  }
+  return "ClipKaro is analysing the source and preparing verified clips.";
+}
 
 function MomentPreview({ projectId, clip, rank, behaviorSessionId, sourceAvailable }: { projectId: string; clip: Clip; rank: number; behaviorSessionId: string; sourceAvailable: boolean }) {
   const ref = useRef<HTMLVideoElement>(null);
@@ -116,17 +136,54 @@ export default function ProjectDetail() {
     return () => window.clearInterval(timer);
   }, [id, project?.status]);
 
-  async function reprocessLanguage(){
+  async function startReprocess(language = languageChoice){
     setReprocessing(true); setError("");
     try{
-      await postJSON<ReprocessResponse>(`/projects/${id}/reprocess`,{language:languageChoice});
-      const timer=window.setInterval(async()=>{try{const data=await api<Project>(`/projects/${id}`);if(data.status==="ready"||data.status==="failed"){clearInterval(timer);setProject(data);setReprocessing(false);if(data.status==="failed")setError("Language re-analysis failed. Open Upload to view processing diagnostics.")}}catch{/* retry */}},1200);
+      await postJSON<ReprocessResponse>(`/projects/${id}/reprocess`,{language});
+      const refreshed = await api<Project>(`/projects/${id}`);
+      setProject(refreshed);
+      const timer=window.setInterval(async()=>{try{const data=await api<Project>(`/projects/${id}`);setProject(data);if(data.status==="ready"||data.status==="failed"){clearInterval(timer);setReprocessing(false);}}catch{/* retry */}},1200);
     }catch(cause){setReprocessing(false);setError(cause instanceof Error?cause.message:"Could not re-analyse this video.")}
+  }
+
+  async function reprocessLanguage(){
+    await startReprocess(languageChoice);
   }
 
   if (error) return <AppShell title="Project"><ErrorState message={error} retry={load} /></AppShell>;
   if (loading || !project) return <AppShell title="Opening project"><div className="screen-loader inline"><div className="loader-mark">✦</div><p>Loading moments and source video…</p></div></AppShell>;
-  if (["queued", "processing"].includes(project.status)) return <AppShell title={project.title} subtitle="Upgrading this project to the verified caption pipeline" action={<Link href="/projects" className="secondary-btn small"><ArrowLeft size={14} />All projects</Link>}><div className="screen-loader inline"><div className="loader-mark">✦</div><h2>{project.stage === "upgrading" ? "Rebuilding captions with the latest accuracy model" : "Analysing audio and video"}</h2><p>Old clips are hidden until their transcript, word timing, and caption safety checks pass.</p><div className="progress-track"><i style={{width:`${Math.max(3, project.progress || 0)}%`}} /></div><small>{project.progress || 0}% complete</small></div></AppShell>;
+  if (project.status === "failed") return <AppShell title={project.title} subtitle="This project needs attention" action={<Link href="/projects" className="secondary-btn small"><ArrowLeft size={14} />All projects</Link>}>
+    <div className="empty-state">
+      <div className="empty-icon"><AlertCircle size={24}/></div>
+      <h3>Processing did not finish</h3>
+      <p>{project.error || "ClipKaro could not finish analysing this video. Retry once; if it fails again, upload a shorter or cleaner source."}</p>
+      <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+        <button className="primary-btn" type="button" disabled={reprocessing || project.source_available === false} onClick={() => void startReprocess(project.detected_language || project.language || "auto")}>
+          {reprocessing ? <RefreshCw className="spin" size={15}/> : <RefreshCw size={15}/>}
+          {reprocessing ? "Retrying…" : "Retry processing"}
+        </button>
+        <Link href="/upload" className="secondary-btn"><Upload size={15}/>Upload again</Link>
+      </div>
+      {project.source_available === false && <small style={{ color: "var(--muted)" }}>The retained source file has expired, so retry is unavailable for this project.</small>}
+    </div>
+  </AppShell>;
+  if (["queued", "processing"].includes(project.status)) {
+    const staleMinutes = minutesSince(project.updated_at);
+    const stale = staleMinutes !== null && staleMinutes >= 10;
+    return <AppShell title={project.title} subtitle="Processing your source video" action={<Link href="/projects" className="secondary-btn small"><ArrowLeft size={14} />All projects</Link>}>
+      <div className="screen-loader inline">
+        <div className="loader-mark">✦</div>
+        <h2>{project.stage === "upgrading" ? "Rebuilding captions with the latest accuracy model" : stale ? "Still working, but taking longer than usual" : "Analysing audio and video"}</h2>
+        <p>{processingMessage(project, staleMinutes)}</p>
+        <div className="progress-track"><i style={{width:`${Math.max(3, project.progress || 0)}%`}} /></div>
+        <small>{project.progress || 0}% complete{staleMinutes !== null ? ` · last update ${staleMinutes} min ago` : ""}</small>
+        {stale && <div className="processing-actions">
+          <button className="secondary-btn small" type="button" onClick={() => void load()}><RefreshCw size={14}/>Refresh status</button>
+          <Link href="/contact" className="secondary-btn small"><Clock3 size={14}/>Contact support</Link>
+        </div>}
+      </div>
+    </AppShell>;
+  }
   const clips = project.clips.filter(clip => filter === "Best match" || filter === "Under 30 sec" && clip.end_time - clip.start_time <= 30 || filter === "High hook" && (clip.score_breakdown.hook || 0) >= 75 || filter === "High emotion" && (clip.score_breakdown.emotion || 0) >= 65);
 
   return <AppShell title={project.title} subtitle={`${project.clips.length} AI-ranked moments · ${formatTime(project.duration || 0)} source · ${languageNames[project.detected_language || project.language] || "Language pending"}`} action={<Link href="/projects" className="secondary-btn small"><ArrowLeft size={14} />All projects</Link>}>
