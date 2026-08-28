@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import Link from "next/link";
 import { ArrowRight, Check, ShieldCheck, Sparkles, Upload, WandSparkles } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { MobileLandingMenu } from "@/components/MobileLandingMenu";
@@ -80,16 +79,17 @@ export default async function SeoLandingPage({ params }: PageProps) {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }} />
 
       <nav className="landing-nav">
-        <Link href="/" aria-label="ClipKaro AI home"><Logo /></Link>
+        <TransitionLink href="/" aria-label="ClipKaro AI home"><Logo /></TransitionLink>
         <div className="nav-links">
+          <TransitionLink href="/">Home</TransitionLink>
           <a href="#workflow">Workflow</a>
           <a href="#use-cases">Use cases</a>
           <a href="#faq">FAQ</a>
-          <Link href="/pricing">Pricing</Link>
+          <TransitionLink href="/pricing">Pricing</TransitionLink>
         </div>
         <div className="nav-ctas">
-          <Link href="/login" className="text-btn">Login</Link>
-          <Link href="/signup" className="primary-btn">Start free <ArrowRight size={16}/></Link>
+          <TransitionLink href="/login" className="text-btn">Login</TransitionLink>
+          <TransitionLink href="/signup" className="primary-btn">Start free <ArrowRight size={16}/></TransitionLink>
         </div>
         <MobileLandingMenu />
       </nav>
@@ -99,8 +99,8 @@ export default async function SeoLandingPage({ params }: PageProps) {
         <h1>{page.h1}</h1>
         <p>{page.lead}</p>
         <div className="hero-actions">
-          <Link href="/signup" className="primary-btn">Try ClipKaro free <ArrowRight size={16}/></Link>
-          <Link href="/pricing" className="secondary-btn">See pricing</Link>
+          <TransitionLink href="/signup" className="primary-btn">Try ClipKaro free <ArrowRight size={16}/></TransitionLink>
+          <TransitionLink href="/pricing" className="secondary-btn">See pricing</TransitionLink>
         </div>
       </header>
 
@@ -176,7 +176,7 @@ export default async function SeoLandingPage({ params }: PageProps) {
         <section className="seo-final-cta">
           <h2>Start with one video. Judge the clips yourself.</h2>
           <p>The fastest proof is whether ClipKaro finds moments you would actually publish.</p>
-          <Link href="/signup" className="primary-btn">Create your first clips <ArrowRight size={16}/></Link>
+          <TransitionLink href="/signup" className="primary-btn">Create your first clips <ArrowRight size={16}/></TransitionLink>
         </section>
       </main>
 
@@ -184,10 +184,11 @@ export default async function SeoLandingPage({ params }: PageProps) {
         <div className="footer-inner" style={{ alignItems: "flex-start", gap: 20, flexWrap: "wrap" }}>
           <div><Logo light/><p>© 2026 ClipKaro AI. Create responsibly. Built for India.</p></div>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: 12 }}>
+            <TransitionLink href="/">Home</TransitionLink>
             <TransitionLink href="/about">About</TransitionLink>
-            <Link href="/contact">Contact</Link>
-            {SEO_PAGES.slice(0, 4).map((item) => <Link key={item.slug} href={`/${item.slug}`}>{item.title}</Link>)}
-            {LEGAL_LINKS.map(([label, href]) => <Link key={href} href={href}>{label}</Link>)}
+            <TransitionLink href="/contact">Contact</TransitionLink>
+            {SEO_PAGES.slice(0, 4).map((item) => <TransitionLink key={item.slug} href={`/${item.slug}`}>{item.title}</TransitionLink>)}
+            {LEGAL_LINKS.map(([label, href]) => <TransitionLink key={href} href={href}>{label}</TransitionLink>)}
           </div>
         </div>
       </footer>
