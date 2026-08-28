@@ -159,7 +159,7 @@ function formatDate(value?: string | null) {
   return Number.isNaN(parsed.getTime()) ? "the next billing cycle" : parsed.toLocaleDateString();
 }
 
-function PublicPricing({ plans, error }: { plans: Plan[]; error: string }) {
+function PublicPricing({ plans }: { plans: Plan[] }) {
   const visiblePlans = plans.length ? plans : fallbackPlans;
   return <div className="landing">
     <nav className="landing-nav">
@@ -182,7 +182,6 @@ function PublicPricing({ plans, error }: { plans: Plan[]; error: string }) {
         <h2>Start free, then pay only when ClipKaro saves real editing time.</h2>
         <p>Mini Pass is a one-time purchase. Monthly plans renew until cancelled or changed from your billing screen.</p>
       </div>
-      {error && <div className="error-banner" style={{ maxWidth: 760, margin: "0 auto 18px" }}><span>{error}</span></div>}
       <div className="plans-full clipkaro-plans public-pricing-grid">
         {visiblePlans.map((plan) => {
           const details = copy[plan.id] || { tagline: "", features: [] };
@@ -223,7 +222,7 @@ function PublicPricing({ plans, error }: { plans: Plan[]; error: string }) {
 }
 
 export function PricingExperience() {
-  const { user, loading, refresh } = useAuth();
+  const { user, refresh } = useAuth();
   const [plans, setPlans] = useState<Plan[]>([]);
   const [status, setStatus] = useState<BillingStatus | null>(null);
   const [legalStatus, setLegalStatus] = useState<LegalStatus | null>(null);
@@ -401,8 +400,8 @@ export function PricingExperience() {
   const scheduledPlan = status?.scheduled_plan || null;
   const scheduledPlanName = plans.find((plan) => plan.id === scheduledPlan)?.name || (scheduledPlan === "free" ? "Free" : scheduledPlan);
 
-  if (!loading && !user) {
-    return <PublicPricing plans={plans} error={error} />;
+  if (!user) {
+    return <PublicPricing plans={plans} />;
   }
 
   function buttonState(plan: Plan) {
