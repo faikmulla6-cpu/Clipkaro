@@ -18,6 +18,24 @@ function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function timeoutMsFor(method: string): number {
+  if (method === "GET" || method === "HEAD") return 12_000;
+  return 30_000;
+}
+
+function requestWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const upstream = init.signal;
+  const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs);
+
+  if (upstream) {
+    if (upstream.aborted) controller.abort();
+    else upstream.addEventListener("abort", () => controller.abort(), { once: true });
+  }
+
+  return fetch(input, { ...init, signal: controller.signal }).finally(() => globalThis.clearTimeout(timeout));
+}
+
 async function parseSuccessfulResponse<T>(response: Response, allowEmpty: boolean): Promise<T> {
   if (response.status === 204) return undefined as T;
 
@@ -50,10 +68,16 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     let response: Response;
     try {
-      response = await fetch(`${API_URL}${path}`, { credentials: "include", ...init, headers });
+      response = await requestWithTimeout(
+        `${API_URL}${path}`,
+        { credentials: "include", ...init, headers },
+        timeoutMsFor(method),
+      );
     } catch (cause) {
       lastError = new Error(
-        "ClipKaro could not reach the processing server. Please try again in a moment.",
+        cause instanceof DOMException && cause.name === "AbortError"
+          ? "ClipKaro is taking longer than expected to respond. Please try again in a moment."
+          : "ClipKaro could not reach the processing server. Please try again in a moment.",
         { cause },
       );
       if (attempt + 1 < attempts) {

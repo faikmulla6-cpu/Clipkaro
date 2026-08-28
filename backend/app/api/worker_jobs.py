@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from datetime import timedelta
@@ -30,9 +31,9 @@ async def _source_available(video: dict | None, user_id: str) -> bool:
     if settings.normalized_storage_backend == "gcs":
         try:
             key = validate_object_key(str(video.get("file_path") or ""), expected_prefix=f"users/{user_id}")
-            metadata = await get_storage_provider().stat(key)
+            metadata = await asyncio.wait_for(get_storage_provider().stat(key), timeout=4)
             return bool(metadata and (not video.get("object_generation") or metadata.generation == str(video["object_generation"])))
-        except (ValueError, RuntimeError):
+        except (ValueError, RuntimeError, TimeoutError):
             return False
     path = confined_upload_path(video.get("file_path"))
     return bool(path and path.is_file())

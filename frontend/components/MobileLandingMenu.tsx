@@ -7,9 +7,9 @@ import { TransitionLink } from "./TransitionLink";
 import styles from "./mobile-landing-menu.module.css";
 
 const sectionLinks = [
-  ["How it works", "#how"],
-  ["Features", "#features"],
-  ["Pricing", "#pricing"],
+  ["How it works", "/#how"],
+  ["Features", "/#features"],
+  ["Pricing", "/pricing"],
 ] as const;
 
 export function MobileLandingMenu() {
@@ -65,6 +65,11 @@ export function MobileLandingMenu() {
           <TransitionLink href="/about" onClick={() => setOpen(false)}>
             <span>04</span>
             <strong>About ClipKaro</strong>
+            <ArrowRight size={17} />
+          </TransitionLink>
+          <TransitionLink href="/contact" onClick={() => setOpen(false)}>
+            <span>05</span>
+            <strong>Contact support</strong>
             <ArrowRight size={17} />
           </TransitionLink>
         </nav>

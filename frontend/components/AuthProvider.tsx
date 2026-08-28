@@ -22,7 +22,7 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 const publicPaths = [
-  "/", "/login", "/signup", "/verify-email", "/forgot-password", "/reset-password",
+  "/", "/about", "/pricing", "/contact", "/login", "/signup", "/verify-email", "/forgot-password", "/reset-password",
   "/terms", "/privacy", "/refund-policy", "/acceptable-use", "/copyright", "/legal-notice",
 ];
 
