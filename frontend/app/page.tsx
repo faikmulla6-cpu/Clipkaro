@@ -33,6 +33,30 @@ export default function Home() {
     </section>
     <div className="trust-strip">Designed for <b>YouTubers · Coaches · Teachers · Podcasters · Local businesses · Agencies</b></div>
     <section className="section" id="how"><div className="section-heading"><span>One simple workflow</span><h2>From long video to polished Short</h2><p>No complicated timeline editor. The AI does the heavy lifting while you keep creative control.</p></div><div className="feature-grid">{[[Upload,"Upload your own video","Drag in an MP4, MOV, WebM or MKV. Your files stay private and expire automatically."],[WandSparkles,"AI finds the moments","Transcript scoring discovers strong hooks, lessons, stories, questions and surprising moments."],[Clapperboard,"Choose and export","Preview the top suggestions, pick a caption style, and export a 9:16 MP4."]].map(([I,t,d]:any)=><div className="feature-card" key={t}><div className="feature-icon"><I size={21}/></div><h3>{t}</h3><p>{d}</p></div>)}</div></section>
+    <section className="section sample-output-section" id="sample-output">
+      <div className="sample-output-copy">
+        <span className="section-kicker">Sample output</span>
+        <h2>Know what you get before you upload.</h2>
+        <p>This example shows the kind of ranked moment, caption treatment and export checklist ClipKaro is built to produce. Real quality still depends on your source audio, language and lighting.</p>
+        <div className="sample-output-list">
+          {["A ranked clip with hook, reason and score", "Mobile-readable captions burned into the video", "A 9:16 MP4 export ready for Shorts or Reels"].map((item)=><div key={item}><Check size={15}/><span>{item}</span></div>)}
+        </div>
+        <Link href="/signup" className="primary-btn"><Upload size={16}/> Try with your own video</Link>
+      </div>
+      <div className="sample-output-preview" aria-label="Example ClipKaro output preview">
+        <div className="sample-phone-frame">
+          <div className="sample-video-face"><Play size={28} fill="currentColor"/></div>
+          <div className="sample-caption"><span>The mistake most creators make is waiting for a perfect idea.</span></div>
+          <div className="sample-watermark">ClipKaro AI sample</div>
+        </div>
+        <div className="sample-output-panel">
+          <span>AI-ranked moment</span>
+          <h3>The creator mistake that kills consistency</h3>
+          <p>Strong standalone advice, clear first sentence, clean ending and useful takeaway for Indian creator audiences.</p>
+          <div><b>92</b><small>hook score</small></div>
+        </div>
+      </div>
+    </section>
     <section className="section" id="features"><div className="section-heading"><span>Made to save hours</span><h2>Everything needed for your next Short</h2></div><div className="feature-grid">{[[Scissors,"Smart clip finder","Ranks moments by hook, clarity, emotion, value, and clean endings."],[Subtitles,"Burned-in subtitles","Readable two-line captions designed for mobile feeds."],[Languages,"India-first language support","English, Hindi and Marathi are supported. Hinglish is not generally available yet while quality validation continues."],[Zap,"Cost-smart rendering","Videos render only after you choose a moment, keeping plans affordable."],[ShieldCheck,"Rights-safe by design","Upload-first workflow for content you own or have permission to use."],[Sparkles,"Hooks and titles","Each suggestion includes a title, hook, reason, score and best platform."]].map(([I,t,d]:any)=><div className="feature-card" key={t}><div className="feature-icon"><I size={21}/></div><h3>{t}</h3><p>{d}</p></div>)}</div></section>
     <section className="section homepage-use-case-section" id="use-cases"><div className="section-heading"><span>Popular workflows</span><h2>Repurpose the videos creators already have</h2><p>High-intent ClipKaro workflows for YouTube creators, Hindi speakers, podcasters, educators and agencies.</p></div><div className="seo-use-case-grid homepage-use-cases">{SEO_PAGES.slice(0,6).map((item)=><TransitionLink key={item.slug} href={`/${item.slug}`}><Check size={16}/><span>{item.title}</span></TransitionLink>)}</div></section>
     <section className="section pricing-preview" id="pricing"><div className="section-heading"><span>Fair Access Pricing</span><h2>Start small. Grow when you grow.</h2><p>Professional AI clipping from ₹59 without forcing you into a subscription.</p></div><div className="price-grid">{[{n:'Mini Pass',p:'₹59',s:'one-time',d:'For students & small creators',f:['25 Karo Minutes','5 Shorts','1080p · no watermark']},{n:'Growth',p:'₹399',s:'/month',d:'Most popular for serious creators',f:['180 Karo Minutes','50 Shorts','1080p · no watermark'],hot:true},{n:'Pro',p:'₹799',s:'/month',d:'For daily publishing',f:['480 Karo Minutes','150 Shorts','Same strong ClipKaro AI']}].map(x=><div className={`price-card ${x.hot?'featured':''}`} key={x.n}><h3>{x.n}</h3><p>{x.d}</p><div className="price">{x.p}<small>{x.s}</small></div><ul>{x.f.map(y=><li key={y}><Check size={14}/>{y}</li>)}</ul><Link href="/pricing" className="primary-btn">View {x.n}</Link></div>)}</div><p style={{textAlign:"center",marginTop:20,color:"#657169",fontSize:13}}>Mini Pass never auto-renews. Monthly plans renew until cancelled or changed. <Link href="/refund-policy">Refund & cancellation policy</Link>.</p></section>
