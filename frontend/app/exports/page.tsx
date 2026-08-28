@@ -63,21 +63,32 @@ export default function Exports() {
   const [downloadNotice, setDownloadNotice] = useState("");
   const [downloadingId, setDownloadingId] = useState("");
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
+  const load = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true;
+    if (!silent) {
+      setLoading(true);
+      setError("");
+    }
     try {
       const result = await api<ExportRow[]>("/exports");
       setRows(Array.isArray(result) ? result : []);
     } catch (cause) {
-      setRows([]);
-      setError(cause instanceof Error ? cause.message : "Exports could not be loaded.");
+      if (!silent) {
+        setRows([]);
+        setError(cause instanceof Error ? cause.message : "Exports could not be loaded.");
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const hasActiveExport = rows.some((row) => row.status === "queued" || row.status === "processing");
+    if (!hasActiveExport) return;
+    const timer = window.setInterval(() => void load({ silent: true }), 4_000);
+    return () => window.clearInterval(timer);
+  }, [load, rows]);
 
   async function downloadExport(exportId: string) {
     if (!exportId || downloadingId) return;
@@ -158,8 +169,10 @@ export default function Exports() {
                   <div className="export-history-meta" style={{ marginTop: 5, color: "var(--muted)", fontSize: 11 }}>
                     {item.project_title || "Project"} · {item.resolution || "720p"} · {item.aspect_ratio || "9:16"} · {createdLabel(item.created_at)}
                   </div>
-                  {item.job_message && pending && <div style={{ marginTop: 5, color: item.attention_needed ? "var(--red)" : "var(--muted)", fontSize: 11 }}>
-                    {item.attention_needed ? "Taking longer than usual: " : ""}{item.job_message}{item.job_age_seconds ? ` · ${jobAgeLabel(item.job_age_seconds)}` : ""}
+                  {pending && <div style={{ marginTop: 5, color: item.attention_needed ? "var(--red)" : "var(--muted)", fontSize: 11 }}>
+                    {item.attention_needed ? "Taking longer than usual: " : ""}
+                    {item.job_message || "Export is rendering securely. This list updates automatically."}
+                    {item.job_age_seconds ? ` · ${jobAgeLabel(item.job_age_seconds)}` : ""}
                   </div>}
                   {item.error && <div style={{ marginTop: 5, color: "var(--red)", fontSize: 11 }}>{item.error}</div>}
                 </div>
@@ -174,7 +187,7 @@ export default function Exports() {
                     </Link>
                   ) : pending ? (
                     <button className="secondary-btn small" type="button" onClick={() => void load()}>
-                      <RefreshCw size={14} />{item.attention_needed ? "Refresh status" : "Still rendering"}
+                      <RefreshCw size={14} />{item.attention_needed ? "Refresh status" : "Refresh now"}
                     </button>
                   ) : (
                     <button className="secondary-btn small" type="button" disabled style={{ opacity: .55 }}>
