@@ -9,7 +9,7 @@ import styles from "./mobile-landing-menu.module.css";
 const sectionLinks = [
   ["How it works", "/#how"],
   ["Features", "/#features"],
-  ["Use cases", "/youtube-video-to-shorts-ai"],
+  ["Use cases", "/#use-cases"],
   ["Pricing", "/pricing"],
 ] as const;
 
