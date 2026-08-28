@@ -4,7 +4,7 @@ import { ArrowRight, Mail, ShieldCheck } from "lucide-react";
 import { LegalOperatorCard } from "@/components/LegalOperatorCard";
 import { Logo } from "@/components/Logo";
 import { MobileLandingMenu } from "@/components/MobileLandingMenu";
-import { LEGAL_LINKS } from "@/lib/legal";
+import { LEGAL_LINKS, TRUST_PROFILE } from "@/lib/legal";
 
 const title = "Contact ClipKaro AI — Support and legal help";
 const description = "Contact ClipKaro AI for product support, billing help, privacy questions, copyright issues, and grievance escalation.";
@@ -56,17 +56,32 @@ export default function ContactPage() {
         <div className="feature-card">
           <div className="feature-icon"><Mail size={21}/></div>
           <h3>Product and billing support</h3>
-          <p>For upload, processing, export, usage, payment, or cancellation questions, include your account email and project name so support can investigate faster.</p>
+          <p>For upload, processing, export, usage, payment, or cancellation questions, use the customer-care email below and include your account email, project name, plan, and payment reference if relevant.</p>
         </div>
         <div className="feature-card">
           <div className="feature-icon"><ShieldCheck size={21}/></div>
           <h3>Privacy and legal requests</h3>
-          <p>For deletion, privacy, refund, copyright, or grievance requests, use the official operator contacts below.</p>
+          <p>For deletion, privacy, refund, copyright, or grievance requests, use the official operator contacts below. {TRUST_PROFILE.supportExpectation}</p>
         </div>
         <div className="feature-card">
           <div className="feature-icon"><ArrowRight size={21}/></div>
-          <h3>Self-service links</h3>
-          <p><Link href="/login?next=/help">Sign in for help centre</Link> · <Link href="/pricing">Plans and billing</Link> · <Link href="/refund-policy">Refund policy</Link> · <Link href="/privacy">Privacy notice</Link></p>
+          <h3>Founder identity</h3>
+          <p>ClipKaro AI is built by {TRUST_PROFILE.founderName}, {TRUST_PROFILE.founderTitle}. Read the <Link href="/about#founder">founder story</Link> or review <Link href="/legal-notice">consumer information</Link> before paying.</p>
+        </div>
+      </div>
+
+      <div className="trust-disclosure-grid">
+        <div>
+          <b>Response expectation</b>
+          <p>{TRUST_PROFILE.supportExpectation}</p>
+        </div>
+        <div>
+          <b>Media retention</b>
+          <p>{TRUST_PROFILE.mediaRetention}</p>
+        </div>
+        <div>
+          <b>Deletion requests</b>
+          <p>{TRUST_PROFILE.deletionSummary}</p>
         </div>
       </div>
 

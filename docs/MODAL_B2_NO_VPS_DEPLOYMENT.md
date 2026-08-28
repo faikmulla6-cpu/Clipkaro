@@ -39,8 +39,12 @@ Create one Modal secret named `clipkaro-production`. Keep every value private. I
 - `ELEVENLABS_API_KEYS` only for the existing controlled Stage-1 cohort
 - `RESEND_API_KEY`
 - `EMAIL_FROM=ClipKaro AI <verify@clipkaro.pro>`
+- public support aliases that are monitored before checkout goes live:
+  `LEGAL_CONTACT_EMAIL=legal@clipkaro.pro`, `PRIVACY_CONTACT_EMAIL=privacy@clipkaro.pro`,
+  `CUSTOMER_CARE_EMAIL=support@clipkaro.pro` and `GRIEVANCE_EMAIL=grievance@clipkaro.pro`
 - Razorpay live key ID, key secret and webhook secret only after owner review
-- the existing legal/customer-care launch particulars required by ClipKaro's paid-launch gate
+- the remaining public legal/customer-care launch particulars required by ClipKaro's paid-launch gate:
+  operator name, principal address, customer-care phone, Grievance Officer name and grievance phone
 
 Never put these values in Git, screenshots, logs or `NEXT_PUBLIC_*` variables.
 

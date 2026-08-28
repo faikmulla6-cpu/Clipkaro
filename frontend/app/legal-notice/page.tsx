@@ -1,12 +1,13 @@
 import { LegalList, LegalPage, LegalSection } from "@/components/LegalPage";
 import { LegalOperatorCard } from "@/components/LegalOperatorCard";
+import { TRUST_PROFILE } from "@/lib/legal";
 import Link from "next/link";
 
 export default function LegalNoticePage() {
   return <LegalPage title="Legal Notice & Consumer Information" summary="Public operator, customer-care and grievance information plus the key billing disclosures ClipKaro publishes before accepting paid users.">
     <LegalSection title="1. Service provider particulars">
       <LegalOperatorCard />
-      <p>ClipKaro&apos;s production paid checkout remains disabled until the required operator, principal-address, customer-care and grievance fields above contain real deployment values.</p>
+      <p>ClipKaro AI is built by {TRUST_PROFILE.founderName}, {TRUST_PROFILE.founderTitle}. ClipKaro&apos;s production paid checkout remains disabled until the required operator, principal-address, customer-care and grievance fields above contain real deployment values.</p>
     </LegalSection>
 
     <LegalSection title="2. Digital service and prices">
@@ -30,10 +31,15 @@ export default function LegalNoticePage() {
     </LegalSection>
 
     <LegalSection title="5. Grievance handling">
-      <p>Customer-care and grievance channels are displayed above. ClipKaro aims to acknowledge consumer grievances within 48 hours and resolve them within one month, subject to the information and third-party payment investigation needed for the case. Privacy and copyright complaints may use the dedicated contacts/policies linked on this site.</p>
+      <p>Customer-care and grievance channels are displayed above. {TRUST_PROFILE.supportExpectation} Privacy and copyright complaints may use the dedicated contacts/policies linked on this site.</p>
     </LegalSection>
 
-    <LegalSection title="6. Important policy links">
+    <LegalSection title="6. Media retention and deletion">
+      <p>{TRUST_PROFILE.mediaRetention}</p>
+      <p>{TRUST_PROFILE.deletionSummary}</p>
+    </LegalSection>
+
+    <LegalSection title="7. Important policy links">
       <LegalList items={[
         <><Link href="/terms">Terms of Service</Link> — account, creator-content and paid-service terms.</>,
         <><Link href="/privacy">Privacy Notice</Link> — personal-data collection, AI processing, sharing and retention.</>,

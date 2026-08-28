@@ -7,7 +7,7 @@ export function LegalPage({ title, summary, children }: { title: string; summary
   return <div style={page}>
     <header style={header}>
       <Link href="/" aria-label="ClipKaro home"><Logo /></Link>
-      <nav style={nav}>{LEGAL_LINKS.map(([label, href]) => <Link key={href} href={href} style={navLink}>{label}</Link>)}</nav>
+      <nav style={nav}><Link href="/contact" style={navLink}>Contact</Link>{LEGAL_LINKS.map(([label, href]) => <Link key={href} href={href} style={navLink}>{label}</Link>)}</nav>
     </header>
     <main style={paper}>
       <div style={eyebrow}>LEGAL · VERSION {LEGAL_VERSION}</div>

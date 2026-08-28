@@ -5,7 +5,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { Logo } from "@/components/Logo";
 import { MobileLandingMenu } from "@/components/MobileLandingMenu";
 import { api, postJSON } from "@/lib/api";
-import { LEGAL_LINKS, LEGAL_VERSION, LegalStatus } from "@/lib/legal";
+import { LEGAL_LINKS, LEGAL_VERSION, LegalStatus, TRUST_PROFILE } from "@/lib/legal";
 import { ArrowRight, Check, Loader2, ShieldCheck, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -203,6 +203,11 @@ function PublicPricing({ plans, error }: { plans: Plan[]; error: string }) {
       <p style={{ textAlign: "center", marginTop: 22, color: "#657169", fontSize: 13 }}>
         Paid checkout happens only after sign-up and legal acceptance. Review <Link href="/refund-policy">refunds</Link>, <Link href="/legal-notice">consumer information</Link>, or <Link href="/contact">contact support</Link>.
       </p>
+      <div className="trust-disclosure-grid">
+        <div><b>Built by</b><p>{TRUST_PROFILE.founderName}, {TRUST_PROFILE.founderTitle}. <Link href="/about#founder">Founder details</Link>.</p></div>
+        <div><b>Support promise</b><p>{TRUST_PROFILE.supportExpectation}</p></div>
+        <div><b>Private media retention</b><p>{TRUST_PROFILE.mediaRetention}</p></div>
+      </div>
     </section>
     <footer className="landing-footer">
       <div className="footer-inner" style={{ alignItems: "flex-start", gap: 20, flexWrap: "wrap" }}>

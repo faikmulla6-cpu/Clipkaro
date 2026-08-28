@@ -523,6 +523,7 @@ export function AboutExperience() {
         <div className={styles.footerLinks}>
           <TransitionLink href="/">Home</TransitionLink>
           <Link href="/pricing">Pricing</Link>
+          <Link href="/contact">Contact</Link>
           <Link href="/privacy">Privacy</Link>
           <Link href="/terms">Terms</Link>
           <a href="https://www.instagram.com/clipkaro.pro/" target="_blank" rel="noreferrer">Instagram</a>

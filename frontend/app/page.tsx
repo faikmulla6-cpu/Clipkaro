@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Logo } from "@/components/Logo";
 import { MobileLandingMenu } from "@/components/MobileLandingMenu";
 import { TransitionLink } from "@/components/TransitionLink";
-import { LEGAL_LINKS } from "@/lib/legal";
+import { LEGAL_LINKS, TRUST_PROFILE } from "@/lib/legal";
 import home from "./home-polish.module.css";
 
 export const dynamic = "force-dynamic";
@@ -32,6 +32,23 @@ export default function Home() {
     <section className="section" id="how"><div className="section-heading"><span>One simple workflow</span><h2>From long video to polished Short</h2><p>No complicated timeline editor. The AI does the heavy lifting while you keep creative control.</p></div><div className="feature-grid">{[[Upload,"Upload your own video","Drag in an MP4, MOV, WebM or MKV. Your files stay private and expire automatically."],[WandSparkles,"AI finds the moments","Transcript scoring discovers strong hooks, lessons, stories, questions and surprising moments."],[Clapperboard,"Choose and export","Preview the top suggestions, pick a caption style, and export a 9:16 MP4."]].map(([I,t,d]:any)=><div className="feature-card" key={t}><div className="feature-icon"><I size={21}/></div><h3>{t}</h3><p>{d}</p></div>)}</div></section>
     <section className="section" id="features"><div className="section-heading"><span>Made to save hours</span><h2>Everything needed for your next Short</h2></div><div className="feature-grid">{[[Scissors,"Smart clip finder","Ranks moments by hook, clarity, emotion, value, and clean endings."],[Subtitles,"Burned-in subtitles","Readable two-line captions designed for mobile feeds."],[Languages,"India-first language support","English, Hindi and Marathi are supported. Hinglish is not generally available yet while quality validation continues."],[Zap,"Cost-smart rendering","Videos render only after you choose a moment, keeping plans affordable."],[ShieldCheck,"Rights-safe by design","Upload-first workflow for content you own or have permission to use."],[Sparkles,"Hooks and titles","Each suggestion includes a title, hook, reason, score and best platform."]].map(([I,t,d]:any)=><div className="feature-card" key={t}><div className="feature-icon"><I size={21}/></div><h3>{t}</h3><p>{d}</p></div>)}</div></section>
     <section className="section pricing-preview" id="pricing"><div className="section-heading"><span>Fair Access Pricing</span><h2>Start small. Grow when you grow.</h2><p>Professional AI clipping from ₹59 without forcing you into a subscription.</p></div><div className="price-grid">{[{n:'Mini Pass',p:'₹59',s:'one-time',d:'For students & small creators',f:['25 Karo Minutes','5 Shorts','1080p · no watermark']},{n:'Growth',p:'₹399',s:'/month',d:'Most popular for serious creators',f:['180 Karo Minutes','50 Shorts','1080p · no watermark'],hot:true},{n:'Pro',p:'₹799',s:'/month',d:'For daily publishing',f:['480 Karo Minutes','150 Shorts','Same strong ClipKaro AI']}].map(x=><div className={`price-card ${x.hot?'featured':''}`} key={x.n}><h3>{x.n}</h3><p>{x.d}</p><div className="price">{x.p}<small>{x.s}</small></div><ul>{x.f.map(y=><li key={y}><Check size={14}/>{y}</li>)}</ul><Link href="/pricing" className="primary-btn">View {x.n}</Link></div>)}</div><p style={{textAlign:"center",marginTop:20,color:"#657169",fontSize:13}}>Mini Pass never auto-renews. Monthly plans renew until cancelled or changed. <Link href="/refund-policy">Refund & cancellation policy</Link>.</p></section>
-    <footer className="landing-footer"><div className="footer-inner" style={{alignItems:"flex-start",gap:20,flexWrap:"wrap"}}><div><Logo light/><p>© 2026 ClipKaro AI. Create responsibly. Built for India.</p></div><div style={{display:"flex",gap:12,flexWrap:"wrap",fontSize:12}}><TransitionLink href="/about">About</TransitionLink>{LEGAL_LINKS.map(([label,href])=><Link key={href} href={href}>{label}</Link>)}</div></div></footer>
+    <section className="trust-band">
+      <div>
+        <span>Founder-led</span>
+        <b>{TRUST_PROFILE.founderName}</b>
+        <p>{TRUST_PROFILE.founderTitle}. <Link href="/about#founder">Read about the builder</Link>.</p>
+      </div>
+      <div>
+        <span>Support expectation</span>
+        <b>48-hour acknowledgement</b>
+        <p>Billing and support questions use the contacts on <Link href="/contact">Contact</Link>.</p>
+      </div>
+      <div>
+        <span>Private media</span>
+        <b>Uploads expire automatically</b>
+        <p>Source and export files use a short retention window. <Link href="/privacy">See retention details</Link>.</p>
+      </div>
+    </section>
+    <footer className="landing-footer"><div className="footer-inner" style={{alignItems:"flex-start",gap:20,flexWrap:"wrap"}}><div><Logo light/><p>© 2026 ClipKaro AI. Create responsibly. Built for India.</p></div><div style={{display:"flex",gap:12,flexWrap:"wrap",fontSize:12}}><TransitionLink href="/about">About</TransitionLink><Link href="/contact">Contact</Link>{LEGAL_LINKS.map(([label,href])=><Link key={href} href={href}>{label}</Link>)}</div></div></footer>
   </div>;
 }
