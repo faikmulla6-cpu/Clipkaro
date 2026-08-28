@@ -2,6 +2,7 @@
 
 import { api, postJSON, User, VerificationStatus } from "@/lib/api";
 import { LEGAL_VERSION } from "@/lib/legal";
+import { SEO_PAGE_SLUGS } from "@/lib/seo-page-slugs";
 import { usePathname, useRouter } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
@@ -24,6 +25,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 const publicPaths = [
   "/", "/about", "/pricing", "/contact", "/login", "/signup", "/verify-email", "/forgot-password", "/reset-password",
   "/terms", "/privacy", "/refund-policy", "/acceptable-use", "/copyright", "/legal-notice",
+  ...SEO_PAGE_SLUGS.map((slug) => `/${slug}`),
 ];
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {

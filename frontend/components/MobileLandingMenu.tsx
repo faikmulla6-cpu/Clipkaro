@@ -9,6 +9,7 @@ import styles from "./mobile-landing-menu.module.css";
 const sectionLinks = [
   ["How it works", "/#how"],
   ["Features", "/#features"],
+  ["Use cases", "/youtube-video-to-shorts-ai"],
   ["Pricing", "/pricing"],
 ] as const;
 
@@ -63,12 +64,12 @@ export function MobileLandingMenu() {
             </a>
           ))}
           <TransitionLink href="/about" onClick={() => setOpen(false)}>
-            <span>04</span>
+            <span>05</span>
             <strong>About ClipKaro</strong>
             <ArrowRight size={17} />
           </TransitionLink>
           <TransitionLink href="/contact" onClick={() => setOpen(false)}>
-            <span>05</span>
+            <span>06</span>
             <strong>Contact support</strong>
             <ArrowRight size={17} />
           </TransitionLink>
