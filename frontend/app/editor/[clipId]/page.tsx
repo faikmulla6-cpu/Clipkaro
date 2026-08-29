@@ -7,7 +7,7 @@ import { API_URL, api, patchJSON, postJSON } from "@/lib/api";
 import { downloadExport, newBehaviorSession, trackClipBehavior } from "@/lib/behavior";
 import {
   AlertTriangle, AlignCenter, Captions, Check, Download, Film, Loader2, MoveHorizontal,
-  Palette, Pause, Play, Save, Smartphone, Sparkles, Square, Type,
+  Palette, Pause, Play, Save, Smartphone, Sparkles, Square, Type, X, ZoomIn, ZoomOut,
 } from "lucide-react";
 import { useParams, useSearchParams } from "next/navigation";
 import { CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -70,6 +70,7 @@ export default function Editor() {
   const [captionPosition, setCaptionPosition] = useState<"bottom" | "above" | "center">("bottom");
   const [ratio, setRatio] = useState("9:16");
   const [focusX, setFocusX] = useState(50);
+  const [zoom, setZoom] = useState(1);
   const [resolution, setResolution] = useState("720p");
   const [watermark, setWatermark] = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>("style");
@@ -79,6 +80,7 @@ export default function Editor() {
   const [job, setJob] = useState<Job | null>(null);
   const [exportId, setExportId] = useState("");
   const [error, setError] = useState("");
+  const [drawerDismissed, setDrawerDismissed] = useState(false);
   const [timedCaptionWords, setTimedCaptionWords] = useState<TimedWord[]>([]);
   const [captionCards, setCaptionCards] = useState<CaptionCard[]>([]);
   const [sourceHasCaptions, setSourceHasCaptions] = useState(false);
@@ -139,8 +141,6 @@ export default function Editor() {
   }, []);
   useEffect(() => {
     if (!user || lastPlanRef.current === user.plan) return;
-    // Free is always watermarked. Paid plans start watermark-free, while still
-    // allowing a creator to opt into the ClipKaro mark if they want it.
     setWatermark(user.plan === "free");
     lastPlanRef.current = user.plan;
   }, [user]);
@@ -148,7 +148,8 @@ export default function Editor() {
     if (indiaQualityMode && preserveSourceCaptions && captionPosition === "bottom") {
       setCaptionPosition("above");
     }
-  }, [indiaQualityMode, preserveSourceCaptions, captionPosition]);
+    if (preserveSourceCaptions && zoom !== 1) setZoom(1);
+  }, [indiaQualityMode, preserveSourceCaptions, captionPosition, zoom]);
   useEffect(() => {
     if (!clip) return;
     trackClipBehavior(clip.id, "selected", {
@@ -310,12 +311,13 @@ export default function Editor() {
     if (!clip || renderStartRef.current || renderBusy) return;
     renderStartRef.current = true;
     setStartingRender(true);
+    setDrawerDismissed(false);
     setError("");
     try {
       await save(false);
       const output = await postJSON<ExportResponse>(`/clips/${clip.id}/export`, {
         resolution, aspect_ratio: ratio, caption_style: captionStyle,
-        caption_position: captionPosition, focus_x: focusX,
+        caption_position: captionPosition, focus_x: focusX, zoom,
         hook_text: hook, watermark, brand_kit_id: brandKitId || null,
         preserve_source_captions: preserveSourceCaptions,
         india_quality_mode: indiaQualityMode,
@@ -398,7 +400,11 @@ export default function Editor() {
               onTimeUpdate={onTimeUpdate}
               onPlay={() => setPlaying(true)}
               onPause={() => setPlaying(false)}
-              style={{ objectFit: preserveSourceCaptions ? "contain" : "cover", objectPosition: `${focusX}% 50%` }}
+              style={{
+                objectFit: preserveSourceCaptions ? "contain" : "cover",
+                objectPosition: `${focusX}% 50%`,
+                transform: preserveSourceCaptions ? "scale(1)" : `scale(${zoom})`,
+              }}
             />
             <button className="canvas-play" onClick={togglePlayback}>{playing ? <Pause fill="currentColor" /> : <Play fill="currentColor" />}</button>
             {showHook && visibleHook && <div className="canvas-hook">{visibleHook}</div>}
@@ -432,6 +438,13 @@ export default function Editor() {
             <div className="editor-section"><label>Caption personality — preview changes instantly</label><div className="style-options">{styles.map(style => <button type="button" className={captionStyle === style[0] ? "active" : ""} onClick={() => setCaptionStyle(style[0])} key={style[0]}><span className={`style-swatch ${style[0]}`}>Aa</span><div><b>{style[1]}</b><small>{style[2]}</small></div>{captionStyle === style[0] && <Check size={14} />}</button>)}</div></div>
             <div className="editor-section"><label>Canvas ratio</label><div className="ratio-options">{[["9:16", Smartphone, "Shorts"], ["4:5", AlignCenter, "Feed"], ["1:1", Square, "Square"]].map(([value, Icon, name]) => <button type="button" key={value as string} className={ratio === value ? "active" : ""} onClick={() => setRatio(value as string)}><Icon size={17} /><b>{value as string}</b><small>{name as string}</small></button>)}</div></div>
             <div className="editor-section"><label><MoveHorizontal size={13} /> Manual reframe: {focusX}%</label><input className="focus-slider" type="range" min="0" max="100" value={focusX} onChange={event => setFocusX(Number(event.target.value))} /><div className="focus-labels"><span>Left</span><span>Centre</span><span>Right</span></div></div>
+            <div className={`editor-section zoom-section ${preserveSourceCaptions ? "disabled" : ""}`}>
+              <div className="zoom-heading"><label><ZoomIn size={13}/> Video zoom: {Math.round(zoom * 100)}%</label><button className="zoom-reset" type="button" disabled={preserveSourceCaptions || zoom === 1} onClick={() => setZoom(1)}>Reset</button></div>
+              <div className="zoom-control"><button type="button" aria-label="Zoom out" disabled={preserveSourceCaptions || zoom <= 1} onClick={() => setZoom(value => clamp(Number((value - .05).toFixed(2)), 1, 2))}><ZoomOut size={15}/></button><input aria-label="Video zoom" type="range" min="1" max="2" step="0.05" value={zoom} disabled={preserveSourceCaptions} onChange={event => setZoom(Number(event.target.value))}/><button type="button" aria-label="Zoom in" disabled={preserveSourceCaptions || zoom >= 2} onClick={() => setZoom(value => clamp(Number((value + .05).toFixed(2)), 1, 2))}><ZoomIn size={15}/></button></div>
+              <div className="zoom-scale"><span>100%</span><span>150%</span><span>200%</span></div>
+              <p className="field-note">Zoom changes the video framing in the final MP4, not just this preview.</p>
+              {preserveSourceCaptions && <p className="zoom-safe-note"><AlertTriangle size={12}/><span>Zoom is held at 100% while source-caption preservation is on so burned-in subtitles are not cropped.</span></p>}
+            </div>
             <div className="editor-section"><label>Caption position</label><div className="segmented three"><button className={captionPosition === "bottom" ? "active" : ""} onClick={() => setCaptionPosition("bottom")}>Lower</button><button className={captionPosition === "above" ? "active" : ""} onClick={() => setCaptionPosition("above")}>Above</button><button className={captionPosition === "center" ? "active" : ""} onClick={() => setCaptionPosition("center")}>Centre</button></div></div>
             <div className="toggle-row"><div><b>Preserve source captions</b><span>{sourceHasCaptions ? `Detected near ${Math.round((sourceCaptionBand ?? .82) * 100)}% height` : "Use when the source already has subtitles"}</span></div><button className={preserveSourceCaptions ? "on" : ""} aria-pressed={preserveSourceCaptions} onClick={() => setPreserveSourceCaptions(value => !value)}><i /></button></div>
           </>}
@@ -444,7 +457,7 @@ export default function Editor() {
 
           {activeTab === "export" && <>
             <div className="editor-section"><label>Export quality</label><select value={resolution} onChange={event => setResolution(event.target.value)}><option value="720p">720p · Fast and efficient</option><option value="1080p">1080p · Any paid plan</option></select></div>
-            <div className="export-summary"><span>Format <b>{ratio}</b></span><span>Duration <b>{Math.round(end - start)}s</b></span><span>Captions <b>{styles.find(style => style[0] === captionStyle)?.[1]}</b></span><span>Frame <b>{preserveSourceCaptions ? "Full" : `${focusX}%`}</b></span><span>India <b>{indiaQualityMode ? captionLanguageStyle.replace("_", " ") : "Off"}</b></span><span>Brand <b>{selectedBrandKit?.name || "None"}</b></span></div>
+            <div className="export-summary"><span>Format <b>{ratio}</b></span><span>Duration <b>{Math.round(end - start)}s</b></span><span>Captions <b>{styles.find(style => style[0] === captionStyle)?.[1]}</b></span><span>Frame <b>{preserveSourceCaptions ? "Full" : `${focusX}%`}</b></span><span>Zoom <b>{preserveSourceCaptions ? "100% safe" : `${Math.round(zoom * 100)}%`}</b></span><span>India <b>{indiaQualityMode ? captionLanguageStyle.replace("_", " ") : "Off"}</b></span><span>Brand <b>{selectedBrandKit?.name || "None"}</b></span></div>
             <div className="toggle-row"><div><b>ClipKaro watermark</b><span>{freePlan ? "Required on Free" : "Optional on your paid plan"}</span></div><button className={watermark ? "on" : ""} aria-pressed={watermark} disabled={freePlan} onClick={() => { if (!freePlan) setWatermark(value => !value); }}><i /></button></div>
             <button className="primary-btn render-panel-button" onClick={render} disabled={renderBusy}>{renderBusy ? <Loader2 className="spin" size={15} /> : <Sparkles size={15} />} {startingRender ? "Starting securely…" : renderBusy ? "Rendering Short…" : "Render verified Short"}</button>
           </>}
@@ -452,7 +465,7 @@ export default function Editor() {
       </div>
 
       {error && <div className={`floating-error ${error === "Saved" ? "success" : ""}`}>{error}</div>}
-      {job && <div className="export-drawer"><div className="export-icon">{job.status === "completed" ? <Check /> : job.status === "failed" ? <span>!</span> : <Loader2 className="spin" />}</div><div><b>{job.status === "completed" ? "Your Short is ready" : job.status === "failed" ? job.error || job.message : job.message}</b><span>{job.status === "completed" ? "The downloaded MP4 matches this crop and caption style" : `${job.progress}% complete`}</span><div className="progress"><i style={{ width: `${job.progress}%` }} /></div></div>{job.status === "completed" && <button className="primary-btn" type="button" onClick={downloadReadyExport} disabled={downloading}>{downloading ? <Loader2 className="spin" size={15} /> : <Download size={15} />}{downloading ? "Preparing…" : "Download MP4"}</button>}</div>}
+      {job && !drawerDismissed && <div className="export-drawer"><div className="export-icon">{job.status === "completed" ? <Check /> : job.status === "failed" ? <span>!</span> : <Loader2 className="spin" />}</div><div><b>{job.status === "completed" ? "Your Short is ready" : job.status === "failed" ? job.error || job.message : job.message}</b><span>{job.status === "completed" ? "The downloaded MP4 matches this crop, zoom and caption style" : `${job.progress}% complete`}</span><div className="progress"><i style={{ width: `${job.progress}%` }} /></div></div>{job.status === "completed" && <button className="primary-btn" type="button" onClick={downloadReadyExport} disabled={downloading}>{downloading ? <Loader2 className="spin" size={15} /> : <Download size={15} />}{downloading ? "Preparing…" : "Download MP4"}</button>}<button className="export-drawer-close" type="button" aria-label="Dismiss export status" onClick={() => setDrawerDismissed(true)}><X size={15}/></button></div>}
     </AppShell>
   );
 }
