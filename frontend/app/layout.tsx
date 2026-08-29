@@ -11,9 +11,25 @@ const tabIcon = "/assets/clipkaro-icon.png?v=4";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://clipkaro.pro"),
-  title: "ClipKaro AI — Long videos into ready-to-publish Shorts",
-  description: "AI-assisted Shorts creation for Indian creators: upload, find strong moments, add captions, and export.",
+  title: "ClipKaro AI — AI Video Clipper for Indian Creators & Hinglish Shorts",
+  description: "Turn long videos into Shorts with AI clip detection, India Quality Mode, Hinglish captions, Smart Transcript Review, 9:16 exports and complete Content Packs for YouTube, Instagram, X and LinkedIn.",
   applicationName: "ClipKaro AI",
+  keywords: [
+    "AI video clipper",
+    "AI Shorts maker",
+    "Hinglish video clipper",
+    "Indian creator AI",
+    "Hindi Shorts maker",
+    "long video to Shorts",
+    "YouTube Shorts generator",
+    "Instagram Reels maker",
+    "AI captions for Indian creators",
+    "video content repurposing",
+    "ClipKaro AI",
+  ],
+  alternates: {
+    canonical: "/",
+  },
   manifest: "/site.webmanifest",
   icons: {
     icon: [{ url: tabIcon, type: "image/png" }],
@@ -24,14 +40,14 @@ export const metadata: Metadata = {
     type: "website",
     url: "https://clipkaro.pro",
     siteName: "ClipKaro AI",
-    title: "ClipKaro AI — Long videos into ready-to-publish Shorts",
-    description: "AI-assisted Shorts creation for Indian creators: upload, find strong moments, add captions, and export.",
-    images: [{ url: "/assets/clipkaro-icon.png", width: 1024, height: 1024, alt: "ClipKaro AI" }],
+    title: "ClipKaro AI — AI Video Clipper for Indian Creators & Hinglish Shorts",
+    description: "Find strong moments, improve Hindi/Hinglish captions, review uncertain transcript lines, export vertical Shorts and generate a complete Content Pack from one video.",
+    images: [{ url: "/assets/clipkaro-icon.png", width: 1024, height: 1024, alt: "ClipKaro AI video clipping and content repurposing platform" }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "ClipKaro AI — Long videos into ready-to-publish Shorts",
-    description: "AI-assisted Shorts creation for Indian creators: upload, find strong moments, add captions, and export.",
+    title: "ClipKaro AI — AI Video Clipper for Indian Creators & Hinglish Shorts",
+    description: "AI clipping, India Quality Mode, Smart Transcript Review, vertical exports and Content Packs for Indian creators.",
     images: ["/assets/clipkaro-icon.png"],
   },
 };
