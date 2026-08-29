@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import subprocess
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any, AsyncIterator
 
 from app.core.config import get_settings
 from .rendering import render_short
+from .video import find_media_tool
 
 
 _loop: asyncio.AbstractEventLoop | None = None
@@ -42,7 +45,116 @@ async def media_encode_slot() -> AsyncIterator[None]:
         yield
 
 
+def _zoom_from_keyframes(keyframes: list[dict[str, Any]] | None) -> tuple[float, list[dict[str, Any]]]:
+    """Extract the internal zoom control while leaving real tracking frames intact."""
+    zoom = 1.0
+    cleaned: list[dict[str, Any]] = []
+    for item in keyframes or []:
+        marker = item.get("zoom")
+        if marker is not None:
+            zoom = max(zoom, max(1.0, min(float(marker), 2.0)))
+            continue
+        cleaned.append(item)
+    return zoom, cleaned
+
+
+async def _prepare_zoomed_clip(source: Path, output: Path, start: float, end: float, zoom: float) -> Path:
+    """Pre-crop only the requested source interval so captions/overlays are not zoomed.
+
+    The normal ClipKaro renderer then adds framing, captions, hook text and
+    watermark once, after the video-only zoom has been applied.
+    """
+    ffmpeg = find_media_tool("ffmpeg")
+    if not ffmpeg:
+        raise RuntimeError("FFmpeg is required for zoomed export.")
+    settings = get_settings()
+    duration = max(0.1, float(end) - float(start))
+    threads = max(1, int(settings.media_ffmpeg_threads))
+    timeout = max(30, int(settings.media_process_timeout_seconds))
+    temp = output.with_name(f".{output.stem}.zoom-source.mp4")
+    temp.unlink(missing_ok=True)
+    z = max(1.0, min(float(zoom), 2.0))
+    # Crop around the source centre, restore the original pixel dimensions,
+    # then let the existing horizontal reframe choose Left/Centre/Right.
+    vf = (
+        f"crop=iw/{z:.4f}:ih/{z:.4f}:(iw-iw/{z:.4f})/2:(ih-ih/{z:.4f})/2,"
+        f"scale=trunc(iw*{z:.4f}/2)*2:trunc(ih*{z:.4f}/2)*2"
+    )
+    try:
+        proc = await asyncio.to_thread(
+            subprocess.run,
+            [
+                ffmpeg, "-nostdin", "-threads", str(threads), "-y",
+                "-ss", str(start), "-i", str(source.resolve()), "-t", str(duration),
+                "-vf", vf, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(temp.resolve()),
+            ],
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=False, timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        temp.unlink(missing_ok=True)
+        raise RuntimeError("Zoom preparation exceeded the media safety limit.") from exc
+    if proc.returncode != 0 or not temp.is_file() or temp.stat().st_size < 10_000:
+        detail = proc.stderr.decode(errors="ignore")[-1200:]
+        temp.unlink(missing_ok=True)
+        raise RuntimeError(f"Zoom preparation failed: {detail}")
+    return temp
+
+
 async def render_short_limited(*args: Any, **kwargs: Any) -> None:
-    """Bound final Short rendering through the shared FFmpeg encode gate."""
+    """Bound final Short rendering through the shared FFmpeg encode gate.
+
+    Zoom is carried inside the existing crop-keyframe payload so both the API
+    renderer and durable media worker use identical behavior without separate
+    execution-specific branches.
+    """
     async with media_encode_slot():
-        await render_short(*args, **kwargs)
+        mutable = list(args)
+        keyframes = kwargs.get("crop_keyframes")
+        if keyframes is None and len(mutable) > 14:
+            keyframes = mutable[14]
+        zoom, cleaned_keyframes = _zoom_from_keyframes(keyframes)
+        if "crop_keyframes" in kwargs:
+            kwargs = {**kwargs, "crop_keyframes": cleaned_keyframes}
+        elif len(mutable) > 14:
+            mutable[14] = cleaned_keyframes
+
+        source_caption_band = kwargs.get("source_caption_band")
+        if source_caption_band is None and len(mutable) > 15:
+            source_caption_band = mutable[15]
+        # Preserving burned-in source captions is intentionally conservative:
+        # zoom could crop the very subtitle band the creator asked us to keep.
+        if source_caption_band is not None:
+            zoom = 1.0
+
+        if zoom <= 1.001:
+            await render_short(*mutable, **kwargs)
+            return
+
+        if len(mutable) < 4:
+            # Current production callers are positional; keep a safe fallback
+            # for tests or future keyword callers.
+            source = Path(kwargs["source"])
+            output = Path(kwargs["output"])
+            start = float(kwargs["start"])
+            end = float(kwargs["end"])
+            zoomed = await _prepare_zoomed_clip(source, output, start, end, zoom)
+            try:
+                forwarded = {**kwargs, "source": zoomed, "start": 0.0, "end": end - start}
+                await render_short(**forwarded)
+            finally:
+                zoomed.unlink(missing_ok=True)
+            return
+
+        source = Path(mutable[0])
+        output = Path(mutable[1])
+        start = float(mutable[2])
+        end = float(mutable[3])
+        zoomed = await _prepare_zoomed_clip(source, output, start, end, zoom)
+        try:
+            mutable[0] = zoomed
+            mutable[2] = 0.0
+            mutable[3] = end - start
+            await render_short(*mutable, **kwargs)
+        finally:
+            zoomed.unlink(missing_ok=True)
