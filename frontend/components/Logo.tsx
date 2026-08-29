@@ -12,7 +12,7 @@ export function Logo({ light = false, transition = false, href = "/" }: LogoProp
   const content = (
     <>
       <span className="logo-mark" aria-hidden="true">
-        <img className="logo-icon" src="/assets/clipkaro-icon.png" alt="" />
+        <img className="logo-icon" src="/assets/clipkaro-icon.png" alt="ClipKaro AI logo" />
       </span>
       <span className="logo-wordmark">ClipKaro<span className="logo-ai">AI</span></span>
     </>
