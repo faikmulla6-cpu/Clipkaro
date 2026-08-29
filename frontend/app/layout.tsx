@@ -4,6 +4,7 @@ import "./mobile-audit.css";
 import "./brand.css";
 import "./interaction-polish.css";
 import "./sidebar-polish.css";
+import "./quality-fixes.css";
 import { AuthProvider } from "@/components/AuthProvider";
 
 const brandIcon = "/assets/clipkaro-icon.png?v=2";
