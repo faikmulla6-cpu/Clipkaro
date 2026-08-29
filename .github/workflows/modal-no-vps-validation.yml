@@ -84,14 +84,25 @@ jobs:
           pytest -q tests/test_production_configuration.py
           pytest -q tests/test_production_preflight.py
 
-      - name: Run Creator Studio quality regressions
+      - name: Test India Quality regressions
         working-directory: backend
-        run: |
-          pytest -q tests/test_india_quality.py
-          pytest -q tests/test_zoom_control.py
-          pytest -q tests/test_transcript_review.py
-          pytest -q tests/test_content_pack.py
-          pytest -q tests/test_rendering.py
+        run: pytest -q tests/test_india_quality.py
+
+      - name: Test creator zoom regressions
+        working-directory: backend
+        run: pytest -q tests/test_zoom_control.py
+
+      - name: Test transcript review regressions
+        working-directory: backend
+        run: pytest -q tests/test_transcript_review.py
+
+      - name: Test Content Pack regressions
+        working-directory: backend
+        run: pytest -q tests/test_content_pack.py
+
+      - name: Test rendering regressions
+        working-directory: backend
+        run: pytest -q tests/test_rendering.py
 
       - name: Run preserved no-VPS architecture tests
         working-directory: backend
