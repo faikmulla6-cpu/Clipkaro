@@ -11,8 +11,8 @@ const tabIcon = "/assets/clipkaro-icon.png?v=4";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://clipkaro.pro"),
-  title: "ClipKaro AI — AI Video Clipper for Indian Creators & Hinglish Shorts",
-  description: "Turn long videos into Shorts with AI clip detection, India Quality Mode, Hinglish captions, Smart Transcript Review, 9:16 exports and complete Content Packs for YouTube, Instagram, X and LinkedIn.",
+  title: "ClipKaro AI — Video Clipper for Indian Creators",
+  description: "Turn long videos into Shorts with AI clip detection, Hinglish captions, transcript review, 9:16 exports and Content Packs for Indian creators.",
   applicationName: "ClipKaro AI",
   keywords: [
     "AI video clipper",
@@ -40,13 +40,13 @@ export const metadata: Metadata = {
     type: "website",
     url: "https://clipkaro.pro",
     siteName: "ClipKaro AI",
-    title: "ClipKaro AI — AI Video Clipper for Indian Creators & Hinglish Shorts",
-    description: "Find strong moments, improve Hindi/Hinglish captions, review uncertain transcript lines, export vertical Shorts and generate a complete Content Pack from one video.",
+    title: "ClipKaro AI — Video Clipper for Indian Creators",
+    description: "Find strong moments, improve Hindi/Hinglish captions, review uncertain transcript lines, export vertical Shorts and generate a Content Pack from one video.",
     images: [{ url: "/assets/clipkaro-icon.png", width: 1024, height: 1024, alt: "ClipKaro AI video clipping and content repurposing platform" }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "ClipKaro AI — AI Video Clipper for Indian Creators & Hinglish Shorts",
+    title: "ClipKaro AI — Video Clipper for Indian Creators",
     description: "AI clipping, India Quality Mode, Smart Transcript Review, vertical exports and Content Packs for Indian creators.",
     images: ["/assets/clipkaro-icon.png"],
   },
