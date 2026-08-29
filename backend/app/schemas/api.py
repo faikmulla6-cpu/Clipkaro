@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 
 class SignupRequest(BaseModel):
@@ -106,6 +106,9 @@ class TranscriptCorrectionRequest(BaseModel):
 class CropKeyframe(BaseModel):
     time: float = Field(ge=0, le=180)
     focus_x: float = Field(ge=0, le=100)
+    # Optional internal control carried through the existing durable job payload.
+    # render_gate removes it before normal crop tracking sees the keyframes.
+    zoom: float | None = Field(default=None, ge=1.0, le=2.0)
 
 
 class ExportRequest(BaseModel):
@@ -122,6 +125,15 @@ class ExportRequest(BaseModel):
     preserve_source_captions: bool = False
     india_quality_mode: bool = False
     caption_language_style: str = Field(default="auto", pattern="^(auto|roman_hinglish|original)$")
+
+    @model_validator(mode="after")
+    def carry_zoom_for_renderer(self):
+        # Existing API/worker calls already pass crop_keyframes into the shared
+        # render gate. Carry zoom there without changing either execution path.
+        # Re-hydrated durable jobs keep the sentinel rather than duplicating it.
+        if self.zoom > 1.0 and not any(item.zoom is not None for item in self.crop_keyframes):
+            self.crop_keyframes.append(CropKeyframe(time=180, focus_x=self.focus_x, zoom=self.zoom))
+        return self
 
 
 class ExportOut(BaseModel):
