@@ -14,6 +14,16 @@ const nextConfig = {
   experimental: {
     proxyClientMaxBodySize: "500mb",
   },
+  async redirects() {
+    return [
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "www.clipkaro.pro" }],
+        destination: "https://clipkaro.pro/:path*",
+        permanent: true,
+      },
+    ];
+  },
   async rewrites() {
     return [{ source: "/api/:path*", destination: `${backendUrl}/api/:path*` }];
   },
