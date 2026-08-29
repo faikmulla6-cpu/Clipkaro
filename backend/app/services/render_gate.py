@@ -58,11 +58,20 @@ def _zoom_from_keyframes(keyframes: list[dict[str, Any]] | None) -> tuple[float,
     return zoom, cleaned
 
 
-async def _prepare_zoomed_clip(source: Path, output: Path, start: float, end: float, zoom: float) -> Path:
-    """Pre-crop only the requested source interval so captions/overlays are not zoomed.
+async def _prepare_zoomed_clip(
+    source: Path,
+    output: Path,
+    start: float,
+    end: float,
+    zoom: float,
+    focus_x: float,
+) -> Path:
+    """Pre-crop the selected interval around the creator's horizontal focus.
 
-    The normal ClipKaro renderer then adds framing, captions, hook text and
-    watermark once, after the video-only zoom has been applied.
+    The resulting source keeps the original pixel dimensions. The normal
+    renderer then centres its aspect-ratio crop, so zoom and Left/Centre/Right
+    behave as one framing control instead of applying the horizontal shift twice.
+    Captions, hook text and watermarks are added only after this video-only step.
     """
     ffmpeg = find_media_tool("ffmpeg")
     if not ffmpeg:
@@ -74,10 +83,13 @@ async def _prepare_zoomed_clip(source: Path, output: Path, start: float, end: fl
     temp = output.with_name(f".{output.stem}.zoom-source.mp4")
     temp.unlink(missing_ok=True)
     z = max(1.0, min(float(zoom), 2.0))
-    # Crop around the source centre, restore the original pixel dimensions,
-    # then let the existing horizontal reframe choose Left/Centre/Right.
+    focus = max(0.0, min(float(focus_x), 100.0)) / 100.0
+    # Crop a smaller source window at the requested horizontal focus, then
+    # restore source dimensions. Because the next render crop is centred, the
+    # chosen focus remains stable in the preview and final MP4.
+    crop_x = f"(iw-iw/{z:.4f})*{focus:.4f}"
     vf = (
-        f"crop=iw/{z:.4f}:ih/{z:.4f}:(iw-iw/{z:.4f})/2:(ih-ih/{z:.4f})/2,"
+        f"crop=iw/{z:.4f}:ih/{z:.4f}:{crop_x}:(ih-ih/{z:.4f})/2,"
         f"scale=trunc(iw*{z:.4f}/2)*2:trunc(ih*{z:.4f}/2)*2"
     )
     try:
@@ -105,8 +117,8 @@ async def render_short_limited(*args: Any, **kwargs: Any) -> None:
     """Bound final Short rendering through the shared FFmpeg encode gate.
 
     Zoom is carried inside the existing crop-keyframe payload so both the API
-    renderer and durable media worker use identical behavior without separate
-    execution-specific branches.
+    renderer and durable media worker use identical behavior. The control is
+    stripped before normal crop tracking sees the keyframes.
     """
     async with media_encode_slot():
         mutable = list(args)
@@ -123,7 +135,7 @@ async def render_short_limited(*args: Any, **kwargs: Any) -> None:
         if source_caption_band is None and len(mutable) > 15:
             source_caption_band = mutable[15]
         # Preserving burned-in source captions is intentionally conservative:
-        # zoom could crop the very subtitle band the creator asked us to keep.
+        # zoom could crop the subtitle band the creator explicitly asked to keep.
         if source_caption_band is not None:
             zoom = 1.0
 
@@ -131,16 +143,15 @@ async def render_short_limited(*args: Any, **kwargs: Any) -> None:
             await render_short(*mutable, **kwargs)
             return
 
-        if len(mutable) < 4:
-            # Current production callers are positional; keep a safe fallback
-            # for tests or future keyword callers.
+        if len(mutable) < 13:
             source = Path(kwargs["source"])
             output = Path(kwargs["output"])
             start = float(kwargs["start"])
             end = float(kwargs["end"])
-            zoomed = await _prepare_zoomed_clip(source, output, start, end, zoom)
+            focus_x = float(kwargs.get("focus_x", 50))
+            zoomed = await _prepare_zoomed_clip(source, output, start, end, zoom, focus_x)
             try:
-                forwarded = {**kwargs, "source": zoomed, "start": 0.0, "end": end - start}
+                forwarded = {**kwargs, "source": zoomed, "start": 0.0, "end": end - start, "focus_x": 50.0}
                 await render_short(**forwarded)
             finally:
                 zoomed.unlink(missing_ok=True)
@@ -150,11 +161,13 @@ async def render_short_limited(*args: Any, **kwargs: Any) -> None:
         output = Path(mutable[1])
         start = float(mutable[2])
         end = float(mutable[3])
-        zoomed = await _prepare_zoomed_clip(source, output, start, end, zoom)
+        focus_x = float(mutable[12])
+        zoomed = await _prepare_zoomed_clip(source, output, start, end, zoom, focus_x)
         try:
             mutable[0] = zoomed
             mutable[2] = 0.0
             mutable[3] = end - start
+            mutable[12] = 50.0
             await render_short(*mutable, **kwargs)
         finally:
             zoomed.unlink(missing_ok=True)
