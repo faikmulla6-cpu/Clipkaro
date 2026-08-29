@@ -84,6 +84,15 @@ jobs:
           pytest -q tests/test_production_configuration.py
           pytest -q tests/test_production_preflight.py
 
+      - name: Run Creator Studio quality regressions
+        working-directory: backend
+        run: |
+          pytest -q tests/test_india_quality.py
+          pytest -q tests/test_zoom_control.py
+          pytest -q tests/test_transcript_review.py
+          pytest -q tests/test_content_pack.py
+          pytest -q tests/test_rendering.py
+
       - name: Run preserved no-VPS architecture tests
         working-directory: backend
         run: pytest -q tests/test_no_vps_architecture.py
@@ -119,6 +128,14 @@ jobs:
       - name: Check security foundation contract
         working-directory: frontend
         run: npm run check:security-foundation
+
+      - name: Check Creator Studio quality contracts
+        working-directory: frontend
+        run: npm run check:quality-fixes
+
+      - name: Typecheck frontend
+        working-directory: frontend
+        run: npm run typecheck
 
       - name: Build production frontend
         working-directory: frontend
