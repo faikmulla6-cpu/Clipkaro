@@ -94,10 +94,16 @@ jobs:
 
       - name: Test transcript review regressions
         working-directory: backend
+        env:
+          DATABASE_BACKEND: sqlite
+          DATABASE_URL: ""
         run: pytest -q tests/test_transcript_review.py
 
       - name: Test Content Pack regressions
         working-directory: backend
+        env:
+          DATABASE_BACKEND: sqlite
+          DATABASE_URL: ""
         run: pytest -q tests/test_content_pack.py
 
       - name: Test rendering regressions
