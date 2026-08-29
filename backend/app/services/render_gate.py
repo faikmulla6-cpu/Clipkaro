@@ -45,16 +45,29 @@ async def media_encode_slot() -> AsyncIterator[None]:
         yield
 
 
-def _zoom_from_keyframes(keyframes: list[dict[str, Any]] | None) -> tuple[float, list[dict[str, Any]]]:
-    """Extract the internal zoom control while leaving real tracking frames intact."""
+def _render_controls_from_keyframes(
+    keyframes: list[dict[str, Any]] | None,
+) -> tuple[float, bool | None, list[dict[str, Any]]]:
+    """Extract private render controls and return only real crop observations."""
     zoom = 1.0
+    preserve: bool | None = None
     cleaned: list[dict[str, Any]] = []
     for item in keyframes or []:
-        marker = item.get("zoom")
-        if marker is not None:
-            zoom = max(zoom, max(1.0, min(float(marker), 2.0)))
+        marker_zoom = item.get("zoom")
+        marker_preserve = item.get("preserve_source_captions")
+        if marker_zoom is not None or marker_preserve is not None:
+            if marker_zoom is not None:
+                zoom = max(1.0, min(float(marker_zoom), 2.0))
+            if marker_preserve is not None:
+                preserve = bool(marker_preserve)
             continue
         cleaned.append(item)
+    return zoom, preserve, cleaned
+
+
+def _zoom_from_keyframes(keyframes: list[dict[str, Any]] | None) -> tuple[float, list[dict[str, Any]]]:
+    """Backwards-compatible helper retained for focused tests."""
+    zoom, _, cleaned = _render_controls_from_keyframes(keyframes)
     return zoom, cleaned
 
 
@@ -84,9 +97,6 @@ async def _prepare_zoomed_clip(
     temp.unlink(missing_ok=True)
     z = max(1.0, min(float(zoom), 2.0))
     focus = max(0.0, min(float(focus_x), 100.0)) / 100.0
-    # Crop a smaller source window at the requested horizontal focus, then
-    # restore source dimensions. Because the next render crop is centred, the
-    # chosen focus remains stable in the preview and final MP4.
     crop_x = f"(iw-iw/{z:.4f})*{focus:.4f}"
     vf = (
         f"crop=iw/{z:.4f}:ih/{z:.4f}:{crop_x}:(ih-ih/{z:.4f})/2,"
@@ -116,16 +126,16 @@ async def _prepare_zoomed_clip(
 async def render_short_limited(*args: Any, **kwargs: Any) -> None:
     """Bound final Short rendering through the shared FFmpeg encode gate.
 
-    Zoom is carried inside the existing crop-keyframe payload so both the API
-    renderer and durable media worker use identical behavior. The control is
-    stripped before normal crop tracking sees the keyframes.
+    Private render controls travel inside the already-durable crop payload and
+    are removed before crop tracking. This keeps local API and isolated worker
+    exports behaviorally identical.
     """
     async with media_encode_slot():
         mutable = list(args)
         keyframes = kwargs.get("crop_keyframes")
         if keyframes is None and len(mutable) > 14:
             keyframes = mutable[14]
-        zoom, cleaned_keyframes = _zoom_from_keyframes(keyframes)
+        zoom, preserve_requested, cleaned_keyframes = _render_controls_from_keyframes(keyframes)
         if "crop_keyframes" in kwargs:
             kwargs = {**kwargs, "crop_keyframes": cleaned_keyframes}
         elif len(mutable) > 14:
@@ -134,9 +144,26 @@ async def render_short_limited(*args: Any, **kwargs: Any) -> None:
         source_caption_band = kwargs.get("source_caption_band")
         if source_caption_band is None and len(mutable) > 15:
             source_caption_band = mutable[15]
-        # Preserving burned-in source captions is intentionally conservative:
-        # zoom could crop the subtitle band the creator explicitly asked to keep.
-        if source_caption_band is not None:
+
+        # Detection is advisory; the creator's Preserve source captions toggle
+        # is authoritative. If OFF, the renderer must crop/zoom normally even
+        # when text was detected near the bottom of the source.
+        if preserve_requested is False:
+            source_caption_band = None
+            if "source_caption_band" in kwargs:
+                kwargs = {**kwargs, "source_caption_band": None}
+            elif len(mutable) > 15:
+                mutable[15] = None
+        elif preserve_requested is True and source_caption_band is None:
+            source_caption_band = .82
+            if "source_caption_band" in kwargs:
+                kwargs = {**kwargs, "source_caption_band": source_caption_band}
+            elif len(mutable) > 15:
+                mutable[15] = source_caption_band
+
+        # A creator explicitly preserving source captions gets the safest full
+        # frame and no destructive zoom of the burned-in subtitle band.
+        if preserve_requested is True and source_caption_band is not None:
             zoom = 1.0
 
         if zoom <= 1.001:
