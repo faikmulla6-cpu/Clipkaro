@@ -21,6 +21,14 @@ ROMAN_CANONICAL = {
     "nahin": "nahi",
     "naheen": "nahi",
 }
+# These are review hints, not silent corrections. They represent common ASR
+# phonetic spellings seen in Indian-English/Hinglish creator footage. The
+# creator remains authoritative through Smart Transcript Review.
+SUSPICIOUS_ROMAN_TOKENS = {
+    "injeenering", "injineering", "injjeering", "veediyo", "veedio",
+    "roomet", "hastil", "taaim", "paaapa", "pataaa", "achcaa",
+}
+REPEATED_CHARACTER_RE = re.compile(r"([a-zA-Z])\1{2,}")
 
 
 def _tokens(text: str) -> list[str]:
@@ -82,6 +90,17 @@ def language_profile(segments: list[dict[str, Any]], language: str = "") -> dict
     }
 
 
+def _roman_spelling_review(text: str, language: str) -> bool:
+    if language not in {"hi", "ur", "hinglish", "auto"}:
+        return False
+    tokens = [token for token in _tokens(text) if token.isascii()]
+    if any(token in SUSPICIOUS_ROMAN_TOKENS for token in tokens):
+        return True
+    # Long repeated letters are a useful warning signal for noisy ASR, but we
+    # keep common expressive forms such as "haan" untouched.
+    return any(len(token) >= 5 and REPEATED_CHARACTER_RE.search(token) for token in tokens)
+
+
 def review_signal(segment: dict[str, Any], language: str = "") -> dict[str, Any]:
     quality = segment_quality(segment, language)
     reasons = list(quality.get("flags") or [])
@@ -99,6 +118,8 @@ def review_signal(segment: dict[str, Any], language: str = "") -> dict[str, Any]
     counts = Counter(_tokens(str(segment.get("text") or "")))
     if any(count >= 4 for count in counts.values()):
         reasons.append("repeated_token_review")
+    if _roman_spelling_review(str(segment.get("display_text") or segment.get("text") or ""), language):
+        reasons.append("phonetic_spelling_review")
     deduped = list(dict.fromkeys(reasons))
     return {
         "review_suggested": bool(deduped),
