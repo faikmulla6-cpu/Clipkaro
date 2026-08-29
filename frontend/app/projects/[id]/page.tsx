@@ -190,13 +190,23 @@ function ContentPackPanel({ projectId, clips }: { projectId: string; clips: Clip
   const [selectedClipId, setSelectedClipId] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
+  const [noticeKind, setNoticeKind] = useState<"info" | "error">("info");
   const loadPack = useCallback(async () => {
     try {
       const result = await api<ContentPackResponse>(`/projects/${projectId}/content-pack`);
       setState(result);
+      setNotice("");
       setSelectedClipId(current => current || result.content_pack?.clips[0]?.clip_id || clips[0]?.id || "");
-    } catch {
-      setState({ status: "failed", content_pack: null });
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : "";
+      if (/not found/i.test(message)) {
+        setState({ status: "missing", content_pack: null });
+        setNotice("");
+      } else {
+        setState({ status: "failed", content_pack: null });
+        setNoticeKind("error");
+        setNotice("Content Pack could not be loaded. Your clips are safe — refresh once or try again in a moment.");
+      }
     }
   }, [projectId, clips]);
   useEffect(() => { loadPack(); }, [loadPack]);
@@ -204,12 +214,20 @@ function ContentPackPanel({ projectId, clips }: { projectId: string; clips: Clip
     setBusy(true); setNotice("");
     try {
       const result = await postJSON<ContentPackResponse>(`/projects/${projectId}/content-pack`, {});
-      setState(result); setSelectedClipId(result.content_pack?.clips[0]?.clip_id || ""); setNotice("Content Pack ready");
+      setState(result);
+      setSelectedClipId(result.content_pack?.clips[0]?.clip_id || clips[0]?.id || "");
+      setNoticeKind("info");
+      setNotice("Content Pack ready — publishing copy is grounded in your current transcript and clips.");
     } catch (cause) {
-      setNotice(cause instanceof Error ? cause.message : "Content Pack couldn't be generated. Try again.");
+      const message = cause instanceof Error ? cause.message : "";
+      setNoticeKind("error");
+      setNotice(/not found/i.test(message)
+        ? "Content Pack could not start on this deployment. Refresh after the latest ClipKaro backend is live, then try again."
+        : message || "Content Pack couldn't be generated. Try again.");
     } finally { setBusy(false); }
   }
   function copied() {
+    setNoticeKind("info");
     setNotice("Copied");
     window.setTimeout(() => setNotice(""), 1200);
   }
@@ -231,12 +249,12 @@ function ContentPackPanel({ projectId, clips }: { projectId: string; clips: Clip
       <div><span className="eyebrow"><PackageCheck size={12}/> CONTENT PACK</span><h2>Publish copy for these clips</h2><p>Grounded in this transcript, clip hooks and ClipKaro scores.</p></div>
       <div className="content-pack-actions">
         {selected && <button className="secondary-btn small" type="button" onClick={() => navigator.clipboard.writeText(selectedText).then(copied)}><Copy size={14}/>Copy all</button>}
-        <button className="primary-btn small" type="button" disabled={busy} onClick={generate}>{busy ? <RefreshCw className="spin" size={14}/> : <Sparkles size={14}/>}{stale ? "Regenerate pack" : pack ? "Refresh pack" : "Generate pack"}</button>
+        <button className="primary-btn small" type="button" disabled={busy} onClick={generate}>{busy ? <RefreshCw className="spin" size={14}/> : <Sparkles size={14}/>}{stale ? "Regenerate pack" : pack ? "Refresh pack" : "Generate Content Pack"}</button>
       </div>
     </div>
-    {notice && <div className="success-banner">{notice}</div>}
+    {notice && <div className={`content-pack-status ${noticeKind}`}>{notice}</div>}
     {stale && <div className="error-banner"><span>Transcript changed - regenerate Content Pack before publishing this copy.</span></div>}
-    {!pack ? <div className="empty-state compact"><h3>No Content Pack yet</h3><p>Create titles, captions, hashtags and thumbnail text from the clips already found.</p></div> : <>
+    {!pack ? <div className="empty-state compact"><h3>No Content Pack yet</h3><p>Generate ready-to-use YouTube Shorts titles and descriptions, Instagram captions and hashtags, X posts, LinkedIn copy when relevant, cover text, content angles and a recommended publishing order from the clips ClipKaro already found.</p></div> : <>
       <div className="content-pack-overview"><div><b>Summary</b><p>{pack.content_summary}</p></div><div><b>Angles</b><p>{pack.content_angles.join(" · ")}</p></div></div>
       <div className="content-pack-layout">
         <div className="pack-clip-list">{pack.best_clips_order.map(item => {
