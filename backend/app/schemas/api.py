@@ -116,6 +116,7 @@ class ExportRequest(BaseModel):
     watermark: bool = True
     brand_kit_id: str | None = None
     focus_x: float = Field(default=50, ge=0, le=100)
+    zoom: float = Field(default=1.0, ge=1.0, le=2.0)
     crop_keyframes: list[CropKeyframe] = Field(default_factory=list, max_length=120)
     caption_position: str = Field(default="bottom", pattern="^(bottom|above|center)$")
     preserve_source_captions: bool = False
