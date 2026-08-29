@@ -1,5 +1,5 @@
 "use client";
-import { BarChart3, Bell, CalendarDays, CircleHelp, CreditCard, FolderKanban, Home, LayoutTemplate, LogOut, Menu, Palette, Plus, ServerCog, Settings, Upload, Video, X } from "lucide-react";
+import { BarChart3, Bell, CalendarDays, CircleHelp, CreditCard, FileText, FolderKanban, Home, LayoutTemplate, LogOut, Menu, Palette, Plus, ServerCog, Settings, Upload, Video, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -8,7 +8,7 @@ import { useAuth } from "./AuthProvider";
 import { Logo } from "./Logo";
 
 const workspace = [["Overview","/dashboard",Home],["Upload video","/upload",Upload],["Projects","/projects",FolderKanban],["Exports","/exports",Video],["Analytics","/analytics",BarChart3],["Content calendar","/calendar",CalendarDays]] as const;
-const studio = [["Templates","/templates",LayoutTemplate],["Brand kit","/brand",Palette]] as const;
+const studio = [["Content Packs","/content-packs",FileText],["Templates","/templates",LayoutTemplate],["Brand kit","/brand",Palette]] as const;
 
 export function AppShell({ children, title, subtitle, action }: { children: React.ReactNode; title: string; subtitle?: string; action?: React.ReactNode }) {
   const path=usePathname(); const [open,setOpen]=useState(false); const {user,loading,logout}=useAuth(); const [usage,setUsage]=useState<Usage|null>(null);
