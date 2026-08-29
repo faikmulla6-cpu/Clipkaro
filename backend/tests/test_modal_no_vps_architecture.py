@@ -186,7 +186,8 @@ def test_export_mobile_safety_contract_is_single_flight_and_server_authoritative
     assert "request.caption_position," in media
     assert "Creator choice is authoritative" in media
     assert "effective_position=" not in routes
-    assert "request.focus_x, request.caption_position" in routes
+    assert "request.focus_x, caption_position" in routes
+    assert "caption_position=effective_caption_position(" in routes
 
     # Centre is a true centre for every Studio personality, including India Pop,
     # rather than accidentally falling through to the lower safe-area rule.
