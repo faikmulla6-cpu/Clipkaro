@@ -521,6 +521,25 @@ def _font_option(text: str = "") -> str:
     return f":fontfile='{escaped}'"
 
 
+def _base_video_filters(width: int, height: int, focus_expression: str,
+                        source_caption_band: float | None = None) -> list[str]:
+    filters = [
+        # ASS/SRT events are clip-local.  Output seeking alone leaves source
+        # timestamps intact on some FFmpeg builds, which makes captions at
+        # 00:00--00:30 disappear for a clip cut from later in the source.
+        "setpts=PTS-STARTPTS",
+    ]
+    if source_caption_band is not None:
+        return filters + [
+            f"scale={width}:{height}:force_original_aspect_ratio=decrease",
+            f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2",
+        ]
+    return filters + [
+        f"scale={width}:{height}:force_original_aspect_ratio=increase",
+        f"crop={width}:{height}:(iw-{width})*{focus_expression}:(ih-{height})/2",
+    ]
+
+
 async def render_short(source: Path, output: Path, start: float, end: float, srt: Path | None,
                        hook: str, watermark: bool, resolution: str = "720p", aspect_ratio: str = "9:16",
                        caption_style: str = "kinetic", brand_text: str = "",
@@ -544,14 +563,7 @@ async def render_short(source: Path, output: Path, start: float, end: float, srt
     width, height = sizes[(resolution, aspect_ratio)]
     focus = max(0.0, min(float(focus_x), 100.0)) / 100.0
     focus_expression = ffmpeg_focus_expression(crop_keyframes, end-start) if crop_keyframes else f"{focus:.3f}"
-    filters = [
-        # ASS/SRT events are clip-local.  Output seeking alone leaves source
-        # timestamps intact on some FFmpeg builds, which makes captions at
-        # 00:00--00:30 disappear for a clip cut from later in the source.
-        "setpts=PTS-STARTPTS",
-        f"scale={width}:{height}:force_original_aspect_ratio=increase",
-        f"crop={width}:{height}:(iw-{width})*{focus_expression}:(ih-{height})/2",
-    ]
+    filters = _base_video_filters(width, height, focus_expression, source_caption_band)
     hook_words = hook.split()[:8]
     safe_hook = _drawtext_safe(" ".join(hook_words), 72)
     hook_size = max(26, min(max(30, width // 18), int(width * .84 / max(1, len(safe_hook) * .54))))

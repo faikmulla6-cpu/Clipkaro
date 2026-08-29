@@ -15,6 +15,7 @@ from app.core.config import get_settings
 from app.core.database import close_database, execute, fetch_one, init_db
 from app.schemas.api import ExportRequest
 from app.services.hinglish_stage1_routing import persisted_stage1_route
+from app.services.india_quality import caption_segments_for_export, effective_caption_position
 from app.services.jobs import claim_job, heartbeat_job_claim, init_job_queue, release_claim, update_job, utcnow
 from app.services.pipeline_provenance import transcript_state
 from app.services.render_gate import render_short_limited
@@ -62,7 +63,7 @@ async def _render_export_durable(
         )
 
         transcript = await fetch_one(
-            "SELECT segments_json FROM transcripts WHERE video_id=? ORDER BY created_at DESC LIMIT 1",
+            "SELECT segments_json,language FROM transcripts WHERE video_id=? ORDER BY created_at DESC LIMIT 1",
             (video["id"],),
         )
         segments = json.loads(transcript["segments_json"]) if transcript else []
@@ -82,8 +83,14 @@ async def _render_export_durable(
             and float(item.get("start", 0)) < clip["end_time"]
         )
         normalize = lambda value: re.sub(r"\s+", " ", value or "").strip().casefold()
+        caption_segments = caption_segments_for_export(
+            segments,
+            (transcript or {}).get("language", "auto"),
+            india_quality_mode=request.india_quality_mode,
+            caption_language_style=request.caption_language_style,
+        )
         if transcript and normalize(clip.get("transcript_text")) == normalize(source_text):
-            create_srt(segments, clip["start_time"], clip["end_time"], srt)
+            create_srt(caption_segments, clip["start_time"], clip["end_time"], srt)
         elif clip.get("transcript_text"):
             reference = timed_words(segments, clip["start_time"], clip["end_time"])
             create_edited_srt(
@@ -104,6 +111,14 @@ async def _render_export_durable(
         # Creator choice is authoritative. Existing burned-in subtitles are still
         # detected and surfaced as a warning, but Lower/Above/Centre must render
         # exactly where the creator selected them.
+        preserve_band = scan.get("band_start") if scan["detected"] else None
+        if request.preserve_source_captions and preserve_band is None:
+            preserve_band = 0.82
+        caption_position = effective_caption_position(
+            request.india_quality_mode,
+            request.preserve_source_captions,
+            request.caption_position,
+        )
         await render_short_limited(
             source,
             output,
@@ -118,9 +133,9 @@ async def _render_export_durable(
             (brand or {}).get("logo_text") or "",
             (brand or {}).get("primary_color") or "#DFFF57",
             request.focus_x,
-            request.caption_position,
+            caption_position,
             [item.model_dump() for item in request.crop_keyframes],
-            scan.get("band_start") if scan["detected"] else None,
+            preserve_band,
         )
 
         if not output.is_file() or output.stat().st_size <= 0:

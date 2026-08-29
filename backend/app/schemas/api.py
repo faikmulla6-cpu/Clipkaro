@@ -99,6 +99,10 @@ class ClipPatch(BaseModel):
     transcript_text: str | None = Field(default=None, max_length=10000)
 
 
+class TranscriptCorrectionRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=10000)
+
+
 class CropKeyframe(BaseModel):
     time: float = Field(ge=0, le=180)
     focus_x: float = Field(ge=0, le=100)
@@ -114,6 +118,9 @@ class ExportRequest(BaseModel):
     focus_x: float = Field(default=50, ge=0, le=100)
     crop_keyframes: list[CropKeyframe] = Field(default_factory=list, max_length=120)
     caption_position: str = Field(default="bottom", pattern="^(bottom|above|center)$")
+    preserve_source_captions: bool = False
+    india_quality_mode: bool = False
+    caption_language_style: str = Field(default="auto", pattern="^(auto|roman_hinglish|original)$")
 
 
 class ExportOut(BaseModel):

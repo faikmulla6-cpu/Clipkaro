@@ -1,8 +1,8 @@
 "use client";
 
 import { AppShell } from "@/components/AppShell";
-import { API_URL, api } from "@/lib/api";
-import { recordDownload } from "@/lib/behavior";
+import { api } from "@/lib/api";
+import { downloadExport as startExportDownload } from "@/lib/behavior";
 import { AlertCircle, CheckCircle2, Clock3, Download, FileVideo, Loader2, RefreshCw, XCircle } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
@@ -90,7 +90,7 @@ export default function Exports() {
     return () => window.clearInterval(timer);
   }, [load, rows]);
 
-  async function downloadExport(exportId: string) {
+  async function prepareDownload(exportId: string) {
     if (!exportId || downloadingId) return;
     setDownloadingId(exportId);
     setDownloadNotice("");
@@ -106,8 +106,7 @@ export default function Exports() {
           : "This Short is still finishing securely. Try Download again in a moment.");
         return;
       }
-      recordDownload(exportId);
-      window.location.assign(`${API_URL}/exports/${exportId}/download`);
+      startExportDownload(exportId);
     } catch (cause) {
       setDownloadNotice(cause instanceof Error ? cause.message : "The download could not be prepared yet.");
     } finally {
@@ -178,7 +177,7 @@ export default function Exports() {
                 </div>
                 <div className="export-history-action">
                   {ready ? (
-                    <button className="primary-btn small" type="button" disabled={preparing} onClick={() => void downloadExport(item.id)}>
+                    <button className="primary-btn small" type="button" disabled={preparing} onClick={() => void prepareDownload(item.id)}>
                       {preparing ? <Loader2 className="spin" size={15} /> : <Download size={15} />}{preparing ? "Preparing…" : "Download MP4"}
                     </button>
                   ) : item.status === "failed" ? (

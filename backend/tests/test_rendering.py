@@ -1,5 +1,5 @@
 from pathlib import Path
-from app.services.rendering import _build_ass, create_edited_srt, create_srt, format_srt_time, subtitle_ass_filter, timed_words
+from app.services.rendering import _base_video_filters, _build_ass, create_edited_srt, create_srt, format_srt_time, subtitle_ass_filter, timed_words
 from app.services.video import probe_metadata
 import pytest
 
@@ -106,9 +106,17 @@ def test_studio_personalities_use_positioned_visual_layers(tmp_path: Path, style
         assert "\\p1" in content
 
 
-def test_export_renderer_keeps_source_burned_subtitles_unchanged():
-    source = Path(__file__).resolve().parents[1] / "app" / "services" / "rendering.py"
-    assert "source_caption_mask_filter" not in source.read_text(encoding="utf-8")
+def test_export_renderer_preserves_full_frame_when_source_has_burned_subtitles():
+    filters = _base_video_filters(720, 1280, "0.500", source_caption_band=.82)
+    assert "scale=720:1280:force_original_aspect_ratio=decrease" in filters
+    assert "pad=720:1280:(ow-iw)/2:(oh-ih)/2" in filters
+    assert not any(item.startswith("crop=") for item in filters)
+
+
+def test_export_renderer_crops_normally_without_source_burned_subtitles():
+    filters = _base_video_filters(720, 1280, "0.500")
+    assert "scale=720:1280:force_original_aspect_ratio=increase" in filters
+    assert "crop=720:1280:(iw-720)*0.500:(ih-1280)/2" in filters
 
 
 def test_ass_filter_uses_escaped_absolute_windows_and_linux_paths():

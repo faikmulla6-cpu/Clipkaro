@@ -54,8 +54,8 @@ must(
   editor.indexOf("await video.play()") < editor.indexOf('trackClipBehavior(clip.id, "preview_started"'),
   "editor preview is recorded before video playback succeeds",
 );
-must(editor.includes("recordDownload(exportId)"), "download receipt is not wired from completed editor export");
-must(exportsPage.includes("recordDownload(item.id)") || exportsPage.includes("recordDownload(x.id)"), "download receipt is not wired from exports library");
+must(editor.includes("downloadExport(exportId)"), "download receipt helper is not wired from completed editor export");
+must(exportsPage.includes("startExportDownload(exportId)") || exportsPage.includes("downloadExport(item.id)") || exportsPage.includes("downloadExport(x.id)"), "download receipt helper is not wired from exports library");
 must(client.includes("keepalive: true"), "download receipt can be cancelled by navigation");
 must(client.includes("void recordDownload(exportId)") && !client.includes("await recordDownload(exportId)"), "download navigation must not wait for telemetry");
 must(client.includes("Behavioral telemetry must never block creator actions"), "client telemetry failure boundary is missing");

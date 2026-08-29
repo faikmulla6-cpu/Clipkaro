@@ -21,6 +21,11 @@ from app.services.rendering import create_edited_srt, create_srt, timed_words
 from app.services.render_gate import render_short_limited
 from app.services.caption_layout import build_caption_cards
 from app.services.caption_styles import public_caption_styles
+from app.services.india_quality import (
+    caption_segments_for_export, effective_caption_position, language_profile,
+    transcript_review_summary,
+)
+from app.services.transcript_review import effective_segments_for_video
 from app.services.transcription import transcribe
 from app.services.source_caption_detection import detect_burned_captions
 from app.services.storage import get_storage_provider, validate_object_key
@@ -201,6 +206,7 @@ async def _persist_suggestions(video: dict, segments: list[dict], language: str)
             str(uuid.uuid4()), video["id"], language,
             " ".join(s.get("display_text") or s["text"] for s in segments), json.dumps(segments), timestamp,
         ))
+        await db.execute("UPDATE content_packs SET status='stale',updated_at=? WHERE project_id=? AND status='ready'", (timestamp, video["project_id"]))
         await _retire_previous_clips(db, video["id"], timestamp)
         if rows:
             await db.executemany("INSERT INTO clips VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
@@ -477,6 +483,13 @@ async def patch_clip(clip_id:str,body:ClipPatch,user:dict=Depends(current_user))
     if values:
         columns=",".join(f"{key}=?" for key in values)
         await execute(f"UPDATE clips SET {columns},updated_at=? WHERE id=?",tuple(values.values())+(utcnow(),clip_id))
+        if "transcript_text" in values:
+            await execute(
+                """UPDATE content_packs SET status='stale',updated_at=?
+                   WHERE project_id=(SELECT p.id FROM projects p JOIN videos v ON v.project_id=p.id WHERE v.id=?)
+                     AND status='ready'""",
+                (utcnow(), clip["video_id"]),
+            )
     row=await fetch_one("SELECT * FROM clips WHERE id=?",(clip_id,)); row["score_breakdown"]=json.loads(row.pop("score_breakdown_json"))
     return ClipOut(**row)
 
@@ -487,15 +500,20 @@ async def clip_captions(clip_id:str,user:dict=Depends(current_user))->dict:
       JOIN projects p ON p.id=v.project_id WHERE c.id=? AND p.user_id=?""",(clip_id,user["id"]))
     if not clip: raise HTTPException(404,"Clip not found.")
     if clip.get("status") == "superseded": raise HTTPException(409,"This moment belongs to an earlier analysis and cannot be edited against the new transcript.")
-    transcript=await fetch_one("SELECT segments_json,language FROM transcripts WHERE video_id=? ORDER BY created_at DESC LIMIT 1",
-                               (clip["video_id"],))
-    segments=json.loads(transcript["segments_json"]) if transcript else []
-    words=timed_words(segments,clip["start_time"],clip["end_time"])
+    transcript, segments = await effective_segments_for_video(clip["video_id"])
+    words=timed_words(segments,clip["start_time"],clip["end_time"], allow_synthetic=True)
     relative_words=[{**word,"start":round(float(word["start"])-clip["start_time"],3),
                      "end":round(float(word["end"])-clip["start_time"],3)} for word in words]
     cards=build_caption_cards(relative_words)
-    return {"language":(transcript or {}).get("language","unknown"),"clip_start":clip["start_time"],
+    language=(transcript or {}).get("language","unknown")
+    profile=language_profile(segments, language)
+    review=transcript_review_summary(segments, language)
+    return {"language":language,"clip_start":clip["start_time"],
             "clip_end":clip["end_time"],"words":relative_words,
+            "india_quality":profile,
+            "review_suggested":review["review_suggested"],
+            "review_reasons":review["review_reasons"],
+            "review_segment_count":review["review_segment_count"],
             "source_has_burned_captions":any(bool(item.get("source_has_burned_captions")) for item in segments),
             "source_caption_band":next((item.get("source_caption_band") for item in segments
                                         if item.get("source_caption_band") is not None),None),
@@ -509,8 +527,8 @@ async def _render_export(job_id:str,export_id:str,clip:dict,video:dict,request:E
     try:
         await update_job(job_id,12,"preparing","Preparing crop, captions and brand style")
         await execute("UPDATE exports SET status='processing',progress=12 WHERE id=?",(export_id,))
-        transcript=await fetch_one("SELECT segments_json FROM transcripts WHERE video_id=? ORDER BY created_at DESC LIMIT 1",(video["id"],))
-        segments=json.loads(transcript["segments_json"]) if transcript else []
+        transcript, segments = await effective_segments_for_video(video["id"])
+        raw_segments = json.loads(transcript["segments_json"]) if transcript else []
         settings=get_settings()
         state=transcript_state(segments,settings.effective_require_asr_consensus,settings.effective_require_forced_alignment)
         if not state["export_safe"]:
@@ -518,8 +536,23 @@ async def _render_export(job_id:str,export_id:str,clip:dict,video:dict,request:E
         source_text=" ".join(str(item.get("display_text") or item.get("text", "")).strip() for item in segments
                              if float(item.get("end", 0)) > clip["start_time"] and float(item.get("start", 0)) < clip["end_time"])
         normalize=lambda value: re.sub(r"\s+", " ", value or "").strip().casefold()
-        if transcript and normalize(clip.get("transcript_text")) == normalize(source_text):
-            create_srt(segments,clip["start_time"],clip["end_time"],srt)
+        caption_segments=caption_segments_for_export(
+            segments,(transcript or {}).get("language","auto"),
+            india_quality_mode=request.india_quality_mode,
+            caption_language_style=request.caption_language_style,
+        )
+        correction_in_clip = any(
+            segment.get("corrected_text")
+            and float(segment.get("end", 0)) > clip["start_time"]
+            and float(segment.get("start", 0)) < clip["end_time"]
+            for segment in segments
+        )
+        if correction_in_clip:
+            reference=timed_words(raw_segments,clip["start_time"],clip["end_time"])
+            create_edited_srt(source_text,clip["end_time"]-clip["start_time"],srt,
+                              reference,clip["start_time"])
+        elif transcript and normalize(clip.get("transcript_text")) == normalize(source_text):
+            create_srt(caption_segments,clip["start_time"],clip["end_time"],srt)
         elif clip.get("transcript_text"):
             reference=timed_words(segments,clip["start_time"],clip["end_time"])
             create_edited_srt(clip["transcript_text"],clip["end_time"]-clip["start_time"],srt,
@@ -532,13 +565,19 @@ async def _render_export(job_id:str,export_id:str,clip:dict,video:dict,request:E
         scan=await detect_burned_captions(source_path,float(video.get("duration") or clip["end_time"]))
         # Existing burned-in subtitles are advisory context only. Lower, Above
         # and Centre are creator-authoritative and render exactly as selected.
+        preserve_band = scan.get("band_start") if scan["detected"] else None
+        if request.preserve_source_captions and preserve_band is None:
+            preserve_band = 0.82
+        caption_position=effective_caption_position(
+            request.india_quality_mode, request.preserve_source_captions, request.caption_position
+        )
         await render_short_limited(
             source_path, output, clip["start_time"], clip["end_time"],
             srt if srt.exists() else None, request.hook_text or clip["hook"], request.watermark,
             request.resolution, request.aspect_ratio, request.caption_style,
             (brand or {}).get("logo_text") or "", (brand or {}).get("primary_color") or "#DFFF57",
-            request.focus_x, request.caption_position, [item.model_dump() for item in request.crop_keyframes],
-            scan.get("band_start") if scan["detected"] else None,
+            request.focus_x, caption_position, [item.model_dump() for item in request.crop_keyframes],
+            preserve_band,
         )
         await update_job(job_id,92,"optimizing","Optimizing MP4 for fast social upload")
         await execute("UPDATE exports SET status='ready',progress=100 WHERE id=?",(export_id,))

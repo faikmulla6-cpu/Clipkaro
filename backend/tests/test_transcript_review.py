@@ -1,0 +1,141 @@
+from unittest.mock import AsyncMock, patch
+import asyncio
+import json
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app.core.config import get_settings
+from app.core.database import fetch_all, fetch_one
+from app.main import app
+from app.services.legal import LEGAL_VERSION
+
+
+@pytest.fixture()
+def client(tmp_path):
+    settings = get_settings()
+    original = {
+        "app_env": settings.app_env,
+        "database_path": settings.database_path,
+        "storage_root": settings.storage_root,
+        "secret_key": settings.secret_key,
+        "seed_demo_user": settings.seed_demo_user,
+        "allow_manual_analysis_in_development": settings.allow_manual_analysis_in_development,
+    }
+    settings.database_path = tmp_path / "transcript-review.db"
+    settings.storage_root = tmp_path / "storage"
+    settings.secret_key = "unit-test-secret-for-transcript-review"
+    settings.seed_demo_user = True
+    settings.app_env = "test"
+    settings.allow_manual_analysis_in_development = True
+    try:
+        with TestClient(app) as test_client:
+            yield test_client
+    finally:
+        for key, value in original.items():
+            setattr(settings, key, value)
+
+
+def login_demo(client: TestClient):
+    response = client.post("/api/v1/auth/login", json={"email": "demo@clipkaro.ai", "password": "ClipKaro123!"})
+    assert response.status_code == 200
+    client.headers["X-CSRF-Token"] = client.cookies.get("csrf_token")
+    accepted = client.post("/api/v1/legal/accept", json={"accepted": True, "version": LEGAL_VERSION})
+    assert accepted.status_code == 200
+
+
+def ready_project(client: TestClient) -> tuple[str, list[dict]]:
+    with patch("app.api.routes._process_project", new=AsyncMock()):
+        upload = client.post(
+            "/api/v1/projects/upload",
+            data={"title": "Transcript review QA", "language": "hinglish", "category": "comedy"},
+            files={"file": ("source.mp4", b"test-bytes", "video/mp4")},
+        )
+    assert upload.status_code == 201
+    project_id = upload.json()["id"]
+    segments = [
+        {"start": 0, "end": 24, "text": "placement placement placement placement thyme sab serious ho jate he"},
+        {"start": 24, "end": 51, "text": "bhai group project me jugaad aur viva explanation ready hota hai"},
+        {"start": 51, "end": 78, "text": "deadline ke pehle ka pressure sabko samajh aata hai"},
+    ]
+    analysis = client.post(f"/api/v1/projects/{project_id}/analyse", json={"language": "hinglish", "segments": segments})
+    assert analysis.status_code == 200
+    return project_id, analysis.json()
+
+
+def test_transcript_review_read_save_persist_caption_and_content_pack_regenerate(client: TestClient):
+    login_demo(client)
+    project_id, clips = ready_project(client)
+    created = client.post(f"/api/v1/projects/{project_id}/content-pack")
+    assert created.status_code == 201
+
+    review = client.get(f"/api/v1/projects/{project_id}/transcript-review")
+    assert review.status_code == 200
+    flagged = review.json()["segments"][0]
+    assert flagged["index"] == 0
+    assert flagged["start"] == 0 and flagged["end"] == 24
+    assert "Possible repeated words" in flagged["reasons"]
+
+    correction = "placement ke time sab serious ho jaate hain"
+    saved = client.patch(f"/api/v1/projects/{project_id}/transcript-review/0", json={"text": correction})
+    assert saved.status_code == 200
+    assert saved.json()["text"] == correction
+
+    refreshed = client.get(f"/api/v1/projects/{project_id}/transcript-review").json()
+    corrected = next(item for item in refreshed["segments"] if item["index"] == 0)
+    assert corrected["state"] == "corrected"
+    assert corrected["text"] == correction
+    assert refreshed["summary"]["corrected"] == 1
+    assert refreshed["summary"]["remaining"] == 0
+
+    rows = asyncio.run(fetch_all("SELECT * FROM transcript_corrections WHERE project_id=?", (project_id,)))
+    assert len(rows) == 1
+    assert rows[0]["original_text"] == "placement placement placement placement thyme sab serious ho jate he"
+    transcript = asyncio.run(fetch_one(
+        """SELECT t.* FROM transcripts t JOIN videos v ON v.id=t.video_id WHERE v.project_id=?""",
+        (project_id,),
+    ))
+    source_segments = json.loads(transcript["segments_json"])
+    assert source_segments[0]["text"] == "placement placement placement placement thyme sab serious ho jate he"
+
+    clip = next(item for item in client.get(f"/api/v1/projects/{project_id}").json()["clips"] if correction in item["transcript_text"])
+    captions = client.get(f"/api/v1/clips/{clip['id']}/captions").json()
+    assert "jaate" in " ".join(word["text"] for word in captions["words"])
+
+    stale = client.get(f"/api/v1/projects/{project_id}/content-pack").json()
+    assert stale["status"] == "stale"
+    regenerated = client.post(f"/api/v1/projects/{project_id}/content-pack")
+    assert regenerated.status_code == 201
+    pack_text = json.dumps(regenerated.json()["content_pack"], ensure_ascii=False)
+    assert "jaate hain" in pack_text
+
+
+def test_transcript_review_reset_restores_original_and_preserves_timestamps(client: TestClient):
+    login_demo(client)
+    project_id, _ = ready_project(client)
+    correction = "bhai ye kya scene hai samajh nahi aaya jugaad"
+    assert client.patch(f"/api/v1/projects/{project_id}/transcript-review/0", json={"text": correction}).status_code == 200
+    reset = client.delete(f"/api/v1/projects/{project_id}/transcript-review/0")
+    assert reset.status_code == 200
+    assert reset.json()["text"] == "placement placement placement placement thyme sab serious ho jate he"
+    review = client.get(f"/api/v1/projects/{project_id}/transcript-review").json()
+    segment = next(item for item in review["segments"] if item["index"] == 0)
+    assert segment["state"] == "needs_review"
+    assert segment["start"] == 0 and segment["end"] == 24
+    assert segment["text"] == "placement placement placement placement thyme sab serious ho jate he"
+    assert asyncio.run(fetch_one("SELECT id FROM transcript_corrections WHERE project_id=?", (project_id,))) is None
+
+
+def test_transcript_review_authorization_and_malformed_requests(client: TestClient):
+    login_demo(client)
+    project_id, _ = ready_project(client)
+    assert client.patch(f"/api/v1/projects/{project_id}/transcript-review/999", json={"text": "valid text"}).status_code == 404
+    assert client.patch(f"/api/v1/projects/{project_id}/transcript-review/0", json={"text": ""}).status_code == 422
+
+    client.post("/api/v1/auth/logout")
+    signup = client.post("/api/v1/auth/signup", json={"name": "Other User", "email": "other-review@example.com", "password": "Secure123"})
+    assert signup.status_code == 201
+    client.headers["X-CSRF-Token"] = client.cookies.get("csrf_token")
+    assert client.get(f"/api/v1/projects/{project_id}/transcript-review").status_code == 404
+    assert client.patch(f"/api/v1/projects/{project_id}/transcript-review/0", json={"text": "stolen edit"}).status_code == 404
+    assert client.delete(f"/api/v1/projects/{project_id}/transcript-review/0").status_code == 404

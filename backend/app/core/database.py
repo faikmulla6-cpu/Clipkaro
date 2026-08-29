@@ -170,6 +170,16 @@ CREATE TABLE IF NOT EXISTS transcripts (
   text TEXT NOT NULL, segments_json TEXT NOT NULL, created_at TEXT NOT NULL,
   FOREIGN KEY(video_id) REFERENCES videos(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS transcript_corrections (
+  id TEXT PRIMARY KEY, transcript_id TEXT NOT NULL, project_id TEXT NOT NULL, video_id TEXT NOT NULL,
+  segment_index INTEGER NOT NULL, segment_key TEXT NOT NULL, original_text TEXT NOT NULL,
+  corrected_text TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'corrected',
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  UNIQUE(transcript_id, segment_key),
+  FOREIGN KEY(transcript_id) REFERENCES transcripts(id) ON DELETE CASCADE,
+  FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY(video_id) REFERENCES videos(id) ON DELETE CASCADE
+);
 CREATE TABLE IF NOT EXISTS clips (
   id TEXT PRIMARY KEY, video_id TEXT NOT NULL, start_time REAL NOT NULL, end_time REAL NOT NULL,
   hook TEXT NOT NULL, title TEXT NOT NULL, reason TEXT NOT NULL, transcript_text TEXT DEFAULT '',
@@ -220,6 +230,12 @@ CREATE TABLE IF NOT EXISTS scheduled_posts (
   FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
   FOREIGN KEY(export_id) REFERENCES exports(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS content_packs (
+  id TEXT PRIMARY KEY, project_id TEXT NOT NULL UNIQUE, status TEXT NOT NULL,
+  payload_json TEXT NOT NULL DEFAULT '{}', provider TEXT DEFAULT '',
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
 CREATE TABLE IF NOT EXISTS audit_events (
   id TEXT PRIMARY KEY, user_id TEXT, event TEXT NOT NULL, entity_type TEXT, entity_id TEXT,
   metadata_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL
@@ -241,11 +257,13 @@ CREATE TABLE IF NOT EXISTS billing_checkouts (
 );
 CREATE INDEX IF NOT EXISTS idx_projects_user ON projects(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_videos_project ON videos(project_id);
+CREATE INDEX IF NOT EXISTS idx_transcript_corrections_project ON transcript_corrections(project_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_clips_video ON clips(video_id, score DESC);
 CREATE INDEX IF NOT EXISTS idx_exports_user ON exports(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_jobs_user ON jobs(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_usage_reservation_period ON usage_reservations(user_id, period_key, kind, status);
 CREATE INDEX IF NOT EXISTS idx_usage_reservation_resource ON usage_reservations(kind, resource_id, status);
+CREATE INDEX IF NOT EXISTS idx_content_packs_project ON content_packs(project_id);
 
 -- A video's duration is known at the validated transition. Reserve its Karo
 -- Minutes in the same SQLite write transaction before transcription starts.

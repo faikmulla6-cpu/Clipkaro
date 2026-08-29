@@ -221,7 +221,7 @@ function PublicPricing({ plans }: { plans: Plan[] }) {
   </div>;
 }
 
-export function PricingExperience() {
+export function PricingExperience({ publicFallback }: { publicFallback?: React.ReactNode }) {
   const { user, refresh } = useAuth();
   const [plans, setPlans] = useState<Plan[]>([]);
   const [status, setStatus] = useState<BillingStatus | null>(null);
@@ -401,7 +401,7 @@ export function PricingExperience() {
   const scheduledPlanName = plans.find((plan) => plan.id === scheduledPlan)?.name || (scheduledPlan === "free" ? "Free" : scheduledPlan);
 
   if (!user) {
-    return <PublicPricing plans={plans} />;
+    return publicFallback || <PublicPricing plans={plans} />;
   }
 
   function buttonState(plan: Plan) {

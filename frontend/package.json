@@ -13,11 +13,13 @@
     "check:legal-privacy": "node scripts/check-legal-privacy.mjs",
     "check:behavioral-learning": "node scripts/check-behavioral-learning.mjs",
     "check:landscape-reframe": "node scripts/check-landscape-reframe.mjs",
+    "check:content-pack": "node scripts/check-content-pack.mjs",
+    "check:transcript-review": "node scripts/check-transcript-review.mjs",
     "check:release-identity": "node scripts/check-release-identity.mjs",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "check:release": "npm run check:settings-trust && npm run check:analytics-truth && npm run check:billing-lifecycle && npm run check:email-verification && npm run check:security-foundation && npm run check:legal-privacy && npm run check:behavioral-learning && npm run check:landscape-reframe && npm run check:release-identity"
+    "check:release": "npm run check:settings-trust && npm run check:analytics-truth && npm run check:billing-lifecycle && npm run check:email-verification && npm run check:security-foundation && npm run check:legal-privacy && npm run check:behavioral-learning && npm run check:landscape-reframe && npm run check:content-pack && npm run check:transcript-review && npm run check:release-identity"
   },
   "dependencies": {
     "@radix-ui/react-progress": "^1.1.7",

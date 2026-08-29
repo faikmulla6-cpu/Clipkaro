@@ -11,10 +11,15 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from app.api import routes as project_routes
 from app.core.config import get_settings
 from app.core.database import UsageQuotaExceeded, distributed_advisory_lock, execute, fetch_all, fetch_one
-from app.schemas.api import AnalyseRequest, ExportOut, ExportRequest, ProjectOut
+from app.schemas.api import AnalyseRequest, ExportOut, ExportRequest, ProjectOut, TranscriptCorrectionRequest
 from app.services.auth import current_user
+from app.services.content_pack import _row_to_response, generate_content_pack, persist_content_pack
 from app.services.jobs import create_job, dispatch_job, update_job
 from app.services.hinglish_stage1_routing import resolve_stage1_route
+from app.services.transcript_review import (
+    _text_for_clip, effective_segments_for_video, reset_correction,
+    review_payload, save_correction,
+)
 from app.services.storage_paths import confined_upload_path
 from app.services.storage import get_storage_provider, validate_object_key
 
@@ -47,6 +52,30 @@ async def _active_export_for_clip(clip_id: str, user_id: str) -> dict | None:
            ORDER BY e.created_at DESC LIMIT 1""",
         (clip_id, user_id),
     )
+
+
+async def _content_pack_context(project_id: str, user_id: str) -> tuple[dict, list[dict], list[dict], str]:
+    project = await fetch_one(
+        """SELECT p.*,v.id video_id FROM projects p
+           LEFT JOIN videos v ON v.project_id=p.id
+           WHERE p.id=? AND p.user_id=?""",
+        (project_id, user_id),
+    )
+    if not project:
+        raise HTTPException(404, "Project not found.")
+    if project.get("status") != "ready":
+        raise HTTPException(409, "Content Pack is available after ClipKaro finishes finding clips.")
+    transcript, segments = await effective_segments_for_video(project.get("video_id"))
+    clips = await fetch_all(
+        "SELECT * FROM clips WHERE video_id=? AND status<>'superseded' ORDER BY score DESC",
+        (project.get("video_id"),),
+    )
+    for clip in clips:
+        clip["score_breakdown"] = json.loads(clip.pop("score_breakdown_json") or "{}")
+        clip["transcript_text"] = _text_for_clip(segments, float(clip["start_time"]), float(clip["end_time"]))
+    if not segments or not clips:
+        raise HTTPException(409, "Content Pack needs a verified transcript and at least one clip.")
+    return project, clips, segments, str((transcript or {}).get("language") or project.get("language") or "auto")
 
 
 async def _mark_project_enqueue_failed(project_id: str, reason: str) -> None:
@@ -120,16 +149,19 @@ async def project_detail(project_id: str, tasks: BackgroundTasks, user: dict = D
     if not project:
         raise HTTPException(404, "Project not found.")
     transcript = await fetch_one(
-        "SELECT segments_json FROM transcripts WHERE video_id=? ORDER BY created_at DESC LIMIT 1",
+        "SELECT * FROM transcripts WHERE video_id=? ORDER BY created_at DESC LIMIT 1",
         (project["video_id"],),
     )
-    segments = json.loads(transcript["segments_json"]) if transcript else []
+    corrections = await fetch_all("SELECT * FROM transcript_corrections WHERE transcript_id=?", (transcript["id"],)) if transcript else []
+    review = review_payload(transcript, corrections) if transcript else {"summary": {"flagged": 0, "corrected": 0, "reviewed": 0, "remaining": 0}, "segments": []}
+    _, segments = await effective_segments_for_video(project["video_id"])
     settings = get_settings()
     state = project_routes.transcript_state(
         segments, settings.effective_require_asr_consensus, settings.effective_require_forced_alignment,
     )
     project["pipeline_version"] = project_routes.PIPELINE_VERSION
     project["transcript_state"] = state
+    project["transcript_review"] = review["summary"]
     source = await fetch_one("SELECT file_path,status FROM videos WHERE id=?", (project["video_id"],))
     source_available = await _source_available(source, str(user["id"]))
     project["source_available"] = source_available
@@ -177,6 +209,84 @@ async def project_detail(project_id: str, tasks: BackgroundTasks, user: dict = D
         clip["score_breakdown"] = json.loads(clip.pop("score_breakdown_json") or "{}")
     project["clips"] = clips
     return project
+
+
+@router.get("/projects/{project_id}/content-pack")
+async def get_content_pack(project_id: str, user: dict = Depends(current_user)) -> dict:
+    project = await fetch_one("SELECT id FROM projects WHERE id=? AND user_id=?", (project_id, user["id"]))
+    if not project:
+        raise HTTPException(404, "Project not found.")
+    row = await fetch_one("SELECT * FROM content_packs WHERE project_id=?", (project_id,))
+    return _row_to_response(row)
+
+
+@router.get("/projects/{project_id}/transcript-review")
+async def get_transcript_review(project_id: str, user: dict = Depends(current_user)) -> dict:
+    project = await fetch_one(
+        """SELECT p.id,v.id video_id FROM projects p JOIN videos v ON v.project_id=p.id
+           WHERE p.id=? AND p.user_id=?""",
+        (project_id, user["id"]),
+    )
+    if not project:
+        raise HTTPException(404, "Project not found.")
+    transcript = await fetch_one("SELECT * FROM transcripts WHERE video_id=? ORDER BY created_at DESC LIMIT 1", (project["video_id"],))
+    if not transcript:
+        return {"language": "auto", "summary": {"flagged": 0, "corrected": 0, "reviewed": 0, "remaining": 0}, "segments": []}
+    corrections = await fetch_all("SELECT * FROM transcript_corrections WHERE transcript_id=?", (transcript["id"],))
+    return review_payload(transcript, corrections)
+
+
+@router.patch("/projects/{project_id}/transcript-review/{segment_index}")
+async def patch_transcript_review(
+    project_id: str,
+    segment_index: int,
+    body: TranscriptCorrectionRequest,
+    user: dict = Depends(current_user),
+) -> dict:
+    try:
+        result = await save_correction(project_id, str(user["id"]), segment_index, body.text)
+        await project_routes.audit(user["id"], "transcript.corrected", "project", project_id, {"segment_index": segment_index})
+        return result
+    except PermissionError:
+        raise HTTPException(404, "Project not found.")
+    except LookupError:
+        raise HTTPException(404, "Transcript not found.")
+    except IndexError:
+        raise HTTPException(404, "Transcript segment not found.")
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.delete("/projects/{project_id}/transcript-review/{segment_index}")
+async def delete_transcript_review(project_id: str, segment_index: int, user: dict = Depends(current_user)) -> dict:
+    try:
+        result = await reset_correction(project_id, str(user["id"]), segment_index)
+        await project_routes.audit(user["id"], "transcript.correction_reset", "project", project_id, {"segment_index": segment_index})
+        return result
+    except PermissionError:
+        raise HTTPException(404, "Project not found.")
+    except LookupError:
+        raise HTTPException(404, "Transcript not found.")
+    except IndexError:
+        raise HTTPException(404, "Transcript segment not found.")
+
+
+@router.post("/projects/{project_id}/content-pack", status_code=201)
+async def create_content_pack(project_id: str, user: dict = Depends(current_user)) -> dict:
+    existing = await fetch_one("SELECT * FROM content_packs WHERE project_id=? AND status='ready'", (project_id,))
+    if existing:
+        return _row_to_response(existing)
+    try:
+        project, clips, segments, language = await _content_pack_context(project_id, str(user["id"]))
+        payload = generate_content_pack(project, clips, segments, language)
+        result = await persist_content_pack(project_id, payload)
+        await project_routes.audit(user["id"], "content_pack.generated", "project", project_id, {"clips": len(clips)})
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        await persist_content_pack(project_id, {"error": "Content Pack couldn't be generated. Try again."}, status="failed")
+        raise HTTPException(502, "Content Pack couldn't be generated. Try again.") from exc
 
 
 @router.post("/projects/{project_id}/reprocess", response_model=ProjectOut, status_code=202)
@@ -242,11 +352,7 @@ async def export_clip(
     if clip.get("status") == "superseded":
         raise HTTPException(409, "This moment belongs to an earlier analysis and cannot be exported again.")
 
-    transcript = await fetch_one(
-        "SELECT segments_json FROM transcripts WHERE video_id=? ORDER BY created_at DESC LIMIT 1",
-        (clip["video_id"],),
-    )
-    segments = json.loads(transcript["segments_json"]) if transcript else []
+    _, segments = await effective_segments_for_video(clip["video_id"])
     settings = get_settings()
     state = project_routes.transcript_state(
         segments, settings.effective_require_asr_consensus, settings.effective_require_forced_alignment,
