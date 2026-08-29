@@ -17,6 +17,7 @@ REASON_LABELS = {
     "repeated_token_review": "Possible repeated words",
     "mixed_language_review": "Mixed-language segment - check spelling",
     "timestamp_collapse": "Timestamp looks collapsed",
+    "phonetic_spelling_review": "Possible phonetic spelling - check wording",
     "review_required": "Needs transcript review",
 }
 
