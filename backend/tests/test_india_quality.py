@@ -3,6 +3,7 @@ from app.services.india_quality import (
     caption_segments_for_export,
     effective_caption_position,
     language_profile,
+    review_signal,
     transcript_review_summary,
 )
 
@@ -27,6 +28,7 @@ def test_export_request_keeps_old_payload_defaults():
     assert request.india_quality_mode is False
     assert request.caption_language_style == "auto"
     assert request.preserve_source_captions is False
+    assert request.zoom == 1.0
 
 
 def test_hinglish_input_is_identified_without_perfect_classifier():
@@ -69,3 +71,14 @@ def test_low_confidence_review_warning_is_meaningful_not_spammy():
     assert confident["review_suggested"] is False
     assert uncertain["review_suggested"] is True
     assert "low_word_confidence" in uncertain["review_reasons"]
+
+
+def test_noisy_phonetic_hinglish_spelling_is_flagged_even_with_high_asr_confidence():
+    signal = review_signal(_segment("roomet vaale mein hastil aur veediyo pataaa kar lenge", confidence=.94), "hi")
+    assert signal["review_suggested"] is True
+    assert "phonetic_spelling_review" in signal["review_reasons"]
+
+
+def test_normal_creator_hinglish_is_not_flagged_by_phonetic_spelling_rule():
+    signal = review_signal(_segment("bhai placement ke time samajh nahi aaya", confidence=.94), "hinglish")
+    assert "phonetic_spelling_review" not in signal["review_reasons"]
