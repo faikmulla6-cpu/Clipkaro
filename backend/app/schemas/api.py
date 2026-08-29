@@ -106,9 +106,10 @@ class TranscriptCorrectionRequest(BaseModel):
 class CropKeyframe(BaseModel):
     time: float = Field(ge=0, le=180)
     focus_x: float = Field(ge=0, le=100)
-    # Optional internal control carried through the existing durable job payload.
-    # render_gate removes it before normal crop tracking sees the keyframes.
+    # Internal render-control fields share the already-durable keyframe payload
+    # and are removed by render_gate before crop tracking sees real keyframes.
     zoom: float | None = Field(default=None, ge=1.0, le=2.0)
+    preserve_source_captions: bool | None = None
 
 
 class ExportRequest(BaseModel):
@@ -127,12 +128,21 @@ class ExportRequest(BaseModel):
     caption_language_style: str = Field(default="auto", pattern="^(auto|roman_hinglish|original)$")
 
     @model_validator(mode="after")
-    def carry_zoom_for_renderer(self):
-        # Existing API/worker calls already pass crop_keyframes into the shared
-        # render gate. Carry zoom there without changing either execution path.
-        # Re-hydrated durable jobs keep the sentinel rather than duplicating it.
-        if self.zoom > 1.0 and not any(item.zoom is not None for item in self.crop_keyframes):
-            self.crop_keyframes.append(CropKeyframe(time=180, focus_x=self.focus_x, zoom=self.zoom))
+    def carry_render_controls(self):
+        # Existing API and durable-worker paths already persist crop_keyframes.
+        # One internal marker keeps zoom and the explicit preserve toggle intact
+        # across both execution paths without changing public crop semantics.
+        has_control = any(
+            item.zoom is not None or item.preserve_source_captions is not None
+            for item in self.crop_keyframes
+        )
+        if not has_control:
+            self.crop_keyframes.append(CropKeyframe(
+                time=180,
+                focus_x=self.focus_x,
+                zoom=self.zoom,
+                preserve_source_captions=self.preserve_source_captions,
+            ))
         return self
 
 
