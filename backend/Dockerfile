@@ -27,13 +27,19 @@ USER 10001:10001
 FROM media-base AS media
 CMD ["python", "-m", "app.media_job"]
 
-# Legacy/local-ASR worker target retained only for deliberate qualification or
-# an explicitly selected ASR_MODE=local deployment. Never used by API mode.
-FROM media-base AS worker
+# Legacy/local-ASR worker target retained only for deliberate qualification.
+# It starts from runtime-base so WhisperX/alignment dependencies stay out of
+# the production API/media image lineage unless this target is built directly.
+FROM runtime-base AS worker
 USER root
-COPY requirements-local-asr.txt requirements-alignment.txt ./
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg libass9 tesseract-ocr fonts-noto-core fonts-liberation2 clamav \
+    && rm -rf /var/lib/apt/lists/*
+COPY assets ./assets
+COPY requirements-alignment.txt .
 RUN python -m pip install --no-cache-dir -r requirements-alignment.txt \
     && python -m pip check
+RUN chown -R 10001:10001 /app
 USER 10001:10001
 CMD ["python", "-m", "app.worker"]
 

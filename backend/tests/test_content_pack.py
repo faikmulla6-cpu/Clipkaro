@@ -118,6 +118,33 @@ def test_hinglish_content_pack_preserves_tone(client: TestClient):
     assert "in today's fast-paced world" not in text
 
 
+def test_content_pack_avoids_uncorrected_noisy_tokens():
+    project = {"id": "project-noise", "title": "Noisy Hinglish clip", "category": "education"}
+    clips = [{
+        "id": "clip-noise",
+        "title": "Injeenering acchee caahate hue",
+        "hook": "injeenering acchee meree caahate hue",
+        "reason": "Noisy ASR moment",
+        "transcript_text": "injeenering acchee meree caahate hue",
+        "start_time": 0,
+        "end_time": 12,
+        "score": 80,
+        "score_breakdown": {"hook": 70},
+    }]
+    segments = [{
+        "start": 0,
+        "end": 12,
+        "text": "injeenering acchee meree caahate hue",
+        "display_text": "injeenering acchee meree caahate hue",
+    }]
+    pack = generate_content_pack(project, clips, segments, "hinglish")
+    body = str(pack).casefold()
+    assert pack["clips"][0]["needs_transcript_review"] is True
+    for token in ("injeenering", "acchee", "meree", "caahate"):
+        assert token not in body
+    assert "review" in body
+
+
 def test_irrelevant_linkedin_is_suppressed_for_pure_comedy():
     project = {"id": "project-1", "title": "Comedy crowd work", "category": "comedy"}
     clips = [{

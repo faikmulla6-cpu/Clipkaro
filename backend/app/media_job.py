@@ -22,6 +22,7 @@ from app.services.render_gate import render_short_limited
 from app.services.rendering import create_edited_srt, create_srt, timed_words
 from app.services.source_caption_detection import detect_burned_captions
 from app.services.storage import get_storage_provider, validate_object_key
+from app.services.transcript_review import effective_segments_for_video
 from app.services.upload_scanner import UploadMalwareDetected, UploadScannerUnavailable, scan_upload
 
 
@@ -62,11 +63,8 @@ async def _render_export_durable(
             (export["id"],),
         )
 
-        transcript = await fetch_one(
-            "SELECT segments_json,language FROM transcripts WHERE video_id=? ORDER BY created_at DESC LIMIT 1",
-            (video["id"],),
-        )
-        segments = json.loads(transcript["segments_json"]) if transcript else []
+        transcript, segments = await effective_segments_for_video(video["id"])
+        raw_segments = json.loads(transcript["segments_json"]) if transcript else []
         settings = get_settings()
         state = transcript_state(
             segments,
@@ -89,7 +87,22 @@ async def _render_export_durable(
             india_quality_mode=request.india_quality_mode,
             caption_language_style=request.caption_language_style,
         )
-        if transcript and normalize(clip.get("transcript_text")) == normalize(source_text):
+        correction_in_clip = any(
+            segment.get("corrected_text")
+            and float(segment.get("end", 0)) > clip["start_time"]
+            and float(segment.get("start", 0)) < clip["end_time"]
+            for segment in segments
+        )
+        if correction_in_clip:
+            reference = timed_words(raw_segments, clip["start_time"], clip["end_time"])
+            create_edited_srt(
+                source_text,
+                clip["end_time"] - clip["start_time"],
+                srt,
+                reference,
+                clip["start_time"],
+            )
+        elif transcript and normalize(clip.get("transcript_text")) == normalize(source_text):
             create_srt(caption_segments, clip["start_time"], clip["end_time"], srt)
         elif clip.get("transcript_text"):
             reference = timed_words(segments, clip["start_time"], clip["end_time"])

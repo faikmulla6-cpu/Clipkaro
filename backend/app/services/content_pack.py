@@ -5,7 +5,7 @@ from typing import Any
 
 from app.core.database import execute, fetch_one
 from app.services.clip_finder import content_profile
-from app.services.india_quality import language_profile
+from app.services.india_quality import SUSPICIOUS_ROMAN_TOKENS, language_profile, review_signal
 from app.services.jobs import utcnow
 
 FORBIDDEN_CLICHES = (
@@ -27,6 +27,7 @@ SOURCE_PHRASES = (
     "placement", "attendance", "engineering", "jugaad", "semester",
     "practical", "deadline", "submission", "viva", "coding",
 )
+REVIEW_NEEDED_COPY = "This clip has a flagged transcript line. Review it before publishing polished copy."
 
 
 def _clean_text(value: Any, limit: int) -> str:
@@ -54,12 +55,51 @@ def _keywords(text: str, limit: int = 8) -> list[str]:
             original[key] = phrase
     for token in re.findall(r"[\w\u0900-\u097f]+", text, re.UNICODE):
         key = token.casefold()
-        if len(key) < 3 or key in STOPWORDS:
+        if len(key) < 3 or key in STOPWORDS or key in SUSPICIOUS_ROMAN_TOKENS:
             continue
         counts[key] = counts.get(key, 0) + 1
         original.setdefault(key, token)
     ranked = sorted(counts, key=lambda key: (counts[key], len(key)), reverse=True)
     return [original[key] for key in ranked[:limit]]
+
+
+def _safe_segment_text(segment: dict[str, Any], language: str) -> str:
+    text = str(segment.get("display_text") or segment.get("text") or "").strip()
+    if not text:
+        return ""
+    if segment.get("corrected_text"):
+        return text
+    signal = review_signal(segment, language)
+    risky_reasons = {
+        "low_word_confidence",
+        "repeated_token_review",
+        "phonetic_spelling_review",
+        "review_required",
+    }
+    if signal["review_suggested"] and any(reason in risky_reasons for reason in signal["review_reasons"]):
+        return ""
+    return text
+
+
+def _clip_source_text(
+    clip: dict[str, Any],
+    segments: list[dict[str, Any]],
+    language: str,
+) -> tuple[str, bool]:
+    overlapping = [
+        segment for segment in segments
+        if float(segment.get("end", 0)) > float(clip.get("start_time", 0))
+        and float(segment.get("start", 0)) < float(clip.get("end_time", 0))
+    ]
+    safe_parts = [_safe_segment_text(segment, language) for segment in overlapping]
+    safe_text = _clean_text(" ".join(part for part in safe_parts if part), 1800)
+    needs_review = any(not part and str(segment.get("text") or "").strip() for part, segment in zip(safe_parts, overlapping))
+    if safe_text:
+        return safe_text, needs_review
+    if needs_review:
+        return "Flagged transcript moment", True
+    fallback = _clean_text(clip.get("title") or clip.get("reason") or clip.get("hook") or "This clip", 1800)
+    return fallback, needs_review
 
 
 def _hashtag(value: str) -> str:
@@ -119,12 +159,14 @@ def _linkedin_relevance(category: str, text: str) -> bool:
     return any(term in lower for term in ("career", "business", "lesson", "work", "startup", "coding", "project"))
 
 
-def _clip_pack(clip: dict[str, Any], language: str, category: str) -> dict[str, Any]:
-    text = _clean_text(clip.get("transcript_text") or clip.get("text") or clip.get("hook"), 1800)
+def _clip_pack(clip: dict[str, Any], segments: list[dict[str, Any]], language: str, category: str) -> dict[str, Any]:
+    text, needs_review = _clip_source_text(clip, segments, language)
+    display_title = "Flagged transcript moment" if needs_review else (clip.get("title") or "")
+    option_source = {**clip, "title": display_title, "hook": text}
     keywords = _keywords(text)
     tags = _hashtags(text, language, category)
-    hook = _sentence(text or clip.get("hook"), str(clip.get("title") or "This clip"))
-    titles = _title_options(clip, keywords, language)
+    hook = REVIEW_NEEDED_COPY if needs_review and not keywords else _sentence(text or clip.get("hook"), str(clip.get("title") or "This clip"))
+    titles = _title_options(option_source, keywords, language)
     context = _short_title(text, hook, 16)
     tone_question = "Ye scene aapke saath bhi hua hai?" if language in {"hi", "hinglish"} else "Have you seen this happen too?"
     youtube_description = _clean_text(
@@ -142,7 +184,7 @@ def _clip_pack(clip: dict[str, Any], language: str, category: str) -> dict[str, 
     thumbnail = list(dict.fromkeys([
         _clean_text(" ".join(thumb_base[:3]) or _short_title(hook, "BEST MOMENT", 4).upper(), 34),
         _clean_text(_short_title(hook, "WATCH THIS", 4).upper(), 34),
-        _clean_text(str(clip.get("title") or "THIS MOMENT").upper().split("?")[0], 34),
+        _clean_text(display_title.upper().split("?")[0] or "THIS MOMENT", 34),
         _clean_text("WATCH THIS MOMENT", 34),
         _clean_text("REAL CLIP PAYOFF", 34),
     ]))
@@ -151,7 +193,8 @@ def _clip_pack(clip: dict[str, Any], language: str, category: str) -> dict[str, 
     thumbnail = thumbnail[:3]
     return {
         "clip_id": clip["id"],
-        "clip_title": clip.get("title") or "",
+        "clip_title": display_title,
+        "needs_transcript_review": needs_review,
         "youtube_shorts": {"titles": titles, "description": youtube_description, "hashtags": tags[:6]},
         "instagram_reels": {"caption": instagram_caption, "hashtags": tags[:7]},
         "x": {"post": x_post},
@@ -160,8 +203,11 @@ def _clip_pack(clip: dict[str, Any], language: str, category: str) -> dict[str, 
     }
 
 
-def _content_angles(segments: list[dict[str, Any]], clips: list[dict[str, Any]]) -> list[str]:
-    text = " ".join(str(segment.get("display_text") or segment.get("text") or "") for segment in segments)
+def _content_angles(segments: list[dict[str, Any]], clips: list[dict[str, Any]], language: str) -> list[str]:
+    text = " ".join(
+        _safe_segment_text(segment, language)
+        for segment in segments
+    )
     lower = text.casefold()
     angles = []
     if "engineering" in lower:
@@ -196,7 +242,7 @@ def _summary(project: dict[str, Any], source_text: str) -> str:
 def generate_content_pack(project: dict[str, Any], clips: list[dict[str, Any]],
                           segments: list[dict[str, Any]], language: str) -> dict[str, Any]:
     category = str(project.get("category") or "auto")
-    source_text = " ".join(str(segment.get("display_text") or segment.get("text") or "") for segment in segments)
+    source_text = " ".join(_safe_segment_text(segment, language) for segment in segments)
     profile = content_profile(segments) if segments else {"content_type": category, "density": "medium"}
     lang_profile = language_profile(segments, language)
     ordered = sorted(clips, key=lambda clip: (float(clip.get("score") or 0), float((clip.get("score_breakdown") or {}).get("hook", 0))), reverse=True)
@@ -207,7 +253,7 @@ def generate_content_pack(project: dict[str, Any], clips: list[dict[str, Any]],
         "language": language,
         "language_style": lang_profile["likely_language_style"],
         "content_summary": _summary(project, source_text),
-        "content_angles": _content_angles(segments, ordered),
+        "content_angles": _content_angles(segments, ordered, language),
         "best_clips_order": [
             {
                 "clip_id": clip["id"],
@@ -216,7 +262,7 @@ def generate_content_pack(project: dict[str, Any], clips: list[dict[str, Any]],
             }
             for index, clip in enumerate(ordered)
         ],
-        "clips": [_clip_pack(clip, language, category) for clip in ordered],
+        "clips": [_clip_pack(clip, segments, language, category) for clip in ordered],
     }
     validate_content_pack(payload)
     return payload

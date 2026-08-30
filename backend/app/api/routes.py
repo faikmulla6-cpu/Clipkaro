@@ -189,6 +189,10 @@ async def usage(user: dict = Depends(current_user)) -> UsageOut: return await ge
 
 async def _persist_suggestions(video: dict, segments: list[dict], language: str) -> list[dict]:
     timestamp = utcnow()
+    project_id = video.get("project_id")
+    if not project_id:
+        project = await fetch_one("SELECT project_id FROM videos WHERE id=?", (video["id"],))
+        project_id = (project or {}).get("project_id")
     origin="asr" if any(item.get("asr_provider") for item in segments) else "manual"
     segments=stamp_segments(segments,origin)
     # Ranking can involve remote semantic scoring. Complete it before mutating
@@ -206,7 +210,8 @@ async def _persist_suggestions(video: dict, segments: list[dict], language: str)
             str(uuid.uuid4()), video["id"], language,
             " ".join(s.get("display_text") or s["text"] for s in segments), json.dumps(segments), timestamp,
         ))
-        await db.execute("UPDATE content_packs SET status='stale',updated_at=? WHERE project_id=? AND status='ready'", (timestamp, video["project_id"]))
+        if project_id:
+            await db.execute("UPDATE content_packs SET status='stale',updated_at=? WHERE project_id=? AND status='ready'", (timestamp, project_id))
         await _retire_previous_clips(db, video["id"], timestamp)
         if rows:
             await db.executemany("INSERT INTO clips VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)

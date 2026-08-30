@@ -27,6 +27,7 @@ ROMAN_CANONICAL = {
 SUSPICIOUS_ROMAN_TOKENS = {
     "injeenering", "injineering", "injjeering", "veediyo", "veedio",
     "roomet", "hastil", "taaim", "paaapa", "pataaa", "achcaa",
+    "acchee", "meree", "caahate",
 }
 REPEATED_CHARACTER_RE = re.compile(r"([a-zA-Z])\1{2,}")
 

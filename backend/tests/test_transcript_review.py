@@ -8,6 +8,8 @@ from fastapi.testclient import TestClient
 from app.core.config import get_settings
 from app.core.database import fetch_all, fetch_one
 from app.main import app
+from app.schemas.api import ExportRequest
+from app.api import routes
 from app.services.legal import LEGAL_VERSION
 
 
@@ -108,6 +110,43 @@ def test_transcript_review_read_save_persist_caption_and_content_pack_regenerate
     assert regenerated.status_code == 201
     pack_text = json.dumps(regenerated.json()["content_pack"], ensure_ascii=False)
     assert "jaate hain" in pack_text
+
+
+def test_project_detail_resolves_effective_clip_snippet_after_save(client: TestClient):
+    login_demo(client)
+    project_id, _ = ready_project(client)
+    correction = "placement ke time sab serious ho jaate hain"
+    assert client.patch(f"/api/v1/projects/{project_id}/transcript-review/0", json={"text": correction}).status_code == 200
+    detail = client.get(f"/api/v1/projects/{project_id}").json()
+    assert any(correction in clip["transcript_text"] for clip in detail["clips"])
+
+
+def test_export_render_uses_effective_corrected_caption_text(client: TestClient, tmp_path):
+    login_demo(client)
+    project_id, _ = ready_project(client)
+    correction = "placement ke time sab serious ho jaate hain"
+    assert client.patch(f"/api/v1/projects/{project_id}/transcript-review/0", json={"text": correction}).status_code == 200
+    clip = next(item for item in client.get(f"/api/v1/projects/{project_id}").json()["clips"] if correction in item["transcript_text"])
+    db_clip = asyncio.run(fetch_one("SELECT c.*,p.user_id FROM clips c JOIN videos v ON v.id=c.video_id JOIN projects p ON p.id=v.project_id WHERE c.id=?", (clip["id"],)))
+    video = asyncio.run(fetch_one("SELECT * FROM videos WHERE id=?", (db_clip["video_id"],)))
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"fake-video")
+    output = tmp_path / "output.mp4"
+    captured = {}
+
+    async def fake_render(*args, **kwargs):
+        srt = args[4]
+        captured["srt"] = srt.read_text(encoding="utf-8") if srt else ""
+        output.write_bytes(b"rendered")
+
+    async def fake_scan(*args, **kwargs):
+        return {"detected": False, "confidence": 0}
+
+    with patch.object(routes, "render_short_limited", new=fake_render), patch.object(routes, "detect_burned_captions", new=fake_scan):
+        asyncio.run(routes._render_export("job-corrected", "export-corrected", db_clip, video, ExportRequest(), output, None, source_override=source))
+
+    assert "jaate" in captured["srt"]
+    assert "thyme" not in captured["srt"]
 
 
 def test_transcript_review_reset_restores_original_and_preserves_timestamps(client: TestClient):
