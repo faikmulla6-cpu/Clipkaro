@@ -139,6 +139,33 @@ def test_project_detail_resolves_visible_hook_from_corrected_transcript(client: 
     assert "caahate" not in corrected_clip["hook"]
 
 
+def test_project_detail_avoids_uncorrected_noisy_visible_hook(client: TestClient):
+    login_demo(client)
+    project_id, _ = ready_project(client)
+    transcript = asyncio.run(fetch_one(
+        """SELECT t.* FROM transcripts t JOIN videos v ON v.id=t.video_id WHERE v.project_id=?""",
+        (project_id,),
+    ))
+    segments = json.loads(transcript["segments_json"])
+    segments[0]["text"] = "ki ab yah laait kiyaa landan aa gayaa ab baahar rahate ho tabhee ham"
+    segments[0]["display_text"] = segments[0]["text"]
+    asyncio.run(execute(
+        """UPDATE transcripts SET segments_json=? WHERE video_id=(SELECT id FROM videos WHERE project_id=?)""",
+        (json.dumps(segments), project_id),
+    ))
+    asyncio.run(execute(
+        """UPDATE clips SET hook='ki ab yah laait kiyaa landan aa gayaa ab baahar rahate ho tabhee ham',
+           start_time=0,end_time=24 WHERE video_id=(SELECT id FROM videos WHERE project_id=?)""",
+        (project_id,),
+    ))
+
+    detail = client.get(f"/api/v1/projects/{project_id}").json()
+    noisy_clip = detail["clips"][0]
+    assert noisy_clip["hook"] == "Transcript needs review"
+    assert "laait" not in noisy_clip["hook"]
+    assert "landan" not in noisy_clip["hook"]
+
+
 def test_export_render_uses_effective_corrected_caption_text(client: TestClient, tmp_path):
     login_demo(client)
     project_id, _ = ready_project(client)

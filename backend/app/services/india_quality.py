@@ -30,6 +30,8 @@ SUSPICIOUS_ROMAN_TOKENS = {
     "acchee", "meree", "caahate",
     "bulavaanaa", "tumane", "mainne", "karee", "kisee", "bhee",
     "ceej", "paapaa", "vaaipar", "aapakee", "soc",
+    "laait", "landan", "tabhee", "rahate", "mujharaa", "injeening",
+    "doneshan", "phalo", "rahegaa", "botee", "peetaa", "shuroo",
 }
 REPEATED_CHARACTER_RE = re.compile(r"([a-zA-Z])\1{2,}")
 
