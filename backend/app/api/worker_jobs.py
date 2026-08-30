@@ -17,7 +17,7 @@ from app.services.content_pack import _row_to_response, generate_content_pack, p
 from app.services.jobs import create_job, dispatch_job, update_job
 from app.services.hinglish_stage1_routing import resolve_stage1_route
 from app.services.transcript_review import (
-    _text_for_clip, effective_segments_for_video, reset_correction,
+    _hook_for_clip, _text_for_clip, effective_segments_for_video, reset_correction,
     review_payload, save_correction,
 )
 from app.services.storage_paths import confined_upload_path
@@ -208,6 +208,7 @@ async def project_detail(project_id: str, tasks: BackgroundTasks, user: dict = D
     for clip in clips:
         clip["score_breakdown"] = json.loads(clip.pop("score_breakdown_json") or "{}")
         clip["transcript_text"] = _text_for_clip(segments, float(clip["start_time"]), float(clip["end_time"]))
+        clip["hook"] = _hook_for_clip(segments, float(clip["start_time"]), float(clip["end_time"]), str(clip.get("hook") or ""))
     project["clips"] = clips
     return project
 

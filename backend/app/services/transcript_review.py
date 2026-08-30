@@ -44,6 +44,22 @@ def _text_for_clip(segments: list[dict[str, Any]], start: float, end: float) -> 
     ))
 
 
+def _hook_for_clip(segments: list[dict[str, Any]], start: float, end: float, fallback: str) -> str:
+    text = _text_for_clip(segments, start, end)
+    if not text:
+        return _normalize(fallback)
+    corrected = any(
+        segment.get("corrected_text")
+        and float(segment.get("end", 0)) > start
+        and float(segment.get("start", 0)) < end
+        for segment in segments
+    )
+    fallback_signal = review_signal({"start": start, "end": end, "text": fallback, "display_text": fallback}, "auto")
+    if not corrected and not fallback_signal["review_suggested"]:
+        return _normalize(fallback)
+    return _normalize(" ".join(text.split()[:14]))
+
+
 def apply_corrections(segments: list[dict[str, Any]], corrections: list[dict[str, Any]]) -> list[dict[str, Any]]:
     effective = copy.deepcopy(segments)
     by_key = {str(row.get("segment_key")): row for row in corrections if row.get("status") in {"corrected", "reviewed"}}
