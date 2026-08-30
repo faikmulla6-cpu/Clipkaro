@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.config import get_settings
-from app.core.database import fetch_all, fetch_one
+from app.core.database import execute, fetch_all, fetch_one
 from app.main import app
 from app.schemas.api import ExportRequest
 from app.api import routes
@@ -119,6 +119,24 @@ def test_project_detail_resolves_effective_clip_snippet_after_save(client: TestC
     assert client.patch(f"/api/v1/projects/{project_id}/transcript-review/0", json={"text": correction}).status_code == 200
     detail = client.get(f"/api/v1/projects/{project_id}").json()
     assert any(correction in clip["transcript_text"] for clip in detail["clips"])
+
+
+def test_project_detail_resolves_visible_hook_from_corrected_transcript(client: TestClient):
+    login_demo(client)
+    project_id, _ = ready_project(client)
+    correction = "placement ke time sab serious ho jaate hain"
+    assert client.patch(f"/api/v1/projects/{project_id}/transcript-review/0", json={"text": correction}).status_code == 200
+    asyncio.run(execute(
+        """UPDATE clips SET hook='Bhai Bass Karr Bhaii injeenering acchee meree caahate hue'
+           WHERE video_id=(SELECT id FROM videos WHERE project_id=?)""",
+        (project_id,),
+    ))
+
+    detail = client.get(f"/api/v1/projects/{project_id}").json()
+    corrected_clip = next(clip for clip in detail["clips"] if correction in clip["transcript_text"])
+    assert corrected_clip["hook"].startswith("placement ke time sab serious")
+    assert "injeenering" not in corrected_clip["hook"]
+    assert "caahate" not in corrected_clip["hook"]
 
 
 def test_export_render_uses_effective_corrected_caption_text(client: TestClient, tmp_path):

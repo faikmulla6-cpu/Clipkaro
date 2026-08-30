@@ -73,6 +73,7 @@ async def _content_pack_context(project_id: str, user_id: str) -> tuple[dict, li
     for clip in clips:
         clip["score_breakdown"] = json.loads(clip.pop("score_breakdown_json") or "{}")
         clip["transcript_text"] = _text_for_clip(segments, float(clip["start_time"]), float(clip["end_time"]))
+        clip["hook"] = _hook_for_clip(segments, float(clip["start_time"]), float(clip["end_time"]), str(clip.get("hook") or ""))
     if not segments or not clips:
         raise HTTPException(409, "Content Pack needs a verified transcript and at least one clip.")
     return project, clips, segments, str((transcript or {}).get("language") or project.get("language") or "auto")

@@ -44,19 +44,44 @@ def _text_for_clip(segments: list[dict[str, Any]], start: float, end: float) -> 
     ))
 
 
+def _review_safe_hook_text(segment: dict[str, Any], language: str = "auto") -> str:
+    text = _effective_text(segment)
+    if not text:
+        return ""
+    if segment.get("corrected_text"):
+        return text
+    signal = review_signal(segment, language)
+    risky_reasons = {
+        "low_word_confidence",
+        "repeated_token_review",
+        "phonetic_spelling_review",
+        "review_required",
+    }
+    if signal["review_suggested"] and any(reason in risky_reasons for reason in signal["review_reasons"]):
+        return ""
+    return text
+
+
 def _hook_for_clip(segments: list[dict[str, Any]], start: float, end: float, fallback: str) -> str:
-    text = _text_for_clip(segments, start, end)
+    overlapping = [
+        segment for segment in segments
+        if float(segment.get("end", 0)) > start and float(segment.get("start", 0)) < end
+    ]
+    safe_text = _normalize(" ".join(part for part in (_review_safe_hook_text(segment) for segment in overlapping) if part))
+    text = safe_text or _text_for_clip(overlapping, start, end)
     if not text:
         return _normalize(fallback)
     corrected = any(
         segment.get("corrected_text")
         and float(segment.get("end", 0)) > start
         and float(segment.get("start", 0)) < end
-        for segment in segments
+        for segment in overlapping
     )
     fallback_signal = review_signal({"start": start, "end": end, "text": fallback, "display_text": fallback}, "auto")
     if not corrected and not fallback_signal["review_suggested"]:
         return _normalize(fallback)
+    if not safe_text and fallback_signal["review_suggested"]:
+        return "Transcript needs review"
     return _normalize(" ".join(text.split()[:14]))
 
 
