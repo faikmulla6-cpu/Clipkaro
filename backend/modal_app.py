@@ -3,12 +3,16 @@
 Deploy from the backend directory with:
     modal deploy modal_app.py
 
+Run production database migrations safely from any supported local OS with:
+    modal run modal_app.py::migrate_database
+
 The existing FastAPI application remains the public API. Heavy media work is a
 separate autoscaling Modal Function and receives only a durable PostgreSQL JOB_ID.
 """
 from __future__ import annotations
 
 import asyncio
+import subprocess
 
 import modal
 
@@ -87,6 +91,29 @@ media_image = (
 # source automount so deployment contents stay deterministic and minimal.
 app = modal.App(APP_NAME, include_source=False)
 production_secret = modal.Secret.from_name(SECRET_NAME)
+
+
+@app.function(
+    image=api_image,
+    secrets=[production_secret],
+    timeout=300,
+)
+def migrate_database() -> str:
+    """Apply forward-only Alembic migrations using production secrets.
+
+    This function exists so Windows operators can run migrations without
+    `modal shell`, which Modal does not currently support on Windows. It does
+    not print DATABASE_URL or any secret values.
+    """
+    result = subprocess.run(
+        ["python", "-m", "alembic", "upgrade", "head"],
+        cwd="/root/clipkaro",
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    output = (result.stdout or result.stderr or "").strip()
+    return output or "Alembic upgrade head completed successfully."
 
 
 @app.function(
