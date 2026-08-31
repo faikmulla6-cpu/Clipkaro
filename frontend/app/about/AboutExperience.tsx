@@ -49,7 +49,7 @@ const processSteps = [
     icon: Clapperboard,
     number: "04",
     title: "Creator control",
-    text: "ClipKaro proposes the moment. The creator still chooses what to publish, how captions should look, where they sit, and whether the result deserves an export.",
+    text: "ClipKaro proposes the moment. The creator still chooses what to publish, how captions should look, where they sit, how tightly the shot is framed, and whether the result deserves an export.",
   },
   {
     icon: Zap,
@@ -135,6 +135,39 @@ const futureSignals = [
   ["Publish with confidence", "The final file, usage state and delivery path should be as dependable as the interface."],
 ];
 
+const productSurfaces = [
+  {
+    icon: Languages,
+    title: "India Quality Mode",
+    text: "A creator-facing mode for Hindi, Hinglish and Indian-English workflows, with Roman Hinglish handling and safer caption placement.",
+  },
+  {
+    icon: Workflow,
+    title: "Smart Transcript Review",
+    text: "Suspicious transcript lines are shown with timestamps, jump controls, inline correction, reset and corrected text flowing into captions and Content Packs.",
+  },
+  {
+    icon: Sparkles,
+    title: "One Video → Content Pack",
+    text: "Selected clips can become YouTube titles and descriptions, Instagram captions, hashtags, X posts, LinkedIn copy, cover text, content angles and recommended publishing order.",
+  },
+  {
+    icon: Clapperboard,
+    title: "Creator Studio controls",
+    text: "The editor exposes zoom, manual horizontal reframe, aspect ratio, caption style, caption position, watermark, quality and Brand Kit controls before export.",
+  },
+  {
+    icon: Scissors,
+    title: "Caption-safe framing",
+    text: "If the source already contains burned-in subtitles, ClipKaro can preserve the subtitle area instead of destroying it during vertical conversion.",
+  },
+  {
+    icon: Zap,
+    title: "Export-ready delivery",
+    text: "Render status, download availability, quota rules and export behavior are product surfaces, not hidden backend side effects.",
+  },
+];
+
 export function AboutExperience() {
   useEffect(() => {
     const items = Array.from(document.querySelectorAll<HTMLElement>("[data-about-reveal]"));
@@ -190,6 +223,7 @@ export function AboutExperience() {
         <div className={styles.navLinks} aria-label="About page sections">
           <a href="#mission">Mission</a>
           <a href="#technology">Technology</a>
+          <a href="#product">Product</a>
           <a href="#principles">Principles</a>
           <a href="#founder">Founder</a>
         </div>
@@ -210,12 +244,13 @@ export function AboutExperience() {
             <p>
               ClipKaro is an AI-powered creation platform designed for creators, educators,
               podcasters and businesses who want to find the strongest moments inside their
-              content without spending hours manually searching, cutting and captioning.
+              content without spending hours manually searching, cutting, captioning and writing publishing copy.
             </p>
             <div className={polish.heroSignals} aria-label="ClipKaro product priorities">
               <span>AI video intelligence</span>
               <span>Creator-controlled</span>
-              <span>Built with India in mind</span>
+              <span>India Quality Mode</span>
+              <span>Complete Content Packs</span>
             </div>
             <div className={styles.heroActions}>
               <a href="#mission" className={styles.primaryAction}>Explore our story <ArrowRight size={17} /></a>
@@ -242,8 +277,9 @@ export function AboutExperience() {
           <p>
             Long-form content already contains stories, insights, reactions, lessons and hooks.
             The difficult part is finding the right moment, preserving the context, turning it
-            into a mobile-first edit and getting it ready to publish. ClipKaro was created to
-            compress that production work without compressing the creator&apos;s judgment.
+            into a mobile-first edit, correcting the transcript when needed and getting the clip
+            ready to publish across platforms. ClipKaro was created to compress that production
+            work without compressing the creator&apos;s judgment.
           </p>
         </div>
       </section>
@@ -395,15 +431,40 @@ export function AboutExperience() {
             timing, readability and the creator&apos;s intended meaning matter too.
           </p>
           <p>
-            That is why language capability is treated as an ongoing quality problem to validate,
-            not a checkbox to claim before the experience is ready.
+            That is why India Quality Mode, Roman Hinglish handling and Smart Transcript Review
+            exist as visible workflow controls, not hidden backend claims.
           </p>
+        </div>
+      </section>
+
+      <section className={`${styles.realitySection} ${polish.realitySection} ${story.sectionPacing}`} id="product">
+        <div className={styles.realityIntro} data-about-reveal>
+          <span className={styles.sectionIndex}>06 / PRODUCT SURFACES</span>
+          <h2>Every core capability has a place creators can actually use.</h2>
+          <p>
+            ClipKaro does not depend on backend features that users never see. The important controls
+            are exposed across Projects, Content Packs and Creator Studio so creators understand what
+            exists before they spend time or money.
+          </p>
+        </div>
+        <div className={story.railHint}>Creator-facing features</div>
+        <div className={`${styles.challengeGrid} ${story.horizontalRail} ${story.challengeRail}`}>
+          {productSurfaces.map((item) => {
+            const Icon = item.icon;
+            return (
+              <article className={styles.challengeCard} key={item.title} data-about-reveal>
+                <Icon size={21} />
+                <h3>{item.title}</h3>
+                <p>{item.text}</p>
+              </article>
+            );
+          })}
         </div>
       </section>
 
       <section className={`${styles.principlesSection} ${polish.principlesSection} ${story.sectionPacing}`} id="principles">
         <div className={styles.principlesTitle} data-about-reveal>
-          <span className={styles.sectionIndex}>06 / OUR PRINCIPLES</span>
+          <span className={styles.sectionIndex}>07 / OUR PRINCIPLES</span>
           <h2>How we decide what belongs in ClipKaro.</h2>
         </div>
         <div className={`${styles.principleList} ${story.compactPrinciples}`}>
@@ -428,7 +489,7 @@ export function AboutExperience() {
         </div>
 
         <div className={`${styles.founderCopy} ${story.founderCopy}`} data-about-reveal>
-          <span className={styles.sectionIndex}>07 / FOUNDER</span>
+          <span className={styles.sectionIndex}>08 / FOUNDER</span>
           <h2>Built by a creator who wanted the tool to exist.</h2>
           <p className={styles.founderLead}>
             <strong>Faik Hameed Mulla</strong> is the Founder and Owner of ClipKaro and an AI/ML
@@ -490,7 +551,7 @@ export function AboutExperience() {
 
       <section className={`${styles.futureSection} ${polish.futureSection} ${story.sectionPacing}`}>
         <div className={`${styles.futureInner} ${story.futureCopy}`} data-about-reveal>
-          <span className={styles.sectionIndex}>08 / WHAT COMES NEXT</span>
+          <span className={styles.sectionIndex}>09 / WHAT COMES NEXT</span>
           <h2>The future of content creation isn&apos;t more editing. It&apos;s better creative decisions.</h2>
           <p>
             We believe creators should spend more time deciding what they want to say and less
