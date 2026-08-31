@@ -1,5 +1,54 @@
 .desktopNavigation{display:flex}
 
+.featureLift :global(.feature-card),
+.workflowLift :global(.feature-card){
+  position:relative;
+  overflow:hidden;
+  transition:transform .28s ease,box-shadow .28s ease,border-color .28s ease,background .28s ease;
+}
+.featureLift :global(.feature-card)::after,
+.workflowLift :global(.feature-card)::after{
+  content:"";
+  position:absolute;
+  inset:-40% auto auto -40%;
+  width:75%;
+  height:75%;
+  background:radial-gradient(circle,rgba(200,255,117,.18),transparent 66%);
+  opacity:0;
+  transform:translate3d(-18px,-18px,0) scale(.9);
+  transition:opacity .32s ease,transform .32s ease;
+  pointer-events:none;
+}
+.featureLift :global(.feature-card:hover),
+.workflowLift :global(.feature-card:hover){
+  transform:translateY(-5px);
+  box-shadow:0 20px 48px rgba(13,45,28,.10);
+  border-color:rgba(84,124,75,.24);
+}
+.featureLift :global(.feature-card:hover)::after,
+.workflowLift :global(.feature-card:hover)::after{
+  opacity:1;
+  transform:translate3d(0,0,0) scale(1);
+}
+.featureLift :global(.feature-icon),
+.workflowLift :global(.feature-icon){
+  transition:transform .25s ease,background .25s ease;
+}
+.featureLift :global(.feature-card:hover .feature-icon),
+.workflowLift :global(.feature-card:hover .feature-icon){
+  transform:scale(1.06) rotate(-2deg);
+}
+.smoothFeatureNote{
+  margin:22px auto 0;
+  max-width:760px;
+  text-align:center;
+  color:#657169;
+  font-size:13px;
+  line-height:1.7;
+}
+
 @media(max-width:760px){
   .desktopNavigation{display:none!important}
+  .featureLift :global(.feature-card:hover),
+  .workflowLift :global(.feature-card:hover){transform:none}
 }
