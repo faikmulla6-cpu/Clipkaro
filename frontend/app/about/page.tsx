@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { AboutExperience } from "./AboutExperience";
 
-const title = "About ClipKaro — AI video intelligence built for creators";
-const description = "Discover why ClipKaro was built, how its AI media pipeline works, the principles behind the product, and the story of founder Faik Hameed Mulla.";
+const title = "About ClipKaro — AI video intelligence for Indian creators";
+const description = "Discover ClipKaro's creator workflow: AI clip ranking, India Quality Mode, Smart Transcript Review, Content Packs, caption-safe export, zoom and reframe controls.";
 
 export const metadata: Metadata = {
   title,
