@@ -77,7 +77,7 @@ jobs:
         run: |
           git rm -- .github/workflows/prepare-next-security-patch.yml
           git diff --check
-          actual="$(git diff --name-only | sort)"
+          actual="$( { git diff --name-only; git diff --cached --name-only; } | sort -u)"
           expected="$(printf '%s\n' \
             '.github/workflows/fresh-launch-qa.yml' \
             '.github/workflows/prepare-next-security-patch.yml' \
