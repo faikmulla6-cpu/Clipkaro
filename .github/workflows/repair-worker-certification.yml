@@ -37,7 +37,7 @@ jobs:
           source = report.read_text(encoding='utf-8')
           old = 'faikmulla/ClipkaroAI'
           new = 'faikmulla6-cpu/Clipkaro'
-          if source.count(old) != 2:
+          if source.count(old) != 3:
               raise SystemExit(f'Unexpected stale repository identity count: {source.count(old)}')
           report.write_text(source.replace(old, new), encoding='utf-8')
           PY
