@@ -1,0 +1,1 @@
+Temporary trigger for the guarded GitHub-hosted Fresh Launch repair. Remove before final validation.
