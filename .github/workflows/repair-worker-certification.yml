@@ -1,0 +1,102 @@
+name: Temporary Worker Certification Repair
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  guarded-repair:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          clean: true
+
+      - name: Apply exact two-file repair
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          dockerfile = Path('backend/Dockerfile')
+          docker = dockerfile.read_text(encoding='utf-8')
+          needle = 'COPY assets ./assets\nCOPY requirements-alignment.txt .\nRUN python -m pip install --no-cache-dir -r requirements-alignment.txt'
+          replacement = 'COPY assets ./assets\nCOPY requirements-local-asr.txt .\nCOPY requirements-alignment.txt .\nRUN python -m pip install --no-cache-dir -r requirements-alignment.txt'
+          if docker.count(needle) != 1:
+              raise SystemExit(f'Unexpected Dockerfile repair match count: {docker.count(needle)}')
+          dockerfile.write_text(docker.replace(needle, replacement, 1), encoding='utf-8')
+
+          report = Path('scripts/generate_launch_qa_report.py')
+          source = report.read_text(encoding='utf-8')
+          old = 'faikmulla/ClipkaroAI'
+          new = 'faikmulla6-cpu/Clipkaro'
+          if source.count(old) != 2:
+              raise SystemExit(f'Unexpected stale repository identity count: {source.count(old)}')
+          report.write_text(source.replace(old, new), encoding='utf-8')
+          PY
+
+      - name: Enforce exact repair diff
+        shell: bash
+        run: |
+          mapfile -t changed < <(git diff --name-only | sort)
+          printf 'Changed paths:\n%s\n' "${changed[*]}"
+          expected=(backend/Dockerfile scripts/generate_launch_qa_report.py)
+          [[ "${changed[*]}" == "${expected[*]}" ]]
+          git diff --check
+          python3 -m py_compile scripts/generate_launch_qa_report.py
+          grep -F 'COPY requirements-local-asr.txt .' backend/Dockerfile
+          ! grep -F 'faikmulla/ClipkaroAI' scripts/generate_launch_qa_report.py
+          grep -F 'faikmulla6-cpu/Clipkaro' scripts/generate_launch_qa_report.py
+
+      - name: Reclaim hosted-runner disk
+        shell: bash
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup
+          sudo apt-get clean
+          docker system prune -af --volumes || true
+          df -h /
+
+      - name: Build patched worker image
+        shell: bash
+        run: |
+          mkdir -p repair-evidence
+          set -o pipefail
+          docker build --progress=plain --pull --target worker -t clipkaro-worker:repair-${GITHUB_RUN_ID} backend 2>&1 | tee repair-evidence/worker-build.log
+
+      - name: Verify patched WhisperX runtime
+        shell: bash
+        run: |
+          set -o pipefail
+          docker run --rm --entrypoint python clipkaro-worker:repair-${GITHUB_RUN_ID} -c "from app.services.forced_alignment import validate_forced_alignment_runtime; print(validate_forced_alignment_runtime('whisperx', True, enforce_production_policy=True, enforce_pinned_versions=True))" 2>&1 | tee repair-evidence/whisperx-runtime.log
+
+      - name: Commit only proven repair
+        shell: bash
+        run: |
+          mapfile -t changed < <(git diff --name-only | sort)
+          expected=(backend/Dockerfile scripts/generate_launch_qa_report.py)
+          [[ "${changed[*]}" == "${expected[*]}" ]]
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add backend/Dockerfile scripts/generate_launch_qa_report.py
+          test -z "$(git diff --name-only)"
+          mapfile -t staged < <(git diff --cached --name-only | sort)
+          [[ "${staged[*]}" == "${expected[*]}" ]]
+          git commit -m 'fix: repair worker qualification and certification identity'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
+
+      - name: Upload repair evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: worker-certification-repair-${{ github.run_id }}
+          path: repair-evidence/
+          if-no-files-found: warn
+          retention-days: 7
