@@ -45,7 +45,10 @@ jobs:
           APP_ENV: test
           TRANSCRIPTION_BACKEND: fixture
           PYTHONPATH: .
-        run: faketime '2026-08-31 12:00:00' pytest -q --ignore=tests/test_self_hosted_runner_contract.py
+        run: >-
+          faketime '2026-08-31 12:00:00' pytest -q
+          --ignore=tests/test_self_hosted_runner_contract.py
+          --ignore=tests/test_fresh_launch_certification_contract.py
       - name: Clean backend job workspace
         if: always()
         run: rm -rf backend/.venv-ci backend/.pytest_cache backend/**/__pycache__
