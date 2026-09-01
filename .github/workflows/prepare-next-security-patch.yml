@@ -1,21 +1,21 @@
 name: Prepare Next Security Patch
 
 on:
-  push:
-    branches: [fix/founder-admin-current-production]
+  pull_request:
 
 permissions:
   contents: write
 
 jobs:
   generate:
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Checkout validation branch
         uses: actions/checkout@v4
         with:
-          ref: fix/founder-admin-current-production
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
       - name: Set up Node 20
