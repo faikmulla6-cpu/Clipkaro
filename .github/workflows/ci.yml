@@ -53,6 +53,8 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      BACKEND_URL: https://clipkaro-ci.invalid
     steps:
       - uses: actions/checkout@v4
         with:
