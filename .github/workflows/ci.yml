@@ -17,15 +17,17 @@ jobs:
   backend:
     name: Backend CI
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, linux, x64, clipkaro-qa]
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
           clean: true
-      - name: Verify trusted self-hosted backend runner
-        run: bash scripts/check-self-hosted-runner.sh --profile ci-backend
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Create isolated backend virtualenv
         working-directory: backend
         run: |
@@ -49,15 +51,19 @@ jobs:
   frontend:
     name: Frontend CI
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, linux, x64, clipkaro-qa]
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
           clean: true
-      - name: Verify trusted self-hosted frontend runner
-        run: bash scripts/check-self-hosted-runner.sh --profile ci-frontend
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci --no-audit --no-fund
