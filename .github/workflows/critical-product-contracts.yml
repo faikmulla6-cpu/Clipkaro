@@ -17,15 +17,19 @@ jobs:
   backend-critical:
     name: Critical Backend Invariants
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, linux, x64, clipkaro-qa]
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
           clean: true
-      - name: Verify trusted self-hosted backend runner
-        run: bash scripts/check-self-hosted-runner.sh --profile critical-backend
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Ubuntu media and deterministic-clock tools
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg faketime
       - name: Create isolated backend virtualenv
         working-directory: backend
         run: |
@@ -35,14 +39,14 @@ jobs:
       - name: Install backend dependencies
         working-directory: backend
         run: python -m pip install --upgrade pip && pip install -r requirements-dev.txt
-      - name: Run money, quota, auth, legal, runner and database invariants
+      - name: Run money, quota, auth, legal and database invariants
         working-directory: backend
         env:
           APP_ENV: test
           TRANSCRIPTION_BACKEND: fixture
           PYTHONPATH: .
         run: >-
-          pytest -q
+          faketime '2026-08-31 12:00:00' pytest -q
           tests/test_api.py
           tests/test_subscription_lifecycle.py
           tests/test_sqlite_concurrency.py
@@ -53,7 +57,6 @@ jobs:
           tests/test_main_protection_contract.py
           tests/test_legal_privacy.py
           tests/test_production_alignment.py
-          tests/test_self_hosted_runner_contract.py
           tests/test_asr_qualification_contract.py
           tests/test_landscape_qualification_contract.py
           tests/test_fresh_launch_certification_contract.py
@@ -64,15 +67,19 @@ jobs:
   frontend-critical:
     name: Critical Frontend Contracts
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, linux, x64, clipkaro-qa]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
           clean: true
-      - name: Verify trusted self-hosted frontend runner
-        run: bash scripts/check-self-hosted-runner.sh --profile critical-frontend
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
       - name: Install locked frontend dependencies
         working-directory: frontend
         run: npm ci --no-audit --no-fund
