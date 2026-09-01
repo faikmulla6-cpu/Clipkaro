@@ -236,8 +236,8 @@ def _certification_analysis(
 
     if not workflow.get("run_id"):
         blockers.append("GitHub workflow run ID is missing; certification must be tied to an immutable workflow artifact")
-    elif workflow.get("repository") != "faikmulla/ClipkaroAI":
-        blockers.append("GitHub repository identity does not match faikmulla/ClipkaroAI")
+    elif workflow.get("repository") != "faikmulla6-cpu/Clipkaro":
+        blockers.append("GitHub repository identity does not match faikmulla6-cpu/Clipkaro")
 
     if checks.get("backend_tests") == "success":
         if not pytest_data.get("available"):
@@ -347,7 +347,7 @@ def generate(args: argparse.Namespace) -> int:
         "certified": decision == "CERTIFIED",
         "decision": decision,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
-        "repository": "faikmulla/ClipkaroAI",
+        "repository": "faikmulla6-cpu/Clipkaro",
         "workflow": workflow,
         "identity": identity,
         "mandatory_checks": list(MANDATORY_CHECKS),
