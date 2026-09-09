@@ -8,6 +8,12 @@ const backendUrl = (process.env.BACKEND_URL || "http://127.0.0.1:8000").replace(
 const nextConfig = {
   output: "standalone",
   poweredByHeader: false,
+  images: {
+    remotePatterns: [
+      { protocol: "https", hostname: "yt3.ggpht.com" },
+      { protocol: "https", hostname: "i.ytimg.com" },
+    ],
+  },
   turbopack: {
     root: path.join(__dirname),
   },
