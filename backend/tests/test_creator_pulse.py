@@ -102,7 +102,11 @@ def set_balance(user_id: str, paise: int) -> None:
 
 
 def test_routes_are_registered():
-    paths = {getattr(route, "path", "") for route in app.routes}
+    # Newer FastAPI/Starlette versions keep included routers nested rather than
+    # flattening every child path into ``app.routes``. OpenAPI is generated from
+    # the effective routing tree, so it verifies the actual externally reachable
+    # API contract without depending on that internal representation detail.
+    paths = set(app.openapi()["paths"])
     assert "/api/v1/creator-pulse/status" in paths
     assert "/api/v1/creator-pulse/analyse" in paths
     assert "/api/v1/creator-pulse/balance/checkout" in paths
