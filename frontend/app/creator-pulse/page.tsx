@@ -116,17 +116,6 @@ type RazorpayResult = {
   razorpay_signature: string;
 };
 
-type RazorpayCheckout = {
-  open: () => void;
-  on?: (event: "payment.failed", handler: (response: { error?: { description?: string } }) => void) => void;
-};
-
-declare global {
-  interface Window {
-    Razorpay?: new (options: Record<string, unknown>) => RazorpayCheckout;
-  }
-}
-
 const RAZORPAY_SRC = "https://checkout.razorpay.com/v1/checkout.js";
 let razorpayPromise: Promise<void> | null = null;
 
