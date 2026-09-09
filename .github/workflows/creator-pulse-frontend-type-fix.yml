@@ -47,11 +47,8 @@ jobs:
           }
 
           '''
-          # Source indentation is zero; normalize the literal to the exact source block.
           duplicate = duplicate.replace('          ', '')
           if duplicate not in text:
-              # Treat an already-fixed file as success, but fail if neither the old block nor
-              # the expected existing Pricing-owned global declaration situation is present.
               if 'type RazorpayCheckout = {' in text or 'declare global {' in text:
                   raise SystemExit('Guard failed: Creator Pulse Razorpay declaration changed unexpectedly')
               print('Creator Pulse duplicate Razorpay declaration already removed.')
@@ -71,6 +68,9 @@ jobs:
       - name: Commit type-safe fix
         shell: bash
         run: |
+          # TypeScript incremental checking updates this generated cache file. It is not
+          # part of the Creator Pulse code change and must never be committed by this gate.
+          git checkout -- frontend/tsconfig.tsbuildinfo 2>/dev/null || true
           if git diff --quiet -- frontend/app/creator-pulse/page.tsx; then
             echo "Type fix already applied; no commit needed."
             exit 0
