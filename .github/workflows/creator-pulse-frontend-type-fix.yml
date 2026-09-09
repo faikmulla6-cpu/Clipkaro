@@ -1,0 +1,88 @@
+name: Creator Pulse Frontend Type Fix
+
+on:
+  pull_request:
+    branches: [modal-no-vps]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix-and-verify:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'feature/creator-pulse-write-actual'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/creator-pulse-write-actual
+          fetch-depth: 0
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Remove duplicate Creator Pulse Razorpay global type
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('frontend/app/creator-pulse/page.tsx')
+          text = path.read_text(encoding='utf-8')
+          duplicate = '''type RazorpayCheckout = {
+            open: () => void;
+            on?: (event: "payment.failed", handler: (response: { error?: { description?: string } }) => void) => void;
+          };
+
+          declare global {
+            interface Window {
+              Razorpay?: new (options: Record<string, unknown>) => RazorpayCheckout;
+            }
+          }
+
+          '''
+          # Source indentation is zero; normalize the literal to the exact source block.
+          duplicate = duplicate.replace('          ', '')
+          if duplicate not in text:
+              # Treat an already-fixed file as success, but fail if neither the old block nor
+              # the expected existing Pricing-owned global declaration situation is present.
+              if 'type RazorpayCheckout = {' in text or 'declare global {' in text:
+                  raise SystemExit('Guard failed: Creator Pulse Razorpay declaration changed unexpectedly')
+              print('Creator Pulse duplicate Razorpay declaration already removed.')
+          else:
+              path.write_text(text.replace(duplicate, '', 1), encoding='utf-8')
+              print('Removed duplicate Creator Pulse window.Razorpay declaration only.')
+          PY
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Verify frontend typecheck
+        working-directory: frontend
+        run: npm run typecheck
+
+      - name: Commit type-safe fix
+        shell: bash
+        run: |
+          if git diff --quiet -- frontend/app/creator-pulse/page.tsx; then
+            echo "Type fix already applied; no commit needed."
+            exit 0
+          fi
+          changed="$(git diff --name-only)"
+          if [ "$changed" != "frontend/app/creator-pulse/page.tsx" ]; then
+            echo "Unexpected files changed:"
+            echo "$changed"
+            exit 1
+          fi
+          git config user.name "ClipKaro CI"
+          git config user.email "actions@users.noreply.github.com"
+          git add frontend/app/creator-pulse/page.tsx
+          git commit -m "fix: avoid duplicate Razorpay global type in Creator Pulse"
+          git push origin HEAD:feature/creator-pulse-write-actual
