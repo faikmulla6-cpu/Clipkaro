@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 jobs:
-  route-debug:
+  main-only:
     if: github.event.pull_request.head.ref == 'feature/creator-pulse-write-actual'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -21,42 +21,38 @@ jobs:
           python-version: '3.12'
       - name: Install backend dependencies
         run: python -m pip install -r backend/requirements.txt
-      - name: Patch only Creator Pulse main registration
-        shell: bash
+      - name: Apply and prove main registration edit
         run: |
           python - <<'PY'
           from pathlib import Path
           p = Path('backend/app/main.py')
           text = p.read_text(encoding='utf-8')
-          text = text.replace(
-              'from app.api.cloud_uploads import init_cloud_uploads, router as cloud_uploads_router\n',
-              'from app.api.cloud_uploads import init_cloud_uploads, router as cloud_uploads_router\nfrom app.api.creator_pulse import init_creator_pulse, router as creator_pulse_router\n',
-              1,
-          )
-          text = text.replace(
-              'app.include_router(cloud_uploads_router, prefix=settings.api_prefix)\napp.include_router(router, prefix=settings.api_prefix)\n',
-              'app.include_router(cloud_uploads_router, prefix=settings.api_prefix)\napp.include_router(creator_pulse_router, prefix=settings.api_prefix)\napp.include_router(router, prefix=settings.api_prefix)\n',
-              1,
-          )
+          import_anchor = 'from app.api.cloud_uploads import init_cloud_uploads, router as cloud_uploads_router\n'
+          include_anchor = 'app.include_router(cloud_uploads_router, prefix=settings.api_prefix)\napp.include_router(router, prefix=settings.api_prefix)\n'
+          if import_anchor not in text:
+              raise SystemExit('import anchor missing')
+          if include_anchor not in text:
+              raise SystemExit('include anchor missing')
+          text = text.replace(import_anchor, import_anchor + 'from app.api.creator_pulse import init_creator_pulse, router as creator_pulse_router\n', 1)
+          text = text.replace(include_anchor, 'app.include_router(cloud_uploads_router, prefix=settings.api_prefix)\napp.include_router(creator_pulse_router, prefix=settings.api_prefix)\napp.include_router(router, prefix=settings.api_prefix)\n', 1)
           p.write_text(text, encoding='utf-8')
+          final = p.read_text(encoding='utf-8')
+          assert 'from app.api.creator_pulse import init_creator_pulse, router as creator_pulse_router' in final
+          assert 'app.include_router(creator_pulse_router, prefix=settings.api_prefix)' in final
+          print('MAIN_EDIT_PRESENT=true')
           PY
-      - name: Prove imported modules and registered routes
+      - name: Prove main-only route registration
         env:
           PYTHONPATH: backend
         run: |
           python - <<'PY'
           import app.main as main_module
           import app.api.creator_pulse as pulse_module
-          from app.core.config import get_settings
+          app_paths = sorted(getattr(route, 'path', '') for route in main_module.app.routes)
           print('MAIN_FILE=', main_module.__file__)
           print('PULSE_FILE=', pulse_module.__file__)
-          print('API_PREFIX=', get_settings().api_prefix)
-          pulse_paths = sorted(getattr(route, 'path', '') for route in pulse_module.router.routes)
-          app_paths = sorted(getattr(route, 'path', '') for route in main_module.app.routes)
-          print('PULSE_ROUTE_COUNT=', len(pulse_paths))
-          print('PULSE_PATHS=', pulse_paths)
           print('APP_ROUTE_COUNT=', len(app_paths))
-          print('CREATOR_PULSE_APP_PATHS=', [path for path in app_paths if 'creator-pulse' in path])
+          print('CREATOR_PULSE_APP_PATHS=', [p for p in app_paths if 'creator-pulse' in p])
           required = {
               '/api/v1/creator-pulse/status',
               '/api/v1/creator-pulse/analyse',
@@ -65,5 +61,54 @@ jobs:
           }
           missing = required - set(app_paths)
           if missing:
-              raise SystemExit(f'Missing app routes after main-only registration: {sorted(missing)}')
+              raise SystemExit(f'Main-only registration missing: {sorted(missing)}')
+          PY
+
+  with-billing-import:
+    if: github.event.pull_request.head.ref == 'feature/creator-pulse-write-actual'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/creator-pulse-write-actual
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install backend dependencies
+        run: python -m pip install -r backend/requirements.txt
+      - name: Apply main registration plus billing import
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          main = Path('backend/app/main.py')
+          text = main.read_text(encoding='utf-8')
+          ia = 'from app.api.cloud_uploads import init_cloud_uploads, router as cloud_uploads_router\n'
+          inc = 'app.include_router(cloud_uploads_router, prefix=settings.api_prefix)\napp.include_router(router, prefix=settings.api_prefix)\n'
+          if ia not in text or inc not in text:
+              raise SystemExit('main anchors missing')
+          text = text.replace(ia, ia + 'from app.api.creator_pulse import init_creator_pulse, router as creator_pulse_router\n', 1)
+          text = text.replace(inc, 'app.include_router(cloud_uploads_router, prefix=settings.api_prefix)\napp.include_router(creator_pulse_router, prefix=settings.api_prefix)\napp.include_router(router, prefix=settings.api_prefix)\n', 1)
+          main.write_text(text, encoding='utf-8')
+
+          billing = Path('backend/app/api/billing_lifecycle.py')
+          b = billing.read_text(encoding='utf-8')
+          anchor = 'from app.services.legal import checkout_allowed, has_current_legal_acceptance\n'
+          if anchor not in b:
+              raise SystemExit('billing import anchor missing')
+          billing.write_text(b.replace(anchor, anchor + 'from app.api.creator_pulse import reconcile_creator_pulse_webhook\n', 1), encoding='utf-8')
+          PY
+      - name: Detect circular-import effect
+        env:
+          PYTHONPATH: backend
+        run: |
+          python - <<'PY'
+          import app.main as main_module
+          app_paths = sorted(getattr(route, 'path', '') for route in main_module.app.routes)
+          print('APP_ROUTE_COUNT=', len(app_paths))
+          print('CREATOR_PULSE_APP_PATHS=', [p for p in app_paths if 'creator-pulse' in p])
+          required = {'/api/v1/creator-pulse/status','/api/v1/creator-pulse/analyse'}
+          missing = required - set(app_paths)
+          if missing:
+              raise SystemExit(f'Billing-import variant missing: {sorted(missing)}')
           PY
