@@ -23,6 +23,7 @@ from app.api.worker_jobs import router as worker_jobs_router
 from app.api.legal import router as legal_router
 from app.api.behavioral_learning import router as behavioral_learning_router
 from app.api.cloud_uploads import init_cloud_uploads, router as cloud_uploads_router
+from app.api.creator_pulse import init_creator_pulse, router as creator_pulse_router
 from app.core.config import get_settings
 from app.core.database import UsageQuotaExceeded, close_database, execute, fetch_all, fetch_one, init_db
 from app.services.auth import current_user, hash_password
@@ -66,6 +67,7 @@ async def lifespan(_: FastAPI):
     await init_account_security()
     await init_user_preferences()
     await init_subscription_lifecycle()
+    await init_creator_pulse()
     if settings.seed_demo_user and not await fetch_one("SELECT id FROM users WHERE email=?", (settings.demo_email,)):
         timestamp = datetime.now(timezone.utc).isoformat()
         await execute(
@@ -389,6 +391,7 @@ app.include_router(worker_jobs_router, prefix=settings.api_prefix)
 app.include_router(legal_router, prefix=settings.api_prefix)
 app.include_router(behavioral_learning_router, prefix=settings.api_prefix)
 app.include_router(cloud_uploads_router, prefix=settings.api_prefix)
+app.include_router(creator_pulse_router, prefix=settings.api_prefix)
 app.include_router(router, prefix=settings.api_prefix)
 app.include_router(settings_router, prefix=settings.api_prefix)
 

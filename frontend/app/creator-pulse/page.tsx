@@ -211,6 +211,7 @@ export default function CreatorPulsePage() {
   const currentBalance = report?.balance_paise ?? status?.balance_paise ?? 0;
 
   const strongestVideo = useMemo(() => report?.recent.videos.reduce<PulseVideo | null>((best, item) => !best || item.views_per_day > best.views_per_day ? item : best, null) || null, [report]);
+  const rankedVideos = useMemo(() => report ? [...report.recent.videos].sort((left, right) => right.views_per_day - left.views_per_day) : [], [report]);
 
   async function addBalance(rupees: number) {
     setTopupBusy(rupees);
@@ -372,7 +373,7 @@ export default function CreatorPulsePage() {
           <section className={styles.performancePanel}>
             <div className={styles.sectionHead}><div><span>RECENT PERFORMANCE</span><h3>Latest uploads, ranked by real momentum</h3></div><div className={styles.methodPill}>No AI guesswork</div></div>
             <div className={styles.videoList}>
-              {report.recent.videos.map((video, index) => <article key={video.id}>
+              {rankedVideos.map((video, index) => <article key={video.id}>
                 <span className={styles.rank}>{String(index + 1).padStart(2, "0")}</span>
                 <div className={styles.videoThumb}>{video.thumbnail_url ? <Image src={video.thumbnail_url} alt="" fill sizes="112px"/> : <Youtube size={20}/>}</div>
                 <div className={styles.videoCopy}><b>{video.title}</b><span>{dateTime(video.published_at)} · {video.age_days.toFixed(1)} days old</span></div>

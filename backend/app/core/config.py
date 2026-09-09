@@ -117,6 +117,9 @@ class Settings(BaseSettings):
     # External production-preflight probes are bounded and never return provider
     # response bodies or credential material to clients.
     preflight_network_timeout_seconds: float = 8.0
+    # Creator Pulse uses the official YouTube Data API server-side only.
+    youtube_data_api_key: str = ""
+    youtube_data_api_timeout_seconds: float = 7.0
     # Number of source videos allowed inside the memory-heavy ASR pipeline at
     # once. This is intentionally separate from ASR_WORKERS, which controls
     # faster-whisper's internal workers for a single model instance.

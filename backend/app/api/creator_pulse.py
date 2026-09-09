@@ -19,6 +19,7 @@ from app.core.database import distributed_advisory_lock, execute, fetch_all, fet
 from app.services.auth import current_user
 from app.services.billing import parse_iso, razorpay_request, utc_now, verify_order_signature
 from app.services.legal import checkout_allowed, has_current_legal_acceptance
+from app.services.email_verification import requires_verification_for_processing
 
 
 router = APIRouter()
@@ -29,6 +30,7 @@ PULSE_RECENT_VIDEO_LIMIT = 10
 PULSE_CHECKOUT_REUSE_MINUTES = 15
 PULSE_DAILY_USER_LIMIT = 25
 PULSE_MIN_RESCAN_SECONDS = 60
+PULSE_STALE_PROCESSING_SECONDS = 300
 
 _user_locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 _checkout_locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
@@ -103,14 +105,14 @@ async def _audit(user_id: str | None, event: str, entity_type: str, entity_id: s
 
 
 def _youtube_api_key() -> str:
-    return os.environ.get("YOUTUBE_DATA_API_KEY", "").strip()
+    return get_settings().youtube_data_api_key.strip()
 
 
 def _youtube_timeout_seconds() -> float:
     try:
-        return min(max(float(os.environ.get("YOUTUBE_DATA_API_TIMEOUT_SECONDS", "12")), 3.0), 30.0)
-    except ValueError:
-        return 12.0
+        return min(max(float(get_settings().youtube_data_api_timeout_seconds), 3.0), 8.0)
+    except (TypeError, ValueError):
+        return 7.0
 
 
 def _safe_int(value: Any, default: int = 0) -> int:
@@ -405,9 +407,26 @@ async def _completed_scan_payload(row: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
+async def _recover_stale_processing(user_id: str) -> None:
+    """Refund a charge left processing after an API/container crash.
+
+    The normal request path refunds immediately on provider/application errors.
+    This recovery path is for abrupt process loss where exception handling never
+    ran. Transactions are idempotent, so concurrent recovery cannot mint balance.
+    """
+    cutoff = (utc_now() - timedelta(seconds=PULSE_STALE_PROCESSING_SECONDS)).isoformat()
+    stale = await fetch_all(
+        "SELECT id,request_key FROM creator_pulse_scans WHERE user_id=? AND status='processing' AND created_at<?",
+        (user_id, cutoff),
+    )
+    for row in stale:
+        await _refund_pulse(str(row["id"]), str(row["request_key"]), "STALE_PROCESSING_RECOVERY")
+
+
 @router.get("/creator-pulse/status")
 async def creator_pulse_status(user: dict = Depends(current_user)) -> dict[str, Any]:
     await _ensure_wallet(str(user["id"]))
+    await _recover_stale_processing(str(user["id"]))
     recent = await fetch_all(
         """SELECT id,channel_title,handle,captured_at,total_views,subscriber_count
            FROM creator_pulse_scans WHERE user_id=? AND status='completed'
@@ -454,6 +473,8 @@ async def creator_pulse_checkout(body: dict, user: dict = Depends(current_user))
     if amount_paise is None:
         raise HTTPException(422, "Choose ₹10, ₹20 or ₹50 for Pulse Balance.")
     user_id = str(user["id"])
+    if requires_verification_for_processing(user):
+        raise HTTPException(403, "Verify your email before adding Pulse Balance.")
     await _require_topup_ready(user_id)
     async with _checkout_locks[user_id], distributed_advisory_lock(f"creator-pulse-checkout:{user_id}"):
         cutoff = (utc_now() - timedelta(minutes=PULSE_CHECKOUT_REUSE_MINUTES)).isoformat()
@@ -803,6 +824,11 @@ async def _finalize_pulse(scan_id: str, snapshot: dict[str, Any], delta: dict[st
     }
 
     async def _finish(db) -> int:
+        scan_cursor = await db.execute("SELECT status,charged_paise FROM creator_pulse_scans WHERE id=?", (scan_id,))
+        scan_row = await scan_cursor.fetchone()
+        scan_state = dict(scan_row) if scan_row else {}
+        if scan_state.get("status") != "processing" or _safe_int(scan_state.get("charged_paise")) != PULSE_PRICE_PAISE:
+            raise RuntimeError("Creator Pulse charge is no longer active; retry safely.")
         wallet_cursor = await db.execute("SELECT balance_paise FROM creator_pulse_wallets WHERE user_id=(SELECT user_id FROM creator_pulse_scans WHERE id=?)", (scan_id,))
         wallet_row = await wallet_cursor.fetchone()
         balance = _safe_int(dict(wallet_row).get("balance_paise") if wallet_row else 0)
@@ -828,6 +854,9 @@ async def creator_pulse_analyse(body: dict, user: dict = Depends(current_user)) 
     handle = _normalize_handle(body.get("handle"))
     request_key = _validate_request_key(body.get("request_key"))
     user_id = str(user["id"])
+    if requires_verification_for_processing(user):
+        raise HTTPException(403, "Verify your email before running Creator Pulse.")
+    await _recover_stale_processing(user_id)
     existing = await fetch_one(
         "SELECT * FROM creator_pulse_scans WHERE user_id=? AND request_key=?",
         (user_id, request_key),
