@@ -1,0 +1,127 @@
+name: Creator Pulse Finalize Integration
+
+on:
+  pull_request:
+    branches: [modal-no-vps]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'feature/creator-pulse-write-actual'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/creator-pulse-write-actual
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Reuse exact guarded Creator Pulse integration patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/creator-pulse-integration.yml').read_text(encoding='utf-8')
+          section = workflow.split('      - name: Apply guarded Creator Pulse integration\n', 1)[1]
+          section = section.split('      - name: Install backend dependencies\n', 1)[0]
+          marker = "          python - <<'PY'\n"
+          if marker not in section or '\n          PY\n' not in section:
+              raise SystemExit('Could not locate guarded integration Python block')
+          block = section.split(marker, 1)[1].rsplit('\n          PY\n', 1)[0]
+          lines = []
+          for line in block.splitlines():
+              if line.startswith('          '):
+                  lines.append(line[10:])
+              else:
+                  lines.append(line)
+          code = '\n'.join(lines) + '\n'
+          exec(compile(code, 'creator-pulse-guarded-integration', 'exec'), {})
+          print('Reused exact guarded integration patch successfully.')
+          PY
+
+      - name: Install backend dependencies
+        run: python -m pip install --upgrade pip pytest && python -m pip install -r backend/requirements.txt
+
+      - name: Creator Pulse backend tests
+        env:
+          PYTHONPATH: backend
+        run: pytest -q backend/tests/test_creator_pulse.py
+
+      - name: Compile Python application
+        run: python -m compileall -q backend/app backend/tests/test_creator_pulse.py backend/migrations/versions/20260909_03_creator_pulse.py
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Frontend typecheck
+        working-directory: frontend
+        run: npm run typecheck
+
+      - name: Frontend release contracts
+        working-directory: frontend
+        run: npm run check:release
+
+      - name: Frontend production build
+        working-directory: frontend
+        env:
+          BACKEND_URL: https://backend.invalid
+        run: npm run build
+
+      - name: Restore generated frontend artifacts
+        shell: bash
+        run: |
+          git checkout -- frontend/next-env.d.ts 2>/dev/null || true
+          git checkout -- frontend/tsconfig.tsbuildinfo 2>/dev/null || true
+
+      - name: Guard final integration diff
+        shell: bash
+        run: |
+          python - <<'PY'
+          import subprocess
+          allowed = {
+              'backend/.env.example',
+              'backend/app/api/billing_lifecycle.py',
+              'backend/app/api/creator_pulse.py',
+              'backend/app/core/config.py',
+              'backend/app/core/database.py',
+              'backend/app/main.py',
+              'frontend/app/creator-pulse/page.tsx',
+          }
+          changed = set(filter(None, subprocess.check_output(['git','diff','--name-only'], text=True).splitlines()))
+          unexpected = changed - allowed
+          if unexpected:
+              raise SystemExit(f'Unexpected final integration paths: {sorted(unexpected)}')
+          required = {'backend/app/main.py','backend/app/api/billing_lifecycle.py','backend/app/core/database.py'}
+          if not required.issubset(changed):
+              raise SystemExit(f'Missing required final integration changes: {sorted(required - changed)}')
+          print('Final guarded integration paths:', *sorted(changed), sep='\n- ')
+          PY
+
+      - name: Commit verified Creator Pulse integration
+        shell: bash
+        run: |
+          git config user.name "ClipKaro CI"
+          git config user.email "actions@users.noreply.github.com"
+          git add backend/.env.example backend/app/api/billing_lifecycle.py backend/app/api/creator_pulse.py backend/app/core/config.py backend/app/core/database.py backend/app/main.py frontend/app/creator-pulse/page.tsx
+          git commit -m "feat: integrate Creator Pulse safely"
+          git push origin HEAD:feature/creator-pulse-write-actual
