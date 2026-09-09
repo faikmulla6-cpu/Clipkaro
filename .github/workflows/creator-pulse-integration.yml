@@ -1,0 +1,222 @@
+name: Creator Pulse Integration Gate
+
+on:
+  pull_request:
+    branches: [modal-no-vps]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  integrate-and-verify:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'feature/creator-pulse-write-actual'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/creator-pulse-write-actual
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Apply guarded Creator Pulse integration
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              if new in text:
+                  return
+              if old not in text:
+                  raise SystemExit(f'Guard failed: expected anchor missing in {path}')
+              p.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          # Register Creator Pulse startup + router.
+          replace_once(
+              'backend/app/main.py',
+              'from app.api.cloud_uploads import init_cloud_uploads, router as cloud_uploads_router\n',
+              'from app.api.cloud_uploads import init_cloud_uploads, router as cloud_uploads_router\nfrom app.api.creator_pulse import init_creator_pulse, router as creator_pulse_router\n',
+          )
+          replace_once(
+              'backend/app/main.py',
+              '    await init_subscription_lifecycle()\n',
+              '    await init_subscription_lifecycle()\n    await init_creator_pulse()\n',
+          )
+          replace_once(
+              'backend/app/main.py',
+              'app.include_router(cloud_uploads_router, prefix=settings.api_prefix)\napp.include_router(router, prefix=settings.api_prefix)\n',
+              'app.include_router(cloud_uploads_router, prefix=settings.api_prefix)\napp.include_router(creator_pulse_router, prefix=settings.api_prefix)\napp.include_router(router, prefix=settings.api_prefix)\n',
+          )
+
+          # Declare the server-only YouTube credential and bounded timeout.
+          replace_once(
+              'backend/app/core/config.py',
+              '    preflight_network_timeout_seconds: float = 8.0\n',
+              '    preflight_network_timeout_seconds: float = 8.0\n    # Creator Pulse uses the official YouTube Data API server-side only.\n    youtube_data_api_key: str = ""\n    youtube_data_api_timeout_seconds: float = 7.0\n',
+          )
+
+          # Production PostgreSQL must be migrated before the feature can boot.
+          replace_once(
+              'backend/app/core/database.py',
+              'POSTGRES_SCHEMA_REVISION = "20260830_02"',
+              'POSTGRES_SCHEMA_REVISION = "20260909_03"',
+          )
+
+          # Route signed Razorpay events to Pulse first when the Order belongs to Pulse.
+          replace_once(
+              'backend/app/api/billing_lifecycle.py',
+              'from app.services.legal import checkout_allowed, has_current_legal_acceptance\n',
+              'from app.services.legal import checkout_allowed, has_current_legal_acceptance\nfrom app.api.creator_pulse import reconcile_creator_pulse_webhook\n',
+          )
+          replace_once(
+              'backend/app/api/billing_lifecycle.py',
+              '        order = provider_payload.get("order", {}).get("entity", {}) or {}\n        subscription_id = str(subscription.get("id") or "")\n',
+              '        order = provider_payload.get("order", {}).get("entity", {}) or {}\n\n        # Creator Pulse top-ups share the signed Razorpay webhook but never share\n        # subscription/plan entitlement state. If this server-created Order belongs\n        # to Pulse, reconcile it idempotently and stop before normal plan billing.\n        pulse_result = await reconcile_creator_pulse_webhook(event_type, payment, order)\n        if pulse_result is not None:\n            await _complete_webhook_event(\n                event_id,\n                user_id=str(pulse_result.get("user_id") or "") or None,\n                event_type=event_type,\n                plan=None,\n                amount=int(pulse_result.get("amount") or 0),\n                status=str(pulse_result.get("status") or "pulse_event_received"),\n                payload_json=sanitized_payload_json,\n            )\n            return Response(status_code=204)\n\n        subscription_id = str(subscription.get("id") or "")\n',
+          )
+
+          # Use typed settings, bound network latency below the frontend POST timeout,
+          # require verified email before taking money/quota, and recover crash-stuck charges.
+          replace_once(
+              'backend/app/api/creator_pulse.py',
+              'import os\n',
+              '',
+          )
+          replace_once(
+              'backend/app/api/creator_pulse.py',
+              'from app.services.legal import checkout_allowed, has_current_legal_acceptance\n',
+              'from app.services.legal import checkout_allowed, has_current_legal_acceptance\nfrom app.services.email_verification import requires_verification_for_processing\n',
+          )
+          replace_once(
+              'backend/app/api/creator_pulse.py',
+              'PULSE_MIN_RESCAN_SECONDS = 60\n',
+              'PULSE_MIN_RESCAN_SECONDS = 60\nPULSE_STALE_PROCESSING_SECONDS = 300\n',
+          )
+          replace_once(
+              'backend/app/api/creator_pulse.py',
+              'def _youtube_api_key() -> str:\n    return os.environ.get("YOUTUBE_DATA_API_KEY", "").strip()\n\n\ndef _youtube_timeout_seconds() -> float:\n    try:\n        return min(max(float(os.environ.get("YOUTUBE_DATA_API_TIMEOUT_SECONDS", "12")), 3.0), 30.0)\n    except ValueError:\n        return 12.0\n',
+              'def _youtube_api_key() -> str:\n    return get_settings().youtube_data_api_key.strip()\n\n\ndef _youtube_timeout_seconds() -> float:\n    try:\n        return min(max(float(get_settings().youtube_data_api_timeout_seconds), 3.0), 8.0)\n    except (TypeError, ValueError):\n        return 7.0\n',
+          )
+          replace_once(
+              'backend/app/api/creator_pulse.py',
+              '@router.get("/creator-pulse/status")\nasync def creator_pulse_status(user: dict = Depends(current_user)) -> dict[str, Any]:\n    await _ensure_wallet(str(user["id"]))\n',
+              'async def _recover_stale_processing(user_id: str) -> None:\n    """Refund a charge left processing after an API/container crash.\n\n    The normal request path refunds immediately on provider/application errors.\n    This recovery path is for abrupt process loss where exception handling never\n    ran. Transactions are idempotent, so concurrent recovery cannot mint balance.\n    """\n    cutoff = (utc_now() - timedelta(seconds=PULSE_STALE_PROCESSING_SECONDS)).isoformat()\n    stale = await fetch_all(\n        "SELECT id,request_key FROM creator_pulse_scans WHERE user_id=? AND status=\'processing\' AND created_at<?",\n        (user_id, cutoff),\n    )\n    for row in stale:\n        await _refund_pulse(str(row["id"]), str(row["request_key"]), "STALE_PROCESSING_RECOVERY")\n\n\n@router.get("/creator-pulse/status")\nasync def creator_pulse_status(user: dict = Depends(current_user)) -> dict[str, Any]:\n    await _ensure_wallet(str(user["id"]))\n    await _recover_stale_processing(str(user["id"]))\n',
+          )
+          replace_once(
+              'backend/app/api/creator_pulse.py',
+              '    user_id = str(user["id"])\n    await _require_topup_ready(user_id)\n',
+              '    user_id = str(user["id"])\n    if requires_verification_for_processing(user):\n        raise HTTPException(403, "Verify your email before adding Pulse Balance.")\n    await _require_topup_ready(user_id)\n',
+          )
+          replace_once(
+              'backend/app/api/creator_pulse.py',
+              '    async def _finish(db) -> int:\n        wallet_cursor = await db.execute(',
+              '    async def _finish(db) -> int:\n        scan_cursor = await db.execute("SELECT status,charged_paise FROM creator_pulse_scans WHERE id=?", (scan_id,))\n        scan_row = await scan_cursor.fetchone()\n        scan_state = dict(scan_row) if scan_row else {}\n        if scan_state.get("status") != "processing" or _safe_int(scan_state.get("charged_paise")) != PULSE_PRICE_PAISE:\n            raise RuntimeError("Creator Pulse charge is no longer active; retry safely.")\n        wallet_cursor = await db.execute(',
+          )
+          replace_once(
+              'backend/app/api/creator_pulse.py',
+              '    user_id = str(user["id"])\n    existing = await fetch_one(\n',
+              '    user_id = str(user["id"])\n    if requires_verification_for_processing(user):\n        raise HTTPException(403, "Verify your email before running Creator Pulse.")\n    await _recover_stale_processing(user_id)\n    existing = await fetch_one(\n',
+          )
+
+          # Truthful UI: if the page says ranked by momentum, actually sort by it.
+          replace_once(
+              'frontend/app/creator-pulse/page.tsx',
+              '  const strongestVideo = useMemo(() => report?.recent.videos.reduce<PulseVideo | null>((best, item) => !best || item.views_per_day > best.views_per_day ? item : best, null) || null, [report]);\n',
+              '  const strongestVideo = useMemo(() => report?.recent.videos.reduce<PulseVideo | null>((best, item) => !best || item.views_per_day > best.views_per_day ? item : best, null) || null, [report]);\n  const rankedVideos = useMemo(() => report ? [...report.recent.videos].sort((left, right) => right.views_per_day - left.views_per_day) : [], [report]);\n',
+          )
+          replace_once(
+              'frontend/app/creator-pulse/page.tsx',
+              '{report.recent.videos.map((video, index) => <article key={video.id}>',
+              '{rankedVideos.map((video, index) => <article key={video.id}>',
+          )
+
+          # Document only the environment names; never commit a credential value.
+          replace_once(
+              'backend/.env.example',
+              'RAZORPAY_KEY_SECRET=\nEMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS=60\n',
+              'RAZORPAY_KEY_SECRET=\n\n# Creator Pulse — server-side only. Never expose this key through NEXT_PUBLIC_* variables.\nYOUTUBE_DATA_API_KEY=\nYOUTUBE_DATA_API_TIMEOUT_SECONDS=7\nEMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS=60\n',
+          )
+          PY
+
+      - name: Install backend dependencies
+        run: python -m pip install --upgrade pip pytest && python -m pip install -r backend/requirements.txt
+
+      - name: Run focused Creator Pulse tests
+        env:
+          PYTHONPATH: backend
+        run: pytest -q backend/tests/test_creator_pulse.py
+
+      - name: Compile Python application
+        run: python -m compileall -q backend/app backend/tests/test_creator_pulse.py backend/migrations/versions/20260909_03_creator_pulse.py
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Frontend typecheck
+        working-directory: frontend
+        run: npm run typecheck
+
+      - name: Frontend release contracts
+        working-directory: frontend
+        run: npm run check:release
+
+      - name: Frontend production build
+        working-directory: frontend
+        env:
+          BACKEND_URL: https://backend.invalid
+        run: npm run build
+
+      - name: Guard integration diff
+        shell: bash
+        run: |
+          python - <<'PY'
+          import subprocess
+          allowed = {
+              'backend/.env.example',
+              'backend/app/api/billing_lifecycle.py',
+              'backend/app/api/creator_pulse.py',
+              'backend/app/core/config.py',
+              'backend/app/core/database.py',
+              'backend/app/main.py',
+              'frontend/app/creator-pulse/page.tsx',
+          }
+          changed = set(filter(None, subprocess.check_output(['git','diff','--name-only'], text=True).splitlines()))
+          unexpected = changed - allowed
+          if unexpected:
+              raise SystemExit(f'Unexpected integration paths: {sorted(unexpected)}')
+          required = {'backend/app/main.py','backend/app/api/billing_lifecycle.py','backend/app/core/database.py'}
+          if not required.issubset(changed):
+              raise SystemExit(f'Missing required integration changes: {sorted(required - changed)}')
+          print('Guarded integration paths:', *sorted(changed), sep='\n- ')
+          PY
+
+      - name: Commit verified integration
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "Integration already applied; no commit needed."
+            exit 0
+          fi
+          git config user.name "ClipKaro CI"
+          git config user.email "actions@users.noreply.github.com"
+          git add backend/.env.example backend/app/api/billing_lifecycle.py backend/app/api/creator_pulse.py backend/app/core/config.py backend/app/core/database.py backend/app/main.py frontend/app/creator-pulse/page.tsx
+          git commit -m "feat: integrate Creator Pulse safely"
+          git push origin HEAD:feature/creator-pulse-write-actual
