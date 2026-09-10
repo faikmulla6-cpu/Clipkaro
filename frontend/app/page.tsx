@@ -47,6 +47,14 @@ export const metadata: Metadata = {
   },
 };
 
+const websiteStructuredData = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  name: "ClipKaro AI",
+  alternateName: ["ClipKaro", "ClipKaroAI"],
+  url: "https://clipkaro.pro/",
+};
+
 const softwareStructuredData = {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
@@ -79,13 +87,13 @@ const softwareStructuredData = {
 
 export default function Home() {
   return <div className="landing">
+    <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteStructuredData) }} />
     <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareStructuredData) }} />
     <nav className="landing-nav">
       <Logo />
       <div className={`nav-links ${home.desktopNavigation}`}>
-        <SmoothAnchorLink href="#how">How it works</SmoothAnchorLink>
-        <SmoothAnchorLink href="#features">Features</SmoothAnchorLink>
-        <SmoothAnchorLink href="#creator-pulse">Creator Pulse</SmoothAnchorLink>
+        <TransitionLink href="/youtube-video-to-shorts-ai">AI Video Clipper</TransitionLink>
+        <TransitionLink href="/youtube-channel-analyzer">Creator Pulse</TransitionLink>
         <SmoothAnchorLink href="#use-cases">Use cases</SmoothAnchorLink>
         <SmoothAnchorLink href="#pricing">Pricing</SmoothAnchorLink>
         <TransitionLink href="/about">About</TransitionLink>
@@ -97,6 +105,14 @@ export default function Home() {
       <MobileLandingMenu />
     </nav>
     <section className="hero"><span className="eyebrow"><Sparkles size={13}/> Built for Indian creators</span><h1>Turn long videos into <span className="lime-underline">scroll-stopping Shorts</span></h1><p>ClipKaro AI finds your strongest moments, improves India-first captions, lets you review uncertain transcript lines, and turns each selected clip into a ready-to-publish Content Pack.</p><div className="hero-actions"><Link className="primary-btn" href="/signup"><Upload size={17}/> Create your first Short</Link><SmoothAnchorLink className="secondary-btn" href="#how"><Play size={15}/> See how it works</SmoothAnchorLink></div><div className="hero-note">No card required · Start free · Upload content you own</div>
+      <div className={home.productRail} aria-label="Explore ClipKaro products">
+        <span>Explore ClipKaro</span>
+        <TransitionLink href="/youtube-video-to-shorts-ai">AI Video Clipper</TransitionLink>
+        <TransitionLink href="/ai-shorts-maker-india">YouTube Shorts Maker</TransitionLink>
+        <TransitionLink href="/youtube-channel-analyzer" className={home.pulseRail}>Creator Pulse <b>₹1</b></TransitionLink>
+        <TransitionLink href="/hindi-video-to-reels">Hindi &amp; Hinglish</TransitionLink>
+        <TransitionLink href="/pricing">Pricing</TransitionLink>
+      </div>
       <div className="hero-product"><div className="mock-window"><div className="mock-side"><div className="mini-logo">✦ ClipKaro</div><div className="mock-nav"><span>Overview</span><span>Upload video</span><span>My projects</span><span>Content Pack</span></div></div><div className="mock-body"><div className="mock-title"><div><h3>Your best moments are ready</h3><small>5 clips found in “How I grew my channel”</small></div><span className="mock-export-label" aria-hidden="true">Export selected</span></div><div className="mock-stats"><div className="mock-stat"><span>Moments found</span><b>05</b></div><div className="mock-stat"><span>Best moment score</span><b>94</b></div><div className="mock-stat"><span>Minutes saved</span><b>47</b></div></div>{["The mistake almost every creator makes", "My simple 3-step growth system"].map((t,i)=><div className="clip-row" key={t}><div className="clip-thumb"><Play size={18}/></div><div className="clip-copy"><b>{t}</b><span>{i?'06:18 – 06:57':'02:10 – 02:46'} · Educational insight</span></div><div className="score">{i?'89':'94'}</div></div>)}</div></div></div>
     </section>
     <div className="trust-strip">Designed for <b>YouTubers · Coaches · Teachers · Podcasters · Local businesses · Agencies</b></div>
@@ -160,6 +176,6 @@ export default function Home() {
         <TransitionLink href="/privacy">See retention details <ArrowRight size={14}/></TransitionLink>
       </div>
     </section>
-    <footer className="landing-footer"><div className="footer-inner" style={{alignItems:"flex-start",gap:20,flexWrap:"wrap"}}><div><Logo light/><p>© 2026 ClipKaro AI. Create responsibly. Built for India.</p></div><div style={{display:"flex",gap:12,flexWrap:"wrap",fontSize:12}}><TransitionLink href="/about">About</TransitionLink><Link href="/contact">Contact</Link>{LEGAL_LINKS.map(([label,href])=><Link key={href} href={href}>{label}</Link>)}</div></div></footer>
+    <footer className="landing-footer"><div className="footer-inner" style={{alignItems:"flex-start",gap:20,flexWrap:"wrap"}}><div><Logo light/><p>© 2026 ClipKaro AI. Create responsibly. Built for India.</p></div><div style={{display:"flex",gap:12,flexWrap:"wrap",fontSize:12,maxWidth:720,justifyContent:"flex-end"}}><TransitionLink href="/youtube-video-to-shorts-ai">AI Video Clipper</TransitionLink><TransitionLink href="/ai-shorts-maker-india">YouTube Shorts Maker</TransitionLink><TransitionLink href="/youtube-channel-analyzer">Creator Pulse</TransitionLink><TransitionLink href="/pricing">Pricing</TransitionLink><TransitionLink href="/about">About</TransitionLink><Link href="/contact">Contact</Link>{LEGAL_LINKS.map(([label,href])=><Link key={href} href={href}>{label}</Link>)}</div></div></footer>
   </div>;
 }
