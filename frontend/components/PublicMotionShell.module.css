@@ -1,0 +1,22 @@
+.shell{
+  min-height:100%;
+  animation:pageEnter .48s cubic-bezier(.22,.61,.36,1) both;
+}
+.ready :global([data-public-reveal]){
+  opacity:0;
+  transform:translate3d(0,24px,0);
+  transition:opacity .62s cubic-bezier(.22,.61,.36,1),transform .72s cubic-bezier(.22,.61,.36,1);
+  will-change:opacity,transform;
+}
+.ready :global([data-public-reveal].ck-public-visible){
+  opacity:1;
+  transform:none;
+}
+@keyframes pageEnter{
+  from{opacity:.01;transform:translate3d(0,14px,0)}
+  to{opacity:1;transform:none}
+}
+@media(prefers-reduced-motion:reduce){
+  .shell{animation:none}
+  .ready :global([data-public-reveal]){opacity:1;transform:none;transition:none}
+}
