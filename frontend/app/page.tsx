@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { HomeExperience } from "@/components/HomeExperience";
+import { LEGAL_LINKS } from "@/lib/legal";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -43,6 +44,11 @@ const websiteStructuredData = {
   name: "ClipKaro AI",
   alternateName: ["ClipKaro", "ClipKaroAI"],
   url: "https://clipkaro.pro/",
+  hasPart: LEGAL_LINKS.map(([name, href]) => ({
+    "@type": "WebPage",
+    name,
+    url: `https://clipkaro.pro${href}`,
+  })),
 };
 
 const softwareStructuredData = {
