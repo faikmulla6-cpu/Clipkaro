@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { AboutCreatorPulse } from "@/components/AboutCreatorPulse";
 import { AboutExperience } from "./AboutExperience";
 
 const title = "About ClipKaro AI — Video Clipping & YouTube Creator Intelligence";
@@ -34,10 +33,5 @@ export const metadata: Metadata = {
 };
 
 export default function AboutPage() {
-  return (
-    <>
-      <AboutExperience />
-      <AboutCreatorPulse />
-    </>
-  );
+  return <AboutExperience />;
 }
