@@ -38,7 +38,7 @@ export function MobileLandingMenu() {
 
   return (
     <div className={styles.mobileOnly}>
-      <TransitionLink href="/youtube-channel-analyzer" className={styles.quickStart}>Pulse · ₹1 <ArrowRight size={15}/></TransitionLink>
+      <Link href="/creator-pulse" className={styles.quickStart}>Run Pulse · ₹1 <ArrowRight size={15}/></Link>
       <button
         type="button"
         className={styles.menuButton}
