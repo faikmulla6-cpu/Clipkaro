@@ -70,8 +70,8 @@ const globalCache = globalThis as GlobalCache;
 const intelligenceCache = globalCache.__clipkaroPulseIntelligence ?? new Map<string, CacheEntry>();
 globalCache.__clipkaroPulseIntelligence = intelligenceCache;
 
-const TEXT_MODEL = "gemini-3.7-flash";
-const IMAGE_MODEL = "gemini-3.1-flash-image";
+const TEXT_MODEL = "gemini-2.5-flash";
+const IMAGE_MODEL = "gemini-2.5-flash-image";
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const ALLOWED_THUMBNAIL_HOSTS = new Set(["i.ytimg.com", "img.youtube.com"]);
 
