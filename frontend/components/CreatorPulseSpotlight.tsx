@@ -21,13 +21,13 @@ export function CreatorPulseSpotlight() {
           <div className={styles.eyebrow}><Activity size={15}/> Creator Pulse · ₹1 channel intelligence</div>
           <h2 id="creator-pulse-title">Know what&apos;s working. <span>Know what to create next.</span></h2>
           <p className={styles.lead}>
-            Creator Pulse analyses your public YouTube channel, compares recent uploads, identifies real momentum and turns that evidence into one clear next-video decision — including a title, angle, opening hook and downloadable thumbnail.
+            Creator Pulse analyses your public YouTube channel, compares recent uploads, identifies real momentum and turns that evidence into one clear next-video decision — including a title, angle, opening hook and downloadable thumbnail when generation is available.
           </p>
 
           <div className={styles.proofList} aria-label="Creator Pulse benefits">
             <div><Check size={16}/><span><b>Verified YouTube evidence</b>Public channel data and recent-upload momentum, not guessed private metrics.</span></div>
             <div><Check size={16}/><span><b>One focused next-video decision</b>A recommended topic with the reasoning, angle, title, hook and confidence behind it.</span></div>
-            <div><Check size={16}/><span><b>One downloadable thumbnail</b>A finished thumbnail prepared around the recommendation so you can move from insight to action faster.</span></div>
+            <div><Check size={16}/><span><b>One downloadable thumbnail when available</b>A finished thumbnail can be prepared around the recommendation so you can move from insight to action faster.</span></div>
           </div>
 
           <div className={styles.actions}>
@@ -108,7 +108,7 @@ export function CreatorPulseSpotlight() {
                     <strong>BUILD THE<br/>UPGRADE</strong>
                     <span className={styles.thumbAccent}>STEP BY STEP</span>
                   </div>
-                  <span className={styles.thumbFoot}><Download size={11}/> One final downloadable thumbnail</span>
+                  <span className={styles.thumbFoot}><Download size={11}/> Example of one downloadable thumbnail</span>
                 </div>
               </div>
             </div>
