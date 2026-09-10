@@ -3,6 +3,7 @@
 import { api, postJSON, User, VerificationStatus } from "@/lib/api";
 import { LEGAL_VERSION } from "@/lib/legal";
 import { SEO_PAGE_SLUGS } from "@/lib/seo-page-slugs";
+import { authHref, rememberPostAuthNext } from "@/lib/safe-next";
 import { usePathname, useRouter } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
@@ -61,11 +62,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (loading) return;
     const isPublic = publicPaths.includes(path);
     if (!user && !isPublic) {
-      router.replace(`/login?next=${encodeURIComponent(path)}`);
+      rememberPostAuthNext(path);
+      router.replace(authHref("/login", path));
       return;
     }
     if (user && !isPublic && verification?.required && !verification.can_process) {
-      router.replace("/verify-email");
+      rememberPostAuthNext(path);
+      router.replace(authHref("/verify-email", path));
     }
   }, [loading, user, verification, path, router]);
 
