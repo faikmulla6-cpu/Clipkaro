@@ -34,8 +34,8 @@ export function CreatorPulseSpotlight() {
             <Link className={styles.primary} href="/creator-pulse">
               <Activity size={17}/> Run Creator Pulse for ₹1 <ArrowRight size={16}/>
             </Link>
-            <Link className={styles.secondary} href="/about#creator-pulse-story">
-              See how it works
+            <Link className={styles.secondary} href="/youtube-channel-analyzer">
+              Explore Creator Pulse
             </Link>
           </div>
           <p className={styles.priceNote}>₹1 only for a successful Pulse · No Creator Pulse subscription required.</p>
