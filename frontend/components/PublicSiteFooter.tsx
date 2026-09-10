@@ -15,7 +15,7 @@ export function PublicSiteFooter() {
         <div className={styles.columns}>
           <div><b>Product</b><TransitionLink href="/youtube-video-to-shorts-ai">AI Video Clipper</TransitionLink><TransitionLink href="/ai-shorts-maker-india">YouTube Shorts Maker</TransitionLink><TransitionLink href="/youtube-channel-analyzer">Creator Pulse</TransitionLink><TransitionLink href="/pricing">Pricing</TransitionLink></div>
           <div><b>Company</b><TransitionLink href="/about">About</TransitionLink><TransitionLink href="/contact">Contact</TransitionLink><TransitionLink href="/about#founder">Founder</TransitionLink></div>
-          <div><b>Legal</b>{LEGAL_LINKS.slice(0,5).map(([label, href]) => <TransitionLink key={href} href={href}>{label}</TransitionLink>)}</div>
+          <div><b>Legal</b>{LEGAL_LINKS.map(([label, href]) => <TransitionLink key={href} href={href}>{label}</TransitionLink>)}</div>
         </div>
       </div>
       <div className={styles.bottom}>
