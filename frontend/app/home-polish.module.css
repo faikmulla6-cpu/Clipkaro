@@ -1,5 +1,57 @@
 .desktopNavigation{display:flex}
 
+.productRail{
+  width:min(900px,100%);
+  margin:22px auto 0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  flex-wrap:wrap;
+}
+.productRail>span{
+  margin-right:2px;
+  color:#8b948d;
+  font-size:9px;
+  font-weight:900;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+}
+.productRail a{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  min-height:34px;
+  padding:0 11px;
+  border:1px solid #dfe6dc;
+  border-radius:999px;
+  background:rgba(255,255,255,.86);
+  color:#445149;
+  font-size:10.5px;
+  font-weight:800;
+  box-shadow:0 6px 16px rgba(33,59,42,.045);
+  transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease,background .18s ease;
+}
+.productRail a:hover{
+  transform:translateY(-2px);
+  border-color:#adc9a8;
+  background:#fff;
+  box-shadow:0 9px 20px rgba(33,59,42,.08);
+}
+.productRail .pulseRail{
+  border-color:#b9dc83;
+  background:#effbd9;
+  color:#285c3c;
+}
+.productRail .pulseRail b{
+  padding:3px 6px;
+  border-radius:999px;
+  background:#165f43;
+  color:#fff;
+  font-size:8px;
+  letter-spacing:.02em;
+}
+
 .featureLift :global(.feature-card),
 .workflowLift :global(.feature-card){
   position:relative;
@@ -49,6 +101,22 @@
 
 @media(max-width:760px){
   .desktopNavigation{display:none!important}
+  .productRail{
+    width:calc(100% + 16px);
+    margin:20px -8px 0;
+    padding:0 8px 5px;
+    justify-content:flex-start;
+    flex-wrap:nowrap;
+    overflow-x:auto;
+    scrollbar-width:none;
+    -webkit-overflow-scrolling:touch;
+  }
+  .productRail::-webkit-scrollbar{display:none}
+  .productRail>span,.productRail a{flex:0 0 auto}
   .featureLift :global(.feature-card:hover),
   .workflowLift :global(.feature-card:hover){transform:none}
+}
+
+@media(prefers-reduced-motion:reduce){
+  .productRail a{transition:none}
 }
