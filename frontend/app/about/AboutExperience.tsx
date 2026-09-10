@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import Link from "next/link";
 import {
+  Activity,
   ArrowRight,
   BrainCircuit,
   CheckCircle2,
@@ -20,6 +21,7 @@ import {
   Workflow,
   Zap,
 } from "lucide-react";
+import { AboutCreatorPulse } from "@/components/AboutCreatorPulse";
 import { Logo } from "@/components/Logo";
 import { TransitionLink } from "@/components/TransitionLink";
 import styles from "./about.module.css";
@@ -137,6 +139,11 @@ const futureSignals = [
 
 const productSurfaces = [
   {
+    icon: Activity,
+    title: "Creator Pulse — ₹1 Channel Analysis",
+    text: "Verified public YouTube performance becomes recent-upload momentum, previous-Pulse comparison and one evidence-led next-video recommendation with a title, angle, hook and downloadable thumbnail.",
+  },
+  {
     icon: Languages,
     title: "India Quality Mode",
     text: "A creator-facing mode for Hindi, Hinglish and Indian-English workflows, with Roman Hinglish handling and safer caption placement.",
@@ -224,11 +231,12 @@ export function AboutExperience() {
           <a href="#mission">Mission</a>
           <a href="#technology">Technology</a>
           <a href="#product">Product</a>
+          <a href="#creator-pulse-story">Creator Pulse</a>
           <a href="#principles">Principles</a>
           <a href="#founder">Founder</a>
         </div>
-        <Link href="/signup" className={styles.navCta}>
-          Start creating <ArrowRight size={15} />
+        <Link href="/creator-pulse" className={styles.navCta}>
+          Creator Pulse · ₹1 <ArrowRight size={15} />
         </Link>
       </nav>
 
@@ -443,7 +451,7 @@ export function AboutExperience() {
           <h2>Every core capability has a place creators can actually use.</h2>
           <p>
             ClipKaro does not depend on backend features that users never see. The important controls
-            are exposed across Projects, Content Packs and Creator Studio so creators understand what
+            are exposed across Creator Pulse, Projects, Content Packs and Creator Studio so creators understand what
             exists before they spend time or money.
           </p>
         </div>
@@ -461,6 +469,8 @@ export function AboutExperience() {
           })}
         </div>
       </section>
+
+      <AboutCreatorPulse />
 
       <section className={`${styles.principlesSection} ${polish.principlesSection} ${story.sectionPacing}`} id="principles">
         <div className={styles.principlesTitle} data-about-reveal>
