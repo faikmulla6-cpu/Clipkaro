@@ -3,16 +3,17 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Menu, X } from "lucide-react";
-import { SmoothAnchorLink } from "./SmoothAnchorLink";
 import { TransitionLink } from "./TransitionLink";
 import styles from "./mobile-landing-menu.module.css";
 
-const sectionLinks = [
-  ["How it works", "/#how"],
-  ["Features", "/#features"],
-  ["Creator Pulse", "/#creator-pulse"],
-  ["Use cases", "/#use-cases"],
+const productLinks = [
+  ["AI Video Clipper", "/youtube-video-to-shorts-ai"],
+  ["YouTube Shorts Maker", "/ai-shorts-maker-india"],
+  ["Creator Pulse · ₹1", "/youtube-channel-analyzer"],
+  ["Hindi & Hinglish", "/hindi-video-to-reels"],
   ["Pricing", "/pricing"],
+  ["About ClipKaro", "/about"],
+  ["Contact support", "/contact"],
 ] as const;
 
 export function MobileLandingMenu() {
@@ -37,7 +38,7 @@ export function MobileLandingMenu() {
 
   return (
     <div className={styles.mobileOnly}>
-      <Link href="/signup" className={styles.quickStart}>Start free <ArrowRight size={15}/></Link>
+      <TransitionLink href="/youtube-channel-analyzer" className={styles.quickStart}>Pulse · ₹1 <ArrowRight size={15}/></TransitionLink>
       <button
         type="button"
         className={styles.menuButton}
@@ -54,33 +55,23 @@ export function MobileLandingMenu() {
       <div id="mobile-landing-navigation" className={`${styles.sheet} ${open ? styles.open : ""}`} aria-hidden={!open}>
         <div className={styles.sheetTop}>
           <span>Explore ClipKaro</span>
-          <small>AI video intelligence for real creator workflows.</small>
+          <small>Clipping, Shorts creation and Creator Pulse channel intelligence.</small>
         </div>
 
-        <nav className={styles.links} aria-label="Mobile homepage navigation">
-          {sectionLinks.map(([label, href], index) => (
-            <SmoothAnchorLink href={href} key={href} onClick={() => setOpen(false)}>
+        <nav className={styles.links} aria-label="Mobile ClipKaro navigation">
+          {productLinks.map(([label, href], index) => (
+            <TransitionLink href={href} key={href} onClick={() => setOpen(false)}>
               <span>0{index + 1}</span>
               <strong>{label}</strong>
               <ArrowRight size={17} />
-            </SmoothAnchorLink>
+            </TransitionLink>
           ))}
-          <TransitionLink href="/about" onClick={() => setOpen(false)}>
-            <span>06</span>
-            <strong>About ClipKaro</strong>
-            <ArrowRight size={17} />
-          </TransitionLink>
-          <TransitionLink href="/contact" onClick={() => setOpen(false)}>
-            <span>07</span>
-            <strong>Contact support</strong>
-            <ArrowRight size={17} />
-          </TransitionLink>
         </nav>
 
         <div className={styles.actions}>
           <Link href="/login" onClick={() => setOpen(false)} className={styles.login}>Log in</Link>
           <Link href="/creator-pulse" onClick={() => setOpen(false)} className={styles.start}>
-            Creator Pulse · ₹1 <ArrowRight size={17} />
+            Run Pulse · ₹1 <ArrowRight size={17} />
           </Link>
         </div>
       </div>
