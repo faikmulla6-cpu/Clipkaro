@@ -25,6 +25,7 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 const publicPaths = [
   "/", "/about", "/pricing", "/contact", "/login", "/signup", "/verify-email", "/forgot-password", "/reset-password",
+  "/youtube-channel-analyzer",
   "/terms", "/privacy", "/refund-policy", "/acceptable-use", "/copyright", "/legal-notice",
   ...SEO_PAGE_SLUGS.map((slug) => `/${slug}`),
 ];
