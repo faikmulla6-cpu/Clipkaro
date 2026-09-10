@@ -53,9 +53,9 @@ const audiences = [
 ] as const;
 
 const plans = [
-  { name: "Free", price: "₹0", suffix: "/month", note: "Try the workflow first.", items: ["15 Karo Minutes", "2 Shorts", "720p with watermark"], href: "/signup" },
+  { name: "Free", price: "₹0", suffix: "/month", note: "Try the workflow first.", items: ["15 Karo Minutes", "2 Shorts", "720p with watermark"], href: "/signup", featured: false },
   { name: "Growth", price: "₹399", suffix: "/month", note: "For serious weekly creators.", items: ["180 Karo Minutes", "50 Shorts", "1080p · no watermark"], href: "/signup?plan=growth", featured: true },
-  { name: "Pro", price: "₹799", suffix: "/month", note: "For daily creator output.", items: ["480 Karo Minutes", "150 Shorts", "1080p · no watermark"], href: "/signup?plan=pro" },
+  { name: "Pro", price: "₹799", suffix: "/month", note: "For daily creator output.", items: ["480 Karo Minutes", "150 Shorts", "1080p · no watermark"], href: "/signup?plan=pro", featured: false },
 ] as const;
 
 export function HomeExperience() {
