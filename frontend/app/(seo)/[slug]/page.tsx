@@ -84,7 +84,7 @@ export default async function SeoLandingPage({ params }: PageProps) {
           <TransitionLink href="/">Home</TransitionLink>
           <a href="#workflow">Workflow</a>
           <a href="#use-cases">Use cases</a>
-          <a href="#faq">FAQ</a>
+          <TransitionLink href="/youtube-channel-analyzer">Creator Pulse</TransitionLink>
           <TransitionLink href="/pricing">Pricing</TransitionLink>
         </div>
         <div className="nav-ctas">
@@ -185,6 +185,7 @@ export default async function SeoLandingPage({ params }: PageProps) {
           <div><Logo light/><p>© 2026 ClipKaro AI. Create responsibly. Built for India.</p></div>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: 12 }}>
             <TransitionLink href="/">Home</TransitionLink>
+            <TransitionLink href="/youtube-channel-analyzer">Creator Pulse</TransitionLink>
             <TransitionLink href="/about">About</TransitionLink>
             <TransitionLink href="/contact">Contact</TransitionLink>
             {SEO_PAGES.slice(0, 4).map((item) => <TransitionLink key={item.slug} href={`/${item.slug}`}>{item.title}</TransitionLink>)}
