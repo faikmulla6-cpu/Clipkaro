@@ -7,17 +7,7 @@ import { ArrowRight, Check, Eye, EyeOff, Loader2, LockKeyhole, Mail, User } from
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useState } from "react";
-
-function safePostAuthPath(raw: string | null): string {
-  if (!raw || !raw.startsWith("/") || raw.startsWith("//") || raw.includes("\\")) return "/dashboard";
-  try {
-    const resolved = new URL(raw, window.location.origin);
-    if (resolved.origin !== window.location.origin) return "/dashboard";
-    return `${resolved.pathname}${resolved.search}${resolved.hash}`;
-  } catch {
-    return "/dashboard";
-  }
-}
+import { authHref, clearPostAuthNext, rememberPostAuthNext, safeInternalNext } from "@/lib/safe-next";
 
 export function AuthForm({ mode }: { mode: "login" | "signup" }) {
   const { login, signup } = useAuth();
@@ -26,6 +16,10 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const requestedNext = safeInternalNext(params.get("next"), "");
+  const nextPath = requestedNext || "/dashboard";
+  const creatorPulseIntent = nextPath === "/creator-pulse";
+  const switchHref = authHref(mode === "login" ? "/signup" : "/login", requestedNext);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -43,13 +37,17 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
           );
 
       if (!result.canProcess) {
-        const delivery = mode === "signup"
-          ? `?sent=${result.verificationEmailSent ? "1" : "0"}`
-          : "";
-        router.push(`/verify-email${delivery}`);
+        rememberPostAuthNext(nextPath);
+        const query = new URLSearchParams();
+        if (mode === "signup") query.set("sent", result.verificationEmailSent ? "1" : "0");
+        if (requestedNext) query.set("next", requestedNext);
+        const suffix = query.toString();
+        router.push(`/verify-email${suffix ? `?${suffix}` : ""}`);
         return;
       }
-      router.push(safePostAuthPath(params.get("next")));
+
+      clearPostAuthNext();
+      router.push(nextPath);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not continue");
     } finally {
@@ -63,26 +61,29 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
         <div className="auth-brand"><Logo light /></div>
         <div className="auth-story">
           <span className="eyebrow dark">INDIA&apos;S CREATOR COPILOT</span>
-          <h1>One upload.<br/><em>A month of moments.</em></h1>
-          <p>Find the clips worth sharing, style them in your brand, and export without learning a complex editor.</p>
+          <h1>{creatorPulseIntent ? <>Know what to create.<br/><em>Before you guess.</em></> : <>One upload.<br/><em>A month of moments.</em></>}</h1>
+          <p>{creatorPulseIntent ? "Sign in securely to run Creator Pulse, review verified YouTube momentum and get one evidence-led next move." : "Find the clips worth sharing, style them in your brand, and export without learning a complex editor."}</p>
           <div className="auth-proof">
-            {["AI-ranked moments with reasons", "Live processing and export progress", "Private uploads that expire automatically"].map((item) => (
+            {(creatorPulseIntent
+              ? ["₹1 only for a successful Pulse", "Verified public YouTube evidence", "One next-video recommendation + thumbnail"]
+              : ["AI-ranked moments with reasons", "Live processing and export progress", "Private uploads that expire automatically"]
+            ).map((item) => (
               <span key={item}><Check size={15}/>{item}</span>
             ))}
           </div>
         </div>
-        <div className="auth-quote"><b>Product principle:</b> Click once. Get your Shorts.</div>
+        <div className="auth-quote"><b>Product principle:</b> {creatorPulseIntent ? "Evidence first. Creative assistance second." : "Click once. Get your Shorts."}</div>
       </div>
 
       <div className="auth-panel">
         <div className={`auth-card ${styles.cardEnter}`}>
           <div className={`auth-mobile-logo ${styles.brandEnter}`}><Logo /></div>
           <span className="auth-kicker">{mode === "login" ? "WELCOME BACK" : "START CREATING"}</span>
-          <h2>{mode === "login" ? "Sign in to your studio" : "Create your free account"}</h2>
+          <h2>{mode === "login" ? (creatorPulseIntent ? "Sign in to continue to Creator Pulse" : "Sign in to your studio") : (creatorPulseIntent ? "Create your account for Creator Pulse" : "Create your free account")}</h2>
           <p>
             {mode === "login"
-              ? "Your projects, exports and brand presets are waiting."
-              : "No card needed. Verify your email and start with the Free plan."}
+              ? (creatorPulseIntent ? "After sign-in, you’ll return directly to Creator Pulse." : "Your projects, exports and brand presets are waiting.")
+              : (creatorPulseIntent ? "No card needed to create an account. Verify your email, then continue directly to Creator Pulse." : "No card needed. Verify your email and start with the Free plan.")}
           </p>
 
           <form onSubmit={submit} autoComplete="on">
@@ -126,8 +127,8 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
 
           <div className="auth-switch">
             {mode === "login"
-              ? <>New to ClipKaro? <Link href="/signup">Create an account</Link></>
-              : <>Already have an account? <Link href="/login">Sign in</Link></>}
+              ? <>New to ClipKaro? <Link href={switchHref}>Create an account</Link></>
+              : <>Already have an account? <Link href={switchHref}>Sign in</Link></>}
           </div>
         </div>
       </div>
