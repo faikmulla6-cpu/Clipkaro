@@ -293,10 +293,7 @@ async function generateRecommendation(report: PulseReportInput): Promise<{ value
         "https://api.groq.com/openai/v1/chat/completions",
         {
           method: "POST",
-          headers: {
-            authorization: `Bearer ${apiKey}`,
-            "content-type": "application/json",
-          },
+          headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
           body: JSON.stringify({
             model,
             messages: [
@@ -310,11 +307,7 @@ async function generateRecommendation(report: PulseReportInput): Promise<{ value
             max_completion_tokens: 1600,
             response_format: {
               type: "json_schema",
-              json_schema: {
-                name: "creator_pulse_next_move",
-                strict: true,
-                schema: recommendationSchema(),
-              },
+              json_schema: { name: "creator_pulse_next_move", strict: true, schema: recommendationSchema() },
             },
           }),
         },
@@ -396,7 +389,8 @@ ${referenceInstruction}
 
 Production requirements:
 - 16:9 YouTube thumbnail composition, premium modern creator quality, instantly understandable at small size.
-- One dominant focal idea with deliberate hierarchy, strong separation and clean negative space for a short headline overlay.
+- One dominant focal idea with deliberate hierarchy and strong separation.
+- Reserve the lower-left portion as relatively clean/darker negative space for ClipKaro's final short headline overlay.
 - IMPORTANT: generate the visual WITHOUT any written words, letters, captions, logos, signatures or watermarks. ClipKaro adds exact typography separately.
 - Stay faithful to the creator's recent niche and the recommended title. Do not introduce unrelated products or topics.
 - If a recurring person is clearly visible in references, preserve the person's natural age/build/features as closely as the references support. If identity is unclear, use the product/topic/interface instead of inventing a face.
@@ -429,6 +423,25 @@ async function cloudflareImageFromResponse(response: Response): Promise<string |
   return `data:image/png;base64,${encoded}`;
 }
 
+function escapeXml(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+}
+
+function applyExactThumbnailText(backgroundDataUrl: string, thumbnailText: string): string {
+  if (!/^data:image\/(png|jpeg|jpg|webp);base64,/i.test(backgroundDataUrl)) return backgroundDataUrl;
+  const words = cleanText(thumbnailText, 60).toUpperCase().split(/\s+/).filter(Boolean).slice(0, 4);
+  if (!words.length) return backgroundDataUrl;
+  const split = words.length >= 3 ? Math.ceil(words.length / 2) : words.length;
+  const lines = words.length >= 3 ? [words.slice(0, split).join(" "), words.slice(split).join(" ")] : [words.join(" ")];
+  const escaped = lines.map(escapeXml);
+  const line1Y = escaped.length === 2 ? 438 : 470;
+  const line2 = escaped.length === 2
+    ? `<text x="54" y="512" font-family="Arial,Helvetica,sans-serif" font-size="66" font-weight="900" letter-spacing="-1.5" fill="#e6ff59" stroke="#0a2018" stroke-width="8" paint-order="stroke fill">${escaped[1]}</text>`
+    : "";
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${THUMBNAIL_WIDTH}" height="${THUMBNAIL_HEIGHT}" viewBox="0 0 ${THUMBNAIL_WIDTH} ${THUMBNAIL_HEIGHT}"><image href="${backgroundDataUrl}" width="${THUMBNAIL_WIDTH}" height="${THUMBNAIL_HEIGHT}" preserveAspectRatio="xMidYMid slice"/><rect x="34" y="${escaped.length === 2 ? 365 : 397}" width="650" height="${escaped.length === 2 ? 168 : 112}" rx="24" fill="#071a13" fill-opacity="0.64"/><text x="54" y="${line1Y}" font-family="Arial,Helvetica,sans-serif" font-size="66" font-weight="900" letter-spacing="-1.5" fill="#ffffff" stroke="#0a2018" stroke-width="8" paint-order="stroke fill">${escaped[0]}</text>${line2}</svg>`;
+  return `data:image/svg+xml;base64,${Buffer.from(svg, "utf8").toString("base64")}`;
+}
+
 async function generateThumbnail(report: PulseReportInput, recommendation: Recommendation): Promise<{ dataUrl: string; model: string } | null> {
   const accountId = cleanText(process.env.CLOUDFLARE_ACCOUNT_ID, 100);
   const apiToken = cleanText(process.env.CLOUDFLARE_API_TOKEN, 500);
@@ -448,17 +461,15 @@ async function generateThumbnail(report: PulseReportInput, recommendation: Recom
       `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/run/${CLOUDFLARE_IMAGE_MODEL}`,
       {
         method: "POST",
-        headers: {
-          authorization: `Bearer ${apiToken}`,
-          accept: "application/json,image/png",
-        },
+        headers: { authorization: `Bearer ${apiToken}`, accept: "application/json,image/png" },
         body: form,
       },
       45_000,
     );
     if (!response.ok) return null;
-    const dataUrl = await cloudflareImageFromResponse(response);
-    return dataUrl ? { dataUrl, model: CLOUDFLARE_IMAGE_MODEL } : null;
+    const background = await cloudflareImageFromResponse(response);
+    if (!background) return null;
+    return { dataUrl: applyExactThumbnailText(background, recommendation.thumbnail_text), model: CLOUDFLARE_IMAGE_MODEL };
   } catch {
     return null;
   }
