@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { ArrowRight, Mail, ShieldCheck } from "lucide-react";
+import { ArrowRight, Mail, ShieldCheck, UserRound } from "lucide-react";
 import { LegalOperatorCard } from "@/components/LegalOperatorCard";
-import { Logo } from "@/components/Logo";
-import { MobileLandingMenu } from "@/components/MobileLandingMenu";
-import { LEGAL_LINKS, TRUST_PROFILE } from "@/lib/legal";
+import { PublicMotionShell } from "@/components/PublicMotionShell";
+import { PublicSiteFooter } from "@/components/PublicSiteFooter";
+import { PublicSiteNav } from "@/components/PublicSiteNav";
+import { TransitionLink } from "@/components/TransitionLink";
+import { TRUST_PROFILE } from "@/lib/legal";
 
 const title = "Contact ClipKaro AI — Support and legal help";
 const description = "Contact ClipKaro AI for product support, billing help, privacy questions, copyright issues, and grievance escalation.";
@@ -13,92 +14,29 @@ export const metadata: Metadata = {
   title,
   description,
   alternates: { canonical: "/contact" },
-  openGraph: {
-    type: "website",
-    url: "/contact",
-    title,
-    description,
-    images: [{ url: "/assets/clipkaro-icon.png", width: 1024, height: 1024, alt: "ClipKaro AI" }],
-  },
-  twitter: {
-    card: "summary_large_image",
-    title,
-    description,
-    images: ["/assets/clipkaro-icon.png"],
-  },
+  openGraph: { type: "website", url: "/contact", siteName: "ClipKaro AI", title, description, images: [{ url: "/assets/clipkaro-icon.png", width: 1024, height: 1024, alt: "ClipKaro AI" }] },
+  twitter: { card: "summary_large_image", title, description, images: ["/assets/clipkaro-icon.png"] },
 };
 
 export default function ContactPage() {
-  return <div className="landing">
-    <nav className="landing-nav">
-      <Logo />
-      <div className="nav-links">
-        <Link href="/#how">How it works</Link>
-        <Link href="/#features">Features</Link>
-        <Link href="/pricing">Pricing</Link>
-        <Link href="/about">About</Link>
+  return (
+    <PublicMotionShell>
+      <div className="landing">
+        <PublicSiteNav />
+        <main>
+          <section className="section" data-public-reveal>
+            <div className="section-heading"><span>Support</span><h2>Get help without hunting for the right contact.</h2><p>Account, billing, privacy, copyright and product support all start from this page.</p></div>
+            <div className="feature-grid" style={{ alignItems: "stretch" }}>
+              <div className="feature-card"><div className="feature-icon"><Mail size={21}/></div><h3>Product and billing support</h3><p>For upload, processing, export, usage, payment, or cancellation questions, use the customer-care contact below and include your account email, project name, plan, and payment reference when relevant.</p></div>
+              <div className="feature-card"><div className="feature-icon"><ShieldCheck size={21}/></div><h3>Privacy and legal requests</h3><p>For deletion, privacy, refund, copyright, or grievance requests, use the official operator contacts below. {TRUST_PROFILE.supportExpectation}</p></div>
+              <div className="feature-card"><div className="feature-icon"><UserRound size={21}/></div><h3>Founder-led product</h3><p>ClipKaro AI is built by {TRUST_PROFILE.founderName}, {TRUST_PROFILE.founderTitle}. Read the founder story or consumer information before paying.</p><TransitionLink href="/about#founder" style={{display:"inline-flex",alignItems:"center",gap:6,marginTop:14,color:"#165f43",fontWeight:800,fontSize:12}}>Read founder story <ArrowRight size={14}/></TransitionLink></div>
+            </div>
+            <div className="trust-disclosure-grid"><div><b>Response expectation</b><p>{TRUST_PROFILE.supportExpectation}</p></div><div><b>Media retention</b><p>{TRUST_PROFILE.mediaRetention}</p></div><div><b>Deletion requests</b><p>{TRUST_PROFILE.deletionSummary}</p></div></div>
+            <div style={{ maxWidth: 860, margin: "32px auto 0" }}><LegalOperatorCard /></div>
+          </section>
+        </main>
+        <PublicSiteFooter />
       </div>
-      <div className="nav-ctas">
-        <Link href="/login" className="text-btn">Log in</Link>
-        <Link href="/signup" className="primary-btn">Start free <ArrowRight size={15}/></Link>
-      </div>
-      <MobileLandingMenu />
-    </nav>
-
-    <section className="section">
-      <div className="section-heading">
-        <span>Support</span>
-        <h2>Get help with ClipKaro AI.</h2>
-        <p>Use this page for account help, billing questions, privacy requests, copyright notices, and product support.</p>
-      </div>
-
-      <div className="feature-grid" style={{ alignItems: "stretch" }}>
-        <div className="feature-card">
-          <div className="feature-icon"><Mail size={21}/></div>
-          <h3>Product and billing support</h3>
-          <p>For upload, processing, export, usage, payment, or cancellation questions, use the customer-care email below and include your account email, project name, plan, and payment reference if relevant.</p>
-        </div>
-        <div className="feature-card">
-          <div className="feature-icon"><ShieldCheck size={21}/></div>
-          <h3>Privacy and legal requests</h3>
-          <p>For deletion, privacy, refund, copyright, or grievance requests, use the official operator contacts below. {TRUST_PROFILE.supportExpectation}</p>
-        </div>
-        <div className="feature-card">
-          <div className="feature-icon"><ArrowRight size={21}/></div>
-          <h3>Founder identity</h3>
-          <p>ClipKaro AI is built by {TRUST_PROFILE.founderName}, {TRUST_PROFILE.founderTitle}. Read the <Link href="/about#founder">founder story</Link> or review <Link href="/legal-notice">consumer information</Link> before paying.</p>
-        </div>
-      </div>
-
-      <div className="trust-disclosure-grid">
-        <div>
-          <b>Response expectation</b>
-          <p>{TRUST_PROFILE.supportExpectation}</p>
-        </div>
-        <div>
-          <b>Media retention</b>
-          <p>{TRUST_PROFILE.mediaRetention}</p>
-        </div>
-        <div>
-          <b>Deletion requests</b>
-          <p>{TRUST_PROFILE.deletionSummary}</p>
-        </div>
-      </div>
-
-      <div style={{ maxWidth: 860, margin: "32px auto 0" }}>
-        <LegalOperatorCard />
-      </div>
-    </section>
-
-    <footer className="landing-footer">
-      <div className="footer-inner" style={{ alignItems: "flex-start", gap: 20, flexWrap: "wrap" }}>
-        <div><Logo light/><p>© 2026 ClipKaro AI. Create responsibly. Built for India.</p></div>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: 12 }}>
-          <Link href="/about">About</Link>
-          <Link href="/contact">Contact</Link>
-          {LEGAL_LINKS.map(([label, href]) => <Link key={href} href={href}>{label}</Link>)}
-        </div>
-      </div>
-    </footer>
-  </div>;
+    </PublicMotionShell>
+  );
 }
