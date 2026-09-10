@@ -1,7 +1,8 @@
 "use client";
 
 import { ChevronDown, Menu, X, ArrowRight, Activity, Scissors, Languages, Sparkles } from "lucide-react";
-import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import { Logo } from "@/components/Logo";
 import { TransitionLink } from "@/components/TransitionLink";
 import styles from "./PublicSiteNav.module.css";
@@ -18,8 +19,11 @@ const products = [
 ] as const;
 
 export function PublicSiteNav({ cta = "start" }: PublicSiteNavProps) {
+  const pathname = usePathname();
+  const productMenuRef = useRef<HTMLDivElement>(null);
   const [productOpen, setProductOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const productActive = products.some((item) => item.href === pathname);
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -35,10 +39,33 @@ export function PublicSiteNav({ cta = "start" }: PublicSiteNavProps) {
     };
   }, [mobileOpen]);
 
+  useEffect(() => {
+    if (!productOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!productMenuRef.current?.contains(event.target as Node)) setProductOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setProductOpen(false);
+    };
+    window.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [productOpen]);
+
+  useEffect(() => {
+    setProductOpen(false);
+    setMobileOpen(false);
+  }, [pathname]);
+
   const closeAll = () => {
     setProductOpen(false);
     setMobileOpen(false);
   };
+
+  const routeClass = (href: string, extra = "") => `${pathname === href ? styles.active : ""} ${extra}`.trim();
 
   return (
     <header className={styles.shell}>
@@ -46,16 +73,17 @@ export function PublicSiteNav({ cta = "start" }: PublicSiteNavProps) {
         <Logo transition />
 
         <div className={styles.desktopLinks}>
-          <div className={styles.productMenu}>
+          <div className={styles.productMenu} ref={productMenuRef}>
             <button
               type="button"
-              className={styles.productButton}
+              className={`${styles.productButton} ${productActive ? styles.active : ""}`}
               aria-expanded={productOpen}
+              aria-haspopup="menu"
               onClick={() => setProductOpen((value) => !value)}
             >
               Product <ChevronDown size={15} className={productOpen ? styles.rotate : ""} />
             </button>
-            <div className={`${styles.dropdown} ${productOpen ? styles.dropdownOpen : ""}`}>
+            <div className={`${styles.dropdown} ${productOpen ? styles.dropdownOpen : ""}`} role="menu">
               <div className={styles.dropdownLead}>
                 <span>ClipKaro workspace</span>
                 <b>One creator workflow, not a pile of disconnected tools.</b>
@@ -64,7 +92,7 @@ export function PublicSiteNav({ cta = "start" }: PublicSiteNavProps) {
                 {products.map((item) => {
                   const Icon = item.icon;
                   return (
-                    <TransitionLink href={item.href} key={item.href} onClick={closeAll}>
+                    <TransitionLink href={item.href} key={item.href} onClick={closeAll} className={pathname === item.href ? styles.dropdownActive : ""} role="menuitem">
                       <i><Icon size={17} /></i>
                       <span><b>{item.label}</b><small>{item.text}</small></span>
                       <ArrowRight size={14} />
@@ -75,10 +103,10 @@ export function PublicSiteNav({ cta = "start" }: PublicSiteNavProps) {
             </div>
           </div>
 
-          <TransitionLink href="/youtube-channel-analyzer" className={styles.pulseLink}>Creator Pulse <span>₹1</span></TransitionLink>
+          <TransitionLink href="/youtube-channel-analyzer" className={routeClass("/youtube-channel-analyzer", styles.pulseLink)}>Creator Pulse <span>₹1</span></TransitionLink>
           <TransitionLink href="/#use-cases">Use cases</TransitionLink>
-          <TransitionLink href="/pricing">Pricing</TransitionLink>
-          <TransitionLink href="/about">About</TransitionLink>
+          <TransitionLink href="/pricing" className={routeClass("/pricing")}>Pricing</TransitionLink>
+          <TransitionLink href="/about" className={routeClass("/about")}>About</TransitionLink>
         </div>
 
         <div className={styles.desktopActions}>
@@ -108,7 +136,7 @@ export function PublicSiteNav({ cta = "start" }: PublicSiteNavProps) {
           {products.map((item) => {
             const Icon = item.icon;
             return (
-              <TransitionLink href={item.href} key={item.href} onClick={closeAll}>
+              <TransitionLink href={item.href} key={item.href} onClick={closeAll} className={pathname === item.href ? styles.mobileActive : ""}>
                 <i><Icon size={18} /></i>
                 <span><b>{item.label}</b><small>{item.text}</small></span>
                 <ArrowRight size={15} />
