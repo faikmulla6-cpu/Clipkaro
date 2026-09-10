@@ -9,6 +9,18 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { authHref, clearPostAuthNext, rememberPostAuthNext, safeInternalNext } from "@/lib/safe-next";
 
+function safePostAuthPath(raw: string | null): string {
+  const sanitized = safeInternalNext(raw, "/dashboard");
+  if (typeof window === "undefined") return sanitized;
+  try {
+    const resolved = new URL(sanitized, window.location.origin);
+    if (resolved.origin !== window.location.origin) return "/dashboard";
+    return `${resolved.pathname}${resolved.search}${resolved.hash}`;
+  } catch {
+    return "/dashboard";
+  }
+}
+
 export function AuthForm({ mode }: { mode: "login" | "signup" }) {
   const { login, signup } = useAuth();
   const router = useRouter();
@@ -16,8 +28,9 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const requestedNext = safeInternalNext(params.get("next"), "");
-  const nextPath = requestedNext || "/dashboard";
+  const rawNext = params.get("next");
+  const requestedNext = safeInternalNext(rawNext, "");
+  const nextPath = safePostAuthPath(rawNext);
   const creatorPulseIntent = nextPath === "/creator-pulse";
   const switchHref = authHref(mode === "login" ? "/signup" : "/login", requestedNext);
 
