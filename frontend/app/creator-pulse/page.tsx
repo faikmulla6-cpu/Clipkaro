@@ -452,7 +452,10 @@ export default function CreatorPulsePage() {
             </div>
 
             <aside className={styles.thumbnailPanel}>
-              <div className={styles.thumbnailHead}><div><span>ONE FINAL THUMBNAIL</span><b>{nextMove?.thumbnail_status === "generated" ? "Generated for this recommendation" : nextMoveLoading ? "Creating after the recommendation" : "Creative direction ready"}</b></div><Youtube size={18}/></div>
+              <div className={styles.thumbnailHead}>
+                <div><span>ONE FINAL THUMBNAIL</span><b>{nextMove?.thumbnail_status === "generated" ? "Generated for this recommendation" : nextMoveLoading ? "Creating after the recommendation" : "Creative direction ready"}</b></div>
+                {nextMove?.thumbnail_data_url ? <a className={styles.youtubeLink} href={nextMove.thumbnail_data_url} download={`clipkaro-${report.channel.handle.replace(/^@/, "").replace(/[^a-z0-9_-]+/gi, "-")}-thumbnail.jpg`}>Download thumbnail</a> : <Youtube size={18}/>} 
+              </div>
               <div className={styles.thumbnailFrame}>
                 {nextMove?.thumbnail_data_url ? <img src={nextMove.thumbnail_data_url} alt={`Generated thumbnail concept for ${nextMove.title}`}/> : <div className={styles.thumbnailPlaceholder}>
                   {nextMoveLoading ? <><Loader2 className="spin" size={24}/><b>Creating one 16:9 thumbnail…</b></> : <><Sparkles size={24}/><strong>{nextMove?.thumbnail_text || "One clear visual"}</strong><p>{nextMove?.thumbnail_direction || "The thumbnail appears here when image generation is available."}</p></>}
