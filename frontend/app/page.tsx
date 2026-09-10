@@ -1,5 +1,7 @@
-import { ArrowRight, Check, Clapperboard, Headphones, Languages, LockKeyhole, Play, Scissors, ShieldCheck, Sparkles, Subtitles, Upload, UserRound, WandSparkles, Zap } from "lucide-react";
+import type { Metadata } from "next";
+import { Activity, ArrowRight, Check, Clapperboard, Headphones, Languages, LockKeyhole, Play, Scissors, ShieldCheck, Sparkles, Subtitles, Upload, UserRound, WandSparkles, Zap } from "lucide-react";
 import Link from "next/link";
+import { CreatorPulseSpotlight } from "@/components/CreatorPulseSpotlight";
 import { Logo } from "@/components/Logo";
 import { MobileLandingMenu } from "@/components/MobileLandingMenu";
 import { SmoothAnchorLink } from "@/components/SmoothAnchorLink";
@@ -11,6 +13,40 @@ import home from "./home-polish.module.css";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+export const metadata: Metadata = {
+  title: "ClipKaro AI — Video Clipper & YouTube Channel Analyzer",
+  description: "Turn long videos into Shorts and use Creator Pulse for ₹1 YouTube channel analysis, recent-upload momentum, next-video ideas, hooks and a downloadable thumbnail.",
+  keywords: [
+    "AI video clipper",
+    "YouTube channel analyzer",
+    "YouTube channel analysis",
+    "AI YouTube analytics",
+    "YouTube analytics for creators",
+    "YouTube video idea generator",
+    "what video should I make next",
+    "YouTube thumbnail generator",
+    "YouTube growth tool India",
+    "long video to Shorts",
+    "Hinglish video clipper",
+    "ClipKaro Creator Pulse",
+  ],
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    url: "/",
+    siteName: "ClipKaro AI",
+    title: "ClipKaro AI — Video Clipper & YouTube Channel Analyzer",
+    description: "Create Shorts from long videos and turn verified public YouTube performance into one clear next-video move with Creator Pulse.",
+    images: [{ url: "/assets/clipkaro-icon.png", width: 1024, height: 1024, alt: "ClipKaro AI creator intelligence platform" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "ClipKaro AI — Video Clipper & YouTube Channel Analyzer",
+    description: "AI video clipping plus ₹1 Creator Pulse channel analysis for creators who want to know what to make next.",
+    images: ["/assets/clipkaro-icon.png"],
+  },
+};
+
 const softwareStructuredData = {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
@@ -19,9 +55,14 @@ const softwareStructuredData = {
   applicationCategory: "MultimediaApplication",
   operatingSystem: "Web",
   description:
-    "AI video clipping and content repurposing for Indian creators with smart clip detection, India Quality Mode, transcript review, captions, vertical export and Content Packs.",
+    "AI video clipping, content repurposing and YouTube creator intelligence for Indian creators, including smart clip detection, India Quality Mode, Creator Pulse channel analysis, transcript review, captions, vertical export and Content Packs.",
   featureList: [
     "AI clip detection and ranking",
+    "₹1 Creator Pulse YouTube channel analysis",
+    "Verified recent-upload momentum comparison",
+    "Evidence-led next-video recommendation with title, angle and opening hook",
+    "One downloadable Creator Pulse thumbnail",
+    "Saved Creator Pulse history and previous-scan comparison",
     "India Quality Mode for Hindi, Hinglish and Indian-English creator workflows",
     "Roman Hinglish caption support",
     "Smart Transcript Review with inline corrections",
@@ -44,6 +85,7 @@ export default function Home() {
       <div className={`nav-links ${home.desktopNavigation}`}>
         <SmoothAnchorLink href="#how">How it works</SmoothAnchorLink>
         <SmoothAnchorLink href="#features">Features</SmoothAnchorLink>
+        <SmoothAnchorLink href="#creator-pulse">Creator Pulse</SmoothAnchorLink>
         <SmoothAnchorLink href="#use-cases">Use cases</SmoothAnchorLink>
         <SmoothAnchorLink href="#pricing">Pricing</SmoothAnchorLink>
         <TransitionLink href="/about">About</TransitionLink>
@@ -58,6 +100,9 @@ export default function Home() {
       <div className="hero-product"><div className="mock-window"><div className="mock-side"><div className="mini-logo">✦ ClipKaro</div><div className="mock-nav"><span>Overview</span><span>Upload video</span><span>My projects</span><span>Content Pack</span></div></div><div className="mock-body"><div className="mock-title"><div><h3>Your best moments are ready</h3><small>5 clips found in “How I grew my channel”</small></div><span className="mock-export-label" aria-hidden="true">Export selected</span></div><div className="mock-stats"><div className="mock-stat"><span>Moments found</span><b>05</b></div><div className="mock-stat"><span>Best moment score</span><b>94</b></div><div className="mock-stat"><span>Minutes saved</span><b>47</b></div></div>{["The mistake almost every creator makes", "My simple 3-step growth system"].map((t,i)=><div className="clip-row" key={t}><div className="clip-thumb"><Play size={18}/></div><div className="clip-copy"><b>{t}</b><span>{i?'06:18 – 06:57':'02:10 – 02:46'} · Educational insight</span></div><div className="score">{i?'89':'94'}</div></div>)}</div></div></div>
     </section>
     <div className="trust-strip">Designed for <b>YouTubers · Coaches · Teachers · Podcasters · Local businesses · Agencies</b></div>
+
+    <CreatorPulseSpotlight />
+
     <section className="section" id="how"><div className="section-heading"><span>One smart workflow</span><h2>From long video to polished Short — and the content around it</h2><p>Upload once. ClipKaro finds the moments, helps clean uncertain transcript lines, prepares captions and exports, then creates platform-ready copy for the clips you want to publish.</p></div><div className="feature-grid">{[[Upload,"Upload your own video","Drag in an MP4, MOV, WebM or MKV. Your files stay private and expire automatically."],[WandSparkles,"AI finds the moments","Transcript scoring discovers strong hooks, lessons, stories, questions and surprising moments."],[Clapperboard,"Review, export & repurpose","Fix flagged transcript lines when needed, export a 9:16 Short, and open its Content Pack for publishing copy."]].map(([I,t,d]:any)=><div className="feature-card" key={t}><div className="feature-icon"><I size={21}/></div><h3>{t}</h3><p>{d}</p></div>)}</div></section>
     <section className="section sample-output-section" id="sample-output">
       <div className="sample-output-copy">
@@ -83,10 +128,10 @@ export default function Home() {
         </div>
       </div>
     </section>
-    <section className={`section ${home.featureLift}`} id="features"><div className="section-heading"><span>ClipKaro AI features</span><h2>Every major feature has a real creator UI</h2><p>From transcript review to zoom, Content Packs and caption-safe export, ClipKaro surfaces the controls creators actually need instead of hiding them in the backend.</p></div><div className="feature-grid">{[[Scissors,"Smart AI Clip Finder","Ranks moments by hook, clarity, emotion, value and clean endings so creators can reach the strongest parts faster."],[Languages,"India Quality Mode","Optional India-first workflow for Hindi, Hinglish and Indian-English content with Roman Hinglish handling and safer caption placement."],[Subtitles,"Smart Transcript Review","Flags suspicious transcript segments, jumps to the source timestamp, and lets you correct or reset text before captions and Content Packs use it."],[Sparkles,"One Video → Content Pack","Turns selected clips into YouTube Shorts titles and descriptions, Instagram captions, hashtags, X posts, contextual LinkedIn copy and cover-text ideas."],[Clapperboard,"Caption-safe vertical export","Preserve burned-in source subtitles when needed and keep generated captions away from protected subtitle areas in 9:16 output."],[Zap,"Zoom and manual reframe","Creator Studio gives 100%, 150% and 200% zoom plus horizontal focus controls so the final Short is framed intentionally."],[Clapperboard,"Multiple export shapes","Choose 9:16 Shorts/Reels, 4:5 social crops or 1:1 square outputs from the editor before rendering."],[Subtitles,"Caption styles and positions","Pick caption personalities such as Kinetic, Clean, Bold, Minimal and India Pop, then place captions at bottom, above or center."],[WandSparkles,"Hooks, titles & clip reasons","Each suggestion includes a title, hook, reason, score and best-platform context to make selection easier."],[ShieldCheck,"Brand Kit and rights-safe workflow","Use creator branding where available and keep the upload-first workflow focused on content you own or have permission to use."],[Zap,"Cost-smart rendering","Videos render only after you choose a moment, keeping processing efficient and plans affordable."],[ShieldCheck,"Private media handling","Source videos and exports use private delivery, retention rules and ownership checks instead of public file links."]].map(([I,t,d]:any)=><div className="feature-card" key={t}><div className="feature-icon"><I size={21}/></div><h3>{t}</h3><p>{d}</p></div>)}</div><p className={home.smoothFeatureNote}>These are not placeholder claims: the authenticated product includes project results, Content Pack workspace, Transcript Review, Creator Studio, export/download and quota-aware flows.</p></section>
+    <section className={`section ${home.featureLift}`} id="features"><div className="section-heading"><span>ClipKaro AI features</span><h2>Every major feature has a real creator UI</h2><p>From channel intelligence and transcript review to zoom, Content Packs and caption-safe export, ClipKaro surfaces the controls creators actually need instead of hiding them in the backend.</p></div><div className="feature-grid">{[[Activity,"Creator Pulse — ₹1 YouTube Analysis","Checks verified public channel performance, compares recent momentum and gives one evidence-led next-video recommendation with a title, angle, hook and downloadable thumbnail."],[Scissors,"Smart AI Clip Finder","Ranks moments by hook, clarity, emotion, value and clean endings so creators can reach the strongest parts faster."],[Languages,"India Quality Mode","Optional India-first workflow for Hindi, Hinglish and Indian-English content with Roman Hinglish handling and safer caption placement."],[Subtitles,"Smart Transcript Review","Flags suspicious transcript segments, jumps to the source timestamp, and lets you correct or reset text before captions and Content Packs use it."],[Sparkles,"One Video → Content Pack","Turns selected clips into YouTube Shorts titles and descriptions, Instagram captions, hashtags, X posts, contextual LinkedIn copy and cover-text ideas."],[Clapperboard,"Caption-safe vertical export","Preserve burned-in source subtitles when needed and keep generated captions away from protected subtitle areas in 9:16 output."],[Zap,"Zoom and manual reframe","Creator Studio gives 100%, 150% and 200% zoom plus horizontal focus controls so the final Short is framed intentionally."],[Clapperboard,"Multiple export shapes","Choose 9:16 Shorts/Reels, 4:5 social crops or 1:1 square outputs from the editor before rendering."],[Subtitles,"Caption styles and positions","Pick caption personalities such as Kinetic, Clean, Bold, Minimal and India Pop, then place captions at bottom, above or center."],[WandSparkles,"Hooks, titles & clip reasons","Each suggestion includes a title, hook, reason, score and best-platform context to make selection easier."],[ShieldCheck,"Brand Kit and rights-safe workflow","Use creator branding where available and keep the upload-first workflow focused on content you own or have permission to use."],[Zap,"Cost-smart rendering","Videos render only after you choose a moment, keeping processing efficient and plans affordable."],[ShieldCheck,"Private media handling","Source videos and exports use private delivery, retention rules and ownership checks instead of public file links."]].map(([I,t,d]:any)=><div className="feature-card" key={t}><div className="feature-icon"><I size={21}/></div><h3>{t}</h3><p>{d}</p></div>)}</div><p className={home.smoothFeatureNote}>These are not placeholder claims: the authenticated product includes Creator Pulse, project results, Content Pack workspace, Transcript Review, Creator Studio, export/download and quota-aware flows.</p></section>
     <section className={`section ${home.workflowLift}`} id="creator-workflow"><div className="section-heading"><span>More than an AI clipper</span><h2>One video can now become a complete creator-ready package</h2><p>ClipKaro connects the steps that usually force creators to jump between multiple tools.</p></div><div className="feature-grid">{[[Languages,"India-first caption quality","Use India Quality Mode for Hindi, Hinglish and Indian-English workflows, including Roman Hinglish support where it fits the transcript."],[Subtitles,"Fix uncertain speech before export","Smart Transcript Review surfaces suspicious lines, keeps your correction after refresh, and uses the corrected text in captions and downstream content."],[Sparkles,"Publish beyond the video file","Content Pack keeps each asset grounded in the selected clip and prepares titles, descriptions, captions, hashtags, social posts, cover text and recommended clip order."],[Clapperboard,"Frame the Short your way","Adjust aspect ratio, caption position, zoom and horizontal focus before rendering so the final video matches the platform."],[WandSparkles,"Keep corrections connected","Transcript corrections flow into visible clip text, captions, Creator Studio seed text and regenerated Content Packs."],[ShieldCheck,"Preserve source subtitles","When a source video already has burned-in captions, ClipKaro can preserve the subtitle area instead of cropping it away."]].map(([I,t,d]:any)=><div className="feature-card" key={t}><div className="feature-icon"><I size={21}/></div><h3>{t}</h3><p>{d}</p></div>)}</div></section>
     <section className="section homepage-use-case-section" id="use-cases"><div className="section-heading"><span>Popular workflows</span><h2>Repurpose the videos creators already have</h2><p>High-intent ClipKaro workflows for YouTube creators, Hindi and Hinglish speakers, podcasters, educators and agencies.</p></div><div className="seo-use-case-grid homepage-use-cases">{SEO_PAGES.slice(0,6).map((item)=><TransitionLink key={item.slug} href={`/${item.slug}`}><Check size={16}/><span>{item.title}</span></TransitionLink>)}</div></section>
-    <section className="section pricing-preview" id="pricing"><div className="section-heading"><span>Fair Access Pricing</span><h2>Start small. Grow when you grow.</h2><p>Professional AI clipping from ₹59 without forcing you into a subscription.</p></div><div className="price-grid">{[{n:'Mini Pass',p:'₹59',s:'one-time',d:'For students & small creators',f:['25 Karo Minutes','5 Shorts','1080p · no watermark']},{n:'Growth',p:'₹399',s:'/month',d:'Most popular for serious creators',f:['180 Karo Minutes','50 Shorts','1080p · no watermark'],hot:true},{n:'Pro',p:'₹799',s:'/month',d:'For daily publishing',f:['480 Karo Minutes','150 Shorts','Same strong ClipKaro AI']}].map(x=><div className={`price-card ${x.hot?'featured':''}`} key={x.n}><h3>{x.n}</h3><p>{x.d}</p><div className="price">{x.p}<small>{x.s}</small></div><ul>{x.f.map(y=><li key={y}><Check size={14}/>{y}</li>)}</ul><Link href="/pricing" className="primary-btn">View {x.n}</Link></div>)}</div><p style={{textAlign:"center",marginTop:20,color:"#657169",fontSize:13}}>Mini Pass never auto-renews. Monthly plans renew until cancelled or changed. <Link href="/refund-policy">Refund & cancellation policy</Link>.</p></section>
+    <section className="section pricing-preview" id="pricing"><div className="section-heading"><span>Fair Access Pricing</span><h2>Start small. Grow when you grow.</h2><p>Professional AI clipping from ₹59 without forcing you into a subscription.</p></div><div className="price-grid">{[{n:'Mini Pass',p:'₹59',s:'one-time',d:'For students & small creators',f:['25 Karo Minutes','5 Shorts','1080p · no watermark']},{n:'Growth',p:'₹399',s:'/month',d:'Most popular for serious creators',f:['180 Karo Minutes','50 Shorts','1080p · no watermark'],hot:true},{n:'Pro',p:'₹799',s:'/month',d:'For daily publishing',f:['480 Karo Minutes','150 Shorts','Same strong ClipKaro AI']}].map(x=><div className={`price-card ${x.hot?'featured':''}`} key={x.n}><h3>{x.n}</h3><p>{x.d}</p><div className="price">{x.p}<small>{x.s}</small></div><ul>{x.f.map(y=><li key={y}><Check size={14}/>{y}</li>)}</ul><Link href="/pricing" className="primary-btn">View {x.n}</Link></div>)}</div><p style={{textAlign:"center",marginTop:20,color:"#657169",fontSize:13}}>Mini Pass never auto-renews. Monthly plans renew until cancelled or changed. Creator Pulse is separate at ₹1 per successful Pulse. <Link href="/refund-policy">Refund & cancellation policy</Link>.</p></section>
     <section className="trust-band" aria-label="ClipKaro trust commitments">
       <div className="trust-band-heading">
         <span>Trust before upload</span>
