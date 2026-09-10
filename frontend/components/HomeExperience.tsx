@@ -45,11 +45,11 @@ const features = [
 ] as const;
 
 const audiences = [
-  [Play, "YouTubers", "Turn long uploads into a repeatable Shorts pipeline."],
-  [GraduationCap, "Educators", "Pull clear teaching moments from lessons, webinars and explainers."],
-  [Mic2, "Podcasters", "Find standalone answers, stories and insights inside conversations."],
-  [UserRound, "Founders", "Repurpose product, build-in-public and expert-led videos."],
-  [UsersRound, "Businesses", "Create more useful short-form content from existing recordings."],
+  { Icon: Play, title: "YouTubers", text: "Turn long uploads into a repeatable Shorts pipeline.", image: "/assets/usecase-youtuber.jpg" },
+  { Icon: GraduationCap, title: "Educators", text: "Pull clear teaching moments from lessons, webinars and explainers.", image: "/assets/usecase-educator.jpg" },
+  { Icon: Mic2, title: "Podcasters", text: "Find standalone answers, stories and insights inside conversations.", image: "/assets/usecase-podcaster.jpg" },
+  { Icon: UserRound, title: "Founders", text: "Repurpose product, build-in-public and expert-led videos.", image: "/assets/usecase-founder.jpg" },
+  { Icon: UsersRound, title: "Businesses", text: "Create more useful short-form content from existing recordings.", image: "/assets/creator-demo.jpg" },
 ] as const;
 
 const plans = [
@@ -106,12 +106,12 @@ export function HomeExperience() {
                       <div className={styles.workspaceTitle}><div><small>Creator workflow</small><b>Your strongest moments are ready</b></div><span>Export selected</span></div>
                       <div className={styles.videoRow}>
                         <div className={styles.sourceVideo}>
-                          <img src="/assets/creator-demo.svg" alt="Illustrative fictional creator used in a ClipKaro source-video demo" />
+                          <img src="/assets/creator-demo.jpg" alt="Illustrative fictional creator used in a ClipKaro source-video demo" />
                           <div className={styles.sourceShade}/><span className={styles.videoBadge}>SOURCE VIDEO · 18:42</span><button type="button" aria-label="Illustrative play button"><Play size={19} fill="currentColor"/></button>
                           <strong>Small steps.<br/>Big results.</strong>
                         </div>
                         <div className={styles.shortVideo}>
-                          <img src="/assets/creator-demo.svg" alt="Illustrative vertical Short preview using a fictional creator" />
+                          <img src="/assets/creator-demo.jpg" alt="Illustrative vertical Short preview using a fictional creator" />
                           <div className={styles.shortShade}/><span>SHORT PREVIEW</span><b>TURN IDEAS<br/>INTO <em>IMPACT</em></b>
                         </div>
                         <div className={styles.momentsPanel}>
@@ -154,7 +154,7 @@ export function HomeExperience() {
                   <div className={styles.lineChart}><span>Recent momentum</span><svg viewBox="0 0 300 100" role="img" aria-label="Illustrative momentum chart"><path className={styles.chartArea} d="M0,87 L35,72 L62,78 L92,55 L125,62 L160,39 L195,48 L229,28 L264,33 L300,14 L300,100 L0,100 Z"/><path className={styles.chartLine} d="M0,87 L35,72 L62,78 L92,55 L125,62 L160,39 L195,48 L229,28 L264,33 L300,14"/></svg></div>
                   <div className={styles.nextMove}><span>YOUR NEXT MOVE</span><b>Turn the strongest recent theme into a practical follow-up</b><small>Use the evidence, then make the creative decision yourself.</small></div>
                 </div>
-                <div className={styles.opportunities}><span>Top content opportunities</span><div>{["High potential","Growing topic","Follow-up angle"].map((item,index)=><article key={item}><img src="/assets/creator-demo.svg" alt=""/><i>{index+1}</i><b>{item}</b></article>)}</div></div>
+                <div className={styles.opportunities}><span>Top content opportunities</span><div>{["High potential","Growing topic","Follow-up angle"].map((item,index)=><article key={item}><img src={["/assets/usecase-youtuber.jpg","/assets/usecase-podcaster.jpg","/assets/usecase-founder.jpg"][index]} alt=""/><i>{index+1}</i><b>{item}</b></article>)}</div></div>
                 <p>Illustrative preview. A real Pulse uses the current public evidence from the channel you submit.</p>
               </div>
             </div>
@@ -172,14 +172,14 @@ export function HomeExperience() {
             <div className={styles.featureLead} data-public-reveal="left"><span>A complete creator toolkit</span><h2>More than just clipping.<br/>Everything you need to grow.</h2></div>
             <div className={styles.featureAside} data-public-reveal="right"><p>From transcripts to publishing copy, ClipKaro keeps the creator workflow connected instead of scattering it across unrelated tools.</p><TransitionLink href="/youtube-video-to-shorts-ai">Explore the workflow <ArrowRight size={14}/></TransitionLink></div>
             <div className={styles.featureGrid}>
-              {features.map(([Icon,title,text,kind],index)=><article key={title} className={styles.featureCard} data-kind={kind} data-public-reveal="scale"><div className={styles.featureTitle}><i><Icon size={18}/></i><b>{title}</b></div><div className={styles.featureVisual} aria-hidden="true">{kind==="timeline"&&<><span/><span/><span/><b/></>}{kind==="transcript"&&<><p>Review uncertain transcript line</p><p>Creator-approved wording</p></>}{kind==="language"&&<strong>ये बात बहुत important है</strong>}{kind==="social"&&<div><i>YT</i><i>IG</i><i>X</i><i>LI</i></div>}{kind==="studio"&&<><span/><span/><span/></>}{kind==="caption"&&<strong>This changed everything</strong>}{kind==="thumbnail"&&<div className={styles.miniThumb}><img src="/assets/creator-demo.svg" alt=""/><b>THE NEXT MOVE</b></div>}{kind==="export"&&<div className={styles.ratios}><i>9:16</i><i>1:1</i><i>16:9</i></div>}</div><p>{text}</p></article>)}
+              {features.map(([Icon,title,text,kind])=><article key={title} className={styles.featureCard} data-kind={kind} data-public-reveal="scale"><div className={styles.featureTitle}><i><Icon size={18}/></i><b>{title}</b></div><div className={styles.featureVisual} aria-hidden="true">{kind==="timeline"&&<><span/><span/><span/><b/></>}{kind==="transcript"&&<><p>Review uncertain transcript line</p><p>Creator-approved wording</p></>}{kind==="language"&&<strong>ये बात बहुत important है</strong>}{kind==="social"&&<div><i>YT</i><i>IG</i><i>X</i><i>LI</i></div>}{kind==="studio"&&<><span/><span/><span/></>}{kind==="caption"&&<strong>This changed everything</strong>}{kind==="thumbnail"&&<div className={styles.miniThumb}><img src="/assets/creator-demo.jpg" alt=""/><b>THE NEXT MOVE</b></div>}{kind==="export"&&<div className={styles.ratios}><i>9:16</i><i>1:1</i><i>16:9</i></div>}</div><p>{text}</p></article>)}
             </div>
           </section>
 
           <section className={styles.audienceSection} id="use-cases">
             <div className={styles.audienceHead}><div data-public-reveal="left"><span>Built for real creator workflows</span><h2>Different creators. Same workflow. Bigger possibilities.</h2></div><p data-public-reveal="right">Whether you teach, entertain, build or share — ClipKaro adapts to the content you already record.</p></div>
             <div className={styles.audienceGrid}>
-              {audiences.map(([Icon,title,text],index)=><article key={title} data-public-reveal="scale"><div className={styles.audiencePhoto}><img src="/assets/creator-demo.svg" alt="Illustrative fictional creator"/><span><Icon size={18}/></span></div><div><b>{title}</b><p>{text}</p></div></article>)}
+              {audiences.map(({Icon,title,text,image})=><article key={title} data-public-reveal="scale"><div className={styles.audiencePhoto}><img src={image} alt={`Illustrative ${title.toLowerCase()} creator workflow`}/><span><Icon size={18}/></span></div><div><b>{title}</b><p>{text}</p></div></article>)}
             </div>
             <div className={styles.useCaseLinks} data-public-reveal="scale">
               <TransitionLink href="/youtube-video-to-shorts-ai">YouTube video → Shorts</TransitionLink>
@@ -201,7 +201,7 @@ export function HomeExperience() {
           <section className={styles.creatorStory}>
             <div className={styles.creatorStoryInner}>
               <div className={styles.creatorStoryCopy} data-public-reveal="left"><span>Creator-led product</span><h2>Built for creators who want the work to feel lighter.</h2><p>ClipKaro is designed around a simple idea: remove repetitive editing work while keeping the creator in control of what gets published.</p><TransitionLink href="/about" className={styles.limeButton}>Read the ClipKaro story <ArrowRight size={15}/></TransitionLink></div>
-              <div className={styles.creatorScene} data-public-reveal="scale"><img src="/assets/creator-demo.svg" alt="Illustrative fictional creator at a content workstation"/><div><span>ILLUSTRATIVE CREATOR WORKFLOW</span><b>One recording.<br/>More ways to use it.</b></div></div>
+              <div className={styles.creatorScene} data-public-reveal="scale"><img src="/assets/creator-demo.jpg" alt="Illustrative fictional creator at a content workstation"/><div><span>ILLUSTRATIVE CREATOR WORKFLOW</span><b>One recording.<br/>More ways to use it.</b></div></div>
               <blockquote data-public-reveal="right"><span>“</span><p>Build practical creator tools that are clear, affordable and honest about what the AI can and cannot do.</p><footer><b>{TRUST_PROFILE.founderName}</b><small>{TRUST_PROFILE.founderTitle}</small></footer></blockquote>
             </div>
           </section>
