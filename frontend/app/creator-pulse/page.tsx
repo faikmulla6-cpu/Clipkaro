@@ -83,6 +83,21 @@ type PulseReport = {
   balance_paise: number;
 };
 
+type PulseNextMove = {
+  title: string;
+  why: string;
+  angle: string;
+  hook: string;
+  confidence: "Strong" | "Moderate" | "Limited";
+  thumbnail_text: string;
+  thumbnail_direction: string;
+  generated_at: string;
+  text_model: string;
+  thumbnail_model?: string | null;
+  thumbnail_data_url?: string | null;
+  thumbnail_status: "generated" | "unavailable";
+};
+
 type PulseHistoryItem = {
   id: string;
   channel_title: string;
@@ -187,6 +202,9 @@ function InsightIcon({ tone }: { tone: PulseInsight["tone"] }) {
 export default function CreatorPulsePage() {
   const [status, setStatus] = useState<PulseStatus | null>(null);
   const [report, setReport] = useState<PulseReport | null>(null);
+  const [nextMove, setNextMove] = useState<PulseNextMove | null>(null);
+  const [nextMoveLoading, setNextMoveLoading] = useState(false);
+  const [nextMoveError, setNextMoveError] = useState("");
   const [handle, setHandle] = useState("");
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
@@ -212,6 +230,11 @@ export default function CreatorPulsePage() {
 
   const strongestVideo = useMemo(() => report?.recent.videos.reduce<PulseVideo | null>((best, item) => !best || item.views_per_day > best.views_per_day ? item : best, null) || null, [report]);
   const rankedVideos = useMemo(() => report ? [...report.recent.videos].sort((left, right) => right.views_per_day - left.views_per_day) : [], [report]);
+  const momentumEvidence = useMemo(() => {
+    const top = rankedVideos.slice(0, 5);
+    const maximum = Math.max(1, ...top.map((video) => video.views_per_day));
+    return top.map((video) => ({ ...video, relative: Math.max(4, Math.round((video.views_per_day / maximum) * 100)) }));
+  }, [rankedVideos]);
 
   async function addBalance(rupees: number) {
     setTopupBusy(rupees);
@@ -252,6 +275,33 @@ export default function CreatorPulsePage() {
     }
   }
 
+  async function loadNextMove(result: PulseReport) {
+    setNextMoveLoading(true);
+    setNextMove(null);
+    setNextMoveError("");
+    try {
+      const response = await fetch("/api-local/creator-pulse/intelligence", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scan_id: result.id, report: result }),
+      });
+      const text = await response.text();
+      let payload: Record<string, unknown> = {};
+      if (text.trim()) {
+        try { payload = JSON.parse(text) as Record<string, unknown>; } catch { payload = {}; }
+      }
+      if (!response.ok) {
+        throw new Error(typeof payload.detail === "string" ? payload.detail : "Your Next Move is temporarily unavailable.");
+      }
+      setNextMove(payload as PulseNextMove);
+    } catch (err) {
+      setNextMoveError(err instanceof Error ? err.message : "Your Next Move is temporarily unavailable.");
+    } finally {
+      setNextMoveLoading(false);
+    }
+  }
+
   async function runPulse() {
     const normalized = normalizeHandle(handle);
     if (!normalized) {
@@ -270,6 +320,7 @@ export default function CreatorPulsePage() {
       setHandle(result.channel.handle || normalized);
       setStatus((current) => current ? { ...current, balance_paise: result.balance_paise } : current);
       setNotice(`Pulse verified and saved. ${inrFromPaise(result.charged_paise)} was deducted only for this successful analysis.`);
+      void loadNextMove(result);
       await loadStatus();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Creator Pulse could not complete this analysis.");
@@ -368,6 +419,62 @@ export default function CreatorPulsePage() {
           <div><span>Subscribers</span><b>{report.channel.hidden_subscriber_count ? "Hidden" : signed(report.delta.subscriber_change)}</b></div>
           <div><span>Uploads</span><b>{signed(report.delta.video_count_change)}</b></div>
         </section>}
+
+        <section className={styles.nextMovePanel}>
+          <div className={styles.nextMoveHeader}>
+            <div>
+              <span className={styles.nextMoveEyebrow}><Sparkles size={14}/> YOUR NEXT MOVE</span>
+              <h3>Turn this Pulse into one clear content decision.</h3>
+              <p>Calculated performance evidence first. AI-assisted creative direction second.</p>
+            </div>
+            <div className={styles.nextMoveBadge}><ShieldCheck size={14}/> Evidence-led recommendation</div>
+          </div>
+
+          <div className={styles.nextMoveGrid}>
+            <div className={styles.nextMoveAdvice}>
+              {nextMoveLoading ? <div className={styles.nextMoveLoading}>
+                <div className={styles.loadingMark}><Loader2 className="spin" size={19}/></div>
+                <div><b>Building your next move…</b><p>Reading the verified Pulse, then creating one recommendation and one thumbnail.</p></div>
+              </div> : nextMove ? <>
+                <div className={styles.recommendationTop}>
+                  <div><span className={styles.recommendationLabel}>RECOMMENDED NEXT VIDEO</span><h4>{nextMove.title}</h4></div>
+                  <span className={styles.confidencePill} data-level={nextMove.confidence.toLowerCase()}>{nextMove.confidence} confidence</span>
+                </div>
+                <p className={styles.recommendationWhy}>{nextMove.why}</p>
+                <div className={styles.nextMoveFacts}>
+                  <div><span>Best angle</span><b>{nextMove.angle}</b></div>
+                  <div><span>Suggested opening hook</span><b>“{nextMove.hook.replace(/^['“"]|['”"]$/g, "")}”</b></div>
+                </div>
+                <div className={styles.nextMoveTrust}><ShieldCheck size={15}/><p><b>Decision support, not a promise.</b> This recommendation is generated from this verified Pulse only. It does not use or invent CTR, impressions, watch time, retention or search-volume data.</p></div>
+              </> : <div className={styles.nextMoveUnavailable}>
+                <Sparkles size={20}/><div><b>Your verified analytics are safe.</b><p>{nextMoveError || "Creative intelligence is temporarily unavailable. Your Pulse report remains complete and no extra charge was made."}</p></div>
+              </div>}
+            </div>
+
+            <aside className={styles.thumbnailPanel}>
+              <div className={styles.thumbnailHead}><div><span>ONE FINAL THUMBNAIL</span><b>{nextMove?.thumbnail_status === "generated" ? "Generated for this recommendation" : nextMoveLoading ? "Creating after the recommendation" : "Creative direction ready"}</b></div><Youtube size={18}/></div>
+              <div className={styles.thumbnailFrame}>
+                {nextMove?.thumbnail_data_url ? <img src={nextMove.thumbnail_data_url} alt={`Generated thumbnail concept for ${nextMove.title}`}/> : <div className={styles.thumbnailPlaceholder}>
+                  {nextMoveLoading ? <><Loader2 className="spin" size={24}/><b>Creating one 16:9 thumbnail…</b></> : <><Sparkles size={24}/><strong>{nextMove?.thumbnail_text || "One clear visual"}</strong><p>{nextMove?.thumbnail_direction || "The thumbnail appears here when image generation is available."}</p></>}
+                </div>}
+              </div>
+              <div className={styles.thumbnailFoot}><span>{nextMove?.thumbnail_text ? `Thumbnail text: ${nextMove.thumbnail_text}` : "16:9 · one concept only"}</span><span>No visible AI branding</span></div>
+            </aside>
+          </div>
+
+          <div className={styles.momentumGraph}>
+            <div className={styles.momentumGraphHead}>
+              <div><BarChart3 size={18}/><div><span>VERIFIED MOMENTUM EVIDENCE</span><b>Which recent uploads are moving fastest right now</b></div></div>
+              <small>Bar length is relative to the strongest recent upload · metric = public views ÷ upload age</small>
+            </div>
+            <div className={styles.momentumRows}>{momentumEvidence.map((video, index) => <div className={styles.momentumRow} key={video.id}>
+              <span className={styles.momentumRank}>{String(index + 1).padStart(2, "0")}</span>
+              <div className={styles.momentumCopy}><b>{video.title}</b><span>{compact(video.views)} views · {video.age_days.toFixed(1)} days old</span></div>
+              <div className={styles.momentumTrack}><span className={styles.momentumFill} style={{ width: `${video.relative}%` }}/></div>
+              <strong className={styles.momentumValue}>{compact(video.views_per_day)} <small>views/day</small></strong>
+            </div>)}</div>
+          </div>
+        </section>
 
         <div className={styles.reportGrid}>
           <section className={styles.performancePanel}>
