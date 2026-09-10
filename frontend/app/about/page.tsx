@@ -1,12 +1,22 @@
 import type { Metadata } from "next";
+import { AboutCreatorPulse } from "@/components/AboutCreatorPulse";
 import { AboutExperience } from "./AboutExperience";
 
-const title = "About ClipKaro — AI video intelligence for Indian creators";
-const description = "Discover ClipKaro's creator workflow: AI clip ranking, India Quality Mode, Smart Transcript Review, Content Packs, caption-safe export, zoom and reframe controls.";
+const title = "About ClipKaro AI — Video Clipping & YouTube Creator Intelligence";
+const description = "Discover how ClipKaro helps creators turn long videos into Shorts and use Creator Pulse to analyse public YouTube performance, find momentum and decide what to create next.";
 
 export const metadata: Metadata = {
   title,
   description,
+  keywords: [
+    "ClipKaro AI",
+    "AI video clipping",
+    "YouTube creator intelligence",
+    "YouTube channel analysis",
+    "Creator Pulse",
+    "YouTube video idea generator",
+    "Indian creator AI",
+  ],
   alternates: { canonical: "/about" },
   openGraph: {
     type: "website",
@@ -24,5 +34,10 @@ export const metadata: Metadata = {
 };
 
 export default function AboutPage() {
-  return <AboutExperience />;
+  return (
+    <>
+      <AboutExperience />
+      <AboutCreatorPulse />
+    </>
+  );
 }
