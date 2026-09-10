@@ -36,6 +36,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg libass9 tesseract-ocr fonts-noto-core fonts-liberation2 clamav \
     && rm -rf /var/lib/apt/lists/*
 COPY assets ./assets
+COPY requirements-local-asr.txt .
 COPY requirements-alignment.txt .
 RUN python -m pip install --no-cache-dir -r requirements-alignment.txt \
     && python -m pip check

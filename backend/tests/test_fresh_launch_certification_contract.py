@@ -34,7 +34,7 @@ def _green_inputs(module):
             for name in ("api", "worker", "frontend")
         }
     }
-    workflow = {"run_id": "123", "repository": "faikmulla/ClipkaroAI"}
+    workflow = {"run_id": "123", "repository": "faikmulla6-cpu/Clipkaro"}
     return checks, identity, preflight, pytest_data, npm_data, docker, workflow
 
 
@@ -132,7 +132,7 @@ def test_evidence_digest_detects_mutation() -> None:
 def test_fresh_launch_workflow_supplies_every_mandatory_check_and_artifact() -> None:
     module = _load_module()
     workflow = (ROOT / ".github" / "workflows" / "fresh-launch-qa.yml").read_text(encoding="utf-8")
-    assert "runs-on: [self-hosted, linux, x64, clipkaro-qa]" in workflow
+    assert "runs-on: ubuntu-latest" in workflow
     assert "check_fresh_launch_execution_environment.py" in workflow
     assert "test -z \"$(git status --porcelain)\"" in workflow
     assert "docker-images.json" in workflow
