@@ -25,32 +25,43 @@ function buildRouteOverlay() {
     placeItems: "center",
     pointerEvents: "none",
     overflow: "hidden",
-    background: "radial-gradient(circle at 50% 48%, rgba(63,125,67,.36), transparent 31%), linear-gradient(155deg, #0b2118 0%, #06110c 68%, #030806 100%)",
-    transform: "translate3d(0,100%,0)",
-    willChange: "transform, opacity",
+    background: "radial-gradient(circle at 50% 44%, rgba(118,177,73,.23), transparent 30%), linear-gradient(155deg, #103829 0%, #082419 57%, #06160f 100%)",
+    clipPath: "inset(0 0 100% 0)",
+    willChange: "clip-path, opacity",
+  });
+
+  const glow = document.createElement("div");
+  Object.assign(glow.style, {
+    position: "absolute",
+    width: "360px",
+    height: "360px",
+    borderRadius: "50%",
+    background: "rgba(223,255,87,.08)",
+    filter: "blur(44px)",
   });
 
   const mark = document.createElement("div");
   Object.assign(mark.style, {
+    position: "relative",
     display: "flex",
     alignItems: "center",
-    gap: "12px",
+    gap: "11px",
     padding: "10px 14px",
-    border: "1px solid rgba(223,255,87,.14)",
-    borderRadius: "20px",
-    background: "rgba(4,13,9,.35)",
-    boxShadow: "0 22px 70px rgba(0,0,0,.28)",
+    border: "1px solid rgba(223,255,87,.16)",
+    borderRadius: "18px",
+    background: "rgba(4,13,9,.28)",
+    boxShadow: "0 22px 70px rgba(0,0,0,.22)",
     opacity: "0",
-    transform: "translate3d(0,10px,0) scale(.98)",
+    transform: "translate3d(0,-10px,0) scale(.985)",
   });
 
   const image = document.createElement("img");
   image.src = "/assets/clipkaro-icon.png";
   image.alt = "";
   Object.assign(image.style, {
-    width: "46px",
-    height: "46px",
-    borderRadius: "13px",
+    width: "42px",
+    height: "42px",
+    borderRadius: "12px",
     objectFit: "cover",
     display: "block",
   });
@@ -60,29 +71,29 @@ function buildRouteOverlay() {
   Object.assign(wordmark.style, {
     color: "#f3f7f3",
     fontFamily: "Manrope, system-ui, sans-serif",
-    fontSize: "18px",
+    fontSize: "17px",
     fontWeight: "800",
     letterSpacing: "-.45px",
   });
 
   mark.append(image, wordmark);
-  overlay.append(mark);
+  overlay.append(glow, mark);
   document.body.appendChild(overlay);
 
   overlay.animate(
     [
-      { transform: "translate3d(0,100%,0)" },
-      { transform: "translate3d(0,0,0)" },
+      { clipPath: "inset(0 0 100% 0)" },
+      { clipPath: "inset(0 0 0 0)" },
     ],
-    { duration: 360, easing: "cubic-bezier(.22,.61,.36,1)", fill: "forwards" },
+    { duration: 285, easing: "cubic-bezier(.22,.61,.36,1)", fill: "forwards" },
   );
 
   mark.animate(
     [
-      { opacity: 0, transform: "translate3d(0,10px,0) scale(.98)" },
+      { opacity: 0, transform: "translate3d(0,-10px,0) scale(.985)" },
       { opacity: 1, transform: "translate3d(0,0,0) scale(1)" },
     ],
-    { duration: 280, delay: 135, easing: "cubic-bezier(.22,.61,.36,1)", fill: "forwards" },
+    { duration: 210, delay: 95, easing: "cubic-bezier(.22,.61,.36,1)", fill: "forwards" },
   );
 
   return overlay;
@@ -108,17 +119,17 @@ export function TransitionLink({ href, onClick, ...props }: TransitionLinkProps)
 
     const overlay = buildRouteOverlay();
 
-    window.setTimeout(() => router.push(href), 300);
+    window.setTimeout(() => router.push(href), 245);
     window.setTimeout(() => {
       overlay.animate(
         [
-          { opacity: 1, transform: "translate3d(0,0,0)" },
-          { opacity: 0, transform: "translate3d(0,-7%,0)" },
+          { clipPath: "inset(0 0 0 0)", opacity: 1 },
+          { clipPath: "inset(100% 0 0 0)", opacity: .98 },
         ],
-        { duration: 380, easing: "cubic-bezier(.22,.61,.36,1)", fill: "forwards" },
+        { duration: 330, easing: "cubic-bezier(.65,0,.35,1)", fill: "forwards" },
       );
-    }, 610);
-    window.setTimeout(() => overlay.remove(), 1040);
+    }, 500);
+    window.setTimeout(() => overlay.remove(), 870);
   }
 
   return <Link href={href} onClick={handleClick} {...props} />;
