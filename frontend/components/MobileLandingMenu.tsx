@@ -10,6 +10,7 @@ import styles from "./mobile-landing-menu.module.css";
 const sectionLinks = [
   ["How it works", "/#how"],
   ["Features", "/#features"],
+  ["Creator Pulse", "/#creator-pulse"],
   ["Use cases", "/#use-cases"],
   ["Pricing", "/pricing"],
 ] as const;
@@ -65,12 +66,12 @@ export function MobileLandingMenu() {
             </SmoothAnchorLink>
           ))}
           <TransitionLink href="/about" onClick={() => setOpen(false)}>
-            <span>05</span>
+            <span>06</span>
             <strong>About ClipKaro</strong>
             <ArrowRight size={17} />
           </TransitionLink>
           <TransitionLink href="/contact" onClick={() => setOpen(false)}>
-            <span>06</span>
+            <span>07</span>
             <strong>Contact support</strong>
             <ArrowRight size={17} />
           </TransitionLink>
@@ -78,8 +79,8 @@ export function MobileLandingMenu() {
 
         <div className={styles.actions}>
           <Link href="/login" onClick={() => setOpen(false)} className={styles.login}>Log in</Link>
-          <Link href="/signup" onClick={() => setOpen(false)} className={styles.start}>
-            Start free <ArrowRight size={17} />
+          <Link href="/creator-pulse" onClick={() => setOpen(false)} className={styles.start}>
+            Creator Pulse · ₹1 <ArrowRight size={17} />
           </Link>
         </div>
       </div>
