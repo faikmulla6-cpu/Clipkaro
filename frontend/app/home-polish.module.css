@@ -1,5 +1,22 @@
 .desktopNavigation{display:flex}
 
+:global(.landing-nav){
+  position:sticky;
+  top:0;
+  z-index:75;
+  background:rgba(251,252,250,.86);
+  backdrop-filter:blur(18px);
+  border-bottom:1px solid rgba(20,55,38,.07);
+}
+:global(.hero .eyebrow){animation:homeRise .48s .03s cubic-bezier(.22,.61,.36,1) both}
+:global(.hero h1){animation:homeRise .56s .09s cubic-bezier(.22,.61,.36,1) both}
+:global(.hero>p){animation:homeRise .56s .14s cubic-bezier(.22,.61,.36,1) both}
+:global(.hero .hero-actions){animation:homeRise .56s .19s cubic-bezier(.22,.61,.36,1) both}
+:global(.hero .hero-note){animation:homeRise .56s .23s cubic-bezier(.22,.61,.36,1) both}
+:global(.hero .hero-product){animation:homeProduct .72s .34s cubic-bezier(.22,.61,.36,1) both}
+@keyframes homeRise{from{opacity:0;transform:translate3d(0,18px,0)}to{opacity:1;transform:none}}
+@keyframes homeProduct{from{opacity:0;transform:translate3d(0,28px,0) scale(.985)}to{opacity:1;transform:none}}
+
 .productRail{
   width:min(900px,100%);
   margin:22px auto 0;
@@ -8,6 +25,7 @@
   justify-content:center;
   gap:8px;
   flex-wrap:wrap;
+  animation:homeRise .56s .27s cubic-bezier(.22,.61,.36,1) both;
 }
 .productRail>span{
   margin-right:2px;
@@ -119,4 +137,11 @@
 
 @media(prefers-reduced-motion:reduce){
   .productRail a{transition:none}
+  .productRail,
+  :global(.hero .eyebrow),
+  :global(.hero h1),
+  :global(.hero>p),
+  :global(.hero .hero-actions),
+  :global(.hero .hero-note),
+  :global(.hero .hero-product){animation:none}
 }
