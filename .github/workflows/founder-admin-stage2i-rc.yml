@@ -1,0 +1,218 @@
+name: Founder Admin Stage 2I RC1 Rehearsal
+
+on:
+  push:
+    branches:
+      - feature/founder-admin-rc1
+  pull_request:
+    branches:
+      - feature/founder-admin-api
+    paths:
+      - "backend/app/api/founder_admin.py"
+      - "backend/app/services/production_configuration.py"
+      - "backend/tests/test_founder_admin_api.py"
+      - "backend/tests/test_founder_admin_production_readiness.py"
+      - "backend/tests/test_api.py"
+      - "backend/tests/test_behavioral_learning.py"
+      - "docs/founder-admin-contract-v1.json"
+      - "docs/FOUNDER_ADMIN_STAGE_2I_RC1.md"
+      - "scripts/founder-admin-stage2i-rc-rehearsal.mjs"
+      - ".github/workflows/founder-admin-stage2i-rc.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: founder-admin-stage2i-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compatibility:
+    name: Python ${{ matrix.python-version }} compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    env:
+      APP_ENV: test
+      DATABASE_BACKEND: sqlite
+      DATABASE_PATH: /tmp/clipkaro-stage2i-${{ matrix.python-version }}.db
+      STORAGE_BACKEND: local
+      STORAGE_ROOT: /tmp/clipkaro-stage2i-storage-${{ matrix.python-version }}
+      JOB_BACKEND: local
+      SEED_DEMO_USER: "false"
+      GROQ_RANKING_ENABLED: "false"
+      ADMIN_API_ENABLED: "false"
+      ADMIN_API_SERVICE_TOKEN: ""
+
+    steps:
+      - name: Checkout Founder Admin RC1
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pytest
+
+      - name: Compile Founder Admin modules
+        working-directory: backend
+        run: |
+          python -m py_compile app/api/founder_admin.py
+          python -m py_compile app/services/production_configuration.py
+
+      - name: Run Founder Admin security and boot-gate tests
+        working-directory: backend
+        run: |
+          python -m pytest tests/test_founder_admin_api.py tests/test_founder_admin_production_readiness.py -v
+
+      - name: Run API and behavioral regressions
+        working-directory: backend
+        run: python -m pytest tests/test_api.py tests/test_behavioral_learning.py -v
+
+      - name: Verify GET-only database boundary
+        run: |
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          source = Path("backend/app/api/founder_admin.py").read_text(encoding="utf-8")
+          tree = ast.parse(source)
+          db_imports = set()
+          route_methods = []
+          forbidden = set()
+          for node in ast.walk(tree):
+              if isinstance(node, ast.ImportFrom):
+                  names = {alias.name for alias in node.names}
+                  if node.module == "app.core.database": db_imports.update(names)
+                  forbidden.update(names & {"execute", "execute_many", "run_in_transaction", "current_user", "sync_subscription_if_needed"})
+              elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                  if node.func.id in {"execute", "execute_many", "run_in_transaction", "current_user", "sync_subscription_if_needed"}:
+                      forbidden.add(node.func.id)
+              elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                  for decorator in node.decorator_list:
+                      if isinstance(decorator, ast.Call) and isinstance(decorator.func, ast.Attribute):
+                          owner = decorator.func.value
+                          if isinstance(owner, ast.Name) and owner.id == "router": route_methods.append(decorator.func.attr.lower())
+          assert db_imports == {"fetch_all", "fetch_one"}, db_imports
+          assert not forbidden, forbidden
+          assert route_methods.count("get") == 9, route_methods
+          assert not ({"post", "put", "patch", "delete"} & set(route_methods)), route_methods
+          print("Stage 2I source boundary: nine GET-only routes, fetch-only DB access.")
+          PY
+
+  runtime-rehearsal:
+    name: Live loopback RC rehearsal
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      APP_ENV: test
+      DATABASE_BACKEND: sqlite
+      DATABASE_PATH: /tmp/clipkaro-founder-admin-stage2i.db
+      STORAGE_BACKEND: local
+      STORAGE_ROOT: /tmp/clipkaro-founder-admin-stage2i-storage
+      JOB_BACKEND: local
+      JOB_EXECUTION_MODE: background
+      SEED_DEMO_USER: "true"
+      SECRET_KEY: stage2i-runtime-only-not-production
+      GROQ_RANKING_ENABLED: "false"
+      ADMIN_API_ENABLED: "true"
+      ADMIN_API_BASE_URL: http://127.0.0.1:8765
+      ADMIN_API_SERVICE_TOKEN: ck-admin-stage2i-0123456789ABCDEF0123456789abcdef-RC1LoopbackOnly
+
+    steps:
+      - name: Checkout Founder Admin RC1
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Prove provider isolation before startup
+        working-directory: backend
+        run: |
+          python - <<'PY'
+          from app.core.config import get_settings
+          settings = get_settings()
+          assert settings.app_env == "test"
+          assert settings.normalized_database_backend == "sqlite"
+          assert settings.normalized_storage_backend == "local"
+          assert settings.normalized_job_backend == "local"
+          assert not settings.database_url
+          assert not settings.gcs_bucket
+          assert not settings.razorpay_key_secret
+          assert not settings.groq_api_keys
+          print("Stage 2I runtime has no production provider connection.")
+          PY
+
+      - name: Start ephemeral ClipKaro API
+        working-directory: backend
+        run: |
+          python -m uvicorn app.main:app --host 127.0.0.1 --port 8765 > "$RUNNER_TEMP/founder-admin-stage2i.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/founder-admin-stage2i.pid"
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:8765/ > /dev/null; then exit 0; fi
+            sleep 1
+          done
+          tail -n 200 "$RUNNER_TEMP/founder-admin-stage2i.log" || true
+          exit 1
+
+      - name: Snapshot demo-user business state
+        working-directory: backend
+        run: |
+          python - <<'PY' > "$RUNNER_TEMP/founder-admin-before.json"
+          import asyncio, json
+          from app.core.database import fetch_one
+          row = asyncio.run(fetch_one("SELECT id,name,email,plan,role,onboarding_complete,email_verified_at,plan_started_at,plan_expires_at,cancel_at_period_end,created_at,updated_at FROM users WHERE id=?", ("demo-user",)))
+          if not row: raise SystemExit("demo-user was not seeded")
+          print(json.dumps(row, sort_keys=True, default=str))
+          PY
+
+      - name: Run nine-endpoint RC rehearsal
+        run: node scripts/founder-admin-stage2i-rc-rehearsal.mjs
+
+      - name: Verify zero demo-user business-state mutation
+        working-directory: backend
+        run: |
+          python - <<'PY' > "$RUNNER_TEMP/founder-admin-after.json"
+          import asyncio, json
+          from app.core.database import fetch_one
+          row = asyncio.run(fetch_one("SELECT id,name,email,plan,role,onboarding_complete,email_verified_at,plan_started_at,plan_expires_at,cancel_at_period_end,created_at,updated_at FROM users WHERE id=?", ("demo-user",)))
+          if not row: raise SystemExit("demo-user disappeared")
+          print(json.dumps(row, sort_keys=True, default=str))
+          PY
+          cmp "$RUNNER_TEMP/founder-admin-before.json" "$RUNNER_TEMP/founder-admin-after.json"
+
+      - name: Show API log on failure
+        if: failure()
+        run: tail -n 200 "$RUNNER_TEMP/founder-admin-stage2i.log" || true
+
+      - name: Stop ephemeral API
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/founder-admin-stage2i.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/founder-admin-stage2i.pid")" 2>/dev/null || true
+          fi

@@ -1,0 +1,60 @@
+name: Founder Admin Stage 2J Activation Prep
+
+on:
+  pull_request:
+    branches:
+      - feature/founder-admin-api
+    paths:
+      - "backend/app/api/founder_admin.py"
+      - "backend/.env.example"
+      - "backend/.env.modal.example"
+      - "backend/release/founder-admin-stage2j.json"
+      - "backend/scripts/generate_founder_admin_token.py"
+      - "backend/scripts/verify_stage2j_activation_prep.py"
+      - "backend/docs/STAGE_2J_PRODUCTION_ACTIVATION_PREP.md"
+      - ".github/workflows/founder-admin-stage2j-prep.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  activation-prep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify Stage 2J fail-closed manifest and source boundary
+        run: python backend/scripts/verify_stage2j_activation_prep.py
+
+      - name: Compile Admin API and Stage 2J scripts
+        run: |
+          python -m py_compile backend/app/api/founder_admin.py
+          python -m py_compile backend/scripts/generate_founder_admin_token.py
+          python -m py_compile backend/scripts/verify_stage2j_activation_prep.py
+
+      - name: Install focused backend test dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pytest
+
+      - name: Re-run Founder Admin security contract
+        working-directory: backend
+        env:
+          APP_ENV: test
+        run: python -m pytest tests/test_founder_admin_api.py -q
+
+      - name: Confirm no activation or secret value is committed
+        shell: bash
+        run: |
+          grep -qx 'ADMIN_API_ENABLED=false' backend/.env.modal.example
+          grep -qx 'ADMIN_API_SERVICE_TOKEN=' backend/.env.modal.example
+          ! grep -R --line-number -E 'ADMIN_API_SERVICE_TOKEN=.{8,}' backend/.env.example backend/.env.modal.example backend/release backend/docs
+          echo 'Stage 2J preparation remained disabled and secret-free.'
