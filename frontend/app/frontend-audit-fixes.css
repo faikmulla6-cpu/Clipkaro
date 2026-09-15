@@ -1,34 +1,8 @@
-/* Frontend audit fixes: performance, mobile workspace actions, and resilient media rendering. */
+/* Frontend audit fixes: mobile workspace actions and mobile homepage readability. */
 
-/*
- * HomeExperience already renders compact JPG fallbacks inside the visual cards.
- * The CSS-module backgrounds used multi-megabyte PNG versions of the same art,
- * while the JPG elements were hidden with opacity: 0. Prefer the actual JPG
- * elements and neutralize those duplicate background downloads. :has() is
- * supported by current Chrome/Edge/Safari/Firefox and degrades safely on older
- * browsers (which keep the original backgrounds).
+/* Keep the original public image assets and visual composition untouched.
+ * The homepage CSS-module owns the intended creator-demo/use-case PNG artwork.
  */
-:where(div, article):has(> img[src="/assets/creator-demo.jpg"]),
-:where(div, article):has(> img[src^="/assets/usecase-"][src$=".jpg"]) {
-  background-image: none !important;
-}
-
-img[src="/assets/creator-demo.jpg"],
-img[src^="/assets/usecase-"][src$=".jpg"] {
-  opacity: 1 !important;
-}
-
-/* Keep the JPG visuals cropped exactly like their previous CSS backgrounds and
- * out of normal flow so the visual cards keep their original dimensions. */
-:where(div, article):has(> img[src="/assets/creator-demo.jpg"]) > img,
-:where(div, article):has(> img[src^="/assets/usecase-"][src$=".jpg"]) > img {
-  position: absolute;
-  inset: 0;
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
 
 /* AppShell used to hide the entire action area on phones, which also hid
  * page-level actions such as Upload video, New project, New video and Refresh.
@@ -56,8 +30,7 @@ img[src^="/assets/usecase-"][src$=".jpg"] {
 }
 
 @media (max-width: 680px) {
-  /* Scope the mobile headline adjustment to the marketing homepage by using a
-   * unique descendant from the illustrative creator workspace. */
+  /* Scope the mobile headline adjustment to the marketing homepage. */
   body:has([aria-label="Illustrative ClipKaro creator workspace"]) main > section:first-child h1 {
     font-size: clamp(42px, 12vw, 56px) !important;
     line-height: .96 !important;
