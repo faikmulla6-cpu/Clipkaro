@@ -2,8 +2,7 @@
 
 import { useAuth } from "./AuthProvider";
 import { Logo } from "./Logo";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import styles from "./AuthForm.module.css";
 import {
   ArrowLeft,
   ArrowRight,
@@ -41,12 +40,12 @@ function safePostAuthPath(raw: string | null): string {
 }
 
 const sketches = [
-  { Icon: Scissors, className: "left-[7%] top-[16%] -rotate-12" },
-  { Icon: Captions, className: "right-[8%] top-[13%] rotate-6" },
-  { Icon: Film, className: "left-[10%] bottom-[16%] rotate-6" },
-  { Icon: BarChart3, className: "right-[8%] bottom-[17%] -rotate-6" },
-  { Icon: Play, className: "left-[24%] top-[44%] rotate-12" },
-  { Icon: WandSparkles, className: "right-[23%] top-[46%] -rotate-12" },
+  { Icon: Scissors, className: "left-[7%] top-[18%] -rotate-12" },
+  { Icon: Captions, className: "right-[9%] top-[16%] rotate-6" },
+  { Icon: Film, className: "left-[10%] bottom-[13%] rotate-6" },
+  { Icon: BarChart3, className: "right-[9%] bottom-[14%] -rotate-6" },
+  { Icon: Play, className: "left-[26%] top-[47%] rotate-12" },
+  { Icon: WandSparkles, className: "right-[25%] top-[49%] -rotate-12" },
 ] as const;
 
 export function AuthForm({ mode }: { mode: "login" | "signup" }) {
@@ -110,98 +109,97 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
       : "Start free, verify your email and enter your creator workspace.";
 
   return (
-    <main className="relative min-h-[100dvh] overflow-hidden bg-[#070b08] text-white selection:bg-[#cfff47] selection:text-[#071108]">
-      <div aria-hidden="true" className="absolute inset-0 bg-[radial-gradient(circle_at_50%_-5%,rgba(140,255,112,0.14),transparent_30%),radial-gradient(circle_at_18%_78%,rgba(65,130,86,0.14),transparent_30%),radial-gradient(circle_at_86%_64%,rgba(210,255,126,0.07),transparent_27%),linear-gradient(135deg,#070b08_0%,#0d120f_43%,#080b09_100%)]" />
-      <div aria-hidden="true" className="absolute inset-0 opacity-40 [background-image:linear-gradient(118deg,transparent_0%,transparent_36%,rgba(255,255,255,0.035)_36.5%,transparent_38%,transparent_61%,rgba(201,255,145,0.025)_61.5%,transparent_63%),linear-gradient(24deg,transparent_0%,transparent_48%,rgba(255,255,255,0.025)_48.5%,transparent_50%)] [background-size:680px_520px,520px_680px]" />
-      <div aria-hidden="true" className="absolute left-1/2 top-1/2 h-[720px] w-[720px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/[0.035] shadow-[0_0_140px_rgba(138,255,102,0.05)]" />
-      <div aria-hidden="true" className="absolute left-1/2 top-1/2 h-[540px] w-[540px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/[0.025]" />
+    <main className={`relative min-h-[100dvh] overflow-x-hidden bg-[#050806] text-white selection:bg-[#cfff47] selection:text-[#071108] ${styles.pageEnter}`}>
+      <div aria-hidden="true" className="fixed inset-0 bg-[radial-gradient(circle_at_50%_-8%,rgba(139,255,108,0.15),transparent_30%),radial-gradient(circle_at_18%_77%,rgba(40,104,64,0.16),transparent_28%),radial-gradient(circle_at_84%_68%,rgba(200,255,126,0.07),transparent_24%),linear-gradient(135deg,#050806_0%,#0b110d_45%,#060907_100%)]" />
+      <div aria-hidden="true" className="fixed inset-0 opacity-45 [background-image:linear-gradient(117deg,transparent_0%,transparent_34%,rgba(255,255,255,0.035)_35%,transparent_36.5%,transparent_61%,rgba(201,255,145,0.028)_62%,transparent_63.5%),linear-gradient(24deg,transparent_0%,transparent_49%,rgba(255,255,255,0.02)_50%,transparent_51%)] [background-size:720px_560px,560px_720px]" />
+      <div aria-hidden="true" className="fixed left-1/2 top-1/2 h-[690px] w-[690px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/[0.035] shadow-[0_0_150px_rgba(138,255,102,0.045)]" />
 
-      <div aria-hidden="true" className="pointer-events-none absolute inset-0 hidden lg:block">
+      <div aria-hidden="true" className="pointer-events-none fixed inset-0 hidden lg:block">
         {sketches.map(({ Icon, className }, index) => (
           <motion.div
             key={index}
-            className={`absolute ${className} text-white/[0.055]`}
-            animate={reduceMotion ? undefined : { y: [0, -10, 0], opacity: [0.35, 0.65, 0.35] }}
-            transition={{ duration: 6 + index * 0.55, repeat: Infinity, ease: "easeInOut", delay: index * 0.35 }}
+            className={`absolute ${className} text-white/[0.045]`}
+            animate={reduceMotion ? undefined : { y: [0, -9, 0], opacity: [0.36, 0.62, 0.36] }}
+            transition={{ duration: 6 + index * 0.5, repeat: Infinity, ease: "easeInOut", delay: index * 0.3 }}
           >
-            <Icon strokeWidth={1.05} className="h-24 w-24 xl:h-28 xl:w-28" />
+            <Icon strokeWidth={1.05} className="h-20 w-20 xl:h-24 xl:w-24" />
           </motion.div>
         ))}
       </div>
 
-      <div aria-hidden="true" className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#9cff57]/50 to-transparent" />
+      <div aria-hidden="true" className="fixed inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#9cff57]/55 to-transparent" />
 
-      <div className="relative z-10 flex min-h-[100dvh] flex-col px-4 py-5 sm:px-6 sm:py-7">
-        <div className="mx-auto flex w-full max-w-7xl items-center justify-between">
+      <div className="relative z-10 flex min-h-[100dvh] flex-col px-4 py-5 sm:px-6 sm:py-6">
+        <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-4">
           <Link
             href="/"
-            className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.035] px-3.5 py-2 text-xs font-semibold text-white/65 backdrop-blur-xl transition hover:border-white/15 hover:bg-white/[0.065] hover:text-white"
+            className="inline-flex items-center gap-2 rounded-full border border-white/[0.09] bg-white/[0.035] px-3.5 py-2 text-xs font-semibold text-white/70 backdrop-blur-xl transition hover:border-white/15 hover:bg-white/[0.065] hover:text-white"
           >
             <ArrowLeft size={14} /> Back to ClipKaro
           </Link>
-          <Badge className="hidden border border-[#b9ff77]/15 bg-[#b9ff77]/[0.06] px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-[#caff8d] shadow-none sm:inline-flex">
+          <span className={`hidden rounded-full px-3 py-1.5 text-[9px] font-bold uppercase tracking-[0.16em] sm:inline-flex ${styles.statusBadge}`}>
             Secure creator access
-          </Badge>
+          </span>
         </div>
 
-        <div className="flex flex-1 items-center justify-center py-8 sm:py-12">
+        <div className="flex flex-1 items-center justify-center py-7 sm:py-9">
           <motion.div
-            initial={reduceMotion ? false : { opacity: 0, y: 18, scale: 0.985 }}
+            initial={reduceMotion ? false : { opacity: 0, y: 16, scale: 0.988 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ duration: 0.45, ease: [0.22, 0.61, 0.36, 1] }}
-            className="w-full max-w-[540px]"
+            transition={{ duration: 0.42, ease: [0.22, 0.61, 0.36, 1] }}
+            className={`w-full max-w-[470px] ${styles.cardEnter}`}
           >
             <div className="relative">
-              <div aria-hidden="true" className="absolute -inset-[1px] rounded-[32px] bg-gradient-to-br from-white/20 via-white/[0.035] to-[#a7ff60]/20 opacity-80 blur-[0.2px]" />
-              <div aria-hidden="true" className="absolute -inset-8 -z-10 rounded-[44px] bg-[#86ff5c]/[0.055] blur-3xl" />
+              <div aria-hidden="true" className="absolute -inset-[1px] rounded-[30px] bg-gradient-to-br from-white/18 via-white/[0.025] to-[#a7ff60]/18" />
+              <div aria-hidden="true" className="absolute -inset-8 -z-10 rounded-[40px] bg-[#86ff5c]/[0.055] blur-3xl" />
 
-              <Card className="relative overflow-hidden rounded-[31px] border border-white/[0.09] bg-[linear-gradient(145deg,rgba(255,255,255,0.095),rgba(255,255,255,0.025)_38%,rgba(255,255,255,0.055)_66%,rgba(255,255,255,0.018))] text-white shadow-[0_34px_100px_rgba(0,0,0,0.58),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl">
-                <div aria-hidden="true" className="absolute inset-0 opacity-70 [background-image:linear-gradient(112deg,transparent_0%,transparent_32%,rgba(255,255,255,0.045)_33%,transparent_34.5%,transparent_65%,rgba(180,255,135,0.026)_66%,transparent_67.5%),linear-gradient(25deg,transparent_0%,transparent_45%,rgba(255,255,255,0.025)_46%,transparent_47%)]" />
-                <div aria-hidden="true" className="absolute -right-24 -top-24 h-64 w-64 rounded-full bg-[#abff68]/[0.08] blur-3xl" />
+              <section className={`relative overflow-hidden rounded-[29px] ${styles.surface}`}>
+                <div aria-hidden="true" className="absolute inset-0 opacity-70 [background-image:linear-gradient(112deg,transparent_0%,transparent_31%,rgba(255,255,255,0.042)_32%,transparent_33.4%,transparent_66%,rgba(180,255,135,0.024)_67%,transparent_68.5%),linear-gradient(26deg,transparent_0%,transparent_45%,rgba(255,255,255,0.022)_46%,transparent_47%)]" />
+                <div aria-hidden="true" className="absolute -right-24 -top-24 h-64 w-64 rounded-full bg-[#abff68]/[0.075] blur-3xl" />
                 <div aria-hidden="true" className="absolute -bottom-32 -left-28 h-72 w-72 rounded-full bg-[#2b7a4a]/[0.10] blur-3xl" />
 
-                <CardContent className="relative p-6 sm:p-8 md:p-9">
-                  <div className="mb-8 flex flex-col items-center text-center">
-                    <div className="mb-5 rounded-[22px] border border-white/[0.09] bg-black/20 p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_15px_40px_rgba(0,0,0,0.25)] backdrop-blur-xl">
+                <div className="relative p-6 sm:p-8">
+                  <div className="mb-6 flex flex-col items-center text-center sm:mb-7">
+                    <div className="mb-4 rounded-[20px] border border-white/[0.09] bg-black/25 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_14px_36px_rgba(0,0,0,0.24)] backdrop-blur-xl">
                       <Logo light />
                     </div>
-                    <Badge className="mb-4 border border-white/[0.08] bg-white/[0.055] px-3 py-1 text-[9px] font-bold uppercase tracking-[0.19em] text-white/55 shadow-none">
+                    <span className={`mb-3 rounded-full px-3 py-1 text-[8.5px] font-bold uppercase tracking-[0.18em] ${styles.microBadge}`}>
                       {mode === "login" ? "Creator studio sign in" : "New creator account"}
-                    </Badge>
-                    <h1 className="max-w-md text-balance text-[30px] font-semibold leading-[1.05] tracking-[-0.045em] text-white sm:text-[34px]">
+                    </span>
+                    <h1 className="max-w-sm text-[29px] font-semibold leading-[1.03] tracking-[-0.045em] text-white sm:text-[32px]">
                       {title}
                     </h1>
-                    <p className="mt-3 max-w-md text-sm leading-6 text-white/48">{subtitle}</p>
+                    <p className="mt-2.5 max-w-sm text-[13px] leading-5 text-white/52">{subtitle}</p>
                   </div>
 
-                  <form onSubmit={submit} autoComplete="on" className="space-y-4">
+                  <form onSubmit={submit} autoComplete="on" className="space-y-3.5">
                     {mode === "signup" && (
                       <label className="block">
-                        <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.11em] text-white/48">Your name</span>
-                        <div className="group flex h-14 items-center gap-3 rounded-2xl border border-white/[0.085] bg-black/20 px-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] transition focus-within:border-[#b8ff75]/35 focus-within:bg-black/28 focus-within:shadow-[0_0_0_3px_rgba(171,255,104,0.06)]">
-                          <User size={17} className="shrink-0 text-white/35 transition group-focus-within:text-[#bfff82]" />
-                          <input name="name" autoComplete="name" placeholder="Your name" required minLength={2} className="h-full min-w-0 flex-1 border-0 bg-transparent text-[15px] text-white outline-none placeholder:text-white/28" />
+                        <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.11em] text-white/52">Your name</span>
+                        <div className={`group flex h-[52px] items-center gap-3 rounded-2xl px-4 ${styles.fieldShell}`}>
+                          <User size={16} className="shrink-0 text-white/38 transition group-focus-within:text-[#bfff82]" />
+                          <input name="name" autoComplete="name" placeholder="Your name" required minLength={2} className={`h-full min-w-0 flex-1 text-[14px] ${styles.authInput}`} />
                         </div>
                       </label>
                     )}
 
                     <label className="block">
-                      <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.11em] text-white/48">Email address</span>
-                      <div className="group flex h-14 items-center gap-3 rounded-2xl border border-white/[0.085] bg-black/20 px-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] transition focus-within:border-[#b8ff75]/35 focus-within:bg-black/28 focus-within:shadow-[0_0_0_3px_rgba(171,255,104,0.06)]">
-                        <Mail size={17} className="shrink-0 text-white/35 transition group-focus-within:text-[#bfff82]" />
-                        <input name="email" type="email" inputMode="email" autoComplete="email" placeholder="you@example.com" required className="h-full min-w-0 flex-1 border-0 bg-transparent text-[15px] text-white outline-none placeholder:text-white/28" />
+                      <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.11em] text-white/52">Email address</span>
+                      <div className={`group flex h-[52px] items-center gap-3 rounded-2xl px-4 ${styles.fieldShell}`}>
+                        <Mail size={16} className="shrink-0 text-white/38 transition group-focus-within:text-[#bfff82]" />
+                        <input name="email" type="email" inputMode="email" autoComplete="email" placeholder="you@example.com" required className={`h-full min-w-0 flex-1 text-[14px] ${styles.authInput}`} />
                       </div>
                     </label>
 
                     <label className="block">
-                      <div className="mb-2 flex items-center justify-between gap-3">
-                        <span className="text-[11px] font-semibold uppercase tracking-[0.11em] text-white/48">Password</span>
+                      <div className="mb-1.5 flex items-center justify-between gap-3">
+                        <span className="text-[10px] font-semibold uppercase tracking-[0.11em] text-white/52">Password</span>
                         {mode === "login" && (
-                          <Link href="/forgot-password" className="text-[11px] font-semibold text-[#bfff82]/75 transition hover:text-[#cfff98]">Forgot password?</Link>
+                          <Link href="/forgot-password" className="text-[10.5px] font-semibold text-[#bfff82]/80 transition hover:text-[#d4ffa8]">Forgot password?</Link>
                         )}
                       </div>
-                      <div className="group flex h-14 items-center gap-3 rounded-2xl border border-white/[0.085] bg-black/20 px-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] transition focus-within:border-[#b8ff75]/35 focus-within:bg-black/28 focus-within:shadow-[0_0_0_3px_rgba(171,255,104,0.06)]">
-                        <LockKeyhole size={17} className="shrink-0 text-white/35 transition group-focus-within:text-[#bfff82]" />
+                      <div className={`group flex h-[52px] items-center gap-3 rounded-2xl px-4 ${styles.fieldShell}`}>
+                        <LockKeyhole size={16} className="shrink-0 text-white/38 transition group-focus-within:text-[#bfff82]" />
                         <input
                           name="password"
                           type={show ? "text" : "password"}
@@ -211,22 +209,22 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
                           minLength={8}
                           pattern="(?=.*[A-Z])(?=.*[0-9]).{8,}"
                           title="Use at least 8 characters, including one uppercase letter and one number."
-                          className="h-full min-w-0 flex-1 border-0 bg-transparent text-[15px] text-white outline-none placeholder:text-white/28"
+                          className={`h-full min-w-0 flex-1 text-[14px] ${styles.authInput}`}
                         />
-                        <button type="button" aria-label={show ? "Hide password" : "Show password"} onClick={() => setShow(!show)} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-white/35 transition hover:bg-white/[0.055] hover:text-white/75">
-                          {show ? <EyeOff size={16}/> : <Eye size={16}/>} 
+                        <button type="button" aria-label={show ? "Hide password" : "Show password"} onClick={() => setShow(!show)} className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg transition ${styles.iconButton}`}>
+                          {show ? <EyeOff size={15}/> : <Eye size={15}/>} 
                         </button>
                       </div>
-                      {mode === "signup" && <small className="mt-2 block text-[10.5px] leading-5 text-white/32">Use 8+ characters with at least one uppercase letter and one number.</small>}
+                      {mode === "signup" && <small className="mt-1.5 block text-[10px] leading-4 text-white/38">Use 8+ characters with at least one uppercase letter and one number.</small>}
                     </label>
 
                     {mode === "signup" && (
-                      <label className="flex items-start gap-3 rounded-2xl border border-white/[0.065] bg-white/[0.025] p-3.5 text-[11px] leading-[1.55] text-white/44">
-                        <input name="legal" type="checkbox" required className="mt-0.5 h-4 w-4 shrink-0 accent-[#9eff62]" />
+                      <label className={`flex items-start gap-3 rounded-2xl p-3 text-[10.5px] leading-[1.5] ${styles.legalBox}`}>
+                        <input name="legal" type="checkbox" required className="mt-0.5 h-4 w-4 shrink-0" />
                         <span>
-                          I am at least 18 and agree to the <Link href="/terms" target="_blank" rel="noopener noreferrer" className="font-semibold text-white/72 underline decoration-white/20 underline-offset-2 hover:text-white">Terms of Service</Link>,{" "}
-                          <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="font-semibold text-white/72 underline decoration-white/20 underline-offset-2 hover:text-white">Privacy Notice</Link> and{" "}
-                          <Link href="/refund-policy" target="_blank" rel="noopener noreferrer" className="font-semibold text-white/72 underline decoration-white/20 underline-offset-2 hover:text-white">Refund & Cancellation Policy</Link>.
+                          I am at least 18 and agree to the <Link href="/terms" target="_blank" rel="noopener noreferrer" className="font-semibold text-white/80 underline decoration-white/20 underline-offset-2 hover:text-white">Terms of Service</Link>,{" "}
+                          <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="font-semibold text-white/80 underline decoration-white/20 underline-offset-2 hover:text-white">Privacy Notice</Link> and{" "}
+                          <Link href="/refund-policy" target="_blank" rel="noopener noreferrer" className="font-semibold text-white/80 underline decoration-white/20 underline-offset-2 hover:text-white">Refund & Cancellation Policy</Link>.
                         </span>
                       </label>
                     )}
@@ -240,31 +238,31 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
                     <button
                       type="submit"
                       disabled={busy}
-                      className="group mt-1 inline-flex h-14 w-full items-center justify-center gap-2 rounded-2xl border border-[#caff8a]/20 bg-[linear-gradient(180deg,#b7ff6d_0%,#8fe64d_100%)] px-5 text-sm font-extrabold text-[#0a170d] shadow-[0_18px_45px_rgba(123,221,75,0.16),inset_0_1px_0_rgba(255,255,255,0.55)] transition hover:-translate-y-0.5 hover:brightness-105 hover:shadow-[0_22px_50px_rgba(123,221,75,0.22)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0"
+                      className={`group mt-1 inline-flex h-[52px] w-full items-center justify-center gap-2 rounded-2xl px-5 text-[13px] font-extrabold transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 ${styles.submitButton}`}
                     >
-                      {busy ? <><Loader2 className="animate-spin" size={17}/> Please wait</> : <>{mode === "login" ? "Sign in to ClipKaro" : "Create ClipKaro account"}<ArrowRight size={16} className="transition group-hover:translate-x-0.5"/></>}
+                      {busy ? <><Loader2 className="animate-spin" size={16}/> Please wait</> : <>{mode === "login" ? "Sign in to ClipKaro" : "Create ClipKaro account"}<ArrowRight size={15} className="transition group-hover:translate-x-0.5"/></>}
                     </button>
                   </form>
 
-                  <div className="my-6 flex items-center gap-3 text-[10px] uppercase tracking-[0.16em] text-white/22">
-                    <span className="h-px flex-1 bg-white/[0.065]" />
+                  <div className="my-5 flex items-center gap-3 text-[9px] uppercase tracking-[0.16em] text-white/25">
+                    <span className="h-px flex-1 bg-white/[0.07]" />
                     secure email access
-                    <span className="h-px flex-1 bg-white/[0.065]" />
+                    <span className="h-px flex-1 bg-white/[0.07]" />
                   </div>
 
-                  <div className="text-center text-xs text-white/43">
+                  <div className="text-center text-[11.5px] text-white/48">
                     {mode === "login"
                       ? <>New to ClipKaro? <Link href={switchHref} className="font-bold text-[#c8ff91] transition hover:text-white">Create an account</Link></>
                       : <>Already have an account? <Link href={switchHref} className="font-bold text-[#c8ff91] transition hover:text-white">Sign in</Link></>}
                   </div>
-                </CardContent>
-              </Card>
+                </div>
+              </section>
             </div>
 
-            <div className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[10.5px] text-white/30">
-              <span className="inline-flex items-center gap-1.5"><Check size={12} className="text-[#aaff68]/70"/> Email verification</span>
-              <span className="inline-flex items-center gap-1.5"><Check size={12} className="text-[#aaff68]/70"/> Secure account access</span>
-              <span className="inline-flex items-center gap-1.5"><Sparkles size={12} className="text-[#aaff68]/70"/> Creator-first workflow</span>
+            <div className="mt-5 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[9.5px] text-white/30">
+              <span className="inline-flex items-center gap-1.5"><Check size={11} className="text-[#aaff68]/70"/> Email verification</span>
+              <span className="inline-flex items-center gap-1.5"><Check size={11} className="text-[#aaff68]/70"/> Secure account access</span>
+              <span className="inline-flex items-center gap-1.5"><Sparkles size={11} className="text-[#aaff68]/70"/> Creator-first workflow</span>
             </div>
           </motion.div>
         </div>
