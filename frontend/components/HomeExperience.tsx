@@ -23,6 +23,7 @@ import { PublicMotionShell } from "@/components/PublicMotionShell";
 import { PublicSiteFooter } from "@/components/PublicSiteFooter";
 import { PublicSiteNav } from "@/components/PublicSiteNav";
 import { TransitionLink } from "@/components/TransitionLink";
+import FeatureSection from "@/components/ui/feature-section";
 import { TRUST_PROFILE } from "@/lib/legal";
 import styles from "./HomeExperience.module.css";
 
@@ -167,6 +168,8 @@ export function HomeExperience() {
               {workflow.map(([Icon,title,text],index)=><article key={title} data-public-reveal="scale"><span>{index+1}</span><i><Icon size={21}/></i><div><b>{title}</b><p>{text}</p></div>{index<workflow.length-1&&<ArrowRight className={styles.stepArrow} size={18}/>}</article>)}
             </div>
           </section>
+
+          <FeatureSection />
 
           <section className={styles.featureStage} id="features">
             <div className={styles.featureLead} data-public-reveal="left"><span>A complete creator toolkit</span><h2>More than just clipping.<br/>Everything you need to grow.</h2></div>
