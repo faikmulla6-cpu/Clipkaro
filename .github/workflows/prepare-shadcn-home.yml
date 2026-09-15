@@ -6,6 +6,7 @@ on:
       - feature/home-shadcn-workflow
     paths:
       - .github/workflows/prepare-shadcn-home.yml
+      - frontend/package.json
 
 permissions:
   contents: write
