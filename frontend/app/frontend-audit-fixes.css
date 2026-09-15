@@ -18,9 +18,12 @@ img[src^="/assets/usecase-"][src$=".jpg"] {
   opacity: 1 !important;
 }
 
-/* Keep the JPG visuals cropped exactly like their previous CSS backgrounds. */
+/* Keep the JPG visuals cropped exactly like their previous CSS backgrounds and
+ * out of normal flow so the visual cards keep their original dimensions. */
 :where(div, article):has(> img[src="/assets/creator-demo.jpg"]) > img,
 :where(div, article):has(> img[src^="/assets/usecase-"][src$=".jpg"]) > img {
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
   height: 100%;
