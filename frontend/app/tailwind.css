@@ -1,0 +1,8 @@
+/* Tailwind utilities for shadcn-style UI islands.
+ * Preflight is intentionally omitted so the existing ClipKaro CSS system keeps
+ * its current typography, spacing, form controls and public-site appearance.
+ */
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+@source "../components/ui";
