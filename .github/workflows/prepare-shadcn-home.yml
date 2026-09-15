@@ -1,0 +1,73 @@
+name: Prepare shadcn home integration
+
+on:
+  push:
+    branches:
+      - feature/home-shadcn-workflow
+    paths:
+      - .github/workflows/prepare-shadcn-home.yml
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout integration branch
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Integrate feature section into homepage
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("frontend/components/HomeExperience.tsx")
+          text = path.read_text(encoding="utf-8")
+
+          import_anchor = 'import { TRUST_PROFILE } from "@/lib/legal";'
+          feature_import = 'import FeatureSection from "@/components/ui/feature-section";'
+          if feature_import not in text:
+              if import_anchor not in text:
+                  raise SystemExit("HomeExperience import anchor not found")
+              text = text.replace(import_anchor, f'{feature_import}\n{import_anchor}', 1)
+
+          section_anchor = '          <section className={styles.featureStage} id="features">'
+          if '<FeatureSection />' not in text:
+              if section_anchor not in text:
+                  raise SystemExit("HomeExperience feature section anchor not found")
+              text = text.replace(section_anchor, f'          <FeatureSection />\n\n{section_anchor}', 1)
+
+          path.write_text(text, encoding="utf-8")
+
+      - name: Install and lock frontend dependencies
+        working-directory: frontend
+        run: npm install --ignore-scripts
+
+      - name: Typecheck frontend
+        working-directory: frontend
+        run: npm run typecheck
+
+      - name: Build optimized frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Commit generated lockfile and homepage integration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/package-lock.json frontend/components/HomeExperience.tsx
+          if git diff --cached --quiet; then
+            echo "No generated changes to commit."
+          else
+            git commit -m "feat(home): wire shadcn workflow section"
+            git push origin HEAD:${GITHUB_REF_NAME}
+          fi
