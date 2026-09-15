@@ -5,10 +5,11 @@ import "./brand.css";
 import "./interaction-polish.css";
 import "./sidebar-polish.css";
 import "./quality-fixes.css";
+import "./frontend-audit-fixes.css";
 import { AuthProvider } from "@/components/AuthProvider";
 
 const brandIcon = "/assets/clipkaro-icon.png?v=2";
-const tabIcon = "/assets/clipkaro-icon.png?v=4";
+const tabIcon = "/assets/clipkaro-tab-icon.svg?v=5";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://clipkaro.pro"),
@@ -33,7 +34,7 @@ export const metadata: Metadata = {
   },
   manifest: "/site.webmanifest",
   icons: {
-    icon: [{ url: tabIcon, type: "image/png" }],
+    icon: [{ url: tabIcon, type: "image/svg+xml" }],
     shortcut: tabIcon,
     apple: brandIcon,
   },
