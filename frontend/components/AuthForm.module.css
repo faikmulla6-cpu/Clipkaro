@@ -7,33 +7,103 @@
   animation: authCardIn 440ms cubic-bezier(.22, 1, .36, 1) 40ms both;
 }
 
-.brandEnter {
-  will-change: transform, opacity;
-  animation: authBrandIn 380ms cubic-bezier(.22, 1, .36, 1) 20ms both;
+.surface {
+  color: #fff !important;
+  background:
+    linear-gradient(145deg, rgba(255,255,255,.10), rgba(255,255,255,.025) 34%, rgba(170,255,115,.045) 70%, rgba(255,255,255,.018)) !important;
+  border: 1px solid rgba(255,255,255,.10) !important;
+  box-shadow:
+    0 34px 100px rgba(0,0,0,.58),
+    inset 0 1px 0 rgba(255,255,255,.09),
+    inset 0 0 0 1px rgba(170,255,120,.018) !important;
+  backdrop-filter: blur(28px) saturate(125%);
+  -webkit-backdrop-filter: blur(28px) saturate(125%);
 }
 
-.cardEnter form > * {
-  animation: authFieldIn 360ms cubic-bezier(.22, 1, .36, 1) both;
+.fieldShell {
+  background: rgba(3, 8, 5, .56) !important;
+  border: 1px solid rgba(255,255,255,.09) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.035) !important;
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
 }
 
-.cardEnter form > *:nth-child(1) { animation-delay: 90ms; }
-.cardEnter form > *:nth-child(2) { animation-delay: 115ms; }
-.cardEnter form > *:nth-child(3) { animation-delay: 140ms; }
-.cardEnter form > *:nth-child(4) { animation-delay: 165ms; }
-.cardEnter form > *:nth-child(5) { animation-delay: 190ms; }
-.cardEnter form > *:nth-child(6) { animation-delay: 215ms; }
-
-.cardEnter :global(.auth-switch) a,
-.cardEnter :global(.auth-submit) {
-  transition: transform 160ms ease, opacity 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+.fieldShell:focus-within {
+  background: rgba(4, 10, 6, .72) !important;
+  border-color: rgba(184,255,117,.38) !important;
+  box-shadow: 0 0 0 3px rgba(171,255,104,.06), inset 0 1px 0 rgba(255,255,255,.04) !important;
 }
 
-.cardEnter :global(.auth-switch) a:active {
-  opacity: .68;
+.authInput {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent !important;
+  color: #f7fff4 !important;
+  border: 0 !important;
+  outline: none !important;
+  box-shadow: none !important;
+  -webkit-text-fill-color: #f7fff4 !important;
 }
 
-.cardEnter :global(.auth-submit):active {
-  transform: scale(.985);
+.authInput::placeholder {
+  color: rgba(255,255,255,.28) !important;
+  -webkit-text-fill-color: rgba(255,255,255,.28) !important;
+}
+
+.authInput:-webkit-autofill,
+.authInput:-webkit-autofill:hover,
+.authInput:-webkit-autofill:focus,
+.authInput:-webkit-autofill:active {
+  -webkit-text-fill-color: #f7fff4 !important;
+  -webkit-box-shadow: 0 0 0 1000px #0b100d inset !important;
+  box-shadow: 0 0 0 1000px #0b100d inset !important;
+  transition: background-color 9999s ease-out 0s;
+}
+
+.iconButton {
+  background: rgba(255,255,255,.035) !important;
+  color: rgba(255,255,255,.44) !important;
+  border: 1px solid rgba(255,255,255,.065) !important;
+  box-shadow: none !important;
+}
+
+.iconButton:hover {
+  background: rgba(255,255,255,.075) !important;
+  color: rgba(255,255,255,.85) !important;
+}
+
+.statusBadge {
+  background: rgba(185,255,119,.065) !important;
+  color: #cbff9a !important;
+  border: 1px solid rgba(185,255,119,.16) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.035) !important;
+}
+
+.microBadge {
+  background: rgba(255,255,255,.045) !important;
+  color: rgba(255,255,255,.58) !important;
+  border: 1px solid rgba(255,255,255,.085) !important;
+}
+
+.legalBox {
+  background: rgba(255,255,255,.028) !important;
+  color: rgba(255,255,255,.52) !important;
+  border: 1px solid rgba(255,255,255,.07) !important;
+}
+
+.legalBox input[type="checkbox"] {
+  accent-color: #9eff62;
+}
+
+.submitButton {
+  background: linear-gradient(180deg, #b8ff70 0%, #91e84f 100%) !important;
+  color: #071108 !important;
+  border: 1px solid rgba(214,255,174,.35) !important;
+  box-shadow: 0 18px 45px rgba(123,221,75,.16), inset 0 1px 0 rgba(255,255,255,.62) !important;
+}
+
+.submitButton:hover {
+  filter: brightness(1.035);
+  box-shadow: 0 22px 52px rgba(123,221,75,.22), inset 0 1px 0 rgba(255,255,255,.62) !important;
 }
 
 @keyframes authPageIn {
@@ -52,38 +122,15 @@
   }
 }
 
-@keyframes authBrandIn {
-  from {
-    opacity: 0;
-    transform: translateY(-7px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes authFieldIn {
-  from {
-    opacity: 0;
-    transform: translateY(7px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .pageEnter,
-  .cardEnter,
-  .brandEnter,
-  .cardEnter form > * {
+  .cardEnter {
     animation: none !important;
   }
 
-  .cardEnter :global(.auth-switch) a,
-  .cardEnter :global(.auth-submit) {
+  .fieldShell,
+  .iconButton,
+  .submitButton {
     transition: none !important;
   }
 }
