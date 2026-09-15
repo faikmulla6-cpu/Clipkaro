@@ -52,6 +52,16 @@ img[src^="/assets/usecase-"][src$=".jpg"] {
   }
 }
 
+@media (max-width: 680px) {
+  /* Scope the mobile headline adjustment to the marketing homepage by using a
+   * unique descendant from the illustrative creator workspace. */
+  body:has([aria-label="Illustrative ClipKaro creator workspace"]) main > section:first-child h1 {
+    font-size: clamp(42px, 12vw, 56px) !important;
+    line-height: .96 !important;
+    letter-spacing: -3px !important;
+  }
+}
+
 @media (max-width: 480px) {
   .app-header .header-actions > .primary-btn,
   .app-header .header-actions > .secondary-btn,
