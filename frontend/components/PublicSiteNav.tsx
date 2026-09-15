@@ -27,14 +27,19 @@ export function PublicSiteNav({ cta = "start" }: PublicSiteNavProps) {
 
   useEffect(() => {
     if (!mobileOpen) return;
-    const previous = document.body.style.overflow;
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
     document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") setMobileOpen(false);
     };
+
     window.addEventListener("keydown", onKey);
     return () => {
-      document.body.style.overflow = previous;
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousHtmlOverflow;
       window.removeEventListener("keydown", onKey);
     };
   }, [mobileOpen]);
@@ -68,70 +73,94 @@ export function PublicSiteNav({ cta = "start" }: PublicSiteNavProps) {
   const routeClass = (href: string, extra = "") => `${pathname === href ? styles.active : ""} ${extra}`.trim();
 
   return (
-    <header className={styles.shell}>
-      <nav className={styles.nav} aria-label="ClipKaro public navigation">
-        <Logo transition />
+    <>
+      <header className={styles.shell}>
+        <nav className={styles.nav} aria-label="ClipKaro public navigation">
+          <Logo transition />
 
-        <div className={styles.desktopLinks}>
-          <div className={styles.productMenu} ref={productMenuRef}>
-            <button
-              type="button"
-              className={`${styles.productButton} ${productActive ? styles.active : ""}`}
-              aria-expanded={productOpen}
-              aria-haspopup="menu"
-              onClick={() => setProductOpen((value) => !value)}
-            >
-              Product <ChevronDown size={15} className={productOpen ? styles.rotate : ""} />
-            </button>
-            <div className={`${styles.dropdown} ${productOpen ? styles.dropdownOpen : ""}`} role="menu">
-              <div className={styles.dropdownLead}>
-                <span>ClipKaro workspace</span>
-                <b>One creator workflow, not a pile of disconnected tools.</b>
-              </div>
-              <div className={styles.dropdownGrid}>
-                {products.map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <TransitionLink href={item.href} key={item.href} onClick={closeAll} className={pathname === item.href ? styles.dropdownActive : ""} role="menuitem">
-                      <i><Icon size={17} /></i>
-                      <span><b>{item.label}</b><small>{item.text}</small></span>
-                      <ArrowRight size={14} />
-                    </TransitionLink>
-                  );
-                })}
+          <div className={styles.desktopLinks}>
+            <div className={styles.productMenu} ref={productMenuRef}>
+              <button
+                type="button"
+                className={`${styles.productButton} ${productActive ? styles.active : ""}`}
+                aria-expanded={productOpen}
+                aria-haspopup="menu"
+                onClick={() => setProductOpen((value) => !value)}
+              >
+                Product <ChevronDown size={15} className={productOpen ? styles.rotate : ""} />
+              </button>
+              <div className={`${styles.dropdown} ${productOpen ? styles.dropdownOpen : ""}`} role="menu">
+                <div className={styles.dropdownLead}>
+                  <span>ClipKaro workspace</span>
+                  <b>One creator workflow, not a pile of disconnected tools.</b>
+                </div>
+                <div className={styles.dropdownGrid}>
+                  {products.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <TransitionLink href={item.href} key={item.href} onClick={closeAll} className={pathname === item.href ? styles.dropdownActive : ""} role="menuitem">
+                        <i><Icon size={17} /></i>
+                        <span><b>{item.label}</b><small>{item.text}</small></span>
+                        <ArrowRight size={14} />
+                      </TransitionLink>
+                    );
+                  })}
+                </div>
               </div>
             </div>
+
+            <TransitionLink href="/youtube-channel-analyzer" className={routeClass("/youtube-channel-analyzer", styles.pulseLink)}>Creator Pulse <span>₹1</span></TransitionLink>
+            <TransitionLink href="/#use-cases">Use cases</TransitionLink>
+            <TransitionLink href="/pricing" className={routeClass("/pricing")}>Pricing</TransitionLink>
+            <TransitionLink href="/about" className={routeClass("/about")}>About</TransitionLink>
           </div>
 
-          <TransitionLink href="/youtube-channel-analyzer" className={routeClass("/youtube-channel-analyzer", styles.pulseLink)}>Creator Pulse <span>₹1</span></TransitionLink>
-          <TransitionLink href="/#use-cases">Use cases</TransitionLink>
-          <TransitionLink href="/pricing" className={routeClass("/pricing")}>Pricing</TransitionLink>
-          <TransitionLink href="/about" className={routeClass("/about")}>About</TransitionLink>
-        </div>
+          <div className={styles.desktopActions}>
+            <TransitionLink href="/login" className={styles.login}>Log in</TransitionLink>
+            <TransitionLink href={cta === "pulse" ? "/creator-pulse" : "/signup"} className={styles.primary}>
+              {cta === "pulse" ? "Run Pulse · ₹1" : "Start free"} <ArrowRight size={15} />
+            </TransitionLink>
+          </div>
 
-        <div className={styles.desktopActions}>
-          <TransitionLink href="/login" className={styles.login}>Log in</TransitionLink>
-          <TransitionLink href={cta === "pulse" ? "/creator-pulse" : "/signup"} className={styles.primary}>
-            {cta === "pulse" ? "Run Pulse · ₹1" : "Start free"} <ArrowRight size={15} />
-          </TransitionLink>
-        </div>
+          <div className={styles.mobileActions}>
+            <TransitionLink href={cta === "pulse" ? "/creator-pulse" : "/signup"} className={styles.mobileQuick} onClick={closeAll}>
+              {cta === "pulse" ? "Pulse · ₹1" : "Start free"}
+            </TransitionLink>
+            <button
+              type="button"
+              className={styles.menuButton}
+              aria-label={mobileOpen ? "Close menu" : "Open menu"}
+              aria-expanded={mobileOpen}
+              aria-controls="clipkaro-mobile-menu"
+              onClick={() => setMobileOpen((value) => !value)}
+            >
+              {mobileOpen ? <X size={21} /> : <Menu size={22} />}
+            </button>
+          </div>
+        </nav>
+      </header>
 
-        <div className={styles.mobileActions}>
-          <TransitionLink href={cta === "pulse" ? "/creator-pulse" : "/signup"} className={styles.mobileQuick} onClick={closeAll}>
-            {cta === "pulse" ? "Pulse · ₹1" : "Start free"}
-          </TransitionLink>
-          <button type="button" className={styles.menuButton} aria-label={mobileOpen ? "Close menu" : "Open menu"} aria-expanded={mobileOpen} onClick={() => setMobileOpen((value) => !value)}>
-            {mobileOpen ? <X size={21} /> : <Menu size={22} />}
-          </button>
-        </div>
-      </nav>
+      <button
+        type="button"
+        aria-label="Close navigation"
+        className={`${styles.scrim} ${mobileOpen ? styles.scrimOpen : ""}`}
+        onClick={closeAll}
+        tabIndex={mobileOpen ? 0 : -1}
+      />
 
-      <button type="button" aria-label="Close navigation" className={`${styles.scrim} ${mobileOpen ? styles.scrimOpen : ""}`} onClick={closeAll} />
-      <aside className={`${styles.mobileSheet} ${mobileOpen ? styles.mobileSheetOpen : ""}`} aria-hidden={!mobileOpen}>
+      <aside
+        id="clipkaro-mobile-menu"
+        className={`${styles.mobileSheet} ${mobileOpen ? styles.mobileSheetOpen : ""}`}
+        aria-hidden={!mobileOpen}
+        aria-label="Explore ClipKaro"
+      >
         <div className={styles.mobileTop}>
-          <span>Explore ClipKaro</span>
-          <button type="button" onClick={closeAll} aria-label="Close menu"><X size={20} /></button>
+          <div>
+            <span>Explore ClipKaro</span>
+            <small>Products, pricing and account access</small>
+          </div>
         </div>
+
         <div className={styles.mobileProductList}>
           {products.map((item) => {
             const Icon = item.icon;
@@ -144,16 +173,18 @@ export function PublicSiteNav({ cta = "start" }: PublicSiteNavProps) {
             );
           })}
         </div>
+
         <div className={styles.mobileSimpleLinks}>
           <TransitionLink href="/pricing" onClick={closeAll}>Pricing</TransitionLink>
           <TransitionLink href="/about" onClick={closeAll}>About</TransitionLink>
           <TransitionLink href="/contact" onClick={closeAll}>Contact</TransitionLink>
           <TransitionLink href="/login" onClick={closeAll}>Log in</TransitionLink>
         </div>
+
         <TransitionLink href={cta === "pulse" ? "/creator-pulse" : "/signup"} className={styles.mobilePrimary} onClick={closeAll}>
           {cta === "pulse" ? "Run Creator Pulse · ₹1" : "Create your free account"} <ArrowRight size={16} />
         </TransitionLink>
       </aside>
-    </header>
+    </>
   );
 }
