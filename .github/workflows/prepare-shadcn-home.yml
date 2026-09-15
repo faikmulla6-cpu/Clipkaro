@@ -58,6 +58,8 @@ jobs:
 
       - name: Build optimized frontend
         working-directory: frontend
+        env:
+          BACKEND_URL: http://127.0.0.1:8000
         run: npm run build
 
       - name: Commit generated lockfile and homepage integration
