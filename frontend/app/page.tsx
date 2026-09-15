@@ -2,9 +2,6 @@ import type { Metadata } from "next";
 import { HomeExperience } from "@/components/HomeExperience";
 import { LEGAL_LINKS } from "@/lib/legal";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-
 export const metadata: Metadata = {
   title: "ClipKaro AI — AI Video Clipper, Shorts Maker & Creator Pulse",
   description: "Turn long videos into Shorts with AI-ranked moments, transcript review, India-first captions and creator controls. Use Creator Pulse for ₹1 YouTube channel analysis and one clear next-content move.",
