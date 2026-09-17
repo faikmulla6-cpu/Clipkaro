@@ -7,6 +7,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AccountSettings, API_URL, Usage, api } from "@/lib/api";
+import { DirectUploadFallback } from "@/components/DirectUploadFallback";
 
 type Job = {
   status: string; progress: number; stage: string; message: string; error?: string;
@@ -43,6 +44,7 @@ export function UploadStudio() {
   const [title, setTitle] = useState("");
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [showFileFallback, setShowFileFallback] = useState(false);
   const [job, setJob] = useState<Job | null>(null);
   const [error, setError] = useState("");
   const [preflight, setPreflight] = useState<Preflight | null>(null);
@@ -96,6 +98,8 @@ export function UploadStudio() {
     }
   }
 
+  if (showFileFallback) return <DirectUploadFallback />;
+
   if (job) {
     const active = STAGES.findIndex(([key]) => key === job.stage);
     const message = job.message || job.error || "Processing your video now.";
@@ -115,7 +119,7 @@ export function UploadStudio() {
         <div className="grid gap-2 border-t border-white/10 bg-black/20 p-4 sm:grid-cols-3 lg:grid-cols-6">
           {STAGES.map(([key, label], index) => <div key={key} className={`rounded-2xl border p-3 ${index === active ? "border-[#dfff57]/40 bg-[#dfff57]/10" : index < active ? "border-emerald-400/20 bg-emerald-400/5" : "border-white/10 bg-white/[.03]"}`}><span className={`mb-2 flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-black ${index <= active ? "bg-[#dfff57] text-[#07110d]" : "bg-white/10 text-white/45"}`}>{index < active ? <Check size={13}/> : index + 1}</span><b className="text-xs text-white/80">{label}</b></div>)}
         </div>
-        {job.status === "failed" && <div className="m-5 flex flex-col gap-3 rounded-2xl border border-rose-300/20 bg-rose-400/10 p-4 sm:flex-row sm:items-center"><AlertCircle className="shrink-0 text-rose-300" size={18}/><span className="flex-1 text-sm">{message}</span><button className="rounded-xl border border-white/15 px-4 py-2 text-sm font-bold hover:bg-white/10" onClick={() => { setJob(null); setBusy(false); }}>Try another link</button></div>}
+        {job.status === "failed" && <div className="m-5 flex flex-col gap-3 rounded-2xl border border-rose-300/20 bg-rose-400/10 p-4 sm:flex-row sm:items-center"><AlertCircle className="shrink-0 text-rose-300" size={18}/><span className="flex-1 text-sm">{message}</span><div className="flex shrink-0 flex-wrap gap-2"><button className="rounded-xl bg-white px-4 py-2 text-sm font-black text-[#07110d] hover:bg-white/90" onClick={() => setShowFileFallback(true)}>Upload original file instead</button><button className="rounded-xl border border-white/15 px-4 py-2 text-sm font-bold hover:bg-white/10" onClick={() => { setJob(null); setBusy(false); }}>Try another link</button></div></div>}
         <div className="flex items-center gap-2 border-t border-white/10 px-5 py-4 text-xs text-white/45"><LockKeyhole size={14}/> Private source media follows ClipKaro&apos;s automatic retention policy.</div>
       </section>
     );

@@ -72,6 +72,16 @@ def _safe_title(value: object) -> str:
     return title[:120] or "YouTube video"
 
 
+def _read_failure_message(exc: Exception) -> str:
+    detail = str(exc).lower()
+    if "sign in to confirm" in detail or "not a bot" in detail:
+        return (
+            "YouTube blocked the secure server import before download. "
+            "Your Karo Minutes were not charged. Upload your original file instead."
+        )
+    return "ClipKaro could not read this YouTube video. Make sure the video is available and try again."
+
+
 def download_youtube_source(
     url: str,
     destination: Path,
@@ -107,9 +117,7 @@ def download_youtube_source(
         with yt_dlp.YoutubeDL(common) as inspector:
             info = inspector.extract_info(canonical, download=False)
     except Exception as exc:
-        raise YouTubeImportError(
-            "ClipKaro could not read this YouTube video. Make sure the video is available and try again."
-        ) from exc
+        raise YouTubeImportError(_read_failure_message(exc)) from exc
 
     if not isinstance(info, dict) or str(info.get("id") or "") != expected_id or info.get("entries"):
         raise YouTubeImportError("Paste a direct link to one YouTube video, not a playlist.")
