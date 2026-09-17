@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
-from app.core.database import execute, fetch_one, run_in_transaction
+from app.core.database import distributed_advisory_lock, execute, fetch_one, run_in_transaction
 from app.services.auth import current_user
 from app.services.email_verification import requires_verification_for_processing
 from app.services.hinglish_stage1_routing import resolve_stage1_route
@@ -44,6 +44,19 @@ class YouTubeImportRequest(BaseModel):
     language: str = Field(default="auto", max_length=32)
     category: str = Field(default="auto", max_length=64)
     rights_confirmed: bool = False
+
+
+async def _reject_if_youtube_import_active(db, user_id: str) -> None:
+    cursor = await db.execute(
+        """SELECT id FROM jobs WHERE user_id=? AND kind='import_youtube'
+           AND status IN ('queued','processing') LIMIT 1""",
+        (user_id,),
+    )
+    if await cursor.fetchone():
+        raise HTTPException(
+            409,
+            "One YouTube video is already processing. Wait for it to finish before starting another.",
+        )
 
 
 async def init_cloud_uploads() -> None:
@@ -180,6 +193,7 @@ async def import_youtube(body: YouTubeImportRequest, user: dict = Depends(curren
     )
 
     async def persist(db) -> None:
+        await _reject_if_youtube_import_active(db, str(user["id"]))
         await db.execute(
             "INSERT INTO projects VALUES (?, ?, ?, '', 'queued', 0, 'queued', ?, ?, NULL, ?, ?)",
             (project_id, user["id"], title[:120], body.language, body.category, timestamp, timestamp),
@@ -199,7 +213,10 @@ async def import_youtube(body: YouTubeImportRequest, user: dict = Depends(curren
             (job_id, payload, timestamp, timestamp),
         )
 
-    await run_in_transaction(persist, operation_name="queue YouTube import")
+    # Keep one remote import active per creator. This matches the UI promise and
+    # prevents accidental double-clicks/tabs from multiplying remote download cost.
+    async with distributed_advisory_lock(f"clipkaro:youtube-import:{user['id']}"):
+        await run_in_transaction(persist, operation_name="queue YouTube import")
     try:
         await get_job_launcher().launch(job_id)
     except JobLaunchError as exc:

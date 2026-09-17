@@ -104,7 +104,7 @@ export function UploadStudio() {
         <div className="relative px-5 py-10 text-center sm:px-10 sm:py-14">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_0%,rgba(223,255,87,.14),transparent_36%)]" />
           <div className="relative mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-[#dfff57]/25 bg-[#dfff57]/10">
-            {job.status === "failed" ? <AlertCircle className="text-rose-300" size={28}/> : <Loader2 className="animate-spin text-[#dfff57]" size={28}/>} 
+            {job.status === "failed" ? <AlertCircle className="text-rose-300" size={28}/> : <Loader2 className="animate-spin text-[#dfff57]" size={28}/>}
           </div>
           <p className="relative mt-5 text-[11px] font-extrabold tracking-[.22em] text-[#dfff57]">CLIPKARO AI PIPELINE</p>
           <h2 className="relative mx-auto mt-2 max-w-2xl text-3xl font-black tracking-[-.04em] sm:text-4xl">{job.status === "failed" ? "This video needs attention" : "Turning your video into strong Shorts"}</h2>

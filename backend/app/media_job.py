@@ -269,19 +269,26 @@ async def _run_youtube_import(job: dict, scratch: Path, storage) -> None:
             await storage.delete(durable_key, generation=(verified or stored).generation if (verified or stored) else None)
             raise RuntimeError("MEDIA_VALIDATION_FAILED")
 
+        generation = verified.generation or stored.generation
+        try:
+            await execute(
+                """UPDATE videos SET original_filename=?,file_size=?,file_path=?,object_generation=?,status='uploaded'
+                   WHERE id=? AND project_id=?""",
+                (
+                    f"youtube-{imported.video_id}{suffix}",
+                    verified.size,
+                    durable_key,
+                    generation,
+                    video_id,
+                    project_id,
+                ),
+            )
+        except Exception:
+            # If persistence fails after the private object upload, remove the
+            # unreferenced object so a retry cannot leak storage.
+            await storage.delete(durable_key, generation=generation)
+            raise
         source_key = durable_key
-        await execute(
-            """UPDATE videos SET original_filename=?,file_size=?,file_path=?,object_generation=?,status='uploaded'
-               WHERE id=? AND project_id=?""",
-            (
-                f"youtube-{imported.video_id}{suffix}",
-                verified.size,
-                durable_key,
-                verified.generation or stored.generation,
-                video_id,
-                project_id,
-            ),
-        )
         if not bool(payload.get("title_is_custom")):
             await execute(
                 "UPDATE projects SET title=?,updated_at=? WHERE id=?",

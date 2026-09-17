@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from fastapi import HTTPException
 
+from app.api.cloud_uploads import _reject_if_youtube_import_active
 from app.services.youtube_import import (
     YouTubeImportError,
     canonicalize_youtube_url,
@@ -105,3 +108,39 @@ def test_duration_is_rejected_before_download(monkeypatch, tmp_path: Path) -> No
             max_bytes=1024,
         )
     assert "15 minutes" in error.value.public_message
+
+
+class _GuardCursor:
+    def __init__(self, row):
+        self.row = row
+
+    async def fetchone(self):
+        return self.row
+
+
+class _GuardDb:
+    def __init__(self, row):
+        self.row = row
+        self.query = ""
+        self.params = ()
+
+    async def execute(self, query, params=()):
+        self.query = query
+        self.params = params
+        return _GuardCursor(self.row)
+
+
+def test_active_youtube_import_guard_blocks_duplicate_remote_work() -> None:
+    db = _GuardDb({"id": "job-1"})
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(_reject_if_youtube_import_active(db, "user-1"))
+    assert getattr(error.value, "status_code", None) == 409
+    assert "import_youtube" in db.query
+    assert "queued" in db.query and "processing" in db.query
+    assert db.params == ("user-1",)
+
+
+def test_active_youtube_import_guard_allows_when_queue_is_clear() -> None:
+    db = _GuardDb(None)
+    asyncio.run(_reject_if_youtube_import_active(db, "user-2"))
+    assert db.params == ("user-2",)
