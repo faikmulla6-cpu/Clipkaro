@@ -134,6 +134,8 @@ async def _render_export_durable(
         preserve_band = scan.get("band_start") if scan["detected"] else None
         if request.preserve_source_captions and preserve_band is None:
             preserve_band = 0.82
+        # Creator choice is authoritative. Existing burned-in subtitles inform the
+        # UI only; they never silently move the creator's requested caption placement.
         caption_position = effective_caption_position(
             request.india_quality_mode,
             request.preserve_source_captions,

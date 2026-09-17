@@ -20,6 +20,8 @@ const STAGES = [
   ["transcribing", "Transcript"], ["ranking", "Moments"], ["finishing", "Previews"],
 ] as const;
 
+const DIRECT_GCS_UPLOAD = process.env.NEXT_PUBLIC_UPLOAD_MODE === "direct_gcs";
+
 function youtubeVideoId(value: string): string {
   try {
     const url = new URL(value.trim());
@@ -120,7 +122,7 @@ export function UploadStudio() {
 
   const minutesLeft = usage ? usage.processing_minutes_remaining.toLocaleString(undefined, { maximumFractionDigits: 1 }) : null;
   return (
-    <div className="mx-auto w-full max-w-6xl">
+    <div className="mx-auto w-full max-w-6xl" data-upload-fallback={DIRECT_GCS_UPLOAD ? "direct_gcs" : "api"}>
       {preflight && !preflight.ready && <div className="mb-5 flex gap-3 rounded-2xl border border-amber-300/30 bg-amber-50 p-4 text-sm text-amber-950"><AlertCircle className="shrink-0" size={20}/><div><b>Processing engine needs attention</b>{preflight.problems.map((item) => <p className="mt-1" key={item}>{item}</p>)}<small className="mt-2 block opacity-70">{preflight.recommendation}</small></div></div>}
 
       <section className="relative overflow-hidden rounded-[34px] border border-[#143c2d]/15 bg-[#07110d] text-white shadow-[0_30px_100px_rgba(7,40,28,.18)]">
