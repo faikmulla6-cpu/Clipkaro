@@ -4,7 +4,7 @@ import {
   AlertCircle, Check, ChevronRight, Clipboard, Clock3, Link2, Loader2,
   LockKeyhole, Play, Scissors, ShieldCheck, Sparkles, WandSparkles, Youtube,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AccountSettings, API_URL, Usage, api } from "@/lib/api";
 import { DirectUploadFallback } from "@/components/DirectUploadFallback";
@@ -52,6 +52,9 @@ export function UploadStudio() {
   const [language, setLanguage] = useState<AccountSettings["default_language"]>("auto");
   const [category, setCategory] = useState<AccountSettings["creator_category"]>("auto");
   const router = useRouter();
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const pollTimerRef = useRef<number | null>(null);
+  const activeJobRef = useRef<string | null>(null);
   const videoId = useMemo(() => youtubeVideoId(youtubeUrl), [youtubeUrl]);
 
   useEffect(() => {
@@ -60,19 +63,48 @@ export function UploadStudio() {
     api<AccountSettings>("/settings").then((saved) => {
       setLanguage(saved.default_language); setCategory(saved.creator_category);
     }).catch(() => undefined);
+    return () => {
+      eventSourceRef.current?.close();
+      if (pollTimerRef.current !== null) window.clearInterval(pollTimerRef.current);
+    };
   }, []);
 
+  function stopWatch() {
+    eventSourceRef.current?.close();
+    eventSourceRef.current = null;
+    if (pollTimerRef.current !== null) {
+      window.clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  }
+
   function watch(jobId: string, projectId: string) {
+    stopWatch();
+    activeJobRef.current = jobId;
+
+    const apply = (data: Job) => {
+      if (activeJobRef.current !== jobId) return;
+      setJob(data);
+      if (!["completed", "failed"].includes(data.status)) return;
+      activeJobRef.current = null;
+      stopWatch();
+      setBusy(false);
+      if (data.status === "completed") setTimeout(() => router.push(`/projects/${projectId}`), 500);
+    };
+
+    pollTimerRef.current = window.setInterval(async () => {
+      try { apply(await api<Job>(`/jobs/${jobId}`)); }
+      catch { /* transient proxy/container restart: the next poll retries */ }
+    }, 4000);
+
     const source = new EventSource(`${API_URL}/jobs/${jobId}/events`, { withCredentials: true });
-    source.addEventListener("progress", (event) => setJob(JSON.parse((event as MessageEvent).data)));
-    source.addEventListener("done", (event) => {
-      const data = JSON.parse((event as MessageEvent).data) as Job;
-      setJob(data); setBusy(false); source.close();
-      if (data.status === "completed") setTimeout(() => router.push(`/projects/${projectId}`), 700);
-    });
+    eventSourceRef.current = source;
+    source.addEventListener("progress", (event) => apply(JSON.parse((event as MessageEvent).data) as Job));
+    source.addEventListener("done", (event) => apply(JSON.parse((event as MessageEvent).data) as Job));
     source.onerror = () => {
-      source.close(); setBusy(false);
-      setError("Live updates paused. Your video can still be processing — check Projects in a moment.");
+      source.close();
+      if (eventSourceRef.current === source) eventSourceRef.current = null;
+      // Polling remains active, so a buffered SSE connection never freezes progress.
     };
   }
 
