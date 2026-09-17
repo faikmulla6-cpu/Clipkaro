@@ -12,13 +12,17 @@ from pydantic import BaseModel, Field
 from app.core.config import get_settings
 from app.core.database import execute, fetch_one, run_in_transaction
 from app.services.auth import current_user
+from app.services.email_verification import requires_verification_for_processing
 from app.services.hinglish_stage1_routing import resolve_stage1_route
 from app.services.job_launcher import JobLaunchError, get_job_launcher
 from app.services.storage import cloud_object_storage_enabled, get_storage_provider
 from app.services.video import upload_type_supported
+from app.services.youtube_import import canonicalize_youtube_url
 
 router = APIRouter()
 _ALLOWED_MIME = {"video/mp4", "video/quicktime", "video/webm", "video/x-matroska", "video/matroska", "application/octet-stream"}
+_ALLOWED_LANGUAGES = {"auto", "en", "hi", "hinglish", "mr"}
+_ALLOWED_CATEGORIES = {"auto", "education", "podcast", "business", "motivation", "spiritual", "local-business"}
 
 
 def _now() -> datetime:
@@ -32,6 +36,14 @@ class UploadInitRequest(BaseModel):
     title: str = Field(default="Untitled video", max_length=120)
     language: str = Field(default="auto", max_length=32)
     category: str = Field(default="auto", max_length=64)
+
+
+class YouTubeImportRequest(BaseModel):
+    url: str = Field(min_length=1, max_length=500)
+    title: str = Field(default="", max_length=120)
+    language: str = Field(default="auto", max_length=32)
+    category: str = Field(default="auto", max_length=64)
+    rights_confirmed: bool = False
 
 
 async def init_cloud_uploads() -> None:
@@ -126,3 +138,79 @@ async def complete_upload(session_id: str, user: dict = Depends(current_user)) -
         await execute("UPDATE jobs SET status='failed',stage='launch_failed',error='Media job launch failed',failed_at=?,updated_at=? WHERE id=?", (timestamp, timestamp, job_id))
         raise HTTPException(503, "Video was stored safely, but processing could not start. Retry shortly.") from exc
     return {"project_id": project_id, "job_id": job_id, "status": "queued"}
+
+
+@router.post("/imports/youtube", status_code=202)
+async def import_youtube(body: YouTubeImportRequest, user: dict = Depends(current_user)) -> dict[str, Any]:
+    """Queue one creator-authorized YouTube video for the existing media pipeline."""
+    if requires_verification_for_processing(user):
+        raise HTTPException(
+            403,
+            {"message": "Verify your email before starting AI processing.", "code": "EMAIL_VERIFICATION_REQUIRED"},
+        )
+    if not cloud_object_storage_enabled():
+        raise HTTPException(409, "YouTube importing requires private cloud media storage.")
+    if not body.rights_confirmed:
+        raise HTTPException(422, "Confirm that you own this video or have permission to create clips from it.")
+    if body.language not in _ALLOWED_LANGUAGES or body.category not in _ALLOWED_CATEGORIES:
+        raise HTTPException(422, "Choose a supported language and content type.")
+    try:
+        canonical_url, youtube_video_id = canonicalize_youtube_url(body.url)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    project_id, video_id, job_id = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
+    timestamp = _now().isoformat()
+    expires = (_now() + timedelta(hours=get_settings().file_expiry_hours)).isoformat()
+    custom_title = body.title.strip()
+    title = custom_title or "YouTube video"
+    # The placeholder is already inside the project's authorized private prefix.
+    # The worker replaces the extension/generation only after malware scanning.
+    source_key = f"users/{user['id']}/projects/{project_id}/source/source.mp4"
+    route = resolve_stage1_route(body.language, str(user["id"]))
+    payload = json.dumps(
+        {
+            "video_id": video_id,
+            "canonical_url": canonical_url,
+            "youtube_video_id": youtube_video_id,
+            "title_is_custom": bool(custom_title),
+            **route,
+        },
+        separators=(",", ":"),
+    )
+
+    async def persist(db) -> None:
+        await db.execute(
+            "INSERT INTO projects VALUES (?, ?, ?, '', 'queued', 0, 'queued', ?, ?, NULL, ?, ?)",
+            (project_id, user["id"], title[:120], body.language, body.category, timestamp, timestamp),
+        )
+        await db.execute(
+            """INSERT INTO videos(id,project_id,original_filename,duration,width,height,file_size,file_path,
+               object_generation,status,created_at,expires_at) VALUES (?,?,?,0,0,0,?,?,?,'uploaded',?,?)""",
+            (video_id, project_id, f"youtube-{youtube_video_id}.mp4", 0, source_key, "", timestamp, expires),
+        )
+        await db.execute(
+            """INSERT INTO jobs(id,user_id,project_id,export_id,kind,status,progress,stage,message,error,created_at,updated_at)
+               VALUES (?,?,?,NULL,'import_youtube','queued',0,'queued','Waiting to import YouTube video',NULL,?,?)""",
+            (job_id, user["id"], project_id, timestamp, timestamp),
+        )
+        await db.execute(
+            "INSERT INTO job_payloads(job_id,payload_json,created_at,updated_at) VALUES (?,?,?,?)",
+            (job_id, payload, timestamp, timestamp),
+        )
+
+    await run_in_transaction(persist, operation_name="queue YouTube import")
+    try:
+        await get_job_launcher().launch(job_id)
+    except JobLaunchError as exc:
+        await execute(
+            "UPDATE jobs SET status='failed',stage='launch_failed',message='Processing could not start',error='Media job launch failed',failed_at=?,updated_at=? WHERE id=?",
+            (timestamp, timestamp, job_id),
+        )
+        await execute(
+            "UPDATE projects SET status='failed',stage='failed',error='Processing could not start',updated_at=? WHERE id=?",
+            (timestamp, project_id),
+        )
+        raise HTTPException(503, "Your project was saved, but processing could not start. Retry shortly.") from exc
+
+    return {"project_id": project_id, "job_id": job_id, "status": "queued", "youtube_video_id": youtube_video_id}
