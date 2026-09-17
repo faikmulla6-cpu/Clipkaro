@@ -209,3 +209,48 @@ def test_export_mobile_safety_contract_is_single_flight_and_server_authoritative
     assert 'user.plan === "free"' in editor
     assert "downloadExport" in exports_page
     assert 'api<ExportStatus>(`/exports/${exportId}`)' in exports_page
+
+
+def test_production_socialkit_mode_fails_closed_without_server_key(monkeypatch) -> None:
+    settings = get_settings()
+    names = (
+        "app_env", "secret_key", "database_backend", "database_url", "storage_backend",
+        "job_backend", "frontend_url", "app_public_url", "cors_origins", "email_from",
+        "razorpay_mode", "seed_demo_user", "allow_live_razorpay_in_development",
+        "youtube_ingestion_provider", "socialkit_access_key", "socialkit_api_base_url",
+    )
+    original = {name: getattr(settings, name) for name in names}
+    try:
+        settings.app_env = "production"
+        settings.secret_key = "A9!clipkaro-production-secret-with-high-diversity-2026"
+        settings.database_backend = "postgres"
+        settings.database_url = "postgresql://user:pass@db.example.invalid/app?sslmode=require"
+        settings.storage_backend = "gcs"
+        settings.job_backend = "cloud_run_job"
+        settings.frontend_url = "https://clipkaro.pro"
+        settings.app_public_url = "https://clipkaro.pro"
+        settings.cors_origins = "https://clipkaro.pro"
+        settings.email_from = "ClipKaro AI <verify@clipkaro.pro>"
+        settings.razorpay_mode = "live"
+        settings.seed_demo_user = False
+        settings.allow_live_razorpay_in_development = False
+        settings.youtube_ingestion_provider = "socialkit"
+        settings.socialkit_access_key = ""
+        settings.socialkit_api_base_url = "https://api.socialkit.dev"
+        monkeypatch.setenv("OBJECT_STORAGE_PROVIDER", "s3")
+        monkeypatch.setenv("JOB_EXECUTION_PROVIDER", "modal")
+        monkeypatch.setenv("S3_ENDPOINT_URL", "https://s3.example.invalid")
+        monkeypatch.setenv("S3_REGION", "region-1")
+        monkeypatch.setenv("S3_BUCKET_NAME", "private-bucket")
+        monkeypatch.setenv("S3_ACCESS_KEY_ID", "access-key")
+        monkeypatch.setenv("S3_SECRET_ACCESS_KEY", "secret-key-with-enough-diversity-123")
+        monkeypatch.setenv("MODAL_APP_NAME", "clipkaro-production")
+        monkeypatch.setenv("MODAL_MEDIA_FUNCTION", "run_media_job")
+        issues = production_boot_configuration_issues()
+        assert "YOUTUBE_INGESTION_PROVIDER_KEY_MISSING" in issues
+        settings.socialkit_access_key = "sk_live_provider_key_with_enough_length_123"
+        issues = production_boot_configuration_issues()
+        assert "YOUTUBE_INGESTION_PROVIDER_KEY_MISSING" not in issues
+    finally:
+        for name, value in original.items():
+            setattr(settings, name, value)

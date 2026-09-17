@@ -162,6 +162,13 @@ def production_boot_configuration_issues() -> list[str]:
         issues.append("EMAIL_FROM_NOT_EXPLICIT")
     if settings.normalized_razorpay_mode != "live":
         issues.append("RAZORPAY_MODE_NOT_LIVE")
+
+    youtube_provider = settings.normalized_youtube_ingestion_provider
+    if youtube_provider in {"auto", "socialkit"}:
+        if _placeholder(settings.socialkit_access_key):
+            issues.append("YOUTUBE_INGESTION_PROVIDER_KEY_MISSING")
+        if _clean(settings.socialkit_api_base_url).rstrip("/") != "https://api.socialkit.dev":
+            issues.append("YOUTUBE_INGESTION_PROVIDER_URL_INVALID")
     return issues
 
 
@@ -223,5 +230,10 @@ def production_configuration_summary() -> dict[str, object]:
         "object_storage_provider": _object_storage_provider(),
         "job_backend": settings.normalized_job_backend,
         "job_execution_provider": _job_execution_provider(),
+        "youtube_ingestion_provider": settings.normalized_youtube_ingestion_provider,
+        "youtube_ingestion_provider_configured": (
+            settings.normalized_youtube_ingestion_provider == "native"
+            or not _placeholder(settings.socialkit_access_key)
+        ),
         "serverless_mode": settings.production_serverless_mode,
     }

@@ -38,6 +38,7 @@ Create one Modal secret named `clipkaro-production`. Keep every value private. I
 - `CLOUDFLARE_API_TOKEN`
 - `ELEVENLABS_API_KEYS` only for the existing controlled Stage-1 cohort
 - `RESEND_API_KEY`
+- `SOCIALKIT_ACCESS_KEY` when `YOUTUBE_INGESTION_PROVIDER=auto` or `socialkit`
 - `EMAIL_FROM=ClipKaro AI <verify@clipkaro.pro>`
 - public support aliases that are monitored before checkout goes live:
   `LEGAL_CONTACT_EMAIL=legal@clipkaro.pro`, `PRIVACY_CONTACT_EMAIL=privacy@clipkaro.pro`,
@@ -47,6 +48,12 @@ Create one Modal secret named `clipkaro-production`. Keep every value private. I
   operator name, principal address, customer-care phone, Grievance Officer name and grievance phone
 
 Never put these values in Git, screenshots, logs or `NEXT_PUBLIC_*` variables.
+
+### YouTube link ingestion
+
+The creator-facing primary path is paste-a-YouTube-link. `YOUTUBE_INGESTION_PROVIDER=auto` keeps the bounded native yt-dlp path first and falls back to SocialKit only when native extraction is blocked. `YOUTUBE_INGESTION_PROVIDER=socialkit` uses the provider directly. ClipKaro sends a provider-side `max_duration` equal to the smaller of the plan source limit and the creator's remaining Karo Minutes, downloads only MP4 media from approved HTTPS provider/CDN hosts, scans it, stores it privately, and then continues through ClipKaro's existing ASR/ranking/export pipeline. Manual upload remains an optional fallback.
+
+Do not enable `auto`/`socialkit` in production without `SOCIALKIT_ACCESS_KEY`; the production configuration gate fails closed. Keep the API key only in the Modal secret.
 
 ## Backblaze B2
 
