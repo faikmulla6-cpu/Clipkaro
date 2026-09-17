@@ -144,3 +144,21 @@ def test_active_youtube_import_guard_allows_when_queue_is_clear() -> None:
     db = _GuardDb(None)
     asyncio.run(_reject_if_youtube_import_active(db, "user-2"))
     assert db.params == ("user-2",)
+
+
+def test_youtube_bot_check_surfaces_no_charge_upload_fallback(monkeypatch, tmp_path: Path) -> None:
+    class BlockedDL(_FakeYoutubeDL):
+        def extract_info(self, url: str, download: bool = False) -> dict:
+            raise RuntimeError("Sign in to confirm you're not a bot")
+
+    monkeypatch.setitem(sys.modules, "yt_dlp", SimpleNamespace(YoutubeDL=BlockedDL))
+    with pytest.raises(YouTubeImportError, match="YOUTUBE_IMPORT_FAILED") as error:
+        download_youtube_source(
+            "https://youtube.com/watch?v=dQw4w9WgXcQ",
+            tmp_path,
+            max_minutes=15,
+            remaining_minutes=15,
+            max_bytes=1024,
+        )
+    assert "Karo Minutes were not charged" in error.value.public_message
+    assert "Upload your original file instead" in error.value.public_message
