@@ -24,6 +24,7 @@ from app.services.source_caption_detection import detect_burned_captions
 from app.services.storage import get_storage_provider, validate_object_key
 from app.services.transcript_review import effective_segments_for_video
 from app.services.upload_scanner import UploadMalwareDetected, UploadScannerUnavailable, scan_upload
+from app.services.youtube_import import YouTubeImportError, download_youtube_source
 
 
 logger = logging.getLogger("clipkaro.media_job")
@@ -37,6 +38,15 @@ async def _heartbeat(job_id: str) -> None:
 
 def _video_mp4(content_type: str) -> bool:
     return str(content_type or "").split(";", 1)[0].strip().lower() == "video/mp4"
+
+
+def _source_content_type(path: Path) -> str:
+    return {
+        ".mp4": "video/mp4",
+        ".mov": "video/quicktime",
+        ".webm": "video/webm",
+        ".mkv": "video/x-matroska",
+    }.get(path.suffix.lower(), "application/octet-stream")
 
 
 async def _render_export_durable(
@@ -121,12 +131,11 @@ async def _render_export_durable(
         )
 
         scan = await detect_burned_captions(source, float(video.get("duration") or clip["end_time"]))
-        # Creator choice is authoritative. Existing burned-in subtitles are still
-        # detected and surfaced as a warning, but Lower/Above/Centre must render
-        # exactly where the creator selected them.
         preserve_band = scan.get("band_start") if scan["detected"] else None
         if request.preserve_source_captions and preserve_band is None:
             preserve_band = 0.82
+        # Creator choice is authoritative. Existing burned-in subtitles inform the
+        # UI only; they never silently move the creator's requested caption placement.
         caption_position = effective_caption_position(
             request.india_quality_mode,
             request.preserve_source_captions,
@@ -165,9 +174,6 @@ async def _render_export_durable(
             expected_prefix=f"users/{job['user_id']}/exports/{export['id']}",
         )
         expected_size = output.stat().st_size
-
-        # A non-ready export may have an orphan from an interrupted attempt.
-        # Delete it first so the durable object always matches this exact render.
         existing = await storage.stat(output_key)
         if existing:
             await storage.delete(output_key, generation=existing.generation or None)
@@ -178,8 +184,6 @@ async def _render_export_durable(
             raise RuntimeError("EXPORT_FAILED")
 
         generation = verified.generation or stored.generation
-        # Persist the durable object key before exposing ready/completed. The
-        # download route can now always create a signed URL for a real object.
         await execute(
             """UPDATE exports
                SET output_path=?,object_generation=?,status='ready',progress=100,error=NULL
@@ -194,7 +198,6 @@ async def _render_export_durable(
         try:
             await project_routes.audit(job["user_id"], "export.completed", "export", export["id"])
         except Exception:
-            # Audit telemetry must not downgrade a verified downloadable export.
             logger.exception("Export audit write failed export_id=%s", export["id"])
 
         await update_job(job["id"], 100, "ready", "Your Short is ready to download", "completed")
@@ -202,8 +205,116 @@ async def _render_export_durable(
         srt.unlink(missing_ok=True)
 
 
+async def _scan_source(source: Path, storage=None, source_key: str = "", generation: str | None = None) -> None:
+    try:
+        await scan_upload(source)
+    except UploadMalwareDetected:
+        if storage is not None and source_key:
+            await storage.delete(source_key, generation=generation)
+        raise RuntimeError("MEDIA_VALIDATION_FAILED")
+    except UploadScannerUnavailable as exc:
+        raise RuntimeError("MEDIA_VALIDATION_FAILED") from exc
+
+
+async def _run_youtube_import(job: dict, scratch: Path, storage) -> None:
+    payload = job.get("payload") or {}
+    project_id = str(job.get("project_id") or "")
+    video_id = str(payload.get("video_id") or "")
+    user = await fetch_one("SELECT * FROM users WHERE id=?", (job["user_id"],))
+    video = await fetch_one("SELECT * FROM videos WHERE id=? AND project_id=?", (video_id, project_id))
+    if not user or not video or not project_id:
+        raise RuntimeError("Project worker input no longer exists.")
+
+    await update_job(job["id"], 3, "importing", "Checking your YouTube video and plan limits")
+    source_key = validate_object_key(
+        str(video.get("file_path") or ""),
+        expected_prefix=f"users/{user['id']}/projects/{project_id}",
+    )
+    source: Path
+
+    existing = await storage.stat(source_key) if video.get("object_generation") else None
+    if existing and existing.size > 0:
+        suffix = Path(str(video.get("original_filename") or "source.mp4")).suffix.lower() or ".mp4"
+        source = scratch / "uploads" / f"{video_id}{suffix}"
+        await storage.download(source_key, source, generation=video.get("object_generation"))
+        await _scan_source(source, storage, source_key, video.get("object_generation"))
+    else:
+        canonical_url = str(payload.get("canonical_url") or "")
+        limits = await project_routes.get_usage_for(user)
+        active_plan = limits.plan
+        max_minutes = project_routes.PLAN_MAX_SOURCE_MINUTES.get(
+            active_plan, project_routes.PLAN_MAX_SOURCE_MINUTES["free"]
+        )
+        settings = get_settings()
+        imported = await asyncio.to_thread(
+            download_youtube_source,
+            canonical_url,
+            scratch / "youtube",
+            max_minutes=float(max_minutes),
+            remaining_minutes=float(limits.processing_minutes_remaining),
+            max_bytes=int(settings.max_upload_mb) * 1024 * 1024,
+        )
+        source = imported.path
+        await update_job(job["id"], 6, "importing", "Securing the source for private AI processing")
+        await _scan_source(source)
+
+        suffix = source.suffix.lower() if source.suffix.lower() in {".mp4", ".mov", ".webm", ".mkv"} else ".mp4"
+        durable_key = validate_object_key(
+            f"users/{user['id']}/projects/{project_id}/source/{uuid.uuid4().hex}{suffix}",
+            expected_prefix=f"users/{user['id']}/projects/{project_id}",
+        )
+        stored = await storage.upload(source, durable_key, content_type=_source_content_type(source))
+        verified = await storage.stat(durable_key)
+        if verified is None or verified.size != source.stat().st_size or verified.size <= 0:
+            await storage.delete(durable_key, generation=(verified or stored).generation if (verified or stored) else None)
+            raise RuntimeError("MEDIA_VALIDATION_FAILED")
+
+        generation = verified.generation or stored.generation
+        try:
+            await execute(
+                """UPDATE videos SET original_filename=?,file_size=?,file_path=?,object_generation=?,status='uploaded'
+                   WHERE id=? AND project_id=?""",
+                (
+                    f"youtube-{imported.video_id}{suffix}",
+                    verified.size,
+                    durable_key,
+                    generation,
+                    video_id,
+                    project_id,
+                ),
+            )
+        except Exception:
+            # If persistence fails after the private object upload, remove the
+            # unreferenced object so a retry cannot leak storage.
+            await storage.delete(durable_key, generation=generation)
+            raise
+        source_key = durable_key
+        if not bool(payload.get("title_is_custom")):
+            await execute(
+                "UPDATE projects SET title=?,updated_at=? WHERE id=?",
+                (imported.title[:120], utcnow(), project_id),
+            )
+        video = await fetch_one("SELECT * FROM videos WHERE id=?", (video_id,)) or video
+
+    route = persisted_stage1_route(payload)
+    await project_routes._process_project(
+        job["id"], project_id, video_id, user, route["asr_route"], False, source,
+    )
+    state = await fetch_one("SELECT status FROM projects WHERE id=?", (project_id,))
+    if state and state.get("status") == "ready":
+        return
+    current_job = await fetch_one("SELECT status FROM jobs WHERE id=?", (job["id"],))
+    if current_job and current_job.get("status") == "failed":
+        return
+    raise RuntimeError("PROVIDER_TEMPORARY_FAILURE")
+
+
 async def _run(job: dict, scratch: Path) -> None:
     storage = get_storage_provider()
+    if job["kind"] == "import_youtube":
+        await _run_youtube_import(job, scratch, storage)
+        return
+
     if job["kind"] in {"process_video", "upgrade_pipeline"}:
         project_id = str(job["project_id"])
         video_id = str((job.get("payload") or {}).get("video_id") or "")
@@ -214,13 +325,7 @@ async def _run(job: dict, scratch: Path) -> None:
         source_key = validate_object_key(str(video["file_path"]), expected_prefix=f"quarantine/{user['id']}") if str(video["file_path"]).startswith("quarantine/") else validate_object_key(str(video["file_path"]), expected_prefix=f"users/{user['id']}")
         source = scratch / "uploads" / (video_id + Path(video["original_filename"]).suffix.lower())
         await storage.download(source_key, source, generation=video.get("object_generation"))
-        try:
-            await scan_upload(source)
-        except UploadMalwareDetected:
-            await storage.delete(source_key, generation=video.get("object_generation"))
-            raise RuntimeError("MEDIA_VALIDATION_FAILED")
-        except UploadScannerUnavailable as exc:
-            raise RuntimeError("MEDIA_VALIDATION_FAILED") from exc
+        await _scan_source(source, storage, source_key, video.get("object_generation"))
         route = persisted_stage1_route(job.get("payload"))
         await project_routes._process_project(
             job["id"], project_id, video_id, user, route["asr_route"],
@@ -251,9 +356,6 @@ async def _run(job: dict, scratch: Path) -> None:
         if not clip or not video:
             raise RuntimeError("Export source no longer exists.")
 
-        # Recovery after a worker restart between durable upload and job
-        # completion: verify the object and finish the job without rendering or
-        # consuming another export reservation.
         if export.get("status") == "ready":
             try:
                 ready_key = validate_object_key(
@@ -302,10 +404,13 @@ async def run_job(job_id: str, *, execution_id: str = "", worker_prefix: str = "
             await _run(job, scratch)
         return 0
     except Exception as exc:
-        category = str(exc) if str(exc) in {"MEDIA_VALIDATION_FAILED", "EXPORT_FAILED"} else "PROVIDER_TEMPORARY_FAILURE"
+        public_message = str(getattr(exc, "public_message", "") or "").strip()
+        if isinstance(exc, YouTubeImportError):
+            category = "YOUTUBE_IMPORT_FAILED"
+        else:
+            category = str(exc) if str(exc) in {"MEDIA_VALIDATION_FAILED", "EXPORT_FAILED"} else "PROVIDER_TEMPORARY_FAILURE"
+        failure_message = public_message or "Media processing failed"
 
-        # If publication already succeeded, preserve the downloadable artifact
-        # and recover only the terminal job event instead of downgrading it.
         if job.get("export_id"):
             current_export = await fetch_one("SELECT status FROM exports WHERE id=?", (job["export_id"],))
             if current_export and current_export.get("status") == "ready":
@@ -326,9 +431,9 @@ async def run_job(job_id: str, *, execution_id: str = "", worker_prefix: str = "
                     logger.exception("Could not recover completed project job_id=%s", job_id)
                     return 1
 
-        await update_job(job_id, int(job.get("progress") or 0), "failed", "Media processing failed", "failed", category)
+        await update_job(job_id, int(job.get("progress") or 0), "failed", failure_message, "failed", category)
         if job.get("project_id"):
-            await execute("UPDATE projects SET status='failed',stage='failed',error=? WHERE id=?", (category, job["project_id"]))
+            await execute("UPDATE projects SET status='failed',stage='failed',error=? WHERE id=?", (failure_message, job["project_id"]))
         if job.get("export_id"):
             await execute("UPDATE exports SET status='failed',error=? WHERE id=?", (category, job["export_id"]))
         return 1
