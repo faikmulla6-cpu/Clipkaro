@@ -28,10 +28,9 @@ class FakeStorage:
         self.deleted.append((key, generation))
         return True
 class FakeResponse:
-    status_code = 200
-
-    def __init__(self, payload: dict[str, object]) -> None:
+    def __init__(self, payload: dict[str, object], status_code: int = 200) -> None:
         self.payload = payload
+        self.status_code = status_code
 
     def json(self) -> dict[str, object]:
         return self.payload
@@ -40,6 +39,7 @@ class FakeResponse:
 class FakeClient:
     calls: list[dict[str, object]] = []
     payload = {
+        "status": "completed",
         "video_id": "wgcfwWw7Mj4",
         "title": "Cosmos Laundromat",
         "duration": 720.0,
@@ -57,11 +57,22 @@ class FakeClient:
         return None
 
     async def post(self, url: str, *, json: dict, headers: dict[str, str]):
-        self.calls.append({"url": url, "json": json, "headers": headers})
+        self.calls.append({"method": "POST", "url": url, "json": json, "headers": headers})
+        return FakeResponse({"job_id": "a" * 32, "status": "queued"}, status_code=202)
+
+    async def get(self, url: str, *, headers: dict[str, str]):
+        self.calls.append({"method": "GET", "url": url, "headers": headers})
         return FakeResponse(dict(self.payload))
+
+
+async def _no_sleep(_seconds: float) -> None:
+    return None
+
+
 def test_worker_ingestion_uses_presigned_upload_and_verifies_storage(monkeypatch) -> None:
     FakeClient.calls.clear()
     monkeypatch.setattr(youtube_worker_client.httpx, "AsyncClient", FakeClient)
+    monkeypatch.setattr(youtube_worker_client.asyncio, "sleep", _no_sleep)
     storage = FakeStorage()
     result = asyncio.run(youtube_worker_client.ingest_youtube_to_storage(
         "https://youtu.be/wgcfwWw7Mj4",
@@ -80,13 +91,18 @@ def test_worker_ingestion_uses_presigned_upload_and_verifies_storage(monkeypatch
     assert result.metadata.size == 12345
     assert result.object_key.startswith("users/user-1/projects/project-1/source/")
     assert storage.signed and storage.signed[0][1] == "video/mp4"
-    call = FakeClient.calls[0]
-    assert call["url"] == "https://worker.example.com/v1/ingest/youtube"
-    assert call["headers"]["Authorization"].startswith("Bearer ")
-    assert call["json"]["expected_video_id"] == "wgcfwWw7Mj4"
+    post_call, poll_call = FakeClient.calls[:2]
+    assert post_call["url"] == "https://worker.example.com/v1/ingest/youtube"
+    assert post_call["headers"]["Authorization"].startswith("Bearer ")
+    assert post_call["json"]["expected_video_id"] == "wgcfwWw7Mj4"
+    assert poll_call["url"] == "https://worker.example.com/v1/jobs/" + "a" * 32
     assert not storage.deleted
+
+
 def test_worker_ingestion_rejects_unverified_size(monkeypatch) -> None:
+    FakeClient.calls.clear()
     monkeypatch.setattr(youtube_worker_client.httpx, "AsyncClient", FakeClient)
+    monkeypatch.setattr(youtube_worker_client.asyncio, "sleep", _no_sleep)
     storage = FakeStorage(size=999)
     with pytest.raises(YouTubeImportError) as error:
         asyncio.run(youtube_worker_client.ingest_youtube_to_storage(

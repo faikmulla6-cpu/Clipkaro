@@ -7,6 +7,8 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
+import uuid
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -30,6 +32,10 @@ SHARED_SECRET = os.getenv("INGESTION_SHARED_SECRET", "")
 ALLOW_HTTP_UPLOAD_FOR_TESTS = os.getenv("INGESTION_ALLOW_HTTP_UPLOAD_FOR_TESTS", "").strip().lower() in {"1", "true", "yes"}
 REQUEST_TIMEOUT = max(60, min(int(os.getenv("INGESTION_REQUEST_TIMEOUT_SECONDS", "900")), 1800))
 semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
+jobs_lock = asyncio.Lock()
+jobs: dict[str, dict[str, object]] = {}
+background_tasks: set[asyncio.Task] = set()
+JOB_TTL_SECONDS = max(900, min(int(os.getenv("INGESTION_JOB_TTL_SECONDS", "3600")), 7200))
 app = FastAPI(title="ClipKaro YouTube Ingestion Worker", version=VERSION, docs_url=None, redoc_url=None)
 
 
@@ -185,9 +191,75 @@ def health() -> dict[str, object]:
     }
 
 
-@app.post("/v1/ingest/youtube")
+def _public_job(state: dict[str, object]) -> dict[str, object]:
+    return {key: value for key, value in state.items() if key != "updated_at"}
+
+
+async def _purge_jobs() -> None:
+    cutoff = time.time() - JOB_TTL_SECONDS
+    async with jobs_lock:
+        stale = [job_id for job_id, state in jobs.items() if float(state.get("updated_at") or 0) < cutoff]
+        for job_id in stale:
+            jobs.pop(job_id, None)
+
+
+async def _run_ingest_job(job_id: str, body: IngestRequest) -> None:
+    async with semaphore:
+        async with jobs_lock:
+            jobs[job_id] = {"job_id": job_id, "status": "processing", "updated_at": time.time()}
+        try:
+            result = await asyncio.to_thread(_ingest, body)
+        except HTTPException as exc:
+            state = {
+                "job_id": job_id,
+                "status": "failed",
+                "status_code": int(exc.status_code),
+                "message": str(exc.detail),
+                "updated_at": time.time(),
+            }
+        except Exception:
+            state = {
+                "job_id": job_id,
+                "status": "failed",
+                "status_code": 502,
+                "message": "YouTube ingestion failed safely.",
+                "updated_at": time.time(),
+            }
+        else:
+            state = {"job_id": job_id, "status": "completed", **result, "updated_at": time.time()}
+        async with jobs_lock:
+            jobs[job_id] = state
+
+
+@app.post("/v1/ingest/youtube", status_code=202)
 async def ingest_youtube(body: IngestRequest, authorization: str | None = Header(default=None)) -> dict[str, object]:
     if not _auth_ok(authorization):
         raise HTTPException(401, "Unauthorized")
-    async with semaphore:
-        return await asyncio.to_thread(_ingest, body)
+    try:
+        _, video_id = _canonical_youtube_url(body.url)
+    except ValueError as exc:
+        raise HTTPException(422, "Invalid YouTube URL.") from exc
+    if video_id != body.expected_video_id or not _upload_host_allowed(body.upload_url):
+        raise HTTPException(422, "Ingestion request did not match its authorization boundary.")
+    await _purge_jobs()
+    job_id = uuid.uuid4().hex
+    async with jobs_lock:
+        jobs[job_id] = {"job_id": job_id, "status": "queued", "updated_at": time.time()}
+    task = asyncio.create_task(_run_ingest_job(job_id, body))
+    background_tasks.add(task)
+    task.add_done_callback(background_tasks.discard)
+    return {"job_id": job_id, "status": "queued"}
+
+
+@app.get("/v1/jobs/{job_id}")
+async def ingestion_job(job_id: str, authorization: str | None = Header(default=None)) -> dict[str, object]:
+    if not _auth_ok(authorization):
+        raise HTTPException(401, "Unauthorized")
+    if len(job_id) != 32 or any(char not in "0123456789abcdef" for char in job_id):
+        raise HTTPException(404, "Job not found")
+    await _purge_jobs()
+    async with jobs_lock:
+        state = jobs.get(job_id)
+        if state is None:
+            raise HTTPException(404, "Job not found")
+        return _public_job(state)
