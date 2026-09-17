@@ -41,11 +41,10 @@ for (const required of [
   'api<AccountSettings>("/settings")',
   "setLanguage(saved.default_language)",
   "setCategory(saved.creator_category)",
-  'form.append("language", language)',
-  'form.append("category", category)',
+  'body: JSON.stringify({ url: youtubeUrl.trim(), title: title.trim(), language, category, rights_confirmed: true })',
 ]) {
   if (!uploadSource.includes(required)) {
-    throw new Error(`Settings trust check failed: upload defaults are not consuming saved preferences: ${required}`);
+    throw new Error(`Settings trust check failed: creator input defaults are not consuming saved preferences: ${required}`);
   }
 }
 
