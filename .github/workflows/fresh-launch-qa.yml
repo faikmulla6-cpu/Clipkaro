@@ -270,6 +270,19 @@ jobs:
           clipkaro-worker:qa-${GITHUB_RUN_ID}
           -c "from app.services.forced_alignment import validate_forced_alignment_runtime; print(validate_forced_alignment_runtime('whisperx', True, enforce_production_policy=True, enforce_pinned_versions=True))"
 
+      - name: Build dedicated YouTube ingestion worker image
+        id: youtube_ingestion_worker_image
+        continue-on-error: true
+        run: docker build --pull -f ingestion_worker/Dockerfile -t clipkaro-youtube-ingest:qa-${GITHUB_RUN_ID} .
+
+      - name: Validate YouTube ingestion worker runtime
+        id: youtube_ingestion_worker_runtime
+        continue-on-error: true
+        run: |
+          docker run --rm --entrypoint python clipkaro-youtube-ingest:qa-${GITHUB_RUN_ID} -c "import importlib.metadata as m; assert m.version('yt-dlp') == '2026.8.19'; assert m.version('bgutil-ytdlp-pot-provider') == '2.0.0'; assert m.version('yt-dlp-ejs') == '0.8.0'; print('ingestion-python-runtime-ok')"
+          docker run --rm --entrypoint node clipkaro-youtube-ingest:qa-${GITHUB_RUN_ID} --version
+          docker run --rm --entrypoint test clipkaro-youtube-ingest:qa-${GITHUB_RUN_ID} -f /opt/bgutil/server/build/main.js
+
       - name: Build production frontend image
         id: frontend_image
         continue-on-error: true
@@ -291,6 +304,7 @@ jobs:
         env:
           API_TAG: clipkaro-api:qa-${{ github.run_id }}
           WORKER_TAG: clipkaro-worker:qa-${{ github.run_id }}
+          INGEST_TAG: clipkaro-youtube-ingest:qa-${{ github.run_id }}
           FRONTEND_TAG: clipkaro-frontend:qa-${{ github.run_id }}
         run: |
           mkdir -p launch-qa
@@ -298,7 +312,7 @@ jobs:
           import json, os, subprocess, sys
           from pathlib import Path
 
-          tags = {"api": os.environ["API_TAG"], "worker": os.environ["WORKER_TAG"], "frontend": os.environ["FRONTEND_TAG"]}
+          tags = {"api": os.environ["API_TAG"], "worker": os.environ["WORKER_TAG"], "youtube_ingestion": os.environ["INGEST_TAG"], "frontend": os.environ["FRONTEND_TAG"]}
           images = {}
           missing = []
           for name, tag in tags.items():
@@ -367,6 +381,8 @@ jobs:
           --check backend_api_image=${{ steps.backend_api_image.outcome }}
           --check backend_worker_image=${{ steps.backend_worker_image.outcome }}
           --check worker_alignment_runtime=${{ steps.worker_alignment_runtime.outcome }}
+          --check youtube_ingestion_worker_image=${{ steps.youtube_ingestion_worker_image.outcome }}
+          --check youtube_ingestion_worker_runtime=${{ steps.youtube_ingestion_worker_runtime.outcome }}
           --check frontend_image=${{ steps.frontend_image.outcome }}
           --check source_unchanged_after_checks=${{ steps.source_unchanged_after_checks.outcome }}
           --check docker_image_identity=${{ steps.docker_image_identity.outcome }}
@@ -399,4 +415,5 @@ jobs:
           docker image rm -f \
             clipkaro-api:qa-${GITHUB_RUN_ID} \
             clipkaro-worker:qa-${GITHUB_RUN_ID} \
+            clipkaro-youtube-ingest:qa-${GITHUB_RUN_ID} \
             clipkaro-frontend:qa-${GITHUB_RUN_ID} >/dev/null 2>&1 || true

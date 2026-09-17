@@ -18,6 +18,7 @@ import modal
 
 APP_NAME = "clipkaro-production"
 SECRET_NAME = "clipkaro-production"
+INGESTION_SECRET_NAME = "clipkaro-ingestion-worker"
 
 # Existing backend selectors remain compatibility gates for the validated
 # no-VPS code path. Concrete providers are selected independently so the
@@ -91,6 +92,7 @@ media_image = (
 # source automount so deployment contents stay deterministic and minimal.
 app = modal.App(APP_NAME, include_source=False)
 production_secret = modal.Secret.from_name(SECRET_NAME)
+ingestion_secret = modal.Secret.from_name(INGESTION_SECRET_NAME)
 
 
 @app.function(
@@ -118,7 +120,7 @@ def migrate_database() -> str:
 
 @app.function(
     image=api_image,
-    secrets=[production_secret],
+    secrets=[production_secret, ingestion_secret],
     timeout=300,
     max_containers=20,
     min_containers=0,
@@ -142,7 +144,7 @@ def api():
 
 @app.function(
     image=media_image,
-    secrets=[production_secret],
+    secrets=[production_secret, ingestion_secret],
     timeout=3600,
     cpu=2.0,
     memory=4096,
