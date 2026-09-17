@@ -120,6 +120,18 @@ class Settings(BaseSettings):
     # Creator Pulse uses the official YouTube Data API server-side only.
     youtube_data_api_key: str = ""
     youtube_data_api_timeout_seconds: float = 7.0
+
+    # YouTube media ingestion. ``native`` is the existing bounded yt-dlp path.
+    # ``auto`` retries a provider-backed import only when native extraction is
+    # blocked; ``socialkit`` uses the provider directly. Keys stay server-side.
+    youtube_ingestion_provider: str = "native"
+    socialkit_access_key: str = ""
+    socialkit_api_base_url: str = "https://api.socialkit.dev"
+    socialkit_poll_interval_seconds: float = 3.0
+    socialkit_timeout_seconds: float = 600.0
+    socialkit_download_timeout_seconds: float = 120.0
+    socialkit_quality: str = "480p"
+    socialkit_download_host_suffixes: str = "socialkit.dev,amazonaws.com,cloudfront.net"
     # Number of source videos allowed inside the memory-heavy ASR pipeline at
     # once. This is intentionally separate from ASR_WORKERS, which controls
     # faster-whisper's internal workers for a single model instance.
@@ -220,6 +232,13 @@ class Settings(BaseSettings):
     razorpay_key_id: str = ""
     razorpay_key_secret: str = ""
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    @property
+    def normalized_youtube_ingestion_provider(self) -> str:
+        provider = self.youtube_ingestion_provider.strip().lower()
+        if provider not in {"native", "auto", "socialkit"}:
+            raise RuntimeError("YOUTUBE_INGESTION_PROVIDER must be native, auto, or socialkit.")
+        return provider
 
     @property
     def normalized_razorpay_mode(self) -> str:

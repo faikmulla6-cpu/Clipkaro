@@ -253,6 +253,14 @@ async def _run_youtube_import(job: dict, scratch: Path, storage) -> None:
             max_minutes=float(max_minutes),
             remaining_minutes=float(limits.processing_minutes_remaining),
             max_bytes=int(settings.max_upload_mb) * 1024 * 1024,
+            ingestion_provider=settings.normalized_youtube_ingestion_provider,
+            socialkit_access_key=settings.socialkit_access_key,
+            socialkit_api_base_url=settings.socialkit_api_base_url,
+            socialkit_quality=settings.socialkit_quality,
+            socialkit_poll_interval_seconds=float(settings.socialkit_poll_interval_seconds),
+            socialkit_timeout_seconds=float(settings.socialkit_timeout_seconds),
+            socialkit_download_timeout_seconds=float(settings.socialkit_download_timeout_seconds),
+            socialkit_download_host_suffixes=settings.socialkit_download_host_suffixes,
         )
         source = imported.path
         await update_job(job["id"], 6, "importing", "Securing the source for private AI processing")
