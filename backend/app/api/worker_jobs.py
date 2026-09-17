@@ -54,6 +54,15 @@ async def _active_export_for_clip(clip_id: str, user_id: str) -> dict | None:
     )
 
 
+async def _active_export_for_user(user_id: str) -> dict | None:
+    return await fetch_one(
+        """SELECT id,status FROM exports
+           WHERE user_id=? AND status IN ('queued','processing')
+           ORDER BY created_at DESC LIMIT 1""",
+        (user_id,),
+    )
+
+
 async def _content_pack_context(project_id: str, user_id: str) -> tuple[dict, list[dict], list[dict], str]:
     project = await fetch_one(
         """SELECT p.*,v.id video_id FROM projects p
@@ -400,7 +409,15 @@ async def export_clip(
         limits = await project_routes.get_usage_for(user)
         active_plan = limits.plan
         if limits.exports_remaining <= 0:
-            raise HTTPException(402, "Your Short export limit is reached or currently reserved by another render.")
+            if await _active_export_for_user(str(user["id"])):
+                raise HTTPException(
+                    409,
+                    "Another Short is currently rendering and has reserved your last export slot. Wait for it to finish, then try again.",
+                )
+            raise HTTPException(
+                402,
+                f"You've used all {limits.exports_limit} Shorts included in your current plan. Buy more Shorts or choose a plan with a higher export limit.",
+            )
         if body.resolution == "1080p" and active_plan == "free":
             raise HTTPException(403, "1080p export is included with every paid ClipKaro plan.")
 

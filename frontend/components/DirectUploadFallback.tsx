@@ -53,6 +53,9 @@ export function DirectUploadFallback() {
   const [category, setCategory] = useState<AccountSettings["creator_category"]>("auto");
   const input = useRef<HTMLInputElement>(null);
   const activeUpload = useRef<XMLHttpRequest | null>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const pollTimerRef = useRef<number | null>(null);
+  const activeJobRef = useRef<string | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -66,6 +69,10 @@ export function DirectUploadFallback() {
         setLanguage("auto");
         setCategory("auto");
       });
+    return () => {
+      eventSourceRef.current?.close();
+      if (pollTimerRef.current !== null) window.clearInterval(pollTimerRef.current);
+    };
   }, []);
 
   function choose(next?: File) {
@@ -87,19 +94,41 @@ export function DirectUploadFallback() {
     setJob(null);
   }
 
+  function stopWatch() {
+    eventSourceRef.current?.close();
+    eventSourceRef.current = null;
+    if (pollTimerRef.current !== null) {
+      window.clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  }
+
   function watch(jobId: string, projectId: string) {
-    const source = new EventSource(`${API_URL}/jobs/${jobId}/events`, { withCredentials: true });
-    source.addEventListener("progress", (event) => setJob(JSON.parse((event as MessageEvent).data)));
-    source.addEventListener("done", (event) => {
-      const data = JSON.parse((event as MessageEvent).data);
+    stopWatch();
+    activeJobRef.current = jobId;
+
+    const apply = (data: Job) => {
+      if (activeJobRef.current !== jobId) return;
       setJob(data);
-      source.close();
-      if (data.status === "completed") setTimeout(() => router.push(`/projects/${projectId}`), 700);
-    });
+      if (!["completed", "failed"].includes(data.status)) return;
+      activeJobRef.current = null;
+      stopWatch();
+      setBusy(false);
+      if (data.status === "completed") setTimeout(() => router.push(`/projects/${projectId}`), 500);
+    };
+
+    pollTimerRef.current = window.setInterval(async () => {
+      try { apply(await api<Job>(`/jobs/${jobId}`)); }
+      catch { /* keep retrying while the durable job exists */ }
+    }, 4000);
+
+    const source = new EventSource(`${API_URL}/jobs/${jobId}/events`, { withCredentials: true });
+    eventSourceRef.current = source;
+    source.addEventListener("progress", (event) => apply(JSON.parse((event as MessageEvent).data) as Job));
+    source.addEventListener("done", (event) => apply(JSON.parse((event as MessageEvent).data) as Job));
     source.onerror = () => {
       source.close();
-      setError("Live connection paused. Your video is still processing—open Projects to check it.");
-      setBusy(false);
+      if (eventSourceRef.current === source) eventSourceRef.current = null;
     };
   }
 

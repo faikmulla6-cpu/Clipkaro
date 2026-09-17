@@ -769,3 +769,11 @@ def test_export_slots_are_atomically_reserved_and_refunded(client: TestClient):
         "SELECT resource_id,status FROM usage_reservations WHERE kind='export' ORDER BY created_at"
     ))
     assert [row["status"] for row in statuses] == ["released", "finalized"]
+
+    blocked = client.post(
+        f"/api/v1/clips/{clip_id}/export",
+        json={"resolution": "720p", "watermark": True},
+    )
+    assert blocked.status_code == 402
+    assert "used all 2 Shorts" in blocked.json()["detail"]
+    assert "reserved by another render" not in blocked.json()["detail"]
