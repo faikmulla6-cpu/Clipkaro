@@ -30,3 +30,13 @@ def test_balanced_break_prefers_hinglish_conjunction():
     card = build_caption_cards(words("main samajh gaya lekin tum abhi bhi nahi samjhe"), max_words=12)[0]
     assert len(card.lines) == 2
     assert card.lines[1].startswith("lekin")
+
+def test_india_pop_splits_projected_phrase_before_visual_overflow():
+    stream = words("biological chronotype assessment", step=.34)
+    cards = build_caption_cards(stream, max_chars=18, max_words=3, max_duration=2.2)
+    assert len(cards) == 2
+    assert [[word["text"] for word in card.words] for card in cards] == [
+        ["biological", "chronotype"],
+        ["assessment"],
+    ]
+    assert not [error for error in validate_cards(cards, max_chars=18) if "overflow" in error]
