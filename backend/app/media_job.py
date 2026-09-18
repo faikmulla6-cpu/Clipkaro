@@ -25,6 +25,7 @@ from app.services.storage import get_storage_provider, validate_object_key
 from app.services.transcript_review import effective_segments_for_video
 from app.services.upload_scanner import UploadMalwareDetected, UploadScannerUnavailable, scan_upload
 from app.services.youtube_import import YouTubeImportError, download_youtube_source
+from app.services.youtube_worker_client import ingest_youtube_to_storage
 
 
 logger = logging.getLogger("clipkaro.media_job")
@@ -246,38 +247,66 @@ async def _run_youtube_import(job: dict, scratch: Path, storage) -> None:
             active_plan, project_routes.PLAN_MAX_SOURCE_MINUTES["free"]
         )
         settings = get_settings()
-        imported = await asyncio.to_thread(
-            download_youtube_source,
-            canonical_url,
-            scratch / "youtube",
-            max_minutes=float(max_minutes),
-            remaining_minutes=float(limits.processing_minutes_remaining),
-            max_bytes=int(settings.max_upload_mb) * 1024 * 1024,
-            ingestion_provider=settings.normalized_youtube_ingestion_provider,
-            socialkit_access_key=settings.socialkit_access_key,
-            socialkit_api_base_url=settings.socialkit_api_base_url,
-            socialkit_quality=settings.socialkit_quality,
-            socialkit_poll_interval_seconds=float(settings.socialkit_poll_interval_seconds),
-            socialkit_timeout_seconds=float(settings.socialkit_timeout_seconds),
-            socialkit_download_timeout_seconds=float(settings.socialkit_download_timeout_seconds),
-            socialkit_download_host_suffixes=settings.socialkit_download_host_suffixes,
-        )
-        source = imported.path
-        await update_job(job["id"], 6, "importing", "Securing the source for private AI processing")
-        await _scan_source(source)
-
-        suffix = source.suffix.lower() if source.suffix.lower() in {".mp4", ".mov", ".webm", ".mkv"} else ".mp4"
-        durable_key = validate_object_key(
-            f"users/{user['id']}/projects/{project_id}/source/{uuid.uuid4().hex}{suffix}",
-            expected_prefix=f"users/{user['id']}/projects/{project_id}",
-        )
-        stored = await storage.upload(source, durable_key, content_type=_source_content_type(source))
-        verified = await storage.stat(durable_key)
-        if verified is None or verified.size != source.stat().st_size or verified.size <= 0:
-            await storage.delete(durable_key, generation=(verified or stored).generation if (verified or stored) else None)
-            raise RuntimeError("MEDIA_VALIDATION_FAILED")
-
-        generation = verified.generation or stored.generation
+        provider = settings.normalized_youtube_ingestion_provider
+        max_bytes = int(settings.max_upload_mb) * 1024 * 1024
+        if provider == "worker":
+            imported = await ingest_youtube_to_storage(
+                canonical_url,
+                user_id=str(user["id"]),
+                project_id=project_id,
+                max_minutes=float(max_minutes),
+                remaining_minutes=float(limits.processing_minutes_remaining),
+                max_bytes=max_bytes,
+                storage=storage,
+                worker_url=settings.youtube_ingestion_worker_url,
+                worker_secret=settings.youtube_ingestion_worker_secret,
+                timeout_seconds=float(settings.youtube_ingestion_worker_timeout_seconds),
+                upload_ttl_seconds=int(settings.youtube_ingestion_worker_upload_ttl_seconds),
+            )
+            durable_key = imported.object_key
+            verified = imported.metadata
+            generation = verified.generation
+            suffix = ".mp4"
+            source = scratch / "youtube" / f"source-{imported.video_id}.mp4"
+            source.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                await storage.download(durable_key, source, generation=generation or None)
+                await update_job(job["id"], 6, "importing", "Securing the source for private AI processing")
+                await _scan_source(source, storage, durable_key, generation or None)
+            except Exception:
+                await storage.delete(durable_key, generation=generation or None)
+                raise
+        else:
+            imported = await asyncio.to_thread(
+                download_youtube_source,
+                canonical_url,
+                scratch / "youtube",
+                max_minutes=float(max_minutes),
+                remaining_minutes=float(limits.processing_minutes_remaining),
+                max_bytes=max_bytes,
+                ingestion_provider=provider,
+                socialkit_access_key=settings.socialkit_access_key,
+                socialkit_api_base_url=settings.socialkit_api_base_url,
+                socialkit_quality=settings.socialkit_quality,
+                socialkit_poll_interval_seconds=float(settings.socialkit_poll_interval_seconds),
+                socialkit_timeout_seconds=float(settings.socialkit_timeout_seconds),
+                socialkit_download_timeout_seconds=float(settings.socialkit_download_timeout_seconds),
+                socialkit_download_host_suffixes=settings.socialkit_download_host_suffixes,
+            )
+            source = imported.path
+            await update_job(job["id"], 6, "importing", "Securing the source for private AI processing")
+            await _scan_source(source)
+            suffix = source.suffix.lower() if source.suffix.lower() in {".mp4", ".mov", ".webm", ".mkv"} else ".mp4"
+            durable_key = validate_object_key(
+                f"users/{user['id']}/projects/{project_id}/source/{uuid.uuid4().hex}{suffix}",
+                expected_prefix=f"users/{user['id']}/projects/{project_id}",
+            )
+            stored = await storage.upload(source, durable_key, content_type=_source_content_type(source))
+            verified = await storage.stat(durable_key)
+            if verified is None or verified.size != source.stat().st_size or verified.size <= 0:
+                await storage.delete(durable_key, generation=(verified or stored).generation if (verified or stored) else None)
+                raise RuntimeError("MEDIA_VALIDATION_FAILED")
+            generation = verified.generation or stored.generation
         try:
             await execute(
                 """UPDATE videos SET original_filename=?,file_size=?,file_path=?,object_generation=?,status='uploaded'

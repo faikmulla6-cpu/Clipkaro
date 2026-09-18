@@ -164,7 +164,12 @@ def production_boot_configuration_issues() -> list[str]:
         issues.append("RAZORPAY_MODE_NOT_LIVE")
 
     youtube_provider = settings.normalized_youtube_ingestion_provider
-    if youtube_provider in {"auto", "socialkit"}:
+    if youtube_provider == "worker":
+        if not _https_url(settings.youtube_ingestion_worker_url):
+            issues.append("YOUTUBE_INGESTION_WORKER_URL_INVALID")
+        if not _secret_ok(settings.youtube_ingestion_worker_secret, minimum=32):
+            issues.append("YOUTUBE_INGESTION_WORKER_SECRET_WEAK")
+    elif youtube_provider in {"auto", "socialkit"}:
         if _placeholder(settings.socialkit_access_key):
             issues.append("YOUTUBE_INGESTION_PROVIDER_KEY_MISSING")
         if _clean(settings.socialkit_api_base_url).rstrip("/") != "https://api.socialkit.dev":
@@ -233,7 +238,15 @@ def production_configuration_summary() -> dict[str, object]:
         "youtube_ingestion_provider": settings.normalized_youtube_ingestion_provider,
         "youtube_ingestion_provider_configured": (
             settings.normalized_youtube_ingestion_provider == "native"
-            or not _placeholder(settings.socialkit_access_key)
+            or (
+                settings.normalized_youtube_ingestion_provider == "worker"
+                and _https_url(settings.youtube_ingestion_worker_url)
+                and _secret_ok(settings.youtube_ingestion_worker_secret, minimum=32)
+            )
+            or (
+                settings.normalized_youtube_ingestion_provider in {"auto", "socialkit"}
+                and not _placeholder(settings.socialkit_access_key)
+            )
         ),
         "serverless_mode": settings.production_serverless_mode,
     }

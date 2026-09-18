@@ -17,7 +17,7 @@ jobs:
   certify-780:
     name: certify-7.8.0
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, clipkaro-qa]
     timeout-minutes: 90
     env:
       EXPECTED_RELEASE_VERSION: "7.8.0"
@@ -37,31 +37,8 @@ jobs:
           persist-credentials: false
           clean: true
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Set up Node 20 for Fresh Launch preflight
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install Ubuntu launch tools
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg faketime
-
-      - name: Reclaim GitHub-hosted runner disk for production qualification
-        shell: bash
-        run: |
-          echo "Disk before safe cleanup:"
-          df -h /
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup
-          sudo apt-get clean
-          docker system prune -af --volumes || true
-          echo "Disk after safe cleanup:"
-          df -h /
+      - name: Verify deterministic-clock tool
+        run: command -v faketime >/dev/null
 
       - name: Verify exact clean checkout
         id: clean_checkout
@@ -78,20 +55,10 @@ jobs:
         continue-on-error: true
         run: python3 scripts/check_fresh_launch_execution_environment.py --tested-sha "$TESTED_SHA" --output launch-qa/execution-preflight.json
 
-      - name: Verify GitHub-hosted Ubuntu launch runner prerequisites
+      - name: Verify self-hosted launch runner prerequisites
         id: runner_prerequisites
         continue-on-error: true
-        shell: bash
-        run: |
-          test "$RUNNER_OS" = "Linux"
-          test "$(uname -m)" = "x86_64"
-          python3.12 --version
-          node --version
-          npm --version
-          ffmpeg -version >/dev/null
-          ffprobe -version >/dev/null
-          docker info >/dev/null
-          docker compose version >/dev/null
+        run: bash scripts/check-self-hosted-runner.sh --profile launch
 
       - name: Create isolated backend virtualenv
         id: backend_environment
@@ -270,6 +237,19 @@ jobs:
           clipkaro-worker:qa-${GITHUB_RUN_ID}
           -c "from app.services.forced_alignment import validate_forced_alignment_runtime; print(validate_forced_alignment_runtime('whisperx', True, enforce_production_policy=True, enforce_pinned_versions=True))"
 
+      - name: Build dedicated YouTube ingestion worker image
+        id: youtube_ingestion_worker_image
+        continue-on-error: true
+        run: docker build --pull -f ingestion_worker/Dockerfile -t clipkaro-youtube-ingest:qa-${GITHUB_RUN_ID} .
+
+      - name: Validate YouTube ingestion worker runtime
+        id: youtube_ingestion_worker_runtime
+        continue-on-error: true
+        run: |
+          docker run --rm --entrypoint python clipkaro-youtube-ingest:qa-${GITHUB_RUN_ID} -c "import importlib.metadata as m; assert m.version('yt-dlp') == '2026.8.19'; assert m.version('bgutil-ytdlp-pot-provider') == '2.0.0'; assert m.version('yt-dlp-ejs') == '0.8.0'; print('ingestion-python-runtime-ok')"
+          docker run --rm --entrypoint node clipkaro-youtube-ingest:qa-${GITHUB_RUN_ID} --version
+          docker run --rm --entrypoint test clipkaro-youtube-ingest:qa-${GITHUB_RUN_ID} -f /opt/bgutil/server/build/main.js
+
       - name: Build production frontend image
         id: frontend_image
         continue-on-error: true
@@ -291,6 +271,7 @@ jobs:
         env:
           API_TAG: clipkaro-api:qa-${{ github.run_id }}
           WORKER_TAG: clipkaro-worker:qa-${{ github.run_id }}
+          INGEST_TAG: clipkaro-youtube-ingest:qa-${{ github.run_id }}
           FRONTEND_TAG: clipkaro-frontend:qa-${{ github.run_id }}
         run: |
           mkdir -p launch-qa
@@ -298,7 +279,7 @@ jobs:
           import json, os, subprocess, sys
           from pathlib import Path
 
-          tags = {"api": os.environ["API_TAG"], "worker": os.environ["WORKER_TAG"], "frontend": os.environ["FRONTEND_TAG"]}
+          tags = {"api": os.environ["API_TAG"], "worker": os.environ["WORKER_TAG"], "youtube_ingestion": os.environ["INGEST_TAG"], "frontend": os.environ["FRONTEND_TAG"]}
           images = {}
           missing = []
           for name, tag in tags.items():
@@ -367,6 +348,8 @@ jobs:
           --check backend_api_image=${{ steps.backend_api_image.outcome }}
           --check backend_worker_image=${{ steps.backend_worker_image.outcome }}
           --check worker_alignment_runtime=${{ steps.worker_alignment_runtime.outcome }}
+          --check youtube_ingestion_worker_image=${{ steps.youtube_ingestion_worker_image.outcome }}
+          --check youtube_ingestion_worker_runtime=${{ steps.youtube_ingestion_worker_runtime.outcome }}
           --check frontend_image=${{ steps.frontend_image.outcome }}
           --check source_unchanged_after_checks=${{ steps.source_unchanged_after_checks.outcome }}
           --check docker_image_identity=${{ steps.docker_image_identity.outcome }}
@@ -391,7 +374,7 @@ jobs:
         if: always()
         run: python3 scripts/generate_launch_qa_report.py enforce --report launch-qa/launch-qa-evidence.json
 
-      - name: Clean GitHub-hosted runner workspace
+      - name: Clean persistent runner workspace
         if: always()
         run: |
           rm -rf backend/.venv-ci backend/.pytest_cache frontend/node_modules frontend/.next launch-qa
@@ -399,4 +382,5 @@ jobs:
           docker image rm -f \
             clipkaro-api:qa-${GITHUB_RUN_ID} \
             clipkaro-worker:qa-${GITHUB_RUN_ID} \
+            clipkaro-youtube-ingest:qa-${GITHUB_RUN_ID} \
             clipkaro-frontend:qa-${GITHUB_RUN_ID} >/dev/null 2>&1 || true

@@ -121,10 +121,14 @@ class Settings(BaseSettings):
     youtube_data_api_key: str = ""
     youtube_data_api_timeout_seconds: float = 7.0
 
-    # YouTube media ingestion. ``native`` is the existing bounded yt-dlp path.
-    # ``auto`` retries a provider-backed import only when native extraction is
-    # blocked; ``socialkit`` uses the provider directly. Keys stay server-side.
+    # YouTube media ingestion. ``native`` runs yt-dlp inside the media worker;
+    # ``worker`` delegates acquisition to a dedicated clean-egress service;
+    # legacy ``auto``/``socialkit`` remain disabled unless explicitly configured.
     youtube_ingestion_provider: str = "native"
+    youtube_ingestion_worker_url: str = ""
+    youtube_ingestion_worker_secret: str = ""
+    youtube_ingestion_worker_timeout_seconds: float = 900.0
+    youtube_ingestion_worker_upload_ttl_seconds: int = 1200
     socialkit_access_key: str = ""
     socialkit_api_base_url: str = "https://api.socialkit.dev"
     socialkit_poll_interval_seconds: float = 3.0
@@ -236,8 +240,8 @@ class Settings(BaseSettings):
     @property
     def normalized_youtube_ingestion_provider(self) -> str:
         provider = self.youtube_ingestion_provider.strip().lower()
-        if provider not in {"native", "auto", "socialkit"}:
-            raise RuntimeError("YOUTUBE_INGESTION_PROVIDER must be native, auto, or socialkit.")
+        if provider not in {"native", "worker", "auto", "socialkit"}:
+            raise RuntimeError("YOUTUBE_INGESTION_PROVIDER must be native, worker, auto, or socialkit.")
         return provider
 
     @property

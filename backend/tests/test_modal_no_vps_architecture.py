@@ -254,3 +254,52 @@ def test_production_socialkit_mode_fails_closed_without_server_key(monkeypatch) 
     finally:
         for name, value in original.items():
             setattr(settings, name, value)
+
+
+def test_production_worker_mode_requires_https_url_and_strong_secret(monkeypatch) -> None:
+    settings = get_settings()
+    names = (
+        "app_env", "secret_key", "database_backend", "database_url", "storage_backend",
+        "job_backend", "frontend_url", "app_public_url", "cors_origins", "email_from",
+        "razorpay_mode", "seed_demo_user", "allow_live_razorpay_in_development",
+        "youtube_ingestion_provider", "youtube_ingestion_worker_url", "youtube_ingestion_worker_secret",
+    )
+    original = {name: getattr(settings, name) for name in names}
+    try:
+        settings.app_env = "production"
+        settings.secret_key = "A9!clipkaro-production-secret-with-high-diversity-2026"
+        settings.database_backend = "postgres"
+        settings.database_url = "postgresql://user:pass@db.example.invalid/app?sslmode=require"
+        settings.storage_backend = "gcs"
+        settings.job_backend = "cloud_run_job"
+        settings.frontend_url = "https://clipkaro.pro"
+        settings.app_public_url = "https://clipkaro.pro"
+        settings.cors_origins = "https://clipkaro.pro"
+        settings.email_from = "ClipKaro AI <verify@clipkaro.pro>"
+        settings.razorpay_mode = "live"
+        settings.seed_demo_user = False
+        settings.allow_live_razorpay_in_development = False
+        settings.youtube_ingestion_provider = "worker"
+        settings.youtube_ingestion_worker_url = "http://worker.example.com"
+        settings.youtube_ingestion_worker_secret = "short"
+        monkeypatch.setenv("OBJECT_STORAGE_PROVIDER", "s3")
+        monkeypatch.setenv("JOB_EXECUTION_PROVIDER", "modal")
+        monkeypatch.setenv("S3_ENDPOINT_URL", "https://s3.example.invalid")
+        monkeypatch.setenv("S3_REGION", "region-1")
+        monkeypatch.setenv("S3_BUCKET_NAME", "private-bucket")
+        monkeypatch.setenv("S3_ACCESS_KEY_ID", "access-key")
+        monkeypatch.setenv("S3_SECRET_ACCESS_KEY", "secret-key-with-enough-diversity-123")
+        monkeypatch.setenv("MODAL_APP_NAME", "clipkaro-production")
+        monkeypatch.setenv("MODAL_MEDIA_FUNCTION", "run_media_job")
+        issues = production_boot_configuration_issues()
+        assert "YOUTUBE_INGESTION_WORKER_URL_INVALID" in issues
+        assert "YOUTUBE_INGESTION_WORKER_SECRET_WEAK" in issues
+
+        settings.youtube_ingestion_worker_url = "https://ingest.clipkaro.pro"
+        settings.youtube_ingestion_worker_secret = "A9-worker-secret-with-enough-diversity-2026!"
+        issues = production_boot_configuration_issues()
+        assert "YOUTUBE_INGESTION_WORKER_URL_INVALID" not in issues
+        assert "YOUTUBE_INGESTION_WORKER_SECRET_WEAK" not in issues
+    finally:
+        for name, value in original.items():
+            setattr(settings, name, value)

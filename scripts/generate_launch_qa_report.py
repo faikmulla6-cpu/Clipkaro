@@ -43,6 +43,8 @@ MANDATORY_CHECKS = (
     "backend_api_image",
     "backend_worker_image",
     "worker_alignment_runtime",
+    "youtube_ingestion_worker_image",
+    "youtube_ingestion_worker_runtime",
     "frontend_image",
     "source_unchanged_after_checks",
     "docker_image_identity",
@@ -257,7 +259,7 @@ def _certification_analysis(
             blockers.append("docker_image_identity reported success but image evidence is missing")
         else:
             images = docker_images.get("images") or {}
-            for name in ("api", "worker", "frontend"):
+            for name in ("api", "worker", "youtube_ingestion", "frontend"):
                 item = images.get(name) or {}
                 if not item.get("image_id") or not item.get("repo_digest_or_id"):
                     blockers.append(f"Docker identity evidence incomplete for {name} image")
