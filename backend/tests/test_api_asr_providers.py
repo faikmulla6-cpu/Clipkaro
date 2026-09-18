@@ -130,7 +130,7 @@ def test_invalid_asr_provider_selection_fails_closed() -> None:
 def test_worker_retry_reuses_current_verified_transcript_before_provider_call() -> None:
     routes = _source("app/api/routes.py")
     reuse = routes.index("Reused existing verified transcript")
-    provider_call = routes.index("await transcribe(Path(video[\"file_path\"])")
+    provider_call = routes.index("await transcribe(source_path,")
     assert reuse < provider_call
     assert 'SELECT COUNT(*) count FROM clips WHERE video_id=?' in routes
 

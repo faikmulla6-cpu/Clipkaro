@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 from app.core.config import get_settings
 from app.core.database import UsageQuotaExceeded, execute, fetch_all, fetch_one
-from app.main import app
+from app.main import _auth_requests, _requests, app
 from app.services.legal import LEGAL_VERSION
 
 
@@ -36,10 +36,14 @@ def client(tmp_path):
     settings.razorpay_key_secret = "test-secret-for-signatures"
     settings.razorpay_webhook_secret = "webhook-test-secret"
     settings.allow_live_razorpay_in_development = False
+    _requests.clear()
+    _auth_requests.clear()
     try:
         with TestClient(app) as test_client:
             yield test_client
     finally:
+        _requests.clear()
+        _auth_requests.clear()
         for key, value in original.items():
             setattr(settings, key, value)
 
@@ -115,7 +119,7 @@ def test_signed_billing_webhook_is_idempotent(client: TestClient):
     payload = {"event_id": "evt_test_1", "event": "subscription.activated", "payload": {
         "subscription": {"entity": {
             "id": "sub_webhook_test", "plan_id": "plan_pro", "status": "active", "paid_count": 1,
-            "current_start": 1786838400, "current_end": 1789516800,
+            "current_start": 1893456000, "current_end": 1896134400,
             # Notes are deliberately wrong; server-created checkout + provider plan id are authority.
             "notes": {"user_id": "attacker-controlled-note", "plan": "creator"},
         }},
