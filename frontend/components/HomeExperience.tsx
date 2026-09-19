@@ -195,6 +195,40 @@ export function HomeExperience() {
             </div>
           </section>
 
+          <section className={styles.answerSection} id="answers">
+            <div className={styles.answerLead} data-public-reveal="left">
+              <span>Clear answers for creators and search</span>
+              <h2>What is ClipKaro AI?</h2>
+              <p>
+                ClipKaro AI is a web-based video repurposing platform for turning authorised long-form
+                source videos into short-form clips. Creators can begin with a supported YouTube URL or
+                upload the original file, review AI-ranked moments and then refine captions, framing and exports.
+              </p>
+            </div>
+            <div className={styles.answerGrid} data-public-reveal="right">
+              <article>
+                <span>01</span>
+                <h3>Can ClipKaro turn a YouTube video into Shorts?</h3>
+                <p>Yes. Paste a supported YouTube video, Shorts or live-replay URL, or upload the original file. ClipKaro analyses the source and surfaces moments you can review before export.</p>
+              </article>
+              <article>
+                <span>02</span>
+                <h3>What if a YouTube URL cannot be imported?</h3>
+                <p>Use the original-file upload fallback. The source then continues through the same transcript, clip-finding, editing and export workflow.</p>
+              </article>
+              <article>
+                <span>03</span>
+                <h3>Does ClipKaro publish clips automatically?</h3>
+                <p>No. ClipKaro helps find, prepare and render clips, but the creator decides what to keep, edit, export and publish.</p>
+              </article>
+              <article>
+                <span>04</span>
+                <h3>Who is ClipKaro built for?</h3>
+                <p>YouTubers, podcasters, educators, coaches, founders, businesses and creator teams that already have long-form video and want more short-form output.</p>
+              </article>
+            </div>
+          </section>
+
           <section className={styles.pulse} id="creator-pulse">
             <div className={styles.pulseGlow} aria-hidden="true" />
             <div className={styles.pulseInner}>
@@ -222,7 +256,7 @@ export function HomeExperience() {
 
           <section className={styles.workflowSection} id="workflow">
             <div className={styles.workflowLead} data-public-reveal="left"><span>Simple process. Powerful results.</span><h2>From long video to creator-ready output.</h2></div>
-            <p className={styles.workflowIntro} data-public-reveal="right">Upload your video, let ClipKaro analyse it, then review the suggested clips, captions and framing before you publish.</p>
+            <p className={styles.workflowIntro} data-public-reveal="right">Paste a supported YouTube URL or upload the original file, let ClipKaro analyse it, then review the suggested clips, captions and framing before you publish.</p>
             <div className={styles.workflowGrid}>
               {workflow.map(([Icon,title,text],index)=><article key={title} data-public-reveal="scale"><span>{index+1}</span><i><Icon size={21}/></i><div><b>{title}</b><p>{text}</p></div>{index<workflow.length-1&&<ArrowRight className={styles.stepArrow} size={18}/>}</article>)}
             </div>
@@ -273,7 +307,7 @@ export function HomeExperience() {
             <div className={styles.faqGrid} data-public-reveal="right">{questions.map(([question,answer])=><details key={question}><summary>{question}<span>+</span></summary><p>{answer}</p></details>)}</div>
           </section>
 
-          <section className={styles.finalCta} data-public-reveal="scale"><div><span><Sparkles size={14}/> START WITH ONE VIDEO</span><h2>Make the content you already recorded work harder.</h2><p>Create a free account, upload content you own and judge the suggested clips yourself.</p></div><TransitionLink href="/signup" className={styles.limeButton}>Start creating free <ArrowRight size={16}/></TransitionLink></section>
+          <section className={styles.finalCta} data-public-reveal="scale"><div><span><Sparkles size={14}/> START WITH ONE VIDEO</span><h2>Make the content you already recorded work harder.</h2><p>Create a free account, paste a supported YouTube link or upload content you own, and judge the suggested clips yourself.</p></div><TransitionLink href="/signup" className={styles.limeButton}>Start creating free <ArrowRight size={16}/></TransitionLink></section>
         </main>
 
         <PublicSiteFooter />

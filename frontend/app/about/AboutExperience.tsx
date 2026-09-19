@@ -257,11 +257,13 @@ export function AboutExperience() {
               <span> short-form content worth publishing.</span>
             </h1>
             <p>
-              ClipKaro is an AI-powered creation platform designed for creators, educators,
-              podcasters and businesses who want to find the strongest moments inside their
-              content without spending hours manually searching, cutting, captioning and writing publishing copy.
+              ClipKaro AI is a web-based video repurposing platform for creators, educators, podcasters
+              and businesses. Start with a supported YouTube URL or an original file you own or can process;
+              ClipKaro transcribes the source, ranks promising moments, supports creator review and turns
+              approved moments into short-form exports and publishing copy.
             </p>
             <div className={polish.heroSignals} aria-label="ClipKaro product priorities">
+              <span>YouTube URL → Shorts</span>
               <span>AI video intelligence</span>
               <span>Creator-controlled</span>
               <span>India Quality Mode</span>

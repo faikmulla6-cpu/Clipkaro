@@ -39,12 +39,25 @@ export const metadata: Metadata = {
   },
 };
 
-const websiteStructuredData = {
+const organizationStructuredData = {
   "@context": "https://schema.org",
-  "@type": "WebSite",
+  "@type": "Organization",
+  "@id": "https://clipkaro.pro/#organization",
   name: "ClipKaro AI",
   alternateName: ["ClipKaro", "ClipKaroAI"],
   url: "https://clipkaro.pro/",
+  logo: "https://clipkaro.pro/assets/clipkaro-icon.png",
+  description: "ClipKaro AI is a web-based video repurposing platform for creators, educators, podcasters and businesses.",
+};
+
+const websiteStructuredData = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  "@id": "https://clipkaro.pro/#website",
+  name: "ClipKaro AI",
+  alternateName: ["ClipKaro", "ClipKaroAI"],
+  url: "https://clipkaro.pro/",
+  publisher: { "@id": "https://clipkaro.pro/#organization" },
   hasPart: LEGAL_LINKS.map(([name, href]) => ({
     "@type": "WebPage",
     name,
@@ -55,17 +68,20 @@ const websiteStructuredData = {
 const softwareStructuredData = {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
+  "@id": "https://clipkaro.pro/#software",
   name: "ClipKaro AI",
   url: "https://clipkaro.pro/",
   applicationCategory: "MultimediaApplication",
   operatingSystem: "Web",
+  publisher: { "@id": "https://clipkaro.pro/#organization" },
+  mainEntityOfPage: { "@id": "https://clipkaro.pro/#website" },
   description: "AI video clipping, YouTube URL import, resilient original-file upload fallback, content repurposing and YouTube creator intelligence for Indian creators, including clip detection, transcript review, India Quality Mode, captions, vertical export, Content Packs and Creator Pulse.",
   offers: {
-    "@type": "AggregateOffer",
+    "@type": "Offer",
     priceCurrency: "INR",
-    lowPrice: "0",
-    highPrice: "1999",
-    offerCount: "6",
+    price: "0",
+    url: "https://clipkaro.pro/pricing",
+    description: "A free plan is available; paid plans are listed on the pricing page.",
   },
   featureList: [
     "YouTube URL import for supported videos, Shorts and live replays",
@@ -118,6 +134,22 @@ const faqStructuredData = {
         text: "ClipKaro can analyse an authorised source video, rank promising moments, support transcript review, captions and reframing, and render creator-approved short-form exports.",
       },
     },
+    {
+      "@type": "Question",
+      name: "Does ClipKaro publish clips automatically?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "No. ClipKaro helps find, prepare and render clips, but the creator decides what to keep, edit, export and publish.",
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Who is ClipKaro built for?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "ClipKaro is built for YouTubers, podcasters, educators, coaches, founders, businesses and creator teams that already have long-form video and want more short-form output.",
+      },
+    },
   ],
 };
 
@@ -137,6 +169,7 @@ const urlToShortsHowToStructuredData = {
 export default function Home() {
   return (
     <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationStructuredData) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteStructuredData) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareStructuredData) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqStructuredData) }} />

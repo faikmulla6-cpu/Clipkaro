@@ -18,27 +18,53 @@ export const metadata: Metadata = {
 
 const aboutStructuredData = {
   "@context": "https://schema.org",
-  "@type": "AboutPage",
-  name: "About ClipKaro AI",
-  url: "https://clipkaro.pro/about",
-  description,
-  about: {
-    "@type": "SoftwareApplication",
-    name: "ClipKaro AI",
-    applicationCategory: "MultimediaApplication",
-    operatingSystem: "Web",
-    url: "https://clipkaro.pro/",
-    featureList: [
-      "YouTube URL import for supported videos, Shorts and live replays",
-      "Original-file upload fallback when direct URL acquisition is unavailable",
-      "AI clip detection and ranking",
-      "Smart Transcript Review",
-      "Hindi, Hinglish and Indian-English creator workflows",
-      "Caption-safe vertical rendering",
-      "Creator Studio editing and export controls",
-      "Creator Pulse YouTube channel intelligence",
-    ],
-  },
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://clipkaro.pro/#organization",
+      name: "ClipKaro AI",
+      alternateName: ["ClipKaro", "ClipKaroAI"],
+      url: "https://clipkaro.pro/",
+      logo: "https://clipkaro.pro/assets/clipkaro-icon.png",
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://clipkaro.pro/#software",
+      name: "ClipKaro AI",
+      applicationCategory: "MultimediaApplication",
+      operatingSystem: "Web",
+      url: "https://clipkaro.pro/",
+      publisher: { "@id": "https://clipkaro.pro/#organization" },
+      description,
+      offers: { "@type": "Offer", priceCurrency: "INR", price: "0", url: "https://clipkaro.pro/pricing" },
+      featureList: [
+        "YouTube URL import for supported videos, Shorts and live replays",
+        "Original-file upload fallback when direct URL acquisition is unavailable",
+        "AI clip detection and ranking",
+        "Smart Transcript Review",
+        "Hindi, Hinglish and Indian-English creator workflows",
+        "Caption-safe vertical rendering",
+        "Creator Studio editing and export controls",
+        "Creator Pulse YouTube channel intelligence",
+      ],
+    },
+    {
+      "@type": "AboutPage",
+      "@id": "https://clipkaro.pro/about#page",
+      name: "About ClipKaro AI",
+      url: "https://clipkaro.pro/about",
+      description,
+      about: { "@id": "https://clipkaro.pro/#software" },
+      publisher: { "@id": "https://clipkaro.pro/#organization" },
+    },
+    {
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        { "@type": "ListItem", position: 1, name: "Home", item: "https://clipkaro.pro/" },
+        { "@type": "ListItem", position: 2, name: "About ClipKaro AI", item: "https://clipkaro.pro/about" },
+      ],
+    },
+  ],
 };
 
 export default function AboutPage() {
