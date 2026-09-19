@@ -31,10 +31,21 @@ async def cleanup_expired() -> int:
     removed = 0
     cloud = get_settings().normalized_storage_backend == "gcs"
     storage = get_storage_provider() if cloud else None
+    upload_sessions = await fetch_all(
+        """SELECT id,object_key FROM upload_sessions
+           WHERE expires_at<? AND status IN ('initiated','rejected')""",
+        (timestamp,),
+    ) if cloud else []
     for item in files:
         try:
             if cloud:
-                key = validate_object_key(str(item.get("file_path") or ""), expected_prefix="users/")
+                raw_key = str(item.get("file_path") or "")
+                if raw_key.startswith("users/"):
+                    key = validate_object_key(raw_key, expected_prefix="users/")
+                elif raw_key.startswith("quarantine/"):
+                    key = validate_object_key(raw_key, expected_prefix="quarantine/")
+                else:
+                    raise ValueError("Expired source is outside an authorized cloud retention namespace.")
                 removed += int(await storage.delete(key))
                 await execute("UPDATE videos SET status='expired' WHERE id=?", (item["id"],))
                 continue
@@ -47,7 +58,7 @@ async def cleanup_expired() -> int:
                 removed += 1
             removed += remove_preview_files(str(item["id"]))
             await execute("UPDATE videos SET status='expired' WHERE id=?", (item["id"],))
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
             logger.error(
                 "Expired source cleanup will retry video_id=%s error_type=%s",
                 item.get("id"), type(exc).__name__,
@@ -68,9 +79,25 @@ async def cleanup_expired() -> int:
                 path.unlink()
                 removed += 1
             await execute("UPDATE exports SET status='expired' WHERE id=?", (item["id"],))
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
             logger.error(
                 "Expired export cleanup will retry export_id=%s error_type=%s",
+                item.get("id"), type(exc).__name__,
+            )
+
+    for item in upload_sessions:
+        try:
+            key = validate_object_key(
+                str(item.get("object_key") or ""), expected_prefix="quarantine/"
+            )
+            removed += int(await storage.delete(key))
+            await execute(
+                "UPDATE upload_sessions SET status='expired' WHERE id=? AND status IN ('initiated','rejected')",
+                (item["id"],),
+            )
+        except (OSError, ValueError) as exc:
+            logger.error(
+                "Expired upload-session cleanup will retry upload_session_id=%s error_type=%s",
                 item.get("id"), type(exc).__name__,
             )
 
