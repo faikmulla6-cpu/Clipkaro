@@ -142,24 +142,36 @@ async def _render_export_durable(
             request.preserve_source_captions,
             request.caption_position,
         )
-        await render_short_limited(
-            source,
-            output,
-            clip["start_time"],
-            clip["end_time"],
-            srt if srt.exists() else None,
-            request.hook_text or clip["hook"],
-            request.watermark,
-            request.resolution,
-            request.aspect_ratio,
-            request.caption_style,
-            (brand or {}).get("logo_text") or "",
-            (brand or {}).get("primary_color") or "#DFFF57",
-            request.focus_x,
-            caption_position,
-            [item.model_dump() for item in request.crop_keyframes],
-            preserve_band,
-        )
+        try:
+            await render_short_limited(
+                source,
+                output,
+                clip["start_time"],
+                clip["end_time"],
+                srt if srt.exists() else None,
+                request.hook_text or clip["hook"],
+                request.watermark,
+                request.resolution,
+                request.aspect_ratio,
+                request.caption_style,
+                (brand or {}).get("logo_text") or "",
+                (brand or {}).get("primary_color") or "#DFFF57",
+                request.focus_x,
+                caption_position,
+                [item.model_dump() for item in request.crop_keyframes],
+                preserve_band,
+            )
+        except Exception as exc:
+            # Keep the creator-facing failure generic, but preserve the actual
+            # render exception in server logs so production failures are
+            # diagnosable without exposing internals to the browser.
+            logger.exception(
+                "Export render failed job_id=%s export_id=%s error_type=%s",
+                job["id"],
+                export["id"],
+                type(exc).__name__,
+            )
+            raise RuntimeError("EXPORT_FAILED") from exc
 
         if not output.is_file() or output.stat().st_size <= 0:
             raise RuntimeError("EXPORT_FAILED")
