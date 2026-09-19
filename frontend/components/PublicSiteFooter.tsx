@@ -10,10 +10,10 @@ export function PublicSiteFooter() {
       <div className={styles.top}>
         <div className={styles.brand}>
           <Logo light transition />
-          <p>AI video clipping, creator workflows and evidence-led channel intelligence built for Indian creators.</p>
+          <p>Paste a supported YouTube URL or upload the original file, then turn long-form video into creator-ready Shorts with ClipKaro AI.</p>
         </div>
         <div className={styles.columns}>
-          <div><b>Product</b><TransitionLink href="/youtube-video-to-shorts-ai">AI Video Clipper</TransitionLink><TransitionLink href="/ai-shorts-maker-india">YouTube Shorts Maker</TransitionLink><TransitionLink href="/youtube-channel-analyzer">Creator Pulse</TransitionLink><TransitionLink href="/pricing">Pricing</TransitionLink></div>
+          <div><b>Product</b><TransitionLink href="/youtube-video-to-shorts-ai">YouTube URL → Shorts</TransitionLink><TransitionLink href="/ai-shorts-maker-india">AI Shorts Maker</TransitionLink><TransitionLink href="/youtube-channel-analyzer">Creator Pulse</TransitionLink><TransitionLink href="/pricing">Pricing</TransitionLink></div>
           <div><b>Company</b><TransitionLink href="/about">About</TransitionLink><TransitionLink href="/contact">Contact</TransitionLink><TransitionLink href="/about#founder">Founder</TransitionLink></div>
           <div><b>Legal</b>{LEGAL_LINKS.map(([label, href]) => <TransitionLink key={href} href={href}>{label}</TransitionLink>)}</div>
         </div>

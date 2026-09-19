@@ -7,6 +7,7 @@ import {
   Download,
   GraduationCap,
   Languages,
+  Link2,
   Mic2,
   Play,
   Scissors,
@@ -14,6 +15,7 @@ import {
   Sparkles,
   Subtitles,
   Upload,
+  Youtube,
   UserRound,
   UsersRound,
   WandSparkles,
@@ -28,7 +30,7 @@ import { TRUST_PROFILE } from "@/lib/legal";
 import styles from "./HomeExperience.module.css";
 
 const workflow = [
-  [Upload, "Upload", "Add a video file you own or have permission to process."],
+  [Link2, "Paste URL or upload", "Start with a supported YouTube link, or upload the original file you own or have permission to process."],
   [WandSparkles, "Analyse", "ClipKaro transcribes the source and finds promising moments."],
   [Scissors, "Edit & refine", "Review the suggested moments, captions and framing before export."],
   [Clapperboard, "Export & share", "Render the Shorts you choose and take them into your publishing workflow."],
@@ -62,7 +64,8 @@ const plans = [
 ] as const;
 
 const questions = [
-  ["Can I paste a YouTube URL?", "ClipKaro is upload-first today. Download or export source media you own or have permission to use, then upload it to ClipKaro."],
+  ["Can I paste a YouTube URL?", "Yes. Paste a supported YouTube video, Shorts or live-replay URL. If direct acquisition is unavailable for that source, ClipKaro lets you upload the original file instead and continue the same creator workflow."],
+  ["What happens if a YouTube link cannot be imported?", "Use the original-file upload fallback. ClipKaro then continues with the same transcript, clip-finding, editing and export workflow."],
   ["Will the clips be 9:16?", "Creator Studio supports vertical short-form framing and gives you controls to review framing before export."],
   ["Does ClipKaro choose clips automatically?", "ClipKaro suggests and ranks promising moments, but you decide which clips to keep, edit and export."],
   ["Do I need to connect YouTube Studio for Creator Pulse?", "No. Creator Pulse works from the public YouTube channel evidence available for the channel you submit."],
@@ -79,12 +82,12 @@ export function HomeExperience() {
             <div className={styles.heroAura} aria-hidden="true"><i/><i/><i/></div>
             <div className={styles.heroGrid}>
               <div className={styles.heroCopy} data-public-reveal="left">
-                <span className={styles.eyebrow}><Sparkles size={14}/> AI-powered video clipping for creators</span>
+                <span className={styles.eyebrow}><Sparkles size={14}/> YouTube URL to Shorts · upload fallback</span>
                 <h1>Turn long videos into <span>ready-to-publish Shorts.</span></h1>
-                <p>ClipKaro finds your best moments, helps prepare captions, reframes for Shorts and gives you a connected creator workflow — so one recording can become more useful content.</p>
+                <p>Start with a supported YouTube URL or upload the original file. ClipKaro finds your best moments, helps prepare captions, reframes for Shorts and keeps the whole creator workflow connected.</p>
                 <div className={styles.heroActions}>
                   <TransitionLink href="/signup" className={styles.primary}>Try ClipKaro free <ArrowRight size={17}/></TransitionLink>
-                  <a href="#workflow" className={styles.secondary}><Play size={15}/> See how it works</a>
+                  <a href="#youtube-url-to-shorts" className={styles.secondary}><Link2 size={15}/> See URL workflow</a>
                 </div>
                 <div className={styles.heroTrust}>
                   <span><CheckCircle2 size={14}/> No card required</span>
@@ -129,10 +132,66 @@ export function HomeExperience() {
             </div>
 
             <div className={styles.productRail} data-public-reveal="scale">
-              <TransitionLink href="/youtube-video-to-shorts-ai"><Scissors size={19}/><span><b>AI Video Clipper</b><small>Find the strongest moments</small></span></TransitionLink>
-              <TransitionLink href="/ai-shorts-maker-india"><Sparkles size={19}/><span><b>YouTube Shorts Maker</b><small>Turn videos into vertical Shorts</small></span></TransitionLink>
+              <TransitionLink href="/youtube-video-to-shorts-ai"><Link2 size={19}/><span><b>YouTube URL → Shorts</b><small>Paste a link or use file fallback</small></span></TransitionLink>
+              <TransitionLink href="/ai-shorts-maker-india"><Sparkles size={19}/><span><b>AI Shorts Maker</b><small>Turn videos into vertical Shorts</small></span></TransitionLink>
               <TransitionLink href="/hindi-video-to-reels"><Languages size={19}/><span><b>Hindi & Hinglish</b><small>India-first creator workflows</small></span></TransitionLink>
               <TransitionLink href="/youtube-channel-analyzer"><Activity size={19}/><span><b>Creator Pulse</b><small>₹1 channel intelligence</small></span></TransitionLink>
+            </div>
+          </section>
+
+          <section className={styles.urlFeature} id="youtube-url-to-shorts">
+            <div className={styles.urlGlow} aria-hidden="true" />
+            <div className={styles.urlFeatureInner}>
+              <div className={styles.urlCopy} data-public-reveal="left">
+                <span className={styles.urlEyebrow}><Youtube size={15}/> NEW CREATOR INTAKE</span>
+                <h2>Paste the YouTube link.<br/><strong>Keep the upload fallback.</strong></h2>
+                <p>
+                  Start from the video URL you already have. ClipKaro can import supported YouTube videos,
+                  Shorts and live replays, then move them into the same transcript, clip-finding and editing
+                  workflow. If a source cannot be retrieved directly, upload the original file instead
+                  — your creative workflow stays the same.
+                </p>
+                <div className={styles.urlBenefits}>
+                  <span><CheckCircle2 size={15}/> One link to start</span>
+                  <span><ShieldCheck size={15}/> Rights confirmation required</span>
+                  <span><Upload size={15}/> Original-file fallback</span>
+                </div>
+                <div className={styles.urlActions}>
+                  <TransitionLink href="/upload" className={styles.urlPrimary}>Try YouTube URL import <ArrowRight size={16}/></TransitionLink>
+                  <TransitionLink href="/youtube-video-to-shorts-ai" className={styles.urlSecondary}>See the full workflow</TransitionLink>
+                </div>
+                <small>Direct URL acquisition depends on the source being retrievable. If it is not, ClipKaro surfaces the file-upload path instead of leaving you stuck.</small>
+              </div>
+
+              <div className={styles.urlGlassStage} data-public-reveal="right" aria-label="Illustrative YouTube URL import with original-file fallback">
+                <div className={styles.urlGlassTop}>
+                  <span><i/><i/><i/></span>
+                  <small>CLIPKARO · LINK-FIRST CREATION</small>
+                </div>
+                <div className={styles.urlInputCard}>
+                  <div className={styles.urlSourceIcon}><Youtube size={22}/></div>
+                  <div className={styles.urlInputBody}>
+                    <span>Paste a YouTube video link</span>
+                    <div><Link2 size={15}/><b>youtube.com/watch?v=your-video</b><em>PASTE</em></div>
+                  </div>
+                  <i className={styles.urlVerified}><Check size={13}/></i>
+                </div>
+                <div className={styles.urlFlowLine}><span/><b>secure import</b><span/></div>
+                <div className={styles.urlPipeline}>
+                  <div><Sparkles size={18}/><span><b>Analyse</b><small>Transcript + moments</small></span></div>
+                  <ArrowRight size={16}/>
+                  <div><Scissors size={18}/><span><b>Refine</b><small>Captions + framing</small></span></div>
+                  <ArrowRight size={16}/>
+                  <div><Clapperboard size={18}/><span><b>Export</b><small>Creator-approved Short</small></span></div>
+                </div>
+                <div className={styles.fallbackCard}>
+                  <div className={styles.fallbackIcon}><Upload size={18}/></div>
+                  <div><span>URL unavailable?</span><b>Upload the original file instead.</b><small>Same project flow · no dead end</small></div>
+                  <ArrowRight size={17}/>
+                </div>
+                <div className={styles.urlOrbitOne} aria-hidden="true"><Link2 size={16}/></div>
+                <div className={styles.urlOrbitTwo} aria-hidden="true"><Upload size={16}/></div>
+              </div>
             </div>
           </section>
 

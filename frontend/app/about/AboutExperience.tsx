@@ -11,12 +11,14 @@ import {
   Cloud,
   Instagram,
   Languages,
+  Link2,
   LockKeyhole,
   Play,
   Scissors,
   ShieldCheck,
   Sparkles,
   Upload,
+  Youtube,
   WandSparkles,
   Workflow,
   Zap,
@@ -30,10 +32,10 @@ import story from "./about-story.module.css";
 
 const processSteps = [
   {
-    icon: Upload,
+    icon: Link2,
     number: "01",
-    title: "Private upload",
-    text: "A creator starts with media they own or are authorised to use. ClipKaro validates the source and keeps the original outside the public web experience.",
+    title: "URL or private upload",
+    text: "A creator can start from a supported YouTube URL or upload an original file they own or are authorised to use. If direct URL acquisition is unavailable, the file-upload path keeps the workflow moving.",
   },
   {
     icon: BrainCircuit,
@@ -138,6 +140,11 @@ const futureSignals = [
 ];
 
 const productSurfaces = [
+  {
+    icon: Link2,
+    title: "YouTube URL intake + file fallback",
+    text: "Paste a supported YouTube video, Shorts or live-replay URL. If the source cannot be acquired directly, ClipKaro surfaces original-file upload instead of leaving the creator at a dead end.",
+  },
   {
     icon: Activity,
     title: "Creator Pulse — ₹1 Channel Analysis",
@@ -467,6 +474,31 @@ export function AboutExperience() {
               </article>
             );
           })}
+        </div>
+
+        <div className={polish.urlPromise} data-about-reveal>
+          <div className={polish.urlPromiseCopy}>
+            <span><Youtube size={15}/> URL-FIRST, FALLBACK-SAFE</span>
+            <h3>A fast path when the link works.<br/><strong>A clear path when it doesn&apos;t.</strong></h3>
+            <p>
+              ClipKaro treats URL import as an entry point, not a dependency the creator has to trust blindly.
+              Supported YouTube links can move directly into analysis. When a source cannot be retrieved,
+              the product offers original-file upload and keeps the same transcript, clip, edit and export journey.
+            </p>
+            <div>
+              <span><Link2 size={14}/> Paste supported link</span>
+              <span><Upload size={14}/> Upload original fallback</span>
+              <span><ShieldCheck size={14}/> Creator rights stay explicit</span>
+            </div>
+            <TransitionLink href="/upload" className={polish.urlPromiseCta}>Open the creator intake <ArrowRight size={15}/></TransitionLink>
+          </div>
+          <div className={polish.urlPromiseGlass} aria-label="Illustrative resilient YouTube URL import flow">
+            <div className={polish.urlPromiseHeader}><span><i/><i/><i/></span><small>RESILIENT CREATOR INTAKE</small></div>
+            <div className={polish.urlPromiseLink}><Youtube size={21}/><span><small>PRIMARY PATH</small><b>Paste YouTube URL</b></span><CheckCircle2 size={18}/></div>
+            <div className={polish.urlPromiseConnector}><span/><b>if acquisition is unavailable</b><span/></div>
+            <div className={polish.urlPromiseFallback}><Upload size={20}/><span><small>FALLBACK PATH</small><b>Upload original file</b></span><ArrowRight size={17}/></div>
+            <div className={polish.urlPromiseDestination}><Sparkles size={18}/><span><small>SAME DESTINATION</small><b>Analyse → Refine → Export</b></span></div>
+          </div>
         </div>
       </section>
 

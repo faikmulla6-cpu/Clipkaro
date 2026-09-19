@@ -5,6 +5,7 @@ import {
   ArrowRight,
   ChevronDown,
   Languages,
+  Link2,
   Menu,
   Scissors,
   Sparkles,
@@ -23,13 +24,13 @@ type PublicSiteNavProps = {
 const products = [
   {
     href: "/youtube-video-to-shorts-ai",
-    label: "AI Video Clipper",
-    text: "Find the strongest moments inside long videos.",
-    icon: Scissors,
+    label: "YouTube URL → Shorts",
+    text: "Paste a supported link or use the original-file fallback.",
+    icon: Link2,
   },
   {
     href: "/ai-shorts-maker-india",
-    label: "YouTube Shorts Maker",
+    label: "AI Shorts Maker",
     text: "Turn creator videos into captioned vertical Shorts.",
     icon: Sparkles,
   },
