@@ -53,17 +53,37 @@ export default async function SeoLandingPage({ params }: PageProps) {
   const schema = {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
+    "@id": "https://clipkaro.pro/#software",
     name: "ClipKaro AI",
     applicationCategory: "MultimediaApplication",
     operatingSystem: "Web",
     url: `https://clipkaro.pro/${page.slug}`,
     description: page.description,
-    offers: { "@type": "Offer", priceCurrency: "INR", price: "59", availability: "https://schema.org/InStock" },
+    publisher: { "@id": "https://clipkaro.pro/#organization" },
+    offers: { "@type": "Offer", priceCurrency: "INR", price: "0", url: "https://clipkaro.pro/pricing", availability: "https://schema.org/InStock" },
   };
   const faqSchema = {
     "@context": "https://schema.org",
     "@type": "FAQPage",
     mainEntity: page.faq.map((item) => ({ "@type": "Question", name: item.question, acceptedAnswer: { "@type": "Answer", text: item.answer } })),
+  };
+  const breadcrumbSchema = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "Home", item: "https://clipkaro.pro/" },
+      { "@type": "ListItem", position: 2, name: page.title, item: `https://clipkaro.pro/${page.slug}` },
+    ],
+  };
+  const webPageSchema = {
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    "@id": `https://clipkaro.pro/${page.slug}#page`,
+    url: `https://clipkaro.pro/${page.slug}`,
+    name: page.metaTitle,
+    description: page.description,
+    about: { "@id": "https://clipkaro.pro/#software" },
+    publisher: { "@id": "https://clipkaro.pro/#organization" },
   };
 
   const words = page.h1.split(" ");
@@ -74,6 +94,8 @@ export default async function SeoLandingPage({ params }: PageProps) {
     <PublicMotionShell>
       <div className={styles.page}>
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }} />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(webPageSchema) }} />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }} />
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }} />
         <PublicSiteNav />
 

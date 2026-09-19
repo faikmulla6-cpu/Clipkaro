@@ -14,11 +14,14 @@ const tabIcon = "/assets/clipkaro-icon.png?v=4";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://clipkaro.pro"),
-  title: "ClipKaro AI — Video Clipper for Indian Creators",
-  description: "Turn long videos into Shorts with AI clip detection, Hinglish captions, transcript review, 9:16 exports and Content Packs for Indian creators.",
+  title: "ClipKaro AI — YouTube URL to Shorts & AI Video Clipper",
+  description: "Paste a supported YouTube URL or upload the original file, then turn long-form video into creator-ready Shorts with AI clip finding, captions, editing and export controls.",
   applicationName: "ClipKaro AI",
   keywords: [
     "AI video clipper",
+    "YouTube URL to Shorts",
+    "paste YouTube link to Shorts",
+    "YouTube video clipper",
     "AI Shorts maker",
     "Hinglish video clipper",
     "Indian creator AI",
@@ -43,14 +46,14 @@ export const metadata: Metadata = {
     type: "website",
     url: "https://clipkaro.pro",
     siteName: "ClipKaro AI",
-    title: "ClipKaro AI — Video Clipper for Indian Creators",
-    description: "Find strong moments, improve Hindi/Hinglish captions, review uncertain transcript lines, export vertical Shorts and generate a Content Pack from one video.",
+    title: "ClipKaro AI — YouTube URL to Shorts & AI Video Clipper",
+    description: "Start with a supported YouTube URL or original-file upload, then find strong moments, review transcripts, refine captions and export creator-ready Shorts.",
     images: [{ url: "/assets/clipkaro-icon.png", width: 1024, height: 1024, alt: "ClipKaro AI video clipping and content repurposing platform" }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "ClipKaro AI — Video Clipper for Indian Creators",
-    description: "AI clipping, India Quality Mode, Smart Transcript Review, vertical exports and Content Packs for Indian creators.",
+    title: "ClipKaro AI — YouTube URL to Shorts & AI Video Clipper",
+    description: "YouTube URL intake with original-file fallback, AI clip finding, transcript review, captions, vertical exports and Content Packs for creators.",
     images: ["/assets/clipkaro-icon.png"],
   },
 };

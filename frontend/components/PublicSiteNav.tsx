@@ -7,7 +7,6 @@ import {
   Languages,
   Link2,
   Menu,
-  Scissors,
   Sparkles,
   X,
 } from "lucide-react";
