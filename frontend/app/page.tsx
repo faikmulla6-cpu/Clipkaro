@@ -3,10 +3,14 @@ import { HomeExperience } from "@/components/HomeExperience";
 import { LEGAL_LINKS } from "@/lib/legal";
 
 export const metadata: Metadata = {
-  title: "ClipKaro AI — AI Video Clipper, Shorts Maker & Creator Pulse",
-  description: "Turn long videos into Shorts with AI-ranked moments, transcript review, India-first captions and creator controls. Use Creator Pulse for ₹1 YouTube channel analysis and one clear next-content move.",
+  title: "ClipKaro AI — YouTube URL to Shorts & AI Video Clipper",
+  description: "Paste a supported YouTube URL or upload the original video, then turn long-form content into creator-ready Shorts with AI clip finding, captions and editing.",
   keywords: [
     "AI video clipper",
+    "YouTube URL to Shorts",
+    "paste YouTube link to Shorts",
+    "YouTube link video clipper",
+    "upload video to Shorts",
     "YouTube Shorts maker",
     "YouTube channel analyzer",
     "YouTube channel analysis",
@@ -23,14 +27,14 @@ export const metadata: Metadata = {
     type: "website",
     url: "/",
     siteName: "ClipKaro AI",
-    title: "ClipKaro AI — AI Video Clipper, Shorts Maker & Creator Pulse",
-    description: "Turn long videos into creator-ready Shorts, then use Creator Pulse to understand public YouTube momentum and decide what to create next.",
+    title: "ClipKaro AI — YouTube URL to Shorts & AI Video Clipper",
+    description: "Paste a supported YouTube link or upload the original file, then find strong moments, refine captions and framing, and export creator-ready Shorts.",
     images: [{ url: "/assets/clipkaro-icon.png", width: 1024, height: 1024, alt: "ClipKaro AI creator workflow platform" }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "ClipKaro AI — AI Video Clipper, Shorts Maker & Creator Pulse",
-    description: "AI video clipping plus ₹1 Creator Pulse channel intelligence for creators.",
+    title: "ClipKaro AI — YouTube URL to Shorts & AI Video Clipper",
+    description: "Paste a supported YouTube URL or upload the source file, then turn long-form video into creator-ready Shorts with ClipKaro AI.",
     images: ["/assets/clipkaro-icon.png"],
   },
 };
@@ -55,7 +59,7 @@ const softwareStructuredData = {
   url: "https://clipkaro.pro/",
   applicationCategory: "MultimediaApplication",
   operatingSystem: "Web",
-  description: "AI video clipping, content repurposing and YouTube creator intelligence for Indian creators, including clip detection, transcript review, India Quality Mode, captions, vertical export, Content Packs and Creator Pulse.",
+  description: "AI video clipping, YouTube URL import, resilient original-file upload fallback, content repurposing and YouTube creator intelligence for Indian creators, including clip detection, transcript review, India Quality Mode, captions, vertical export, Content Packs and Creator Pulse.",
   offers: {
     "@type": "AggregateOffer",
     priceCurrency: "INR",
@@ -64,6 +68,8 @@ const softwareStructuredData = {
     offerCount: "6",
   },
   featureList: [
+    "YouTube URL import for supported videos, Shorts and live replays",
+    "Original-file upload fallback when direct URL acquisition is unavailable",
     "AI clip detection and ranking",
     "Smart Transcript Review with inline corrections",
     "India Quality Mode for Hindi, Hinglish and Indian-English creator workflows",
@@ -84,11 +90,57 @@ const softwareStructuredData = {
   ],
 };
 
+const faqStructuredData = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: [
+    {
+      "@type": "Question",
+      name: "Can I paste a YouTube URL into ClipKaro?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "Yes. ClipKaro accepts supported YouTube video, Shorts and live-replay URLs. You must own the video or have permission to process it.",
+      },
+    },
+    {
+      "@type": "Question",
+      name: "What happens if a YouTube URL cannot be imported?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "If direct acquisition is unavailable for a source, ClipKaro provides an original-file upload fallback so the creator can continue the same analysis, editing and export workflow.",
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Can ClipKaro turn a long YouTube video into Shorts?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "ClipKaro can analyse an authorised source video, rank promising moments, support transcript review, captions and reframing, and render creator-approved short-form exports.",
+      },
+    },
+  ],
+};
+
+const urlToShortsHowToStructuredData = {
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  name: "How to turn a YouTube URL into Shorts with ClipKaro",
+  description: "Start from a supported YouTube link or upload the original file, then analyse, review and export creator-approved Shorts.",
+  step: [
+    { "@type": "HowToStep", name: "Paste the YouTube URL", text: "Paste an authorised YouTube video, Shorts or live-replay URL. If direct acquisition is unavailable, upload the original file instead." },
+    { "@type": "HowToStep", name: "Analyse the video", text: "ClipKaro transcribes the source and ranks promising moments." },
+    { "@type": "HowToStep", name: "Review and refine", text: "Review the suggested moments, transcript, captions and framing." },
+    { "@type": "HowToStep", name: "Export the Short", text: "Render the creator-approved short-form output in the selected format." },
+  ],
+};
+
 export default function Home() {
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteStructuredData) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareStructuredData) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqStructuredData) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(urlToShortsHowToStructuredData) }} />
       <HomeExperience />
     </>
   );

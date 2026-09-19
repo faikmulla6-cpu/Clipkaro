@@ -5,12 +5,12 @@ import {
   Check,
   Clapperboard,
   Languages,
+  Link2,
   Play,
   Scissors,
   ShieldCheck,
   Sparkles,
   Subtitles,
-  Upload,
   WandSparkles,
 } from "lucide-react";
 import { PublicMotionShell } from "@/components/PublicMotionShell";
@@ -88,7 +88,7 @@ export default async function SeoLandingPage({ params }: PageProps) {
               <TransitionLink href="/pricing" className={styles.secondary}>See pricing</TransitionLink>
             </div>
             <div className={styles.microTrust}>
-              <span><ShieldCheck size={13}/> Upload content you own</span>
+              <span><ShieldCheck size={13}/> Use content you own or can process</span>
               <span><Scissors size={13}/> AI-ranked moments</span>
               <span><Clapperboard size={13}/> Creator-controlled export</span>
             </div>
@@ -113,7 +113,7 @@ export default async function SeoLandingPage({ params }: PageProps) {
 
         <main>
           <section className={styles.proofStrip} data-public-reveal>
-            <div className={styles.proofItem}><Upload size={18}/><b>Upload-first</b><span>Use video files you own or have permission to process.</span></div>
+            <div className={styles.proofItem}><Link2 size={18}/><b>URL or original file</b><span>Paste a supported YouTube link or upload the source you own or have permission to process.</span></div>
             <div className={styles.proofItem}><WandSparkles size={18}/><b>AI-ranked moments</b><span>Start with promising hooks and complete ideas instead of scrubbing blindly.</span></div>
             <div className={styles.proofItem}><ShieldCheck size={18}/><b>Private media window</b><span>Source and export files follow ClipKaro&apos;s configured retention and access rules.</span></div>
           </section>
@@ -130,7 +130,7 @@ export default async function SeoLandingPage({ params }: PageProps) {
             </div>
           </section>
 
-          <section className={styles.section} id="workflow" data-public-reveal><div className={styles.sectionHead}><span>ONE CONNECTED WORKFLOW</span><h2>From source video to creator-ready short-form output.</h2><p>The interface stays clear because the sequence is clear: source → intelligence → review → export.</p></div><div className={styles.workflow}>{page.workflow.map((step,index)=><article className={styles.step} key={step}><span className={styles.stepNumber}>0{index+1}</span><h3>{["Bring in the source","Find the moments","Review the result","Export with intent"][index] || `Step ${index+1}`}</h3><p>{step}</p></article>)}</div></section>
+          <section className={styles.section} id="workflow" data-public-reveal><div className={styles.sectionHead}><span>ONE CONNECTED WORKFLOW</span><h2>From source video to creator-ready short-form output.</h2><p>The interface stays clear because the sequence is clear: URL or file → intelligence → review → export.</p></div><div className={styles.workflow}>{page.workflow.map((step,index)=><article className={styles.step} key={step}><span className={styles.stepNumber}>0{index+1}</span><h3>{["Bring in the source","Find the moments","Review the result","Export with intent"][index] || `Step ${index+1}`}</h3><p>{step}</p></article>)}</div></section>
 
           <section className={styles.capabilities} data-public-reveal><div className={styles.section} style={{paddingBottom:45}}><div className={styles.sectionHead}><span>MORE THAN A CUT BUTTON</span><h2>One product language from transcript to final Short.</h2><p>The core ClipKaro surfaces stay connected so creators do not feel like they are jumping between unrelated tools.</p></div></div><div className={styles.capGrid}>{capabilities.map((item)=>{const Icon=item.icon;return <article className={styles.capCard} key={item.title}><span className={styles.capGlow}/><div className={styles.capIcon}><Icon size={20}/></div><h3>{item.title}</h3><p>{item.text}</p></article>;})}</div></section>
 
