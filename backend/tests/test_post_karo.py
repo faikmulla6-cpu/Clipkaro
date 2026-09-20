@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+from app.api.post_karo import POST_KARO_PLANS, _eligible
 from app.core.config import get_settings
 from app.core.database import execute, fetch_all, fetch_one
 from app.main import app
@@ -259,3 +260,12 @@ def test_post_karo_is_strictly_user_scoped(client: TestClient):
         json={},
     ).status_code == 404
     assert client.get("/api/v1/post-karo/publications").json() == []
+
+
+def test_post_karo_is_available_on_every_paid_plan_only():
+    paid = {"mini_pass", "creator", "growth", "pro", "agency"}
+    assert POST_KARO_PLANS == paid
+    for plan in paid:
+        assert _eligible({"plan": plan, "role": "creator"}) is True
+    assert _eligible({"plan": "free", "role": "creator"}) is False
+    assert _eligible({"plan": "free", "role": "admin"}) is True

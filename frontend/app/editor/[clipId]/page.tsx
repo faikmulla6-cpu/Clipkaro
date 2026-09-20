@@ -489,8 +489,8 @@ export default function Editor() {
           <div className="post-karo-gate-card" onMouseDown={event => event.stopPropagation()}>
             <div className="post-karo-gate-icon">{postKaro?.plan_eligible === false ? <LockKeyhole/> : <Send/>}</div>
             <span>POST KARO</span>
-            <h3>{postKaro?.plan_eligible === false ? "Post Karo starts on Growth" : "Set up Post Karo first"}</h3>
-            <p>{postKaro?.plan_eligible === false ? "Upgrade when you want to publish finished Shorts directly from ClipKaro." : "Connect Instagram or YouTube once, then publish finished Shorts directly from ClipKaro."}</p>
+            <h3>{postKaro?.plan_eligible === false ? "Post Karo is included with every paid plan" : "Set up Post Karo first"}</h3>
+            <p>{postKaro?.plan_eligible === false ? "Choose Mini Pass or any subscription plan to publish finished Shorts directly from ClipKaro." : "Connect Instagram or YouTube once, then publish finished Shorts directly from ClipKaro."}</p>
             <div><button className="secondary-btn" type="button" onClick={() => setShowPostKaroPrompt(false)}>Not now</button><button className="primary-btn" type="button" onClick={() => router.push(postKaro?.plan_eligible === false ? "/pricing" : "/post-karo?export=" + encodeURIComponent(exportId))}>{postKaro?.plan_eligible === false ? "View plans" : "Set up Post Karo"} <ArrowRight size={14}/></button></div>
           </div>
         </div>}
