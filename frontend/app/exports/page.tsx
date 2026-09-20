@@ -3,7 +3,7 @@
 import { AppShell } from "@/components/AppShell";
 import { api } from "@/lib/api";
 import { downloadExport as startExportDownload } from "@/lib/behavior";
-import { AlertCircle, CheckCircle2, Clock3, Download, FileVideo, Loader2, RefreshCw, XCircle } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock3, Download, FileVideo, Loader2, RefreshCw, Send, XCircle } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
@@ -177,9 +177,14 @@ export default function Exports() {
                 </div>
                 <div className="export-history-action">
                   {ready ? (
-                    <button className="primary-btn small" type="button" disabled={preparing} onClick={() => void prepareDownload(item.id)}>
-                      {preparing ? <Loader2 className="spin" size={15} /> : <Download size={15} />}{preparing ? "Preparing…" : "Download MP4"}
-                    </button>
+                    <div style={{ display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                      <button className="secondary-btn small" type="button" disabled={preparing} onClick={() => void prepareDownload(item.id)}>
+                        {preparing ? <Loader2 className="spin" size={15}/> : <Download size={15}/>} {preparing ? "Preparing…" : "Download"}
+                      </button>
+                      <Link className="primary-btn small" href={"/post-karo?export=" + encodeURIComponent(item.id)}>
+                        <Send size={14}/> Post Karo
+                      </Link>
+                    </div>
                   ) : item.status === "failed" ? (
                     <Link className="primary-btn small" href={`/editor/${item.clip_id}`}>
                       <RefreshCw size={14} />Retry export

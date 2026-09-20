@@ -108,6 +108,8 @@ def production_boot_configuration_issues() -> list[str]:
     issues: list[str] = []
     if not _secret_ok(settings.secret_key, minimum=32):
         issues.append("SECRET_KEY_WEAK")
+    if not _secret_ok(settings.post_karo_encryption_key, minimum=32):
+        issues.append("POST_KARO_ENCRYPTION_KEY_WEAK")
     if not _https_url(settings.app_public_url):
         issues.append("APP_PUBLIC_URL_NOT_HTTPS")
     if not _https_url(settings.frontend_url):
@@ -229,6 +231,7 @@ def production_configuration_summary() -> dict[str, object]:
             and _secret_ok(settings.razorpay_webhook_secret, minimum=32)
         ),
         "provider_credentials_checked_by_media_runtime": True,
+        "post_karo_credential_encryption_ready": _secret_ok(settings.post_karo_encryption_key, minimum=32),
         "credentials_rotation_confirmed": bool(settings.production_credentials_rotated),
         "database_backend": settings.normalized_database_backend,
         "storage_backend": settings.normalized_storage_backend,

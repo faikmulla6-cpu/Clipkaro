@@ -71,6 +71,8 @@ def validate(env: dict[str, str]) -> list[str]:
         b.append("ACME_EMAIL_INVALID")
     if not secret_ok(get("SECRET_KEY"), 32):
         b.append("SECRET_KEY_WEAK")
+    if not secret_ok(get("POST_KARO_ENCRYPTION_KEY"), 32):
+        b.append("POST_KARO_ENCRYPTION_KEY_WEAK")
     if get("PRODUCTION_CREDENTIALS_ROTATED").lower() != "true":
         b.append("PRODUCTION_CREDENTIAL_ROTATION_UNCONFIRMED")
     if not https_ok(get("APP_PUBLIC_URL")):

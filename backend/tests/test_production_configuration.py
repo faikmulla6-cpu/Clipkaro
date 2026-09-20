@@ -16,7 +16,7 @@ def _read(path: str) -> str:
 def test_default_production_shape_fails_closed_without_real_values() -> None:
     settings = get_settings()
     names = (
-        "app_env", "secret_key", "app_public_url", "cors_origins", "seed_demo_user",
+        "app_env", "secret_key", "post_karo_encryption_key", "app_public_url", "cors_origins", "seed_demo_user",
         "production_credentials_rotated", "resend_api_key", "email_from", "smtp_host", "smtp_from_email", "smtp_username",
         "smtp_password", "razorpay_key_id", "razorpay_key_secret", "razorpay_webhook_secret",
         "groq_ranking_enabled", "groq_api_keys", "groq_api_key_1",
@@ -27,6 +27,7 @@ def test_default_production_shape_fails_closed_without_real_values() -> None:
     try:
         settings.app_env = "production"
         settings.secret_key = "replace-with-at-least-32-random-characters"
+        settings.post_karo_encryption_key = ""
         settings.app_public_url = "http://localhost:3000"
         settings.cors_origins = "http://localhost:3000"
         settings.seed_demo_user = False
@@ -49,6 +50,7 @@ def test_default_production_shape_fails_closed_without_real_values() -> None:
             setattr(settings, name, value)
 
     assert "SECRET_KEY_WEAK" in issues
+    assert "POST_KARO_ENCRYPTION_KEY_WEAK" in issues
     assert "APP_PUBLIC_URL_NOT_HTTPS" in issues
     assert "PRODUCTION_CREDENTIAL_ROTATION_UNCONFIRMED" in issues
     assert "TRANSACTIONAL_EMAIL_NOT_CONFIGURED" in issues
@@ -59,7 +61,7 @@ def test_default_production_shape_fails_closed_without_real_values() -> None:
 def test_realistic_private_configuration_passes_offline_shape_checks() -> None:
     settings = get_settings()
     names = (
-        "app_env", "secret_key", "app_public_url", "cors_origins", "seed_demo_user",
+        "app_env", "secret_key", "post_karo_encryption_key", "app_public_url", "cors_origins", "seed_demo_user",
         "production_credentials_rotated", "resend_api_key", "email_from", "smtp_host", "smtp_from_email", "smtp_username",
         "smtp_password", "razorpay_key_id", "razorpay_key_secret", "razorpay_webhook_secret",
         "groq_ranking_enabled", "groq_api_keys", "groq_api_key_1",
@@ -70,6 +72,7 @@ def test_realistic_private_configuration_passes_offline_shape_checks() -> None:
     try:
         settings.app_env = "production"
         settings.secret_key = "Q5uH4mN7J2fS8xR1cK6pV3yT9zW0bL5dE7gA2nM4qP8sU1iO"
+        settings.post_karo_encryption_key = "Pk8!mS4rT9vN2xQ7cD5eL1uW6yH3jA0bF8gK2pR4sV7zX9nM"
         settings.app_public_url = "https://clipkaro.pro"
         settings.cors_origins = "https://clipkaro.pro"
         settings.seed_demo_user = False

@@ -11,6 +11,10 @@ class Settings(BaseSettings):
     allow_manual_analysis_in_development: bool = False
     api_prefix: str = "/api/v1"
     secret_key: str = "development-only-change-me"
+    # Dedicated application-layer key for Post Karo provider credentials. Keep
+    # this separate from JWT/session signing so either secret can rotate without
+    # silently expanding the blast radius of the other.
+    post_karo_encryption_key: str = ""
     access_token_minutes: int = 10080
     database_backend: str = "sqlite"
     database_url: str = ""
