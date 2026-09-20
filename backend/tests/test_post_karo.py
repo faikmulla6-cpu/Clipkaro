@@ -268,4 +268,28 @@ def test_post_karo_is_available_on_every_paid_plan_only():
     for plan in paid:
         assert _eligible({"plan": plan, "role": "creator"}) is True
     assert _eligible({"plan": "free", "role": "creator"}) is False
+    assert _eligible({"plan": "free", "role": "creator", "post_karo_access_override": 1}) is True
     assert _eligible({"plan": "free", "role": "admin"}) is True
+
+
+def test_post_karo_override_does_not_change_plan_role_or_billing(client: TestClient):
+    login_demo(client)
+    asyncio.run(execute(
+        """UPDATE users
+           SET plan='free',role='creator',billing_reference=NULL,post_karo_access_override=1
+           WHERE id='demo-user'"""
+    ))
+
+    status = client.get("/api/v1/post-karo/status")
+    assert status.status_code == 200
+    assert status.json()["plan_eligible"] is True
+
+    user = asyncio.run(fetch_one(
+        "SELECT plan,role,billing_reference,post_karo_access_override FROM users WHERE id='demo-user'"
+    ))
+    assert user == {
+        "plan": "free",
+        "role": "creator",
+        "billing_reference": None,
+        "post_karo_access_override": 1,
+    }

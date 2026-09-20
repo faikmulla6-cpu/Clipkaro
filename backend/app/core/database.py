@@ -22,7 +22,7 @@ T = TypeVar("T")
 logger = logging.getLogger("clipkaro.database")
 _LOCK_MESSAGES = ("database is locked", "database table is locked", "database schema is locked")
 _LOCK_PRIMARY_CODES = {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}
-POSTGRES_SCHEMA_REVISION = "20260920_04"
+POSTGRES_SCHEMA_REVISION = "20260920_05"
 _postgres_pool: Any = None
 
 
@@ -149,7 +149,8 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL, plan TEXT NOT NULL DEFAULT 'free', role TEXT NOT NULL DEFAULT 'creator',
   onboarding_complete INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
   billing_reference TEXT, plan_started_at TEXT, plan_expires_at TEXT,
-  cancel_at_period_end INTEGER NOT NULL DEFAULT 0
+  cancel_at_period_end INTEGER NOT NULL DEFAULT 0,
+  post_karo_access_override INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS projects (
   id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT NOT NULL, description TEXT DEFAULT '',
@@ -694,6 +695,7 @@ async def init_db() -> None:
                 "plan_started_at": "ALTER TABLE users ADD COLUMN plan_started_at TEXT",
                 "plan_expires_at": "ALTER TABLE users ADD COLUMN plan_expires_at TEXT",
                 "cancel_at_period_end": "ALTER TABLE users ADD COLUMN cancel_at_period_end INTEGER NOT NULL DEFAULT 0",
+                "post_karo_access_override": "ALTER TABLE users ADD COLUMN post_karo_access_override INTEGER NOT NULL DEFAULT 0",
             }
             for name, statement in migrations.items():
                 if name not in columns:
