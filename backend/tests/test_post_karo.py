@@ -16,10 +16,12 @@ from app.services.post_karo import (
     PostKaroProviderError,
     ZernioClient,
     _post_response,
+    _provider_profile_id,
     build_post_payload,
     decrypt_api_key,
     encrypt_api_key,
     mask_api_key,
+    sync_supported_accounts,
     validate_api_key_shape,
 )
 
@@ -344,3 +346,43 @@ def test_connection_sync_provider_error_is_controlled_not_500(client: TestClient
     assert response.status_code == 400
     assert response.status_code != 500
     assert "publishing service" in response.json()["detail"].lower()
+
+
+def test_provider_profile_id_accepts_string_and_populated_object():
+    profile_id = "66a1f0c2a4b9d3e8f1a2b3c4"
+    assert _provider_profile_id({"profileId": profile_id}) == profile_id
+    assert _provider_profile_id({"profileId": {"_id": profile_id, "name": "ClipKaro"}}) == profile_id
+    assert _provider_profile_id({"profile": {"_id": profile_id}}) == profile_id
+
+
+def test_sync_accepts_populated_profile_id_object(client: TestClient):
+    login_demo(client)
+    profile_id = "66a1f0c2a4b9d3e8f1a2b3c4"
+    with (
+        patch(
+            "app.services.post_karo.ZernioClient.list_accounts",
+            new=AsyncMock(return_value=[{
+                "_id": "ig-account-1",
+                "platform": "instagram",
+                "profileId": {"_id": profile_id, "name": "ClipKaro"},
+                "username": "creator",
+                "displayName": "Creator",
+                "isActive": True,
+            }]),
+        ),
+        patch(
+            "app.services.post_karo.ZernioClient.account_health",
+            new=AsyncMock(return_value=[{
+                "accountId": "ig-account-1",
+                "canPost": True,
+            }]),
+        ),
+    ):
+        rows = asyncio.run(
+            sync_supported_accounts("demo-user", synthetic_zernio_key(), profile_id)
+        )
+
+    assert len(rows) == 1
+    assert rows[0]["platform"] == "instagram"
+    assert rows[0]["connection_status"] == "connected"
+    assert rows[0]["can_post"] == 1
