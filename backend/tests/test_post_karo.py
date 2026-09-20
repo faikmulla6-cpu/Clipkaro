@@ -13,6 +13,8 @@ from app.core.database import execute, fetch_all, fetch_one
 from app.main import app
 from app.services.legal import LEGAL_VERSION
 from app.services.post_karo import (
+    PostKaroProviderError,
+    ZernioClient,
     _post_response,
     build_post_payload,
     decrypt_api_key,
@@ -293,3 +295,52 @@ def test_post_karo_override_does_not_change_plan_role_or_billing(client: TestCli
         "billing_reference": None,
         "post_karo_access_override": 1,
     }
+
+
+def test_zernio_list_accounts_does_not_send_unpaired_limit():
+    client = ZernioClient(synthetic_zernio_key())
+    with patch.object(
+        client,
+        "_request",
+        new=AsyncMock(return_value=(200, {"accounts": []})),
+    ) as request:
+        result = asyncio.run(client.list_accounts("66a1f0c2a4b9d3e8f1a2b3c4"))
+    assert result == []
+    request.assert_awaited_once_with(
+        "GET",
+        "/v1/accounts",
+        params={"profileId": "66a1f0c2a4b9d3e8f1a2b3c4"},
+    )
+
+
+def test_connection_sync_provider_error_is_controlled_not_500(client: TestClient):
+    login_demo(client)
+    asyncio.run(execute(
+        "UPDATE users SET plan='mini_pass' WHERE id='demo-user'"
+    ))
+    with (
+        patch(
+            "app.api.post_karo.ZernioClient.validate",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "app.api.post_karo.ZernioClient.ensure_clipkaro_profile",
+            new=AsyncMock(return_value="66a1f0c2a4b9d3e8f1a2b3c4"),
+        ),
+        patch(
+            "app.api.post_karo.sync_supported_accounts",
+            new=AsyncMock(
+                side_effect=PostKaroProviderError(
+                    "The publishing service could not accept this request.",
+                    status_code=400,
+                )
+            ),
+        ),
+    ):
+        response = client.post(
+            "/api/v1/post-karo/connection/test",
+            json={"api_key": synthetic_zernio_key()},
+        )
+    assert response.status_code == 400
+    assert response.status_code != 500
+    assert "publishing service" in response.json()["detail"].lower()
