@@ -17,6 +17,11 @@ def safe_project_failure(exc: BaseException) -> str:
     raw = _normalized(exc)
     if "no complete 20" in raw and "moment" in raw:
         return "We found speech, but no complete 20–90 second moments. Try a longer source video."
+    if "transcript quality verification" in raw or "insufficient reliable speech" in raw:
+        return (
+            "Not enough clear speech was detected. ClipKaro needs at least 20 seconds of reliable spoken dialogue "
+            "to find a 20–90 second Short. Try a video with more audible speech."
+        )
     if "source video" in raw and ("expired" in raw or "unavailable" in raw or "storage" in raw):
         return "The source video is no longer available. Upload it again and retry."
     if "quota" in raw or "processing minute" in raw or "karo minute" in raw:
