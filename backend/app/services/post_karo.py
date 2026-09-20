@@ -199,8 +199,11 @@ class ZernioClient:
         return url
 
     async def list_accounts(self, profile_id: str) -> list[dict[str, Any]]:
+        # Zernio requires page and limit to be supplied together. Omitting
+        # both keeps the backward-compatible all-accounts response while
+        # profileId safely scopes the result to this ClipKaro user profile.
         _, payload = await self._request(
-            "GET", "/v1/accounts", params={"profileId": profile_id, "limit": 100}
+            "GET", "/v1/accounts", params={"profileId": profile_id}
         )
         accounts = payload.get("accounts") or payload.get("data") or []
         return [item for item in accounts if isinstance(item, dict)] if isinstance(accounts, list) else []

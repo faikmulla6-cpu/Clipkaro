@@ -244,7 +244,12 @@ async def test_connection(body: ConnectionRequest, user: dict = Depends(current_
         ),
     )
 
-    accounts = await sync_supported_accounts(str(user["id"]), api_key, profile_id)
+    try:
+        accounts = await sync_supported_accounts(str(user["id"]), api_key, profile_id)
+    except PostKaroProviderError as exc:
+        # The API key and profile were already validated. Provider-side account
+        # discovery failures must remain a controlled setup error, never a 500.
+        raise _provider_error(exc) from exc
     await _audit(
         str(user["id"]), "post_karo.connection_validated", "user", str(user["id"]),
         {"profile_ready": True, "connected_platforms": [row["platform"] for row in accounts if row.get("can_post")]},
