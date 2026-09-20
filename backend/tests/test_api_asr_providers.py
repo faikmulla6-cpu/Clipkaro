@@ -98,7 +98,8 @@ def test_durable_job_id_is_used_as_provider_correlation_id() -> None:
     routes = _source("app/api/routes.py")
     transcription = _source("app/services/transcription.py")
     assert "request_id=job_id" in routes
-    assert "duration=chunk_duration, request_id=request_id" in transcription
+    assert "duration=chunk_duration" in transcription
+    assert "request_id=request_id" in transcription
 
 
 def test_api_production_startup_skips_legacy_whisperx_policy() -> None:

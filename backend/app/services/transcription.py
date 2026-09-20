@@ -218,9 +218,25 @@ async def _transcribe_api_impl(video_path: Path, language_hint: str, request_id:
         if asr_route == "elevenlabs_roman":
             chunk_seconds = min(chunk_seconds, max(30, settings.elevenlabs_asr_chunk_seconds))
         chunks = await chunk_api_audio(audio_path, duration=duration, output_dir=chunk_dir, chunk_seconds=chunk_seconds, overlap_seconds=settings.asr_chunk_overlap_seconds, max_chunks=settings.asr_api_max_chunks, max_bytes=settings.asr_api_max_chunk_mb * 1024 * 1024)
+
+        async def transcribe_chunks(hint: str):
+            results = [
+                (
+                    await transcribe_api(
+                        chunk,
+                        language_hint=hint,
+                        duration=chunk_duration,
+                        request_id=request_id,
+                        asr_route=asr_route,
+                    ),
+                    offset,
+                )
+                for chunk, offset, chunk_duration in chunks
+            ]
+            return merge_chunk_results(results)
+
         try:
-            results = [(await transcribe_api(chunk, language_hint=language_hint, duration=chunk_duration, request_id=request_id, asr_route=asr_route), offset) for chunk, offset, chunk_duration in chunks]
-            result = merge_chunk_results(results)
+            result = await transcribe_chunks(language_hint)
         except ASRProviderError as exc:
             # Authentication and configuration errors are deliberately
             # fail-closed in the provider layer.  Do not present those as a
@@ -238,6 +254,29 @@ async def _transcribe_api_impl(video_path: Path, language_hint: str, request_id:
         if not verified:
             raise RuntimeError("API transcription did not include segment timestamps; no clips were created.")
         assessment = assess_transcript(verified, final_language)
+        normalized_hint = language_hint.strip().lower().replace("-", "_")
+        if (
+            not assessment["accepted"]
+            and "foreign_script" in assessment["flags"]
+            and normalized_hint in {"", "auto", "hinglish", "roman_hinglish"}
+            and asr_route == "legacy"
+        ):
+            # Hindi and Urdu are acoustically close. Auto-detection can return
+            # Urdu-script text for clearly Hindi speech; relabelling that result
+            # as Hindi is not enough because the transcript itself remains in
+            # the wrong script. Retry once with an explicit Hindi hint, then
+            # keep whichever result passes more of ClipKaro's quality gate.
+            try:
+                hindi_result = await transcribe_chunks("hi")
+                hindi_language = "hi" if hindi_result.language in {"hi", "ur"} else hindi_result.language
+                hindi_assessment = assess_transcript(hindi_result.segments, hindi_language)
+                if hindi_assessment["accepted"] or hindi_assessment["clean_duration"] > assessment["clean_duration"]:
+                    result = hindi_result
+                    final_language = hindi_language
+                    verified = hindi_result.segments
+                    assessment = hindi_assessment
+            except ASRProviderError:
+                pass
         if not assessment["accepted"]:
             flags = ", ".join(assessment["flags"]) or "insufficient reliable speech"
             raise RuntimeError(f"Transcript quality verification failed ({flags}). No clips were created. Try clearer audio or choose the correct language.")
