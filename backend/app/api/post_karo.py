@@ -86,7 +86,11 @@ class PublishRequest(BaseModel):
 
 
 def _eligible(user: dict[str, Any]) -> bool:
-    return str(user.get("plan") or "").strip().lower() in POST_KARO_PLANS or user.get("role") == "admin"
+    return (
+        str(user.get("plan") or "").strip().lower() in POST_KARO_PLANS
+        or user.get("role") == "admin"
+        or bool(user.get("post_karo_access_override"))
+    )
 
 
 def _require_eligible(user: dict[str, Any]) -> None:
