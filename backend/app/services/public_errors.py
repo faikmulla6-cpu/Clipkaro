@@ -26,7 +26,10 @@ def safe_project_failure(exc: BaseException) -> str:
         return "The source video is no longer available. Upload it again and retry."
     if "quota" in raw or "processing minute" in raw or "karo minute" in raw:
         return "This video exceeds the processing allowance available on your current plan."
-    if "duration" in raw and ("limit" in raw or "too long" in raw or "maximum" in raw):
+    if (
+        ("duration" in raw and ("limit" in raw or "too long" in raw or "maximum" in raw))
+        or "supports a single source video up to" in raw
+    ):
         return "This source video is longer than the maximum duration supported by your current plan."
     if "security scan" in raw or "clamav" in raw or "malware" in raw:
         return "ClipKaro could not safely accept this video. Try a different source file."

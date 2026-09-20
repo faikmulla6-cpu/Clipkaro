@@ -382,6 +382,12 @@ async def _run(job: dict, scratch: Path) -> None:
         )
         state = await fetch_one("SELECT status FROM projects WHERE id=?", (project_id,))
         if not state or state["status"] != "ready":
+            # _process_project owns product-level validation and persists a
+            # user-safe terminal failure. Do not replace that truth with the
+            # serverless wrapper's generic provider category/progress=0 state.
+            current_job = await fetch_one("SELECT status FROM jobs WHERE id=?", (job["id"],))
+            if current_job and current_job.get("status") == "failed":
+                return
             raise RuntimeError("PROVIDER_TEMPORARY_FAILURE")
         if state and state["status"] == "ready" and source_key.startswith("quarantine/"):
             durable_key = f"users/{user['id']}/projects/{project_id}/source/{uuid.uuid4().hex}{source.suffix}"

@@ -32,3 +32,10 @@ def test_export_error_does_not_expose_ffmpeg_stderr_or_machine_path():
 def test_known_user_actionable_messages_remain_specific():
     assert "20–90 second moments" in safe_project_failure(ValueError("We found speech, but no complete 20–90 second moments."))
     assert "source video" in safe_export_failure(RuntimeError("The source video is unavailable in ClipKaro private storage.")).lower()
+
+
+def test_plan_source_duration_message_is_not_hidden_by_generic_failure():
+    raw = ValueError("Your Free plan supports a single source video up to 15 minutes.")
+    assert safe_project_failure(raw) == (
+        "This source video is longer than the maximum duration supported by your current plan."
+    )

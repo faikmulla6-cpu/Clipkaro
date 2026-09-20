@@ -309,3 +309,12 @@ def test_production_worker_mode_requires_https_url_and_strong_secret(monkeypatch
     finally:
         for name, value in original.items():
             setattr(settings, name, value)
+
+
+def test_media_wrapper_preserves_project_level_failure_truth() -> None:
+    root = Path(__file__).resolve().parents[1]
+    media = (root / "app/media_job.py").read_text(encoding="utf-8")
+    direct_upload = (root.parent / "frontend/components/DirectUploadFallback.tsx").read_text(encoding="utf-8")
+    assert 'current_job = await fetch_one("SELECT status FROM jobs WHERE id=?", (job["id"],))' in media
+    assert 'if current_job and current_job.get("status") == "failed":' in media
+    assert 'const diagnostic = job.message || job.error' in direct_upload

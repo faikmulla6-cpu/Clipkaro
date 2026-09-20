@@ -189,7 +189,7 @@ export function DirectUploadFallback() {
   const waitingForAsr = Boolean(job?.asr_state === "queued" && job.queue_position && job.queue_position > 0);
 
   if (job) {
-    const diagnostic = job.error || job.message || "Processing failed without a diagnostic. Restart the backend and try again.";
+    const diagnostic = job.message || job.error || "Processing failed without a diagnostic. Please try again.";
     return (
       <div className="processing-experience">
         <div className="processing-hero">
