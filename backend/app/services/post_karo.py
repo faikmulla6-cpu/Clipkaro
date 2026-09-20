@@ -277,6 +277,19 @@ def _health_account_id(item: dict[str, Any]) -> str:
     return str(item.get("accountId") or item.get("_id") or item.get("id") or "").strip()
 
 
+def _provider_profile_id(item: dict[str, Any]) -> str:
+    # Zernio may populate profileId as either a plain id or an object.
+    profile_id = item.get("profileId")
+    if isinstance(profile_id, dict):
+        return str(profile_id.get("_id") or profile_id.get("id") or "").strip()
+    if profile_id:
+        return str(profile_id).strip()
+    profile = item.get("profile")
+    if isinstance(profile, dict):
+        return str(profile.get("_id") or profile.get("id") or "").strip()
+    return ""
+
+
 def _can_post(item: dict[str, Any]) -> bool:
     value = item.get("canPost")
     if value is None and isinstance(item.get("capabilities"), dict):
@@ -298,11 +311,7 @@ async def sync_supported_accounts(user_id: str, api_key: str, profile_id: str) -
         account_id = _provider_account_id(item)
         if platform not in SUPPORTED_POST_KARO_PLATFORMS or not account_id:
             continue
-        profile_value = str(
-            item.get("profileId")
-            or ((item.get("profile") or {}).get("_id") if isinstance(item.get("profile"), dict) else "")
-            or ""
-        ).strip()
+        profile_value = _provider_profile_id(item)
         if profile_value and profile_value != profile_id:
             continue
         seen.add(platform)
