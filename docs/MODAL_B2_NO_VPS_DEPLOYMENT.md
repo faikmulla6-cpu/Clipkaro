@@ -26,6 +26,8 @@ This preserves the established local/GCP paths while moving production execution
 
 Keep the existing Modal secret named `clipkaro-production` for the established production credentials. Post Karo uses a second narrowly scoped secret named `clipkaro-post-karo` containing only `POST_KARO_ENCRYPTION_KEY`. This separates social-publishing credential encryption from JWT/session signing and avoids modifying the existing production secret bundle.
 
+The `clipkaro-post-karo` secret is an encryption-key container only. Never place creator Zernio API keys, Instagram/YouTube OAuth tokens, account IDs, captions, or publication metadata in that Modal secret; those remain in the user-scoped application/provider data paths described by Post Karo.
+
 Keep every value private. The existing `clipkaro-production` secret should ultimately contain:
 
 - `DATABASE_URL` (Neon pooled TLS URL)
