@@ -384,9 +384,9 @@ function PostKaroPageInner() {
   if (!status.plan_eligible) {
     return <AppShell title="Post Karo" subtitle="Publish without leaving ClipKaro.">
       <section className={styles.gatedHero}>
-        <div className={styles.heroBadge}><LockKeyhole size={14}/> GROWTH FEATURE</div>
+        <div className={styles.heroBadge}><LockKeyhole size={14}/> PAID PLAN FEATURE</div>
         <h2>Clip it here.<br/><span>Post it from here.</span></h2>
-        <p>Post Karo connects finished Shorts to Instagram Reels and YouTube Shorts. It is available on Growth, Pro and Agency.</p>
+        <p>Post Karo connects finished Shorts to Instagram Reels and YouTube Shorts. It is available on every paid ClipKaro plan, starting with Mini Pass.</p>
         <Link href="/pricing" className="primary-btn">View plans <ArrowRight size={15}/></Link>
         <div className={styles.gatedPlatforms}><span><Instagram/> Instagram Reels</span><span><Youtube/> YouTube Shorts</span></div>
       </section>
