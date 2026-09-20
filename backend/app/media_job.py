@@ -390,6 +390,17 @@ async def _run(job: dict, scratch: Path) -> None:
             await storage.delete(source_key, generation=video.get("object_generation"))
         return
 
+    if job["kind"] == "post_karo_publish":
+        publication_id = str((job.get("payload") or {}).get("publication_id") or "").strip()
+        if not publication_id:
+            raise RuntimeError("Post Karo worker input is incomplete.")
+        # Post Karo deliberately reuses the isolated media runtime without
+        # attaching jobs.export_id. A provider failure can therefore never
+        # mutate a finished ClipKaro export into a failed export.
+        from app.services.post_karo import run_publication_job
+        await run_publication_job(job["id"], publication_id, scratch=scratch, storage=storage)
+        return
+
     if job["kind"] == "render_export":
         export = await fetch_one("SELECT * FROM exports WHERE id=?", (job["export_id"],))
         payload = (job.get("payload") or {}).get("request")

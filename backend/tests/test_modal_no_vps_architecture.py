@@ -100,6 +100,7 @@ def test_modal_s3_production_boot_does_not_require_gcp(monkeypatch) -> None:
     names = (
         "app_env",
         "secret_key",
+        "post_karo_encryption_key",
         "database_backend",
         "database_url",
         "storage_backend",
@@ -116,6 +117,7 @@ def test_modal_s3_production_boot_does_not_require_gcp(monkeypatch) -> None:
     try:
         settings.app_env = "production"
         settings.secret_key = "A9!clipkaro-production-secret-with-high-diversity-2026"
+        settings.post_karo_encryption_key = "Pk8!clipkaro-post-karo-secret-with-high-diversity-2026"
         settings.database_backend = "postgres"
         settings.database_url = "postgresql://user:pass@db.example.invalid/app?sslmode=require"
         settings.storage_backend = "gcs"
@@ -155,6 +157,8 @@ def test_modal_app_keeps_api_and_media_as_separate_functions() -> None:
     assert "modal.current_function_call_id()" in source
     assert "ffmpeg" in source and "clamav" in source and "libass9" in source
     assert 'modal.Secret.from_name(SECRET_NAME)' in source
+    assert 'modal.Secret.from_name(POST_KARO_SECRET_NAME)' in source
+    assert 'secrets=[production_secret, post_karo_secret]' in source
 
 
 def test_export_mobile_safety_contract_is_single_flight_and_server_authoritative() -> None:
@@ -214,7 +218,7 @@ def test_export_mobile_safety_contract_is_single_flight_and_server_authoritative
 def test_production_socialkit_mode_fails_closed_without_server_key(monkeypatch) -> None:
     settings = get_settings()
     names = (
-        "app_env", "secret_key", "database_backend", "database_url", "storage_backend",
+        "app_env", "secret_key", "post_karo_encryption_key", "database_backend", "database_url", "storage_backend",
         "job_backend", "frontend_url", "app_public_url", "cors_origins", "email_from",
         "razorpay_mode", "seed_demo_user", "allow_live_razorpay_in_development",
         "youtube_ingestion_provider", "socialkit_access_key", "socialkit_api_base_url",
@@ -223,6 +227,7 @@ def test_production_socialkit_mode_fails_closed_without_server_key(monkeypatch) 
     try:
         settings.app_env = "production"
         settings.secret_key = "A9!clipkaro-production-secret-with-high-diversity-2026"
+        settings.post_karo_encryption_key = "Pk8!clipkaro-post-karo-secret-with-high-diversity-2026"
         settings.database_backend = "postgres"
         settings.database_url = "postgresql://user:pass@db.example.invalid/app?sslmode=require"
         settings.storage_backend = "gcs"
@@ -259,7 +264,7 @@ def test_production_socialkit_mode_fails_closed_without_server_key(monkeypatch) 
 def test_production_worker_mode_requires_https_url_and_strong_secret(monkeypatch) -> None:
     settings = get_settings()
     names = (
-        "app_env", "secret_key", "database_backend", "database_url", "storage_backend",
+        "app_env", "secret_key", "post_karo_encryption_key", "database_backend", "database_url", "storage_backend",
         "job_backend", "frontend_url", "app_public_url", "cors_origins", "email_from",
         "razorpay_mode", "seed_demo_user", "allow_live_razorpay_in_development",
         "youtube_ingestion_provider", "youtube_ingestion_worker_url", "youtube_ingestion_worker_secret",
@@ -268,6 +273,7 @@ def test_production_worker_mode_requires_https_url_and_strong_secret(monkeypatch
     try:
         settings.app_env = "production"
         settings.secret_key = "A9!clipkaro-production-secret-with-high-diversity-2026"
+        settings.post_karo_encryption_key = "Pk8!clipkaro-post-karo-secret-with-high-diversity-2026"
         settings.database_backend = "postgres"
         settings.database_url = "postgresql://user:pass@db.example.invalid/app?sslmode=require"
         settings.storage_backend = "gcs"

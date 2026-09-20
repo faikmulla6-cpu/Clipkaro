@@ -6,10 +6,10 @@ import { useAuth } from "@/components/AuthProvider";
 import { API_URL, api, patchJSON, postJSON } from "@/lib/api";
 import { downloadExport, newBehaviorSession, trackClipBehavior } from "@/lib/behavior";
 import {
-  AlertTriangle, AlignCenter, Captions, Check, Download, Film, Loader2, MoveHorizontal,
-  Palette, Pause, Play, Save, Smartphone, Sparkles, Square, Type, X, ZoomIn, ZoomOut,
+  AlertTriangle, AlignCenter, ArrowRight, Captions, Check, Download, Film, Loader2, LockKeyhole, MoveHorizontal,
+  Palette, Pause, Play, Save, Send, Smartphone, Sparkles, Square, Type, X, ZoomIn, ZoomOut,
 } from "lucide-react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type Clip = {
@@ -32,6 +32,7 @@ type CaptionStyle = { id: string; name: string; font_family: string; font_weight
 type BrandKit = { id: string; name: string; primary_color: string; logo_text?: string | null; caption_preset: string; is_default: boolean };
 type Tab = "style" | "transcript" | "export";
 type CaptionLanguageStyle = "auto" | "roman_hinglish" | "original";
+type PostKaroStatus = { plan_eligible: boolean; ready: boolean };
 
 const styles = [
   ["kinetic", "Kinetic", "Punchy highlighted words"],
@@ -46,6 +47,7 @@ const clamp = (value: number, min: number, max: number) => Math.min(Math.max(val
 export default function Editor() {
   const { clipId } = useParams<{ clipId: string }>();
   const projectId = useSearchParams().get("project");
+  const router = useRouter();
   const { user } = useAuth();
   const videoRef = useRef<HTMLVideoElement>(null);
   const behaviorSessionRef = useRef("");
@@ -94,6 +96,8 @@ export default function Editor() {
   const [captionStyles, setCaptionStyles] = useState<CaptionStyle[]>([]);
   const [brandKits, setBrandKits] = useState<BrandKit[]>([]);
   const [brandKitId, setBrandKitId] = useState("");
+  const [postKaro, setPostKaro] = useState<PostKaroStatus | null>(null);
+  const [showPostKaroPrompt, setShowPostKaroPrompt] = useState(false);
 
   const freePlan = user?.plan === "free";
   const renderBusy = startingRender || (!!job && !["completed", "failed"].includes(job.status));
@@ -144,6 +148,10 @@ export default function Editor() {
     setWatermark(user.plan === "free");
     lastPlanRef.current = user.plan;
   }, [user]);
+  useEffect(() => {
+    if (!user) return;
+    api<PostKaroStatus>("/post-karo/status").then(setPostKaro).catch(() => setPostKaro(null));
+  }, [user?.plan]);
   useEffect(() => {
     if (indiaQualityMode && preserveSourceCaptions && captionPosition === "bottom") {
       setCaptionPosition("above");
@@ -352,6 +360,15 @@ export default function Editor() {
     }
   }
 
+  function openPostKaro() {
+    if (!exportId) return;
+    if (postKaro?.ready) {
+      router.push("/post-karo?export=" + encodeURIComponent(exportId));
+      return;
+    }
+    setShowPostKaroPrompt(true);
+  }
+
   if (loadError) return <AppShell title="Creator studio"><ErrorState message={loadError} retry={load} /></AppShell>;
   if (!clip || !project) return <AppShell title="Creator studio"><div className="screen-loader inline"><div className="loader-mark">✦</div><p>Loading the real video preview…</p></div></AppShell>;
 
@@ -465,7 +482,19 @@ export default function Editor() {
       </div>
 
       {error && <div className={`floating-error ${error === "Saved" ? "success" : ""}`}>{error}</div>}
-      {job && !drawerDismissed && <div className="export-drawer"><div className="export-icon">{job.status === "completed" ? <Check /> : job.status === "failed" ? <span>!</span> : <Loader2 className="spin" />}</div><div><b>{job.status === "completed" ? "Your Short is ready" : job.status === "failed" ? job.error || job.message : job.message}</b><span>{job.status === "completed" ? "The downloaded MP4 matches this crop, zoom and caption style" : `${job.progress}% complete`}</span><div className="progress"><i style={{ width: `${job.progress}%` }} /></div></div>{job.status === "completed" && <button className="primary-btn" type="button" onClick={downloadReadyExport} disabled={downloading}>{downloading ? <Loader2 className="spin" size={15} /> : <Download size={15} />}{downloading ? "Preparing…" : "Download MP4"}</button>}<button className="export-drawer-close" type="button" aria-label="Dismiss export status" onClick={() => setDrawerDismissed(true)}><X size={15}/></button></div>}
+      {job && !drawerDismissed && <div className="export-drawer"><div className="export-icon">{job.status === "completed" ? <Check /> : job.status === "failed" ? <span>!</span> : <Loader2 className="spin" />}</div><div><b>{job.status === "completed" ? "Your Short is ready" : job.status === "failed" ? job.error || job.message : job.message}</b><span>{job.status === "completed" ? "The downloaded MP4 matches this crop, zoom and caption style" : `${job.progress}% complete`}</span><div className="progress"><i style={{ width: `${job.progress}%` }} /></div></div>{job.status === "completed" && <div className="post-karo-drawer-actions">
+        <button className="secondary-btn" type="button" onClick={downloadReadyExport} disabled={downloading}>{downloading ? <Loader2 className="spin" size={15}/> : <Download size={15}/>} {downloading ? "Preparing…" : "Download MP4"}</button>
+        <button className={postKaro?.ready ? "primary-btn" : "post-karo-locked-btn"} type="button" onClick={openPostKaro}>{postKaro?.ready ? <Send size={15}/> : <LockKeyhole size={14}/>} Post Now</button>
+        {showPostKaroPrompt && <div className="post-karo-gate-backdrop" onMouseDown={() => setShowPostKaroPrompt(false)}>
+          <div className="post-karo-gate-card" onMouseDown={event => event.stopPropagation()}>
+            <div className="post-karo-gate-icon">{postKaro?.plan_eligible === false ? <LockKeyhole/> : <Send/>}</div>
+            <span>POST KARO</span>
+            <h3>{postKaro?.plan_eligible === false ? "Post Karo starts on Growth" : "Set up Post Karo first"}</h3>
+            <p>{postKaro?.plan_eligible === false ? "Upgrade when you want to publish finished Shorts directly from ClipKaro." : "Connect Instagram or YouTube once, then publish finished Shorts directly from ClipKaro."}</p>
+            <div><button className="secondary-btn" type="button" onClick={() => setShowPostKaroPrompt(false)}>Not now</button><button className="primary-btn" type="button" onClick={() => router.push(postKaro?.plan_eligible === false ? "/pricing" : "/post-karo?export=" + encodeURIComponent(exportId))}>{postKaro?.plan_eligible === false ? "View plans" : "Set up Post Karo"} <ArrowRight size={14}/></button></div>
+          </div>
+        </div>}
+      </div>}<button className="export-drawer-close" type="button" aria-label="Dismiss export status" onClick={() => setDrawerDismissed(true)}><X size={15}/></button></div>}
     </AppShell>
   );
 }

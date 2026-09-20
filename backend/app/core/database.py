@@ -22,7 +22,7 @@ T = TypeVar("T")
 logger = logging.getLogger("clipkaro.database")
 _LOCK_MESSAGES = ("database is locked", "database table is locked", "database schema is locked")
 _LOCK_PRIMARY_CODES = {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}
-POSTGRES_SCHEMA_REVISION = "20260909_03"
+POSTGRES_SCHEMA_REVISION = "20260920_04"
 _postgres_pool: Any = None
 
 
@@ -236,6 +236,44 @@ CREATE TABLE IF NOT EXISTS content_packs (
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
   FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS post_karo_connections (
+  user_id TEXT PRIMARY KEY, api_key_ciphertext TEXT NOT NULL, api_key_masked TEXT NOT NULL,
+  api_key_fingerprint TEXT NOT NULL, profile_id TEXT NOT NULL, validated_at TEXT NOT NULL,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS post_karo_accounts (
+  id TEXT PRIMARY KEY, user_id TEXT NOT NULL, platform TEXT NOT NULL CHECK(platform IN ('instagram','youtube')),
+  provider_account_id TEXT NOT NULL, username TEXT NOT NULL DEFAULT '', display_name TEXT NOT NULL DEFAULT '',
+  can_post INTEGER NOT NULL DEFAULT 1, connection_status TEXT NOT NULL DEFAULT 'connected',
+  health_json TEXT NOT NULL DEFAULT '{}', last_synced_at TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  UNIQUE(user_id,platform), UNIQUE(user_id,provider_account_id),
+  FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS post_karo_drafts (
+  id TEXT PRIMARY KEY, user_id TEXT NOT NULL, export_id TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 1 CHECK(revision > 0),
+  instagram_enabled INTEGER NOT NULL DEFAULT 0, instagram_caption TEXT NOT NULL DEFAULT '',
+  instagram_hashtags TEXT NOT NULL DEFAULT '[]', youtube_enabled INTEGER NOT NULL DEFAULT 0,
+  youtube_title TEXT NOT NULL DEFAULT '', youtube_description TEXT NOT NULL DEFAULT '',
+  youtube_tags TEXT NOT NULL DEFAULT '[]', youtube_visibility TEXT NOT NULL DEFAULT 'public'
+    CHECK(youtube_visibility IN ('public','unlisted','private')),
+  scheduled_for TEXT, timezone TEXT NOT NULL DEFAULT 'Asia/Kolkata', created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  UNIQUE(user_id,export_id),
+  FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY(export_id) REFERENCES exports(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS post_karo_publications (
+  id TEXT PRIMARY KEY, user_id TEXT NOT NULL, export_id TEXT NOT NULL, draft_id TEXT NOT NULL,
+  draft_revision INTEGER NOT NULL CHECK(draft_revision > 0), request_id TEXT NOT NULL, job_id TEXT,
+  mode TEXT NOT NULL CHECK(mode IN ('now','schedule')), status TEXT NOT NULL
+    CHECK(status IN ('queued','processing','scheduled','published','partial','failed')),
+  snapshot_json TEXT NOT NULL, provider_post_id TEXT, platform_results_json TEXT NOT NULL DEFAULT '[]',
+  error TEXT, scheduled_for TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  UNIQUE(user_id,request_id), UNIQUE(draft_id,draft_revision),
+  FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY(export_id) REFERENCES exports(id) ON DELETE CASCADE,
+  FOREIGN KEY(draft_id) REFERENCES post_karo_drafts(id) ON DELETE CASCADE
+);
 CREATE TABLE IF NOT EXISTS audit_events (
   id TEXT PRIMARY KEY, user_id TEXT, event TEXT NOT NULL, entity_type TEXT, entity_id TEXT,
   metadata_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL
@@ -264,6 +302,8 @@ CREATE INDEX IF NOT EXISTS idx_jobs_user ON jobs(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_usage_reservation_period ON usage_reservations(user_id, period_key, kind, status);
 CREATE INDEX IF NOT EXISTS idx_usage_reservation_resource ON usage_reservations(kind, resource_id, status);
 CREATE INDEX IF NOT EXISTS idx_content_packs_project ON content_packs(project_id);
+CREATE INDEX IF NOT EXISTS idx_post_karo_accounts_user ON post_karo_accounts(user_id,platform);
+CREATE INDEX IF NOT EXISTS idx_post_karo_publications_user ON post_karo_publications(user_id,created_at DESC);
 
 -- A video's duration is known at the validated transition. Reserve its Karo
 -- Minutes in the same SQLite write transaction before transcription starts.

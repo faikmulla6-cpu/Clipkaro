@@ -7,6 +7,7 @@ services:
     environment:
       APP_ENV: production
       SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
+      POST_KARO_ENCRYPTION_KEY: ${POST_KARO_ENCRYPTION_KEY:?Set POST_KARO_ENCRYPTION_KEY in .env}
       PRODUCTION_CREDENTIALS_ROTATED: ${PRODUCTION_CREDENTIALS_ROTATED:-false}
       CORS_ORIGINS: https://${DOMAIN:?Set DOMAIN in .env}
       SEED_DEMO_USER: "false"
