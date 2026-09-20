@@ -22,9 +22,11 @@ JOB_EXECUTION_PROVIDER=modal
 
 This preserves the established local/GCP paths while moving production execution to Modal + S3-compatible storage without rewriting business logic.
 
-## Modal secret
+## Modal secrets
 
-Create one Modal secret named `clipkaro-production`. Keep every value private. It should ultimately contain:
+Keep the existing Modal secret named `clipkaro-production` for the established production credentials. Post Karo uses a second narrowly scoped secret named `clipkaro-post-karo` containing only `POST_KARO_ENCRYPTION_KEY`. This separates social-publishing credential encryption from JWT/session signing and avoids modifying the existing production secret bundle.
+
+Keep every value private. The existing `clipkaro-production` secret should ultimately contain:
 
 - `DATABASE_URL` (Neon pooled TLS URL)
 - `SECRET_KEY`

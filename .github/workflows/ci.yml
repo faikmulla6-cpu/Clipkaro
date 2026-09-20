@@ -100,6 +100,7 @@ jobs:
           DOMAIN: clipkaro.example
           ACME_EMAIL: ci@example.com
           SECRET_KEY: ci-only-secret-key-with-at-least-32-characters
+          POST_KARO_ENCRYPTION_KEY: ci-only-post-karo-encryption-key-with-at-least-32-characters
         run: docker compose -f docker-compose.hostinger.yml config --quiet
       - name: Validate production Caddyfile
         run: >-
