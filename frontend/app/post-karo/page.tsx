@@ -10,7 +10,7 @@ import {
   Sparkles, Unplug, Youtube,
 } from "lucide-react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import styles from "./post-karo.module.css";
 
@@ -99,6 +99,7 @@ function SuccessOrb({ small = false }: { small?: boolean }) {
 }
 function PostKaroPageInner() {
   const search = useSearchParams();
+  const router = useRouter();
   const returnExport = search.get("export") || "";
   const [status, setStatus] = useState<PostKaroStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -126,6 +127,12 @@ function PostKaroPageInner() {
   const pollTimerRef = useRef<number | null>(null);
 
   useEffect(() => { draftRef.current = draft; }, [draft]);
+  useEffect(() => {
+    if (!returnExport && draftRef.current) {
+      setDraft(null);
+      draftRef.current = null;
+    }
+  }, [returnExport]);
   useEffect(() => () => {
     if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
     if (pollTimerRef.current !== null) window.clearTimeout(pollTimerRef.current);
@@ -515,7 +522,7 @@ function PostKaroPageInner() {
           </motion.div>
         </motion.div>}
       </AnimatePresence>
-      <AnimatePresence>{publication && <PublicationOverlay publication={publication} onClose={() => { setPublication(null); if (terminalStatuses.has(publication.status)) setDraft(null); }}/>}</AnimatePresence>
+      <AnimatePresence>{publication && <PublicationOverlay publication={publication} onClose={() => { setPublication(null); if (terminalStatuses.has(publication.status)) router.replace("/post-karo"); }}/>}</AnimatePresence>
     </AppShell>;
   }
   return <AppShell title="Post Karo" subtitle="Your publishing connection is ready.">
