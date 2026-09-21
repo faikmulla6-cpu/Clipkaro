@@ -47,6 +47,9 @@ requireText(nextConfig, 'key: "Content-Security-Policy"', "Hostinger frontend mu
 requireText(nextConfig, "frame-ancestors 'none'", "Hostinger CSP must block framing");
 requireText(nextConfig, "object-src 'none'", "Hostinger CSP must block plugin/object content");
 requireText(nextConfig, "https://*.razorpay.com", "Hostinger CSP must scope payment origins");
+requireText(nextConfig, "https://storage.googleapis.com", "Hostinger CSP must allow direct GCS upload and signed media delivery");
+requireText(nextConfig, "https://fonts.googleapis.com", "Hostinger CSP must allow the declared Google Fonts stylesheet");
+requireText(nextConfig, "https://fonts.gstatic.com", "Hostinger CSP must allow the declared Google Fonts files");
 requireText(nextConfig, "same-origin-allow-popups", "Hostinger frontend must keep Razorpay popups compatible while isolating openers");
 
 requireText(compose, "UPLOAD_SCAN_REQUIRED: ${UPLOAD_SCAN_REQUIRED:-true}", "production upload scanning must fail closed");
