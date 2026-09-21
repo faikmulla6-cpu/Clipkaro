@@ -487,11 +487,11 @@ export default function Editor() {
         <button className={postKaro?.ready ? "primary-btn" : "post-karo-locked-btn"} type="button" onClick={openPostKaro}>{postKaro?.ready ? <Send size={15}/> : <LockKeyhole size={14}/>} Post Now</button>
         {showPostKaroPrompt && <div className="post-karo-gate-backdrop" onMouseDown={() => setShowPostKaroPrompt(false)}>
           <div className="post-karo-gate-card" onMouseDown={event => event.stopPropagation()}>
-            <div className="post-karo-gate-icon">{postKaro?.plan_eligible === false ? <LockKeyhole/> : <Send/>}</div>
+            <div className="post-karo-gate-icon"><Send/></div>
             <span>POST KARO</span>
-            <h3>{postKaro?.plan_eligible === false ? "Post Karo is included with every paid plan" : "Set up Post Karo first"}</h3>
-            <p>{postKaro?.plan_eligible === false ? "Choose Mini Pass or any subscription plan to publish finished Shorts directly from ClipKaro." : "Connect Instagram or YouTube once, then publish finished Shorts directly from ClipKaro."}</p>
-            <div><button className="secondary-btn" type="button" onClick={() => setShowPostKaroPrompt(false)}>Not now</button><button className="primary-btn" type="button" onClick={() => router.push(postKaro?.plan_eligible === false ? "/pricing" : "/post-karo?export=" + encodeURIComponent(exportId))}>{postKaro?.plan_eligible === false ? "View plans" : "Set up Post Karo"} <ArrowRight size={14}/></button></div>
+            <h3>Set up Post Karo first</h3>
+            <p>Post Karo is free on every ClipKaro plan. Connect Instagram or YouTube once, then publish finished Shorts directly from ClipKaro.</p>
+            <div><button className="secondary-btn" type="button" onClick={() => setShowPostKaroPrompt(false)}>Not now</button><button className="primary-btn" type="button" onClick={() => router.push("/post-karo?export=" + encodeURIComponent(exportId))}>Set up Post Karo <ArrowRight size={14}/></button></div>
           </div>
         </div>}
       </div>}<button className="export-drawer-close" type="button" aria-label="Dismiss export status" onClick={() => setDrawerDismissed(true)}><X size={15}/></button></div>}

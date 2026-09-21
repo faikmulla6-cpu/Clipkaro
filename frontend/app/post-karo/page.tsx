@@ -391,10 +391,10 @@ function PostKaroPageInner() {
   if (!status.plan_eligible) {
     return <AppShell title="Post Karo" subtitle="Publish without leaving ClipKaro.">
       <section className={styles.gatedHero}>
-        <div className={styles.heroBadge}><LockKeyhole size={14}/> PAID PLAN FEATURE</div>
-        <h2>Clip it here.<br/><span>Post it from here.</span></h2>
-        <p>Post Karo connects finished Shorts to Instagram Reels and YouTube Shorts. It is available on every paid ClipKaro plan, starting with Mini Pass.</p>
-        <Link href="/pricing" className="primary-btn">View plans <ArrowRight size={15}/></Link>
+        <div className={styles.heroBadge}><ShieldCheck size={14}/> ACCOUNT CHECK</div>
+        <h2>Post Karo access needs a <span>refresh.</span></h2>
+        <p>Post Karo is free on every ClipKaro plan, including Free. Refresh your session and try again.</p>
+        <button className="primary-btn" onClick={() => void loadStatus()}><RefreshCw size={15}/> Refresh access</button>
         <div className={styles.gatedPlatforms}><span><Instagram/> Instagram Reels</span><span><Youtube/> YouTube Shorts</span></div>
       </section>
     </AppShell>;

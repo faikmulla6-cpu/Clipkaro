@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 };
 
 const publicPlans: PublicPlanView[] = [
-  { id: "free", name: "Free", price: "₹0", suffix: "/month", tagline: "Try ClipKaro before paying", features: ["15 Karo Minutes / month", "2 Shorts / month", "720p with ClipKaro watermark"] },
+  { id: "free", name: "Free", price: "₹0", suffix: "/month", tagline: "Try ClipKaro before paying", features: ["15 Karo Minutes / month", "2 Shorts / month", "720p with ClipKaro watermark", "Post Karo · Instagram + YouTube"] },
   { id: "mini_pass", name: "Mini Pass", price: "₹59", suffix: " one-time", tagline: "No subscription. Use it when you need it.", features: ["25 Karo Minutes", "5 Shorts", "1080p · no watermark", "Valid for 30 days", "Post Karo · Instagram + YouTube"] },
   { id: "creator", name: "Creator", price: "₹199", suffix: "/month", tagline: "For new creators building consistency", features: ["60 Karo Minutes / month", "15 Shorts / month", "1080p · no watermark", "Full AI clip quality", "Post Karo · Instagram + YouTube"] },
   { id: "growth", name: "Growth", price: "₹399", suffix: "/month", tagline: "For serious creators publishing every week", features: ["180 Karo Minutes / month", "50 Shorts / month", "1080p · no watermark", "Brand kit + creator workflow", "Post Karo · Instagram + YouTube"], popular: true },

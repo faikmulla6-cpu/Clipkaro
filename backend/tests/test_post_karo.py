@@ -11,7 +11,7 @@ from app.api.post_karo import POST_KARO_PLANS, _eligible
 from app.core.config import get_settings
 from app.core.database import execute, fetch_all, fetch_one
 from app.main import app
-from app.services.billing import PAID_PLANS
+from app.services.billing import PLAN_CATALOG
 from app.services.legal import LEGAL_VERSION
 from app.services.post_karo import (
     PostKaroProviderError,
@@ -267,22 +267,19 @@ def test_post_karo_is_strictly_user_scoped(client: TestClient):
     assert client.get("/api/v1/post-karo/publications").json() == []
 
 
-def test_post_karo_is_available_on_every_paid_plan_only():
-    paid = {"mini_pass", "creator", "growth", "pro", "agency"}
-    assert PAID_PLANS == paid
-    assert POST_KARO_PLANS == PAID_PLANS
-    for plan in PAID_PLANS:
+def test_post_karo_is_available_on_every_clipkaro_plan():
+    assert POST_KARO_PLANS == set(PLAN_CATALOG)
+    for plan in PLAN_CATALOG:
         assert _eligible({"plan": plan, "role": "creator"}) is True
-    assert _eligible({"plan": "free", "role": "creator"}) is False
-    assert _eligible({"plan": "free", "role": "creator", "post_karo_access_override": 1}) is True
-    assert _eligible({"plan": "free", "role": "admin"}) is True
+    assert _eligible({"plan": "unknown", "role": "creator"}) is False
+    assert _eligible({"plan": "unknown", "role": "admin"}) is True
 
 
-def test_post_karo_override_does_not_change_plan_role_or_billing(client: TestClient):
+def test_post_karo_free_access_does_not_change_plan_role_or_billing(client: TestClient):
     login_demo(client)
     asyncio.run(execute(
         """UPDATE users
-           SET plan='free',role='creator',billing_reference=NULL,post_karo_access_override=1
+           SET plan='free',role='creator',billing_reference=NULL,post_karo_access_override=0
            WHERE id='demo-user'"""
     ))
 
@@ -297,7 +294,7 @@ def test_post_karo_override_does_not_change_plan_role_or_billing(client: TestCli
         "plan": "free",
         "role": "creator",
         "billing_reference": None,
-        "post_karo_access_override": 1,
+        "post_karo_access_override": 0,
     }
 
 
@@ -320,7 +317,7 @@ def test_zernio_list_accounts_does_not_send_unpaired_limit():
 def test_connection_sync_provider_error_is_controlled_not_500(client: TestClient):
     login_demo(client)
     asyncio.run(execute(
-        "UPDATE users SET plan='mini_pass' WHERE id='demo-user'"
+        "UPDATE users SET plan='free' WHERE id='demo-user'"
     ))
     with (
         patch(

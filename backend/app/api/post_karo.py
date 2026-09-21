@@ -30,7 +30,7 @@ from app.services.post_karo import (
 )
 
 router = APIRouter(prefix="/post-karo", tags=["post-karo"])
-POST_KARO_PLANS = {"mini_pass", "creator", "growth", "pro", "agency"}
+POST_KARO_PLANS = {"free", "mini_pass", "creator", "growth", "pro", "agency"}
 SUPPORTED = {"instagram", "youtube"}
 
 
@@ -97,7 +97,7 @@ def _require_eligible(user: dict[str, Any]) -> None:
     if not _eligible(user):
         raise HTTPException(
             403,
-            "Post Karo is available on every paid ClipKaro plan.",
+            "Post Karo is available on every ClipKaro plan.",
         )
 
 
@@ -202,7 +202,7 @@ async def post_karo_status(user: dict = Depends(current_user)) -> dict[str, Any]
     ready = [row for row in accounts if row.get("connection_status") == "connected" and row.get("can_post")]
     return {
         "plan_eligible": _eligible(user),
-        "required_plan": "mini_pass",
+        "required_plan": "free",
         "connection_active": bool(connection),
         "api_key_masked": (connection or {}).get("api_key_masked"),
         "profile_ready": bool((connection or {}).get("profile_id")),
