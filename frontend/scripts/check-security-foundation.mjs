@@ -14,6 +14,7 @@ const forgotPage = read("frontend/app/forgot-password/page.tsx");
 const resetPage = read("frontend/app/reset-password/page.tsx");
 const caddy = read("Caddyfile");
 const nextConfig = read("frontend/next.config.js");
+const rootLayout = read("frontend/app/layout.tsx");
 const compose = read("docker-compose.hostinger.yml");
 const backendDocker = read("backend/Dockerfile");
 const frontendDocker = read("frontend/Dockerfile");
@@ -51,6 +52,10 @@ requireText(nextConfig, "https://storage.googleapis.com", "Hostinger CSP must al
 requireText(nextConfig, "https://fonts.googleapis.com", "Hostinger CSP must allow the declared Google Fonts stylesheet");
 requireText(nextConfig, "https://fonts.gstatic.com", "Hostinger CSP must allow the declared Google Fonts files");
 requireText(nextConfig, "same-origin-allow-popups", "Hostinger frontend must keep Razorpay popups compatible while isolating openers");
+requireText(rootLayout, 'httpEquiv="Content-Security-Policy"', "Hostinger frontend must keep an in-document CSP fallback when the edge replaces the upstream CSP header");
+requireText(rootLayout, "https://storage.googleapis.com", "CSP fallback must preserve direct GCS upload and media delivery");
+requireText(rootLayout, "https://checkout.razorpay.com", "CSP fallback must preserve Razorpay checkout");
+requireText(rootLayout, "https://fonts.googleapis.com", "CSP fallback must preserve the declared Google Fonts stylesheet");
 
 requireText(compose, "UPLOAD_SCAN_REQUIRED: ${UPLOAD_SCAN_REQUIRED:-true}", "production upload scanning must fail closed");
 requireText(compose, "CLAMAV_HOST: clamav", "API must use private ClamAV service");
