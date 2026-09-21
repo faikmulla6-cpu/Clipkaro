@@ -386,3 +386,51 @@ def test_sync_accepts_populated_profile_id_object(client: TestClient):
     assert rows[0]["platform"] == "instagram"
     assert rows[0]["connection_status"] == "connected"
     assert rows[0]["can_post"] == 1
+
+
+def test_zernio_presigned_upload_sends_exact_content_length(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    source = tmp_path / "short.mp4"
+    source.write_bytes(b"clipkaro-video-bytes")
+    observed: dict[str, object] = {}
+
+    class FakeResponse:
+        status_code = 200
+
+    class FakeAsyncClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def put(self, url, *, headers, content):
+            observed["url"] = url
+            observed["headers"] = headers
+            uploaded = bytearray()
+            async for block in content:
+                uploaded.extend(block)
+            observed["content"] = bytes(uploaded)
+            return FakeResponse()
+
+    client = ZernioClient(synthetic_zernio_key())
+    monkeypatch.setattr(
+        client,
+        "_request",
+        AsyncMock(return_value=(200, {
+            "uploadUrl": "https://upload.example/object",
+            "publicUrl": "https://media.example/short.mp4",
+        })),
+    )
+    monkeypatch.setattr("app.services.post_karo.httpx.AsyncClient", FakeAsyncClient)
+
+    public_url = asyncio.run(client.upload_media(source))
+
+    assert public_url == "https://media.example/short.mp4"
+    assert observed["content"] == source.read_bytes()
+    assert observed["headers"] == {
+        "Content-Type": "video/mp4",
+        "Content-Length": str(source.stat().st_size),
+    }
