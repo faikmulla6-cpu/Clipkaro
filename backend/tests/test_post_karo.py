@@ -11,6 +11,7 @@ from app.api.post_karo import POST_KARO_PLANS, _eligible
 from app.core.config import get_settings
 from app.core.database import execute, fetch_all, fetch_one
 from app.main import app
+from app.services.billing import PAID_PLANS
 from app.services.legal import LEGAL_VERSION
 from app.services.post_karo import (
     PostKaroProviderError,
@@ -268,8 +269,9 @@ def test_post_karo_is_strictly_user_scoped(client: TestClient):
 
 def test_post_karo_is_available_on_every_paid_plan_only():
     paid = {"mini_pass", "creator", "growth", "pro", "agency"}
-    assert POST_KARO_PLANS == paid
-    for plan in paid:
+    assert PAID_PLANS == paid
+    assert POST_KARO_PLANS == PAID_PLANS
+    for plan in PAID_PLANS:
         assert _eligible({"plan": plan, "role": "creator"}) is True
     assert _eligible({"plan": "free", "role": "creator"}) is False
     assert _eligible({"plan": "free", "role": "creator", "post_karo_access_override": 1}) is True
