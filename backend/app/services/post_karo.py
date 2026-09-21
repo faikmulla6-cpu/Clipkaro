@@ -245,12 +245,25 @@ class ZernioClient:
             async with httpx.AsyncClient(timeout=httpx.Timeout(600.0, connect=20.0)) as client:
                 response = await client.put(
                     upload_url,
-                    headers={"Content-Type": "video/mp4"},
+                    # Zernio's presign request includes the exact byte size.
+                    # Send that same size on the PUT so httpx does not fall back
+                    # to Transfer-Encoding: chunked for our async iterator.
+                    # Object-storage presigned URLs can reject chunked uploads
+                    # even when the media bytes themselves are valid.
+                    headers={
+                        "Content-Type": "video/mp4",
+                        "Content-Length": str(size),
+                    },
                     content=chunks(),
                 )
         except (httpx.TimeoutException, httpx.NetworkError) as exc:
             raise PostKaroProviderError("The Short upload was interrupted. Retry Post Karo safely.") from exc
         if response.status_code >= 400:
+            logger.warning(
+                "Post Karo media PUT rejected status=%s bytes=%s",
+                response.status_code,
+                size,
+            )
             raise PostKaroProviderError("The publishing service could not receive this Short.")
         return public_url
 
