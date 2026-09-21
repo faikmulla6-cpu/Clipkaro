@@ -13,6 +13,7 @@ const authForm = read("frontend/components/AuthForm.tsx");
 const forgotPage = read("frontend/app/forgot-password/page.tsx");
 const resetPage = read("frontend/app/reset-password/page.tsx");
 const caddy = read("Caddyfile");
+const nextConfig = read("frontend/next.config.js");
 const compose = read("docker-compose.hostinger.yml");
 const backendDocker = read("backend/Dockerfile");
 const frontendDocker = read("frontend/Dockerfile");
@@ -36,6 +37,20 @@ requireText(caddy, "Content-Security-Policy", "edge CSP must be present");
 requireText(caddy, "frame-ancestors 'none'", "CSP must block framing");
 requireText(caddy, "object-src 'none'", "CSP must block plugin/object content");
 requireText(caddy, "https://*.razorpay.com", "CSP must explicitly scope payment origins");
+
+// The current Hostinger + Modal production path does not traverse Caddy, so
+// equivalent browser policy must also be emitted by Next.js itself.
+requireText(nextConfig, 'key: "Strict-Transport-Security"', "Hostinger frontend must emit HSTS");
+requireText(nextConfig, 'key: "X-Content-Type-Options"', "Hostinger frontend must disable MIME sniffing");
+requireText(nextConfig, 'key: "X-Frame-Options"', "Hostinger frontend must block framing");
+requireText(nextConfig, 'key: "Content-Security-Policy"', "Hostinger frontend must emit CSP");
+requireText(nextConfig, "frame-ancestors 'none'", "Hostinger CSP must block framing");
+requireText(nextConfig, "object-src 'none'", "Hostinger CSP must block plugin/object content");
+requireText(nextConfig, "https://*.razorpay.com", "Hostinger CSP must scope payment origins");
+requireText(nextConfig, "https://storage.googleapis.com", "Hostinger CSP must allow direct GCS upload and signed media delivery");
+requireText(nextConfig, "https://fonts.googleapis.com", "Hostinger CSP must allow the declared Google Fonts stylesheet");
+requireText(nextConfig, "https://fonts.gstatic.com", "Hostinger CSP must allow the declared Google Fonts files");
+requireText(nextConfig, "same-origin-allow-popups", "Hostinger frontend must keep Razorpay popups compatible while isolating openers");
 
 requireText(compose, "UPLOAD_SCAN_REQUIRED: ${UPLOAD_SCAN_REQUIRED:-true}", "production upload scanning must fail closed");
 requireText(compose, "CLAMAV_HOST: clamav", "API must use private ClamAV service");

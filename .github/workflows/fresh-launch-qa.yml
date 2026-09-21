@@ -93,6 +93,10 @@ jobs:
         working-directory: backend
         run: python -m pip check
 
+      - name: Audit Python dependencies
+        working-directory: backend
+        run: python -m pip_audit
+
       - name: Run complete backend test suite
         id: backend_tests
         continue-on-error: true
