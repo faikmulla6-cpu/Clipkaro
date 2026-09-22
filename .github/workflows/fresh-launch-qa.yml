@@ -173,6 +173,13 @@ jobs:
         working-directory: frontend
         run: npm run check:legal-privacy
 
+      - name: Check Search discovery, GEO and AEO contract
+        id: search_discovery
+        continue-on-error: true
+        working-directory: frontend
+        run: npm run check:search-discovery
+
+
       - name: Check Behavioral learning contract
         id: behavioral_learning
         continue-on-error: true
@@ -343,6 +350,7 @@ jobs:
           --check email_verification=${{ steps.email_verification.outcome }}
           --check security_foundation=${{ steps.security_foundation.outcome }}
           --check legal_privacy=${{ steps.legal_privacy.outcome }}
+          --check search_discovery=${{ steps.search_discovery.outcome }}
           --check behavioral_learning=${{ steps.behavioral_learning.outcome }}
           --check landscape_reframe=${{ steps.landscape_reframe.outcome }}
           --check release_identity_postinstall=${{ steps.release_identity_postinstall.outcome }}
