@@ -33,7 +33,7 @@ const workflow = [
   [Link2, "Paste URL or upload", "Start with a supported YouTube link, or upload the original file you own or have permission to process."],
   [WandSparkles, "Analyse", "ClipKaro transcribes the source and finds promising moments."],
   [Scissors, "Edit & refine", "Review the suggested moments, captions and framing before export."],
-  [Clapperboard, "Export & share", "Render the Shorts you choose and take them into your publishing workflow."],
+  [Clapperboard, "Publish with Post Karo", "Render the Shorts you choose, then publish to Instagram Reels or YouTube Shorts from ClipKaro after you connect your account."],
 ] as const;
 
 const features = [
@@ -45,6 +45,7 @@ const features = [
   [Zap, "Auto captions", "Prepare readable short-form captions and review the transcript before publishing.", "caption"],
   [WandSparkles, "Thumbnail & cover direction", "Turn clip context into creator-ready cover text and thumbnail direction where available.", "thumbnail"],
   [Download, "Export controls", "Choose the output you want and keep the final publishing decision with the creator.", "export"],
+  [Youtube, "Post Karo", "Publish finished Shorts to Instagram Reels and YouTube Shorts from ClipKaro. Post Karo is free on every ClipKaro plan.", "publish"],
 ] as const;
 
 const audiences = [
@@ -56,11 +57,11 @@ const audiences = [
 ] as const;
 
 const plans = [
-  { name: "Free", price: "₹0", suffix: "/month", note: "Try ClipKaro before paying.", items: ["15 Karo Minutes", "2 Shorts", "720p with watermark"], href: "/signup", featured: false },
-  { name: "Mini Pass", price: "₹59", suffix: "one-time", note: "Use it when you need it.", items: ["25 Karo Minutes", "5 Shorts", "1080p · no watermark"], href: "/signup?plan=mini_pass", featured: false },
-  { name: "Growth", price: "₹399", suffix: "/month", note: "For serious weekly creators.", items: ["180 Karo Minutes", "50 Shorts", "1080p · no watermark"], href: "/signup?plan=growth", featured: true },
-  { name: "Pro", price: "₹799", suffix: "/month", note: "For daily creator output.", items: ["480 Karo Minutes", "150 Shorts", "1080p · no watermark"], href: "/signup?plan=pro", featured: false },
-  { name: "Agency", price: "₹1,999", suffix: "/month", note: "For higher-volume client work.", items: ["1,500 Karo Minutes", "500 Shorts", "1080p · no watermark"], href: "/signup?plan=agency", featured: false },
+  { name: "Free", price: "₹0", suffix: "/month", note: "Try the full create-to-publish loop.", items: ["15 Karo Minutes", "2 Shorts", "720p with watermark", "Post Karo included"], href: "/signup", featured: false },
+  { name: "Mini Pass", price: "₹59", suffix: "one-time", note: "Use it when you need it.", items: ["25 Karo Minutes", "5 Shorts", "1080p · no watermark", "Post Karo included"], href: "/signup?plan=mini_pass", featured: false },
+  { name: "Growth", price: "₹399", suffix: "/month", note: "For serious weekly creators.", items: ["180 Karo Minutes", "50 Shorts", "1080p · no watermark", "Post Karo included"], href: "/signup?plan=growth", featured: true },
+  { name: "Pro", price: "₹799", suffix: "/month", note: "For daily creator output.", items: ["480 Karo Minutes", "150 Shorts", "1080p · no watermark", "Post Karo included"], href: "/signup?plan=pro", featured: false },
+  { name: "Agency", price: "₹1,999", suffix: "/month", note: "For higher-volume client work.", items: ["1,500 Karo Minutes", "500 Shorts", "1080p · no watermark", "Post Karo included"], href: "/signup?plan=agency", featured: false },
 ] as const;
 
 const questions = [
@@ -68,6 +69,8 @@ const questions = [
   ["What happens if a YouTube link cannot be imported?", "Use the original-file upload fallback. ClipKaro then continues with the same transcript, clip-finding, editing and export workflow."],
   ["Will the clips be 9:16?", "Creator Studio supports vertical short-form framing and gives you controls to review framing before export."],
   ["Does ClipKaro choose clips automatically?", "ClipKaro suggests and ranks promising moments, but you decide which clips to keep, edit and export."],
+  ["Can ClipKaro publish my finished Shorts directly?", "Yes. Post Karo lets signed-in users publish finished Shorts to connected Instagram Reels and YouTube Shorts accounts. You review and confirm the post; ClipKaro does not publish without your action."],
+  ["Is Post Karo free?", "Yes. Post Karo is included on every ClipKaro plan, including Free. Plan limits still control how many source minutes and Shorts you can create."],
   ["Do I need to connect YouTube Studio for Creator Pulse?", "No. Creator Pulse works from the public YouTube channel evidence available for the channel you submit."],
 ] as const;
 
@@ -82,9 +85,9 @@ export function HomeExperience() {
             <div className={styles.heroAura} aria-hidden="true"><i/><i/><i/></div>
             <div className={styles.heroGrid}>
               <div className={styles.heroCopy} data-public-reveal="left">
-                <span className={styles.eyebrow}><Sparkles size={14}/> YouTube URL to Shorts · upload fallback</span>
-                <h1>Turn long videos into <span>ready-to-publish Shorts.</span></h1>
-                <p>Start with a supported YouTube URL or upload the original file. ClipKaro finds your best moments, helps prepare captions, reframes for Shorts and keeps the whole creator workflow connected.</p>
+                <span className={styles.eyebrow}><Sparkles size={14}/> AI VIDEO CLIPPER FOR INDIA · CREATE → EDIT → POST</span>
+                <h1>One long video in. <span>Strong Shorts out.</span></h1>
+                <p>ClipKaro is an AI video clipper for creators who want the whole workflow in one place: start from a supported YouTube URL or original file, find strong moments, review captions and framing, export, then publish to Instagram Reels or YouTube Shorts with free Post Karo.</p>
                 <div className={styles.heroActions}>
                   <TransitionLink href="/signup" className={styles.primary}>Try ClipKaro free <ArrowRight size={17}/></TransitionLink>
                   <a href="#youtube-url-to-shorts" className={styles.secondary}><Link2 size={15}/> See URL workflow</a>
@@ -93,6 +96,7 @@ export function HomeExperience() {
                   <span><CheckCircle2 size={14}/> No card required</span>
                   <span><Languages size={14}/> Hindi, Hinglish & English workflows</span>
                   <span><ShieldCheck size={14}/> You keep creative control</span>
+                  <span><Youtube size={14}/> Post Karo free on every plan</span>
                 </div>
               </div>
 
@@ -307,7 +311,7 @@ export function HomeExperience() {
             <div className={styles.faqGrid} data-public-reveal="right">{questions.map(([question,answer])=><details key={question}><summary>{question}<span>+</span></summary><p>{answer}</p></details>)}</div>
           </section>
 
-          <section className={styles.finalCta} data-public-reveal="scale"><div><span><Sparkles size={14}/> START WITH ONE VIDEO</span><h2>Make the content you already recorded work harder.</h2><p>Create a free account, paste a supported YouTube link or upload content you own, and judge the suggested clips yourself.</p></div><TransitionLink href="/signup" className={styles.limeButton}>Start creating free <ArrowRight size={16}/></TransitionLink></section>
+          <section className={styles.finalCta} data-public-reveal="scale"><div><span><Sparkles size={14}/> START WITH ONE VIDEO</span><h2>Create the Short. Edit it. Post it. Keep moving.</h2><p>Create a free account, paste a supported YouTube link or upload content you own, review the AI suggestions, then publish finished Shorts to Instagram or YouTube with Post Karo.</p></div><TransitionLink href="/signup" className={styles.limeButton}>Create my first Short free <ArrowRight size={16}/></TransitionLink></section>
         </main>
 
         <PublicSiteFooter />
