@@ -34,8 +34,9 @@ requireText(homePage, "Is Post Karo free?", "homepage answer schema must reflect
 
 for (const slug of ["ai-video-clipper-india", "post-shorts-instagram-youtube"]) {
   requireText(slugs, `"${slug}"`, `public SEO slug ${slug} must remain registered`);
-  requireText(seoPages, `"${slug}"`, `public SEO content ${slug} must remain defined`);
 }
+requireText(seoPages, 'title: "AI Video Clipper India"', "AI video clipper acquisition content must remain defined");
+requireText(seoPages, 'title: "Post Shorts to Instagram and YouTube"', "Post Karo acquisition content must remain defined");
 requireText(seoTemplate, "QUICK ANSWER", "SEO pages must expose answer-first visible copy");
 requireText(seoTemplate, '"FAQPage"', "SEO pages must keep visible FAQs machine-readable");
 requireText(seoTemplate, '"SoftwareApplication"', "SEO pages must identify the product entity");

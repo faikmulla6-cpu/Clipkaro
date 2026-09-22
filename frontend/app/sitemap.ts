@@ -28,7 +28,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     url: `https://clipkaro.pro/${page.slug}`,
     changeFrequency: (index === 0 ? "weekly" : "monthly") as "weekly" | "monthly",
     priority: index === 0 ? 0.9 : 0.75,
-    { lastModified: publicRefresh },
+    lastModified: publicRefresh,
   }));
   return [...staticRoutes, ...seoRoutes];
 }
