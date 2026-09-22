@@ -21,7 +21,7 @@ import { PublicSiteFooter } from "@/components/PublicSiteFooter";
 import { PublicSiteNav } from "@/components/PublicSiteNav";
 import styles from "./page.module.css";
 
-const title = "YouTube Channel Analyzer — Creator Pulse | ClipKaro AI";
+const title = "AI YouTube Channel Analyzer India — Creator Pulse | ClipKaro AI";
 const description = "Analyse public YouTube channel performance with Creator Pulse for ₹1 per successful Pulse. Compare recent upload momentum and get one evidence-led next-video idea, hook, angle and downloadable thumbnail.";
 
 export const metadata: Metadata = {
@@ -82,12 +82,23 @@ const faqs = [
   ["What happens if the recommendation or thumbnail service is unavailable?", "Your verified channel analysis remains the important result. Optional intelligence is designed to fail without erasing the successful Pulse data."],
 ] as const;
 
+const faqSchema = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: faqs.map(([question, answer]) => ({
+    "@type": "Question",
+    name: question,
+    acceptedAnswer: { "@type": "Answer", text: answer },
+  })),
+};
+
 export default function YoutubeChannelAnalyzerPage() {
   return (
     <PublicMotionShell>
       <div className={`landing ${styles.page}`}>
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(webPageSchema) }} />
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }} />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }} />
         <PublicSiteNav cta="pulse" />
 
         <header className={styles.hero} data-public-reveal>
