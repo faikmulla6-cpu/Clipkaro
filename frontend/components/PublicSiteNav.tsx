@@ -22,6 +22,12 @@ type PublicSiteNavProps = {
 
 const products = [
   {
+    href: "/ai-video-clipper-india",
+    label: "AI Video Clipper",
+    text: "Long video → ranked moments → edited Shorts.",
+    icon: Sparkles,
+  },
+  {
     href: "/youtube-video-to-shorts-ai",
     label: "YouTube URL → Shorts",
     text: "Paste a supported link or use the original-file fallback.",
@@ -38,6 +44,12 @@ const products = [
     label: "Hindi & Hinglish",
     text: "India-first clipping and caption workflows.",
     icon: Languages,
+  },
+  {
+    href: "/post-shorts-instagram-youtube",
+    label: "Post Karo",
+    text: "Publish finished Shorts to Instagram + YouTube.",
+    icon: ArrowRight,
   },
   {
     href: "/youtube-channel-analyzer",
@@ -162,7 +174,7 @@ export function PublicSiteNav({ cta = "start" }: PublicSiteNavProps) {
                         ClipKaro workspace
                       </span>
                       <p className="mt-2 max-w-[430px] text-[17px] font-extrabold leading-snug tracking-[-0.02em]">
-                        One connected workflow for clipping, captions and creator decisions.
+                        One connected workflow to clip, edit and publish creator-ready Shorts.
                       </p>
                     </div>
                     <span className="shrink-0 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[10px] font-extrabold text-emerald-50">
@@ -291,8 +303,8 @@ export function PublicSiteNav({ cta = "start" }: PublicSiteNavProps) {
       >
         <div className="rounded-[18px] bg-gradient-to-br from-emerald-950 via-emerald-900 to-emerald-800 p-4 text-white">
           <span className="text-[10px] font-black uppercase tracking-[0.18em] text-lime-300">Explore ClipKaro</span>
-          <h2 className="mt-2 text-[19px] font-black leading-tight tracking-[-0.03em]">Create, refine and decide what to publish next.</h2>
-          <p className="mt-2 text-[11px] leading-relaxed text-emerald-100/85">Products, creator intelligence, pricing and account access in one place.</p>
+          <h2 className="mt-2 text-[19px] font-black leading-tight tracking-[-0.03em]">Create, edit and publish Shorts from one connected workflow.</h2>
+          <p className="mt-2 text-[11px] leading-relaxed text-emerald-100/85">AI clipping, captions, Post Karo publishing, creator intelligence and pricing in one place.</p>
         </div>
 
         <div className="mt-3 grid gap-2">
