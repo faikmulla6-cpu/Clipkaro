@@ -62,7 +62,7 @@ export const SEO_PAGES: SeoPage[] = [
     trust: "Hindi and Hinglish creator workflows are supported, but mixed-language speech can still produce uncertain transcript lines. Review the transcript and captions before publishing.",
     faq: [
       { question: "Is Hindi supported?", answer: "Yes. ClipKaro includes Hindi as a supported spoken-language choice in the upload workflow." },
-      { question: "Is Hinglish fully supported?", answer: "Hinglish appears in the product, but general availability should be treated carefully while quality validation continues." },
+      { question: "Does ClipKaro support Hinglish?", answer: "Yes. ClipKaro supports Hinglish-oriented creator workflows. Because mixed-language speech can contain uncertain transcript lines, review the transcript and captions before publishing." },
       { question: "Can I use these clips for Instagram?", answer: "Yes. The vertical export workflow is designed for platforms like Instagram Reels and YouTube Shorts." },
     ],
   },
