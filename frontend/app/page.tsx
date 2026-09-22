@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import { HomeExperience } from "@/components/HomeExperience";
-import { LEGAL_LINKS } from "@/lib/legal";
+import { LEGAL_LINKS, TRUST_PROFILE } from "@/lib/legal";
 
 export const metadata: Metadata = {
-  title: "ClipKaro AI — YouTube URL to Shorts & AI Video Clipper",
-  description: "Paste a supported YouTube URL or upload the original video, then turn long-form content into creator-ready Shorts with AI clip finding, captions and editing.",
+  title: { absolute: "ClipKaro AI — AI Video Clipper for YouTube Shorts & Reels" },
+  description: "Turn long videos into Shorts with ClipKaro AI: import a supported YouTube URL or upload a file, find strong moments, edit captions and framing, then publish to Instagram Reels or YouTube Shorts with free Post Karo.",
   keywords: [
     "AI video clipper",
     "YouTube URL to Shorts",
@@ -21,20 +21,35 @@ export const metadata: Metadata = {
     "Hinglish video clipper",
     "Hindi video to Reels",
     "ClipKaro Creator Pulse",
+    "AI video clipper India",
+    "post Shorts to Instagram",
+    "post Shorts to YouTube",
+    "long video to Reels",
   ],
   alternates: { canonical: "/" },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
   openGraph: {
     type: "website",
     url: "/",
     siteName: "ClipKaro AI",
-    title: "ClipKaro AI — YouTube URL to Shorts & AI Video Clipper",
-    description: "Paste a supported YouTube link or upload the original file, then find strong moments, refine captions and framing, and export creator-ready Shorts.",
+    title: "ClipKaro AI — AI Video Clipper for YouTube Shorts & Reels",
+    description: "From one long video to strong Shorts: find moments with AI, review captions and framing, export, then publish to Instagram Reels or YouTube Shorts from ClipKaro.",
     images: [{ url: "/assets/clipkaro-icon.png", width: 1024, height: 1024, alt: "ClipKaro AI creator workflow platform" }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "ClipKaro AI — YouTube URL to Shorts & AI Video Clipper",
-    description: "Paste a supported YouTube URL or upload the source file, then turn long-form video into creator-ready Shorts with ClipKaro AI.",
+    title: "ClipKaro AI — AI Video Clipper for YouTube Shorts & Reels",
+    description: "ClipKaro AI turns long videos into creator-ready Shorts and lets you publish finished clips to Instagram Reels and YouTube Shorts with free Post Karo.",
     images: ["/assets/clipkaro-icon.png"],
   },
 };
@@ -47,7 +62,18 @@ const organizationStructuredData = {
   alternateName: ["ClipKaro", "ClipKaroAI"],
   url: "https://clipkaro.pro/",
   logo: "https://clipkaro.pro/assets/clipkaro-icon.png",
-  description: "ClipKaro AI is a web-based video repurposing platform for creators, educators, podcasters and businesses.",
+  founder: {
+    "@type": "Person",
+    name: TRUST_PROFILE.founderName,
+    jobTitle: TRUST_PROFILE.founderTitle,
+  },
+  contactPoint: {
+    "@type": "ContactPoint",
+    contactType: "customer support",
+    email: TRUST_PROFILE.supportEmail,
+    url: "https://clipkaro.pro/contact",
+  },
+  description: "ClipKaro AI is an AI video clipper and video repurposing platform for creators, educators, podcasters and businesses that turns long-form video into short-form clips and supports direct publishing to Instagram Reels and YouTube Shorts.",
 };
 
 const websiteStructuredData = {
@@ -75,7 +101,7 @@ const softwareStructuredData = {
   operatingSystem: "Web",
   publisher: { "@id": "https://clipkaro.pro/#organization" },
   mainEntityOfPage: { "@id": "https://clipkaro.pro/#website" },
-  description: "AI video clipping, YouTube URL import, resilient original-file upload fallback, content repurposing and YouTube creator intelligence for Indian creators, including clip detection, transcript review, India Quality Mode, captions, vertical export, Content Packs and Creator Pulse.",
+  description: "AI video clipping and repurposing for Indian creators: supported YouTube URL import, original-file upload fallback, ranked clip discovery, transcript review, Hindi/Hinglish workflows, captions, vertical editing, export, free Post Karo publishing to Instagram Reels and YouTube Shorts, Content Packs and Creator Pulse.",
   offers: {
     "@type": "Offer",
     priceCurrency: "INR",
@@ -83,6 +109,11 @@ const softwareStructuredData = {
     url: "https://clipkaro.pro/pricing",
     description: "A free plan is available; paid plans are listed on the pricing page.",
   },
+  audience: {
+    "@type": "Audience",
+    audienceType: "YouTubers, podcasters, educators, coaches, founders, businesses and creator teams",
+  },
+  inLanguage: ["en", "hi", "hi-Latn"],
   featureList: [
     "YouTube URL import for supported videos, Shorts and live replays",
     "Original-file upload fallback when direct URL acquisition is unavailable",
@@ -95,7 +126,8 @@ const softwareStructuredData = {
     "9:16, 4:5 and 1:1 export controls",
     "Caption style and caption position controls",
     "One video to complete Content Pack",
-    "YouTube Shorts, Instagram, X and LinkedIn publishing copy",
+    "Free Post Karo publishing to connected Instagram Reels and YouTube Shorts accounts",
+    "Publishing copy for additional social workflows",
     "₹1 Creator Pulse YouTube channel analysis",
     "Verified recent-upload momentum comparison",
     "Evidence-led next-video recommendation with title, angle and opening hook",
@@ -103,6 +135,7 @@ const softwareStructuredData = {
     "Saved Creator Pulse history and previous-scan comparison",
     "Private source and export media handling",
     "Brand Kit support",
+    "Free plan with Post Karo included",
   ],
 };
 
@@ -136,10 +169,18 @@ const faqStructuredData = {
     },
     {
       "@type": "Question",
-      name: "Does ClipKaro publish clips automatically?",
+      name: "Can ClipKaro publish finished Shorts directly to Instagram and YouTube?",
       acceptedAnswer: {
         "@type": "Answer",
-        text: "No. ClipKaro helps find, prepare and render clips, but the creator decides what to keep, edit, export and publish.",
+        text: "Yes. Post Karo lets signed-in users publish finished Shorts to connected Instagram Reels and YouTube Shorts accounts after the creator reviews and confirms the post. Post Karo is included on every ClipKaro plan, including Free.",
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Is Post Karo free?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "Yes. Post Karo is included on every ClipKaro plan, including Free. Plan limits still control Karo Minutes, Short creation capacity, export resolution and watermark rules.",
       },
     },
     {
@@ -147,7 +188,7 @@ const faqStructuredData = {
       name: "Who is ClipKaro built for?",
       acceptedAnswer: {
         "@type": "Answer",
-        text: "ClipKaro is built for YouTubers, podcasters, educators, coaches, founders, businesses and creator teams that already have long-form video and want more short-form output.",
+        text: "ClipKaro is built for YouTubers, podcasters, educators, coaches, founders, businesses and creator teams that already have long-form video and want a faster create-to-publish workflow.",
       },
     },
   ],
@@ -162,7 +203,7 @@ const urlToShortsHowToStructuredData = {
     { "@type": "HowToStep", name: "Paste the YouTube URL", text: "Paste an authorised YouTube video, Shorts or live-replay URL. If direct acquisition is unavailable, upload the original file instead." },
     { "@type": "HowToStep", name: "Analyse the video", text: "ClipKaro transcribes the source and ranks promising moments." },
     { "@type": "HowToStep", name: "Review and refine", text: "Review the suggested moments, transcript, captions and framing." },
-    { "@type": "HowToStep", name: "Export the Short", text: "Render the creator-approved short-form output in the selected format." },
+    { "@type": "HowToStep", name: "Export or publish the Short", text: "Render the creator-approved short-form output, then download it or publish to a connected Instagram Reels or YouTube Shorts account with Post Karo." },
   ],
 };
 

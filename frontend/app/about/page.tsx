@@ -5,7 +5,7 @@ import { AboutExperience } from "./AboutExperience";
 import unified from "./unified.module.css";
 
 const title = "About ClipKaro AI — YouTube URL to Shorts & Creator Video AI";
-const description = "See how ClipKaro turns authorised YouTube URLs or uploaded video files into creator-ready Shorts with AI clip finding, transcript review and a resilient upload fallback.";
+const description = "ClipKaro AI is an India-first AI video clipper that turns authorised long videos into creator-ready Shorts with ranked moments, transcript review, captions, vertical editing and Post Karo publishing.";
 
 export const metadata: Metadata = {
   title,
@@ -46,6 +46,7 @@ const aboutStructuredData = {
         "Caption-safe vertical rendering",
         "Creator Studio editing and export controls",
         "Creator Pulse YouTube channel intelligence",
+        "Post Karo publishing to connected Instagram Reels and YouTube Shorts accounts",
       ],
     },
     {

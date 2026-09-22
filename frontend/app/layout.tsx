@@ -16,8 +16,8 @@ const browserCsp = "default-src 'self'; base-uri 'self'; object-src 'none'; form
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://clipkaro.pro"),
-  title: "ClipKaro AI — YouTube URL to Shorts & AI Video Clipper",
-  description: "Paste a supported YouTube URL or upload the original file, then turn long-form video into creator-ready Shorts with AI clip finding, captions, editing and export controls.",
+  title: "ClipKaro AI — AI Video Clipper for YouTube Shorts & Reels",
+  description: "ClipKaro AI turns long videos into creator-ready Shorts with AI clip discovery, transcript review, captions, vertical editing and free Post Karo publishing to Instagram Reels and YouTube Shorts.",
   applicationName: "ClipKaro AI",
   keywords: [
     "AI video clipper",
@@ -34,11 +34,15 @@ export const metadata: Metadata = {
     "AI captions for Indian creators",
     "video content repurposing",
     "ClipKaro AI",
+    "AI video clipper India",
+    "Post Karo",
+    "publish Shorts to Instagram and YouTube",
   ],
   alternates: {
     canonical: "/",
   },
   manifest: "/site.webmanifest",
+  category: "video",
   icons: {
     icon: [{ url: tabIcon, type: "image/png" }],
     shortcut: tabIcon,
@@ -48,14 +52,14 @@ export const metadata: Metadata = {
     type: "website",
     url: "https://clipkaro.pro",
     siteName: "ClipKaro AI",
-    title: "ClipKaro AI — YouTube URL to Shorts & AI Video Clipper",
-    description: "Start with a supported YouTube URL or original-file upload, then find strong moments, review transcripts, refine captions and export creator-ready Shorts.",
+    title: "ClipKaro AI — AI Video Clipper for YouTube Shorts & Reels",
+    description: "Turn one long video into strong Shorts, edit captions and framing, then publish finished clips to Instagram Reels or YouTube Shorts with ClipKaro AI.",
     images: [{ url: "/assets/clipkaro-icon.png", width: 1024, height: 1024, alt: "ClipKaro AI video clipping and content repurposing platform" }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "ClipKaro AI — YouTube URL to Shorts & AI Video Clipper",
-    description: "YouTube URL intake with original-file fallback, AI clip finding, transcript review, captions, vertical exports and Content Packs for creators.",
+    title: "ClipKaro AI — AI Video Clipper for YouTube Shorts & Reels",
+    description: "AI video clipping, captions, vertical editing and direct Instagram Reels + YouTube Shorts publishing for creators in one ClipKaro workflow.",
     images: ["/assets/clipkaro-icon.png"],
   },
 };

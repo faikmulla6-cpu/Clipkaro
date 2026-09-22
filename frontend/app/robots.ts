@@ -8,12 +8,15 @@ const privatePaths = [
   "/api-local",
   "/brand",
   "/calendar",
+  "/content-packs",
   "/creator-pulse",
   "/dashboard",
   "/editor",
   "/exports",
   "/forgot-password",
+  "/help",
   "/login",
+  "/post-karo",
   "/projects",
   "/reset-password",
   "/signup",
@@ -22,12 +25,23 @@ const privatePaths = [
   "/verify-email",
 ];
 
+const discoveryAgents = [
+  "*",
+  "Googlebot",
+  "bingbot",
+  "OAI-SearchBot",
+  "ChatGPT-User",
+  "PerplexityBot",
+  "ClaudeBot",
+] as const;
+
 export default function robots(): MetadataRoute.Robots {
   return {
-    rules: [
-      { userAgent: "*", allow: "/", disallow: privatePaths },
-      { userAgent: "OAI-SearchBot", allow: "/", disallow: privatePaths },
-    ],
+    rules: discoveryAgents.map((userAgent) => ({
+      userAgent,
+      allow: ["/", "/llms.txt"],
+      disallow: privatePaths,
+    })),
     host: "https://clipkaro.pro",
     sitemap: "https://clipkaro.pro/sitemap.xml",
   };

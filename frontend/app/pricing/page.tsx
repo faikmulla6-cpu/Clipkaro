@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { PublicPricingView, type PublicPlanView } from "@/components/PublicPricingView";
 import { PricingExperience } from "./PricingExperience";
 
-const title = "ClipKaro AI Pricing — Free, Mini Pass and creator plans";
-const description = "Compare ClipKaro AI plans for turning long videos into Shorts. Start free, buy a one-time Mini Pass, or choose a monthly creator, growth, pro, or agency plan.";
+const title = "ClipKaro AI Pricing — Free AI Video Clipper + Creator Plans";
+const description = "Compare ClipKaro plans for turning long videos into Shorts. Start free with Post Karo publishing included, choose a ₹59 one-time Mini Pass, or scale with monthly creator plans.";
 
 export const metadata: Metadata = {
   title,
@@ -22,6 +22,30 @@ const publicPlans: PublicPlanView[] = [
   { id: "agency", name: "Agency", price: "₹1,999", suffix: "/month", tagline: "For client work and high-volume teams", features: ["1,500 Karo Minutes / month", "500 Shorts / month", "1080p · no watermark", "Agency-scale usage", "Post Karo · Instagram + YouTube"] },
 ];
 
+const pricingStructuredData = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "@id": "https://clipkaro.pro/#software",
+  name: "ClipKaro AI",
+  applicationCategory: "MultimediaApplication",
+  operatingSystem: "Web",
+  url: "https://clipkaro.pro/",
+  description,
+  offers: [
+    { "@type": "Offer", name: "Free", price: "0", priceCurrency: "INR", url: "https://clipkaro.pro/pricing" },
+    { "@type": "Offer", name: "Mini Pass", price: "59", priceCurrency: "INR", url: "https://clipkaro.pro/pricing", description: "One-time purchase valid for 30 days." },
+    { "@type": "Offer", name: "Creator", price: "199", priceCurrency: "INR", url: "https://clipkaro.pro/pricing", priceSpecification: { "@type": "UnitPriceSpecification", price: "199", priceCurrency: "INR", unitText: "MONTH" } },
+    { "@type": "Offer", name: "Growth", price: "399", priceCurrency: "INR", url: "https://clipkaro.pro/pricing", priceSpecification: { "@type": "UnitPriceSpecification", price: "399", priceCurrency: "INR", unitText: "MONTH" } },
+    { "@type": "Offer", name: "Pro", price: "799", priceCurrency: "INR", url: "https://clipkaro.pro/pricing", priceSpecification: { "@type": "UnitPriceSpecification", price: "799", priceCurrency: "INR", unitText: "MONTH" } },
+    { "@type": "Offer", name: "Agency", price: "1999", priceCurrency: "INR", url: "https://clipkaro.pro/pricing", priceSpecification: { "@type": "UnitPriceSpecification", price: "1999", priceCurrency: "INR", unitText: "MONTH" } },
+  ],
+};
+
 export default function PricingPage() {
-  return <PricingExperience publicFallback={<PublicPricingView plans={publicPlans} />} />;
+  return (
+    <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(pricingStructuredData) }} />
+      <PricingExperience publicFallback={<PublicPricingView plans={publicPlans} />} />
+    </>
+  );
 }

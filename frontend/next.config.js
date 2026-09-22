@@ -18,6 +18,31 @@ const browserSecurityHeaders = [
   },
 ];
 
+const privateIndexPaths = [
+  "/account/:path*",
+  "/admin/:path*",
+  "/analytics/:path*",
+  "/api/:path*",
+  "/api-local/:path*",
+  "/brand/:path*",
+  "/calendar/:path*",
+  "/content-packs/:path*",
+  "/creator-pulse/:path*",
+  "/dashboard/:path*",
+  "/editor/:path*",
+  "/exports/:path*",
+  "/forgot-password/:path*",
+  "/help/:path*",
+  "/login/:path*",
+  "/post-karo/:path*",
+  "/projects/:path*",
+  "/reset-password/:path*",
+  "/signup/:path*",
+  "/templates/:path*",
+  "/upload/:path*",
+  "/verify-email/:path*",
+];
+
 const nextConfig = {
   output: "standalone",
   poweredByHeader: false,
@@ -34,7 +59,13 @@ const nextConfig = {
     proxyClientMaxBodySize: "500mb",
   },
   async headers() {
-    return [{ source: "/:path*", headers: browserSecurityHeaders }];
+    return [
+      { source: "/:path*", headers: browserSecurityHeaders },
+      ...privateIndexPaths.map((source) => ({
+        source,
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" }],
+      })),
+    ];
   },
   async redirects() {
     return [
