@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { HomeExperience } from "@/components/HomeExperience";
-import { LEGAL_LINKS } from "@/lib/legal";
+import { LEGAL_LINKS, TRUST_PROFILE } from "@/lib/legal";
 
 export const metadata: Metadata = {
   title: { absolute: "ClipKaro AI — AI Video Clipper for YouTube Shorts & Reels" },
@@ -62,6 +62,17 @@ const organizationStructuredData = {
   alternateName: ["ClipKaro", "ClipKaroAI"],
   url: "https://clipkaro.pro/",
   logo: "https://clipkaro.pro/assets/clipkaro-icon.png",
+  founder: {
+    "@type": "Person",
+    name: TRUST_PROFILE.founderName,
+    jobTitle: TRUST_PROFILE.founderTitle,
+  },
+  contactPoint: {
+    "@type": "ContactPoint",
+    contactType: "customer support",
+    email: TRUST_PROFILE.supportEmail,
+    url: "https://clipkaro.pro/contact",
+  },
   description: "ClipKaro AI is an AI video clipper and video repurposing platform for creators, educators, podcasters and businesses that turns long-form video into short-form clips and supports direct publishing to Instagram Reels and YouTube Shorts.",
 };
 
