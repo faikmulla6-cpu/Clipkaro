@@ -16,10 +16,7 @@ const browserCsp = "default-src 'self'; base-uri 'self'; object-src 'none'; form
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://clipkaro.pro"),
-  title: {
-    default: "ClipKaro AI — AI Video Clipper for YouTube Shorts & Reels",
-    template: "%s | ClipKaro AI",
-  },
+  title: "ClipKaro AI — AI Video Clipper for YouTube Shorts & Reels",
   description: "ClipKaro AI turns long videos into creator-ready Shorts with AI clip discovery, transcript review, captions, vertical editing and free Post Karo publishing to Instagram Reels and YouTube Shorts.",
   applicationName: "ClipKaro AI",
   keywords: [
