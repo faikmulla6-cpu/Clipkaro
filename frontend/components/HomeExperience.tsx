@@ -186,7 +186,7 @@ export function HomeExperience() {
                   <ArrowRight size={16}/>
                   <div><Scissors size={18}/><span><b>Refine</b><small>Captions + framing</small></span></div>
                   <ArrowRight size={16}/>
-                  <div><Clapperboard size={18}/><span><b>Export</b><small>Creator-approved Short</small></span></div>
+                  <div><Clapperboard size={18}/><span><b>Export or post</b><small>Post Karo · Instagram + YouTube</small></span></div>
                 </div>
                 <div className={styles.fallbackCard}>
                   <div className={styles.fallbackIcon}><Upload size={18}/></div>
@@ -204,9 +204,9 @@ export function HomeExperience() {
               <span>Clear answers for creators and search</span>
               <h2>What is ClipKaro AI?</h2>
               <p>
-                ClipKaro AI is a web-based video repurposing platform for turning authorised long-form
-                source videos into short-form clips. Creators can begin with a supported YouTube URL or
-                upload the original file, review AI-ranked moments and then refine captions, framing and exports.
+                ClipKaro AI is an India-first AI video clipper and repurposing platform. Creators can start
+                from a supported YouTube URL or original file, review AI-ranked moments, refine transcripts,
+                captions and framing, export the finished Short, then publish it to Instagram Reels or YouTube Shorts with free Post Karo.
               </p>
             </div>
             <div className={styles.answerGrid} data-public-reveal="right">
@@ -222,13 +222,13 @@ export function HomeExperience() {
               </article>
               <article>
                 <span>03</span>
-                <h3>Does ClipKaro publish clips automatically?</h3>
-                <p>No. ClipKaro helps find, prepare and render clips, but the creator decides what to keep, edit, export and publish.</p>
+                <h3>Can ClipKaro publish Shorts to Instagram and YouTube?</h3>
+                <p>Yes. Post Karo publishes finished Shorts to connected Instagram Reels and YouTube Shorts accounts after you review and confirm the post. Post Karo is included on every ClipKaro plan.</p>
               </article>
               <article>
                 <span>04</span>
                 <h3>Who is ClipKaro built for?</h3>
-                <p>YouTubers, podcasters, educators, coaches, founders, businesses and creator teams that already have long-form video and want more short-form output.</p>
+                <p>YouTubers, podcasters, educators, coaches, founders, businesses and creator teams that already have long-form video and want a faster create → edit → publish workflow.</p>
               </article>
             </div>
           </section>
