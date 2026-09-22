@@ -43,17 +43,6 @@ export const metadata: Metadata = {
   },
   manifest: "/site.webmanifest",
   category: "video",
-  robots: {
-    index: true,
-    follow: true,
-    googleBot: {
-      index: true,
-      follow: true,
-      "max-video-preview": -1,
-      "max-image-preview": "large",
-      "max-snippet": -1,
-    },
-  },
   icons: {
     icon: [{ url: tabIcon, type: "image/png" }],
     shortcut: tabIcon,
