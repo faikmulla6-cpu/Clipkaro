@@ -10,6 +10,7 @@ const requireText = (text, needle, label) => {
 const home = read("frontend/components/HomeExperience.tsx");
 const homePage = read("frontend/app/page.tsx");
 const layout = read("frontend/app/layout.tsx");
+const nextConfig = read("frontend/next.config.js");
 const robots = read("frontend/app/robots.ts");
 const sitemap = read("frontend/app/sitemap.ts");
 const llms = read("frontend/app/llms.txt/route.ts");
@@ -21,8 +22,9 @@ const nav = read("frontend/components/PublicSiteNav.tsx");
 const footer = read("frontend/components/PublicSiteFooter.tsx");
 
 requireText(layout, "AI Video Clipper for YouTube Shorts & Reels", "global metadata must describe the primary product");
-requireText(layout, '"max-video-preview": -1', "Googlebot may use full video previews");
-requireText(layout, '"max-image-preview": "large"', "Googlebot may use large image previews");
+requireText(homePage, '"max-video-preview": -1', "Googlebot may use full video previews on the public homepage");
+requireText(homePage, '"max-image-preview": "large"', "Googlebot may use large image previews on the public homepage");
+if (layout.includes('"max-video-preview"') || layout.includes('robots: {')) throw new Error("Search discovery contract failed: global layout must not force index directives onto private app routes");
 requireText(home, "AI VIDEO CLIPPER FOR INDIA", "homepage must state the primary category visibly");
 requireText(home, "Post Karo free on every plan", "homepage must state the free publishing differentiator visibly");
 requireText(home, "Can ClipKaro publish Shorts to Instagram and YouTube?", "homepage must expose an answer-first publishing question");
@@ -47,6 +49,10 @@ for (const privatePath of ['"/account"', '"/admin"', '"/api"', '"/creator-pulse"
 requireText(robots, '"Googlebot"', "Googlebot discovery rule must remain explicit");
 requireText(robots, '"OAI-SearchBot"', "OpenAI search discovery rule must remain explicit");
 requireText(robots, '"PerplexityBot"', "Perplexity discovery rule must remain explicit");
+requireText(nextConfig, '"X-Robots-Tag"', "private app routes must emit an X-Robots-Tag");
+requireText(nextConfig, '"noindex, nofollow, noarchive"', "private app routes must be explicitly noindexed");
+requireText(nextConfig, '"/post-karo/:path*"', "authenticated Post Karo must stay out of the search index");
+requireText(nextConfig, '"/creator-pulse/:path*"', "authenticated Creator Pulse must stay out of the search index");
 requireText(sitemap, "SEO_PAGES.map", "sitemap must automatically include all public SEO pages");
 requireText(sitemap, "2026-09-22", "sitemap freshness signal must reflect this launch update");
 
