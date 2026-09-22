@@ -25,8 +25,8 @@ export function PublicPricingView({ plans }: { plans: PublicPlanView[] }) {
           <header className={styles.hero} data-public-reveal>
             <span><Sparkles size={14}/> Fair access pricing</span>
             <h1>Start small. <em>Grow when you grow.</em></h1>
-            <p>Try ClipKaro before paying. Use the ₹59 Mini Pass when you want a one-time pack, or choose a monthly plan when your publishing volume becomes consistent.</p>
-            <div className={styles.heroTrust}><b>No card required to start</b><b>Mini Pass never auto-renews</b><b>Monthly plans can be changed or cancelled</b></div>
+            <p>Start free, create your first Shorts, and use Post Karo to publish finished clips to Instagram Reels or YouTube Shorts. Pay only when you need more creation capacity, 1080p exports or no watermark.</p>
+            <div className={styles.heroTrust}><b>No card required to start</b><b>Post Karo included on every plan</b><b>Mini Pass never auto-renews</b><b>Monthly plans can be changed or cancelled</b></div>
           </header>
 
           <section className={styles.planSection} data-public-reveal>
