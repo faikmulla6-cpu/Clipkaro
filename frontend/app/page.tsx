@@ -155,10 +155,18 @@ const faqStructuredData = {
     },
     {
       "@type": "Question",
+      name: "Is Post Karo free?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "Yes. Post Karo is included on every ClipKaro plan, including Free. Plan limits still control Karo Minutes, Short creation capacity, export resolution and watermark rules.",
+      },
+    },
+    {
+      "@type": "Question",
       name: "Who is ClipKaro built for?",
       acceptedAnswer: {
         "@type": "Answer",
-        text: "ClipKaro is built for YouTubers, podcasters, educators, coaches, founders, businesses and creator teams that already have long-form video and want more short-form output.",
+        text: "ClipKaro is built for YouTubers, podcasters, educators, coaches, founders, businesses and creator teams that already have long-form video and want a faster create-to-publish workflow.",
       },
     },
   ],
@@ -173,7 +181,7 @@ const urlToShortsHowToStructuredData = {
     { "@type": "HowToStep", name: "Paste the YouTube URL", text: "Paste an authorised YouTube video, Shorts or live-replay URL. If direct acquisition is unavailable, upload the original file instead." },
     { "@type": "HowToStep", name: "Analyse the video", text: "ClipKaro transcribes the source and ranks promising moments." },
     { "@type": "HowToStep", name: "Review and refine", text: "Review the suggested moments, transcript, captions and framing." },
-    { "@type": "HowToStep", name: "Export the Short", text: "Render the creator-approved short-form output in the selected format." },
+    { "@type": "HowToStep", name: "Export or publish the Short", text: "Render the creator-approved short-form output, then download it or publish to a connected Instagram Reels or YouTube Shorts account with Post Karo." },
   ],
 };
 
