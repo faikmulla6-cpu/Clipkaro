@@ -3,7 +3,7 @@ import { HomeExperience } from "@/components/HomeExperience";
 import { LEGAL_LINKS } from "@/lib/legal";
 
 export const metadata: Metadata = {
-  title: "ClipKaro AI — AI Video Clipper for YouTube Shorts & Reels",
+  title: { absolute: "ClipKaro AI — AI Video Clipper for YouTube Shorts & Reels" },
   description: "Turn long videos into Shorts with ClipKaro AI: import a supported YouTube URL or upload a file, find strong moments, edit captions and framing, then publish to Instagram Reels or YouTube Shorts with free Post Karo.",
   keywords: [
     "AI video clipper",
