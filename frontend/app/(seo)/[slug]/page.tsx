@@ -33,6 +33,17 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     title: page.metaTitle,
     description: page.description,
     alternates: { canonical: `/${page.slug}` },
+    robots: {
+      index: true,
+      follow: true,
+      googleBot: {
+        index: true,
+        follow: true,
+        "max-video-preview": -1,
+        "max-image-preview": "large",
+        "max-snippet": -1,
+      },
+    },
     openGraph: { type: "website", url: `/${page.slug}`, siteName: "ClipKaro AI", title: page.metaTitle, description: page.description, images: [{ url: "/assets/clipkaro-icon.png", width: 1024, height: 1024, alt: page.title }] },
     twitter: { card: "summary_large_image", title: page.metaTitle, description: page.description, images: ["/assets/clipkaro-icon.png"] },
   };
