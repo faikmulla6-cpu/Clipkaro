@@ -38,14 +38,14 @@ const workflow = [
 
 const features = [
   [Scissors, "AI Clip Finder", "Find strong, self-contained moments without scrubbing the whole timeline.", "timeline"],
-  [Subtitles, "Smart Transcript Review", "Fix uncertain transcript lines before captions and downstream content use them.", "transcript"],
-  [Languages, "India Quality Mode", "Creator-facing Hindi, Hinglish and Indian-English workflow support.", "language"],
-  [Sparkles, "Content Pack", "Generate titles, descriptions, captions, hashtags and social copy from selected clips.", "social"],
-  [Clapperboard, "Creator Studio", "Adjust aspect ratio, caption style, caption position, zoom and horizontal framing.", "studio"],
-  [Zap, "Auto captions", "Prepare readable short-form captions and review the transcript before publishing.", "caption"],
-  [WandSparkles, "Thumbnail & cover direction", "Turn clip context into creator-ready cover text and thumbnail direction where available.", "thumbnail"],
-  [Download, "Export controls", "Choose the output you want and keep the final publishing decision with the creator.", "export"],
-  [Youtube, "Post Karo", "Publish finished Shorts to Instagram Reels and YouTube Shorts from ClipKaro. Post Karo is free on every ClipKaro plan.", "publish"],
+  [Subtitles, "Smart Transcript Review", "Fix uncertain transcript lines before captions or other content use them.", "transcript"],
+  [Languages, "India Quality Mode", "Hindi, Hinglish and Indian-English creator workflows.", "language"],
+  [Sparkles, "Content Pack", "Generate titles, descriptions, hashtags and social copy from selected clips.", "social"],
+  [Clapperboard, "Creator Studio", "Adjust aspect ratio, captions, zoom and horizontal framing.", "studio"],
+  [Zap, "Auto captions", "Prepare readable captions, then review the transcript before publishing.", "caption"],
+  [WandSparkles, "Thumbnail & cover direction", "Turn clip context into cover text and thumbnail direction where available.", "thumbnail"],
+  [Download, "Export controls", "Choose the output you want and keep the publishing decision with the creator.", "export"],
+  [Youtube, "Post Karo", "Publish finished Shorts to Instagram Reels or YouTube Shorts. Free on every ClipKaro plan.", "publish"],
 ] as const;
 
 const audiences = [
@@ -87,7 +87,7 @@ export function HomeExperience() {
               <div className={styles.heroCopy} data-public-reveal="left">
                 <span className={styles.eyebrow}><Sparkles size={14}/> AI VIDEO CLIPPER FOR INDIA · CREATE → EDIT → POST</span>
                 <h1>One long video in. <span>Strong Shorts out.</span></h1>
-                <p>ClipKaro is an AI video clipper for creators who want the whole workflow in one place: start from a supported YouTube URL or original file, find strong moments, review captions and framing, export, then publish to Instagram Reels or YouTube Shorts with free Post Karo.</p>
+                <p>Turn a supported YouTube URL or original file into strong Shorts. AI finds promising moments, you review captions and framing, then export or publish to Instagram Reels and YouTube Shorts with free Post Karo.</p>
                 <div className={styles.heroActions}>
                   <TransitionLink href="/signup" className={styles.primary}>Try ClipKaro free <ArrowRight size={17}/></TransitionLink>
                   <a href="#youtube-url-to-shorts" className={styles.secondary}><Link2 size={15}/> See URL workflow</a>
@@ -102,7 +102,7 @@ export function HomeExperience() {
 
               <div className={styles.workspaceWrap} data-public-reveal="scale">
                 <div className={`${styles.floatNote} ${styles.floatNoteOne}`}><Sparkles size={15}/><span><b>AI finds strong moments</b><small>Review before export</small></span></div>
-                <div className={`${styles.floatNote} ${styles.floatNoteTwo}`}><Subtitles size={15}/><span><b>Caption-ready</b><small>Creator-reviewed text</small></span></div>
+                <div className={`${styles.floatNote} ${styles.floatNoteTwo}`}><Youtube size={15}/><span><b>Post Karo ready</b><small>Instagram + YouTube</small></span></div>
                 <div className={styles.workspace} aria-label="Illustrative ClipKaro creator workspace">
                   <div className={styles.workspaceTop}><div><span className={styles.dot}/><span className={styles.dot}/><span className={styles.dot}/></div><small>ILLUSTRATIVE PRODUCT PREVIEW</small></div>
                   <div className={styles.workspaceGrid}>
@@ -131,13 +131,13 @@ export function HomeExperience() {
                     </div>
                   </div>
                 </div>
-                <div className={styles.workspaceActions}><span><Zap size={14}/> Reframe to 9:16</span><span><Subtitles size={14}/> Add captions</span><span><Download size={14}/> Export & share</span></div>
+                <div className={styles.workspaceActions}><span><Zap size={14}/> Reframe to 9:16</span><span><Subtitles size={14}/> Add captions</span><span><Youtube size={14}/> Post to IG + YT</span></div>
               </div>
             </div>
 
             <div className={styles.productRail} data-public-reveal="scale">
               <TransitionLink href="/youtube-video-to-shorts-ai"><Link2 size={19}/><span><b>YouTube URL → Shorts</b><small>Paste a link or use file fallback</small></span></TransitionLink>
-              <TransitionLink href="/ai-shorts-maker-india"><Sparkles size={19}/><span><b>AI Shorts Maker</b><small>Turn videos into vertical Shorts</small></span></TransitionLink>
+              <TransitionLink href="/post-shorts-instagram-youtube"><Youtube size={19}/><span><b>Post Karo</b><small>Instagram + YouTube · included free</small></span></TransitionLink>
               <TransitionLink href="/hindi-video-to-reels"><Languages size={19}/><span><b>Hindi & Hinglish</b><small>India-first creator workflows</small></span></TransitionLink>
               <TransitionLink href="/youtube-channel-analyzer"><Activity size={19}/><span><b>Creator Pulse</b><small>₹1 channel intelligence</small></span></TransitionLink>
             </div>
@@ -213,22 +213,22 @@ export function HomeExperience() {
               <article>
                 <span>01</span>
                 <h3>Can ClipKaro turn a YouTube video into Shorts?</h3>
-                <p>Yes. Paste a supported YouTube video, Shorts or live-replay URL, or upload the original file. ClipKaro analyses the source and surfaces moments you can review before export.</p>
+                <p>Yes. Paste a supported YouTube URL or upload the original file. ClipKaro analyses the source and surfaces moments to review.</p>
               </article>
               <article>
                 <span>02</span>
                 <h3>What if a YouTube URL cannot be imported?</h3>
-                <p>Use the original-file upload fallback. The source then continues through the same transcript, clip-finding, editing and export workflow.</p>
+                <p>Upload the original file instead. It continues through the same transcript, clip-finding and editing workflow.</p>
               </article>
               <article>
                 <span>03</span>
                 <h3>Can ClipKaro publish Shorts to Instagram and YouTube?</h3>
-                <p>Yes. Post Karo publishes finished Shorts to connected Instagram Reels and YouTube Shorts accounts after you review and confirm the post. Post Karo is included on every ClipKaro plan.</p>
+                <p>Yes. Review the post, then publish to connected Instagram Reels or YouTube Shorts with Post Karo. It is included on every plan.</p>
               </article>
               <article>
                 <span>04</span>
                 <h3>Who is ClipKaro built for?</h3>
-                <p>YouTubers, podcasters, educators, coaches, founders, businesses and creator teams that already have long-form video and want a faster create → edit → publish workflow.</p>
+                <p>Creators and teams with long-form video who want a faster create → edit → publish workflow.</p>
               </article>
             </div>
           </section>
@@ -272,7 +272,7 @@ export function HomeExperience() {
             <div className={styles.featureLead} data-public-reveal="left"><span>A complete creator toolkit</span><h2>More than just clipping.<br/>Everything you need to grow.</h2></div>
             <div className={styles.featureAside} data-public-reveal="right"><p>From transcripts to publishing copy, ClipKaro keeps the creator workflow connected instead of scattering it across unrelated tools.</p><TransitionLink href="/youtube-video-to-shorts-ai">Explore the workflow <ArrowRight size={14}/></TransitionLink></div>
             <div className={styles.featureGrid}>
-              {features.map(([Icon,title,text,kind])=><article key={title} className={styles.featureCard} data-kind={kind} data-public-reveal="scale"><div className={styles.featureTitle}><i><Icon size={18}/></i><b>{title}</b></div><div className={styles.featureVisual} aria-hidden="true">{kind==="timeline"&&<><span/><span/><span/><b/></>}{kind==="transcript"&&<><p>Review uncertain transcript line</p><p>Creator-approved wording</p></>}{kind==="language"&&<strong>ये बात बहुत important है</strong>}{kind==="social"&&<div><i>YT</i><i>IG</i><i>X</i><i>LI</i></div>}{kind==="studio"&&<><span/><span/><span/></>}{kind==="caption"&&<strong>This changed everything</strong>}{kind==="thumbnail"&&<div className={styles.miniThumb}><img src="/assets/creator-demo.jpg" alt=""/><b>THE NEXT MOVE</b></div>}{kind==="export"&&<div className={styles.ratios}><i>9:16</i><i>1:1</i><i>16:9</i></div>}</div><p>{text}</p></article>)}
+              {features.map(([Icon,title,text,kind])=><article key={title} className={styles.featureCard} data-kind={kind} data-public-reveal="scale">{kind==="publish"&&<em className={styles.featureBadge}>FREE ON EVERY PLAN</em>}<div className={styles.featureTitle}><i><Icon size={18}/></i><b>{title}</b></div><div className={styles.featureVisual} aria-hidden="true">{kind==="timeline"&&<><span/><span/><span/><b/></>}{kind==="transcript"&&<><p>Review uncertain transcript line</p><p>Creator-approved wording</p></>}{kind==="language"&&<strong>ये बात बहुत important है</strong>}{kind==="social"&&<div><i>YT</i><i>IG</i><i>X</i><i>LI</i></div>}{kind==="studio"&&<><span/><span/><span/></>}{kind==="caption"&&<strong>This changed everything</strong>}{kind==="thumbnail"&&<div className={styles.miniThumb}><img src="/assets/creator-demo.jpg" alt=""/><b>THE NEXT MOVE</b></div>}{kind==="export"&&<div className={styles.ratios}><i>9:16</i><i>1:1</i><i>16:9</i></div>}{kind==="publish"&&<strong>Instagram + YouTube</strong>}</div><p>{text}</p></article>)}
             </div>
           </section>
 
