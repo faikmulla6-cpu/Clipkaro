@@ -42,7 +42,7 @@ const capabilities = [
   { icon: Scissors, title: "Start from ranked moments", text: "ClipKaro analyses the source before asking you to edit, so the first screen is a shortlist of moments with titles, hooks, reasons and scores — not a blank timeline." },
   { icon: Subtitles, title: "Review speech before captions", text: "Transcript Review helps you inspect uncertain lines before corrected text flows into captions and downstream creator assets." },
   { icon: Languages, title: "Built for Indian creator speech", text: "Hindi, Hinglish and Indian-English workflows are treated as real creator inputs, with India Quality Mode available where the creator wants that extra review layer." },
-  { icon: Clapperboard, title: "Finish inside one creator workflow", text: "Choose the moment, adjust framing and caption presentation, render the Short, then continue into publishing copy instead of rebuilding the work in separate tools." },
+  { icon: Clapperboard, title: "Finish inside one creator workflow", text: "Choose the moment, adjust framing and captions, render the Short, then publish to Instagram Reels or YouTube Shorts with Post Karo or download the MP4." },
 ] as const;
 
 export default async function SeoLandingPage({ params }: PageProps) {
@@ -60,6 +60,8 @@ export default async function SeoLandingPage({ params }: PageProps) {
     url: `https://clipkaro.pro/${page.slug}`,
     description: page.description,
     publisher: { "@id": "https://clipkaro.pro/#organization" },
+    audience: { "@type": "Audience", audienceType: page.audience },
+    featureList: ["AI-ranked clip discovery", "Transcript and caption review", "Vertical framing controls", "Post Karo publishing to Instagram Reels and YouTube Shorts"],
     offers: { "@type": "Offer", priceCurrency: "INR", price: "0", url: "https://clipkaro.pro/pricing", availability: "https://schema.org/InStock" },
   };
   const faqSchema = {
@@ -112,7 +114,7 @@ export default async function SeoLandingPage({ params }: PageProps) {
             <div className={styles.microTrust}>
               <span><ShieldCheck size={13}/> Use content you own or can process</span>
               <span><Scissors size={13}/> AI-ranked moments</span>
-              <span><Clapperboard size={13}/> Creator-controlled export</span>
+              <span><Clapperboard size={13}/> Export or Post Karo</span>
             </div>
           </div>
 
@@ -141,8 +143,8 @@ export default async function SeoLandingPage({ params }: PageProps) {
           </section>
 
           <section className={styles.story} data-public-reveal>
-            <div className={styles.storyCopy}><span className={styles.kicker}>BUILT FOR THE REAL WORKFLOW</span><h2>{page.audience}</h2><p>{page.promise}</p></div>
-            <div className={styles.audienceCard}><span>GOOD FIT WHEN YOU ALREADY HAVE CONTENT</span><h3>Record once. Find the moments. Keep the creative decision.</h3><div className={styles.usePills}>{page.useCases.slice(0,6).map((item)=><b key={item}>{item}</b>)}</div></div>
+            <div className={styles.storyCopy}><span className={styles.kicker}>QUICK ANSWER</span><h2>What does {page.title} help you do?</h2><p>{page.lead}</p><p>{page.promise}</p></div>
+            <div className={styles.audienceCard}><span>WHO IT IS FOR</span><h3>{page.audience}</h3><div className={styles.usePills}>{page.useCases.slice(0,6).map((item)=><b key={item}>{item}</b>)}</div></div>
           </section>
 
           <section className={styles.darkSection} data-public-reveal>
