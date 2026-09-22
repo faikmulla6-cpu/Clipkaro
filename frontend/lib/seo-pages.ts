@@ -183,7 +183,7 @@ export const SEO_PAGES: SeoPage[] = [
     faq: [
       { question: "Will viewers understand the clip without the full video?", answer: "That is one of the key checks. ClipKaro ranks for clarity and context, but you should still preview before export." },
       { question: "Can I use this for course marketing?", answer: "Yes. Short teaching moments can become previews, social posts and lead-generation clips." },
-      { question: "Does it support Indian education content?", answer: "ClipKaro includes India-first positioning and Hindi/Marathi/English language choices in the product." },
+      { question: "Does it support Indian education content?", answer: "ClipKaro includes India-first positioning and supports Hindi, Hinglish and English-oriented creator workflows." },
     ],
   },
   {
@@ -209,7 +209,7 @@ export const SEO_PAGES: SeoPage[] = [
       { question: "Do I need editing skills?", answer: "You still choose what to publish, but ClipKaro removes much of the discovery and captioning work." },
       { question: "Can agencies use this for clients?", answer: "Yes. The same workflow works for personal-brand and social-media teams handling client recordings." },
     ],
-  },,
+  },
   {
     slug: SEO_PAGE_SLUGS[8],
     title: "AI Video Clipper India",
