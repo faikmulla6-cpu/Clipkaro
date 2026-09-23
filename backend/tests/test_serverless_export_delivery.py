@@ -23,8 +23,16 @@ def test_creator_caption_position_is_authoritative_in_preview_and_render() -> No
 
     assert "request.caption_position" in worker
     assert "effective_position" not in worker
-    assert 'const positionClass = `position-${captionPosition}`;' in editor
+    assert 'const positionClass = captionY === null ? `position-${captionPosition}` : "caption-custom-position";' in editor
+    assert "caption_position: captionPosition" in editor
+    assert "caption_y: captionY" in editor
     assert "effectiveCaptionPosition" not in editor
+
+
+def test_durable_media_worker_forwards_caption_composition() -> None:
+    worker = (BACKEND_ROOT / "app" / "media_job.py").read_text(encoding="utf-8")
+    for field in ("caption_x", "caption_y", "caption_scale", "caption_alignment"):
+        assert f"{field}=request.{field}" in worker
 
 
 def test_postgres_claim_locks_only_the_jobs_side_of_outer_join() -> None:
