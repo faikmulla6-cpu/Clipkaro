@@ -52,6 +52,7 @@ export default function Editor() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const captionRef = useRef<HTMLDivElement>(null);
+  const captionContentRef = useRef<HTMLSpanElement>(null);
   const captionDragRef = useRef<{ pointerId: number; offsetX: number; offsetY: number } | null>(null);
   const behaviorSessionRef = useRef("");
   const previewLogged = useRef(false);
@@ -231,10 +232,11 @@ export default function Editor() {
   function updateCaptionPlacement(clientX: number, clientY: number) {
     const canvas = canvasRef.current;
     const caption = captionRef.current;
+    const captionContent = captionContentRef.current;
     const drag = captionDragRef.current;
     if (!canvas || !caption || !drag) return;
     const canvasRect = canvas.getBoundingClientRect();
-    const captionRect = caption.getBoundingClientRect();
+    const captionRect = (captionContent || caption).getBoundingClientRect();
     if (!canvasRect.width || !canvasRect.height) return;
 
     const centerX = clientX - drag.offsetX;
@@ -509,7 +511,9 @@ export default function Editor() {
               onPointerUp={endCaptionDrag}
               onPointerCancel={endCaptionDrag}
             >
-              {captionState.words.map((word, index) => <span className={`${index === captionState.active ? "active-word" : ""} ${captionState.uncertain[index] ? "low-confidence" : ""}`} key={`${word}-${index}`}>{word} </span>)}
+              <span ref={captionContentRef} className="caption-content">
+                {captionState.words.map((word, index) => <span className={`${index === captionState.active ? "active-word" : ""} ${captionState.uncertain[index] ? "low-confidence" : ""}`} key={`${word}-${index}`}>{word} </span>)}
+              </span>
             </div>
             {selectedBrandKit?.logo_text && <div className="canvas-brandmark" style={{ color: selectedBrandKit.primary_color }}>{selectedBrandKit.logo_text}</div>}
             {watermark && <div className="canvas-watermark">✦ ClipKaro AI</div>}
