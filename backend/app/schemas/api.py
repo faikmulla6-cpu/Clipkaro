@@ -123,6 +123,12 @@ class ExportRequest(BaseModel):
     zoom: float = Field(default=1.0, ge=1.0, le=2.0)
     crop_keyframes: list[CropKeyframe] = Field(default_factory=list, max_length=120)
     caption_position: str = Field(default="bottom", pattern="^(bottom|above|center)$")
+    # Caption composition is normalized to percentages so Creator Studio preview
+    # coordinates remain resolution-independent at render time. caption_y stays
+    # optional so existing preset-based exports retain their exact layout.
+    caption_x: float = Field(default=50.0, ge=0, le=100)
+    caption_y: float | None = Field(default=None, ge=0, le=100)
+    caption_scale: float = Field(default=1.0, ge=0.65, le=1.60)
     preserve_source_captions: bool = False
     india_quality_mode: bool = False
     caption_language_style: str = Field(default="auto", pattern="^(auto|roman_hinglish|original)$")
