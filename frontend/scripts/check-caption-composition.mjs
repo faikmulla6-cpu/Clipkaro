@@ -13,7 +13,7 @@ const schema = read("backend/app/schemas/api.py");
 const routes = read("backend/app/api/routes.py");
 const renderer = read("backend/app/services/rendering.py");
 
-for (const field of ["caption_x", "caption_y", "caption_scale"]) {
+for (const field of ["caption_x", "caption_y", "caption_scale", "caption_alignment"]) {
   requireText(editor, field + ":", `editor export payload must send ${field}`);
   requireText(schema, field + ":", `server schema must validate ${field}`);
   requireText(routes, "request." + field, `render boundary must forward ${field}`);
@@ -22,6 +22,9 @@ for (const field of ["caption_x", "caption_y", "caption_scale"]) {
 requireText(editor, "onPointerDown={beginCaptionDrag}", "caption must be directly draggable");
 requireText(editor, "Drag caption on preview", "UI must explain direct caption placement");
 requireText(editor, 'aria-label="Caption size"', "caption size needs an accessible slider");
+requireText(editor, 'aria-label="Caption text alignment"', "caption alignment needs an accessible control group");
+requireText(editor, 'caption_alignment: captionAlignment', "editor must send selected caption alignment");
+requireText(editor, "textAlign: captionAlignment", "preview must render selected caption alignment");
 requireText(editor, "Text wraps and reflows automatically", "UI must explain responsive wrapping");
 requireText(editor, "applies the placement to every caption in this Short", "layout scope must be explicit");
 requireText(editor, '"--caption-font-size-ratio-effective"', "preview must scale actual font size, not bitmap-transform text");
@@ -34,6 +37,9 @@ requireText(css, "--caption-font-size-ratio-effective", "preview font size must 
 
 requireText(renderer, "def _normalized_caption_scale", "renderer must clamp caption scale");
 requireText(renderer, "def _clamp_caption_center", "renderer must keep captions inside safe bounds");
+requireText(renderer, 'caption_alignment: str = "center"', "renderer must accept validated caption alignment");
+requireText(renderer, 'caption_alignment == "left"', "renderer must position left-aligned multi-line captions");
+requireText(renderer, 'caption_alignment == "right"', "renderer must position right-aligned multi-line captions");
 requireText(renderer, "max_chars = _scaled_caption_max_chars", "larger rendered text must reflow more aggressively");
 requireText(renderer, "caption_y: float | None = None", "renderer must preserve preset backward compatibility");
 
