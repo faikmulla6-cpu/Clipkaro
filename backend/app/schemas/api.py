@@ -129,6 +129,7 @@ class ExportRequest(BaseModel):
     caption_x: float = Field(default=50.0, ge=0, le=100)
     caption_y: float | None = Field(default=None, ge=0, le=100)
     caption_scale: float = Field(default=1.0, ge=0.65, le=1.60)
+    caption_alignment: str = Field(default="center", pattern="^(left|center|right)$")
     preserve_source_captions: bool = False
     india_quality_mode: bool = False
     caption_language_style: str = Field(default="auto", pattern="^(auto|roman_hinglish|original)$")
