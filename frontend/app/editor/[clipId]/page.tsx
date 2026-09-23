@@ -6,7 +6,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { API_URL, api, patchJSON, postJSON } from "@/lib/api";
 import { downloadExport, newBehaviorSession, trackClipBehavior } from "@/lib/behavior";
 import {
-  AlertTriangle, AlignCenter, ArrowRight, Captions, Check, Download, Film, Loader2, LockKeyhole, MoveHorizontal,
+  AlertTriangle, AlignCenter, AlignLeft, AlignRight, ArrowRight, Captions, Check, Download, Film, Loader2, LockKeyhole, MoveHorizontal,
   Palette, Pause, Play, Save, Send, Smartphone, Sparkles, Square, Type, X, ZoomIn, ZoomOut,
 } from "lucide-react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
@@ -32,6 +32,7 @@ type CaptionStyle = { id: string; name: string; font_family: string; font_weight
 type BrandKit = { id: string; name: string; primary_color: string; logo_text?: string | null; caption_preset: string; is_default: boolean };
 type Tab = "style" | "transcript" | "export";
 type CaptionLanguageStyle = "auto" | "roman_hinglish" | "original";
+type CaptionAlignment = "left" | "center" | "right";
 type PostKaroStatus = { plan_eligible: boolean; ready: boolean };
 
 const styles = [
@@ -50,6 +51,10 @@ export default function Editor() {
   const router = useRouter();
   const { user } = useAuth();
   const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const captionRef = useRef<HTMLDivElement>(null);
+  const captionContentRef = useRef<HTMLSpanElement>(null);
+  const captionDragRef = useRef<{ pointerId: number; offsetX: number; offsetY: number } | null>(null);
   const behaviorSessionRef = useRef("");
   const previewLogged = useRef(false);
   const renderStartRef = useRef(false);
@@ -70,6 +75,11 @@ export default function Editor() {
   const [playing, setPlaying] = useState(false);
   const [captionStyle, setCaptionStyle] = useState("kinetic");
   const [captionPosition, setCaptionPosition] = useState<"bottom" | "above" | "center">("bottom");
+  const [captionX, setCaptionX] = useState(50);
+  const [captionY, setCaptionY] = useState<number | null>(null);
+  const [captionScale, setCaptionScale] = useState(1);
+  const [captionAlignment, setCaptionAlignment] = useState<CaptionAlignment>("center");
+  const [captionDragging, setCaptionDragging] = useState(false);
   const [ratio, setRatio] = useState("9:16");
   const [focusX, setFocusX] = useState(50);
   const [zoom, setZoom] = useState(1);
@@ -153,11 +163,11 @@ export default function Editor() {
     api<PostKaroStatus>("/post-karo/status").then(setPostKaro).catch(() => setPostKaro(null));
   }, [user?.plan]);
   useEffect(() => {
-    if (indiaQualityMode && preserveSourceCaptions && captionPosition === "bottom") {
+    if (indiaQualityMode && preserveSourceCaptions && captionY === null && captionPosition === "bottom") {
       setCaptionPosition("above");
     }
     if (preserveSourceCaptions && zoom !== 1) setZoom(1);
-  }, [indiaQualityMode, preserveSourceCaptions, captionPosition, zoom]);
+  }, [indiaQualityMode, preserveSourceCaptions, captionPosition, captionY, zoom]);
   useEffect(() => {
     if (!clip) return;
     trackClipBehavior(clip.id, "selected", {
@@ -207,6 +217,86 @@ export default function Editor() {
     });
     return { words: chunk, active: wordIndex - chunkStart, uncertain, breakAfter: -1 };
   }, [captionWords, timedCaptionWords, captionCards, playhead, start, end]);
+
+  function captionPreset(position: "bottom" | "above" | "center") {
+    setCaptionPosition(position);
+    setCaptionX(50);
+    setCaptionY(null);
+  }
+
+  function resetCaptionLayout() {
+    setCaptionPosition("bottom");
+    setCaptionX(50);
+    setCaptionY(null);
+    setCaptionScale(1);
+    setCaptionAlignment("center");
+  }
+
+  function updateCaptionPlacement(clientX: number, clientY: number) {
+    const canvas = canvasRef.current;
+    const caption = captionRef.current;
+    const captionContent = captionContentRef.current;
+    const drag = captionDragRef.current;
+    if (!canvas || !caption || !drag) return;
+    const canvasRect = canvas.getBoundingClientRect();
+    const captionRect = (captionContent || caption).getBoundingClientRect();
+    if (!canvasRect.width || !canvasRect.height) return;
+
+    const centerX = clientX - drag.offsetX;
+    const centerY = clientY - drag.offsetY;
+    const halfWidthPercent = Math.min(44, captionRect.width / canvasRect.width * 50);
+    const halfHeightPercent = Math.min(44, captionRect.height / canvasRect.height * 50);
+    const styleInset = captionStyles.find(style => style.id === captionStyle)?.horizontal_inset_ratio ?? .06;
+    const horizontalSafe = clamp(styleInset * 100, 4, 20);
+    const minX = Math.min(50, horizontalSafe + halfWidthPercent);
+    const maxX = Math.max(50, 100 - horizontalSafe - halfWidthPercent);
+    const minY = Math.min(50, 6 + halfHeightPercent);
+    const maxY = Math.max(50, 94 - halfHeightPercent);
+    const x = clamp((centerX - canvasRect.left) / canvasRect.width * 100, minX, maxX);
+    const y = clamp((centerY - canvasRect.top) / canvasRect.height * 100, minY, maxY);
+    setCaptionX(Number(x.toFixed(1)));
+    setCaptionY(Number(y.toFixed(1)));
+  }
+
+  function beginCaptionDrag(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0 || !canvasRef.current || !captionRef.current) return;
+    const captionRect = captionRef.current.getBoundingClientRect();
+    captionDragRef.current = {
+      pointerId: event.pointerId,
+      offsetX: event.clientX - (captionRect.left + captionRect.width / 2),
+      offsetY: event.clientY - (captionRect.top + captionRect.height / 2),
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setCaptionDragging(true);
+    event.preventDefault();
+  }
+
+  function moveCaptionDrag(event: React.PointerEvent<HTMLDivElement>) {
+    if (!captionDragRef.current || captionDragRef.current.pointerId !== event.pointerId) return;
+    updateCaptionPlacement(event.clientX, event.clientY);
+    event.preventDefault();
+  }
+
+  function endCaptionDrag(event: React.PointerEvent<HTMLDivElement>) {
+    if (!captionDragRef.current || captionDragRef.current.pointerId !== event.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    captionDragRef.current = null;
+    setCaptionDragging(false);
+  }
+
+  function nudgeCaption(event: React.KeyboardEvent<HTMLDivElement>) {
+    const direction = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key];
+    if (!direction) return;
+    event.preventDefault();
+    const step = event.shiftKey ? 5 : 1;
+    const style = captionStyles.find(item => item.id === captionStyle);
+    const inset = clamp((style?.horizontal_inset_ratio ?? .06) * 100, 4, 20);
+    const baseY = captionY ?? (captionPosition === "center" ? 50 : captionPosition === "above"
+      ? (style?.above_safe_ratio ?? .34) * 100
+      : (1 - (style?.bottom_safe_ratio ?? .18)) * 100);
+    setCaptionX(value => Number(clamp(value + direction[0] * step, inset, 100 - inset).toFixed(1)));
+    setCaptionY(Number(clamp(baseY + direction[1] * step, 6, 94).toFixed(1)));
+  }
 
   function seekToClipStart() {
     if (!videoRef.current) return;
@@ -325,8 +415,9 @@ export default function Editor() {
       await save(false);
       const output = await postJSON<ExportResponse>(`/clips/${clip.id}/export`, {
         resolution, aspect_ratio: ratio, caption_style: captionStyle,
-        caption_position: captionPosition, focus_x: focusX, zoom,
-        hook_text: hook, watermark, brand_kit_id: brandKitId || null,
+        caption_position: captionPosition, caption_x: captionX, caption_y: captionY, caption_scale: captionScale,
+        caption_alignment: captionAlignment,
+        focus_x: focusX, zoom, hook_text: hook, watermark, brand_kit_id: brandKitId || null,
         preserve_source_captions: preserveSourceCaptions,
         india_quality_mode: indiaQualityMode,
         caption_language_style: captionLanguageStyle,
@@ -373,25 +464,33 @@ export default function Editor() {
   if (!clip || !project) return <AppShell title="Creator studio"><div className="screen-loader inline"><div className="loader-mark">✦</div><p>Loading the real video preview…</p></div></AppShell>;
 
   const selectedBrandKit = brandKits.find(kit => kit.id === brandKitId);
-  const positionClass = `position-${captionPosition}`;
+  const positionClass = captionY === null ? `position-${captionPosition}` : "caption-custom-position";
   const selectedCaptionStyle = captionStyles.find(style => style.id === captionStyle);
-  const previewStyle = selectedCaptionStyle ? {
-    "--caption-font-family": `${selectedCaptionStyle.font_family}, sans-serif`,
-    "--caption-font-weight": selectedCaptionStyle.font_weight,
-    "--caption-font-size-ratio": selectedCaptionStyle.font_size_width_ratio,
-    "--caption-line-height": selectedCaptionStyle.line_height,
-    "--caption-text-transform": selectedCaptionStyle.text_transform,
-    "--caption-text-color": selectedCaptionStyle.text_color,
-    "--caption-highlight-color": selectedCaptionStyle.highlight_color,
-    "--caption-highlight-background": selectedCaptionStyle.highlight_background,
-    "--caption-shadow": selectedCaptionStyle.shadow,
-    "--caption-horizontal-inset": `${selectedCaptionStyle.horizontal_inset_ratio * 100}%`,
-    "--caption-bottom": `${selectedCaptionStyle.bottom_safe_ratio * 100}%`,
-    "--caption-above": `${selectedCaptionStyle.above_safe_ratio * 100}%`,
-    "--caption-active-scale": selectedCaptionStyle.active_word_scale,
-    "--caption-corner-radius": `${selectedCaptionStyle.corner_radius_px}px`,
-    "--caption-background": selectedCaptionStyle.background,
-  } as CSSProperties : undefined;
+  const baseCaptionRatio = selectedCaptionStyle?.font_size_width_ratio ?? .065;
+  const captionInsetRatio = selectedCaptionStyle?.horizontal_inset_ratio ?? .06;
+  const previewStyle = {
+    ...(selectedCaptionStyle ? {
+      "--caption-font-family": `${selectedCaptionStyle.font_family}, sans-serif`,
+      "--caption-font-weight": selectedCaptionStyle.font_weight,
+      "--caption-line-height": selectedCaptionStyle.line_height,
+      "--caption-text-transform": selectedCaptionStyle.text_transform,
+      "--caption-text-color": selectedCaptionStyle.text_color,
+      "--caption-highlight-color": selectedCaptionStyle.highlight_color,
+      "--caption-highlight-background": selectedCaptionStyle.highlight_background,
+      "--caption-shadow": selectedCaptionStyle.shadow,
+      "--caption-horizontal-inset": `${selectedCaptionStyle.horizontal_inset_ratio * 100}%`,
+      "--caption-bottom": `${selectedCaptionStyle.bottom_safe_ratio * 100}%`,
+      "--caption-above": `${selectedCaptionStyle.above_safe_ratio * 100}%`,
+      "--caption-active-scale": selectedCaptionStyle.active_word_scale,
+      "--caption-corner-radius": `${selectedCaptionStyle.corner_radius_px}px`,
+      "--caption-background": selectedCaptionStyle.background,
+    } : {}),
+    "--caption-font-size-ratio-effective": baseCaptionRatio * captionScale,
+    "--caption-safe-width": `${Math.max(60, (1 - captionInsetRatio * 2) * 100)}%`,
+    "--caption-x": `${captionX}%`,
+    "--caption-y": `${captionY ?? 50}%`,
+    textAlign: captionAlignment,
+  } as CSSProperties;
   const visibleHook = hook.trim().split(/\s+/).slice(0, 8).join(" ");
   const showHook = playhead - start < 4.5;
   return (
@@ -407,7 +506,7 @@ export default function Editor() {
         </aside>
 
         <section className="canvas-area">
-          <div className={`video-canvas ratio-${ratio.replace(":", "-")}`}>
+          <div ref={canvasRef} className={`video-canvas ratio-${ratio.replace(":", "-")}`}>
             <video
               ref={videoRef}
               src={`${API_URL}/projects/${project.id}/media`}
@@ -425,8 +524,22 @@ export default function Editor() {
             />
             <button className="canvas-play" onClick={togglePlayback}>{playing ? <Pause fill="currentColor" /> : <Play fill="currentColor" />}</button>
             {showHook && visibleHook && <div className="canvas-hook">{visibleHook}</div>}
-            <div className={`caption-preview style-${captionStyle} ${positionClass}`} style={previewStyle}>
-              {captionState.words.map((word, index) => <span className={`${index === captionState.active ? "active-word" : ""} ${captionState.uncertain[index] ? "low-confidence" : ""}`} key={`${word}-${index}`}>{word} {captionState.breakAfter === index + 1 && <br/>}</span>)}
+            <div
+              ref={captionRef}
+              className={`caption-preview caption-draggable style-${captionStyle} ${positionClass} ${captionDragging ? "caption-dragging" : ""}`}
+              style={previewStyle}
+              title="Drag caption to place it"
+              tabIndex={0}
+              aria-label="Caption preview. Drag to place it, or use arrow keys for precise movement."
+              onKeyDown={nudgeCaption}
+              onPointerDown={beginCaptionDrag}
+              onPointerMove={moveCaptionDrag}
+              onPointerUp={endCaptionDrag}
+              onPointerCancel={endCaptionDrag}
+            >
+              <span ref={captionContentRef} className="caption-content">
+                {captionState.words.map((word, index) => <span className={`${index === captionState.active ? "active-word" : ""} ${captionState.uncertain[index] ? "low-confidence" : ""}`} key={`${word}-${index}`}>{word} </span>)}
+              </span>
             </div>
             {selectedBrandKit?.logo_text && <div className="canvas-brandmark" style={{ color: selectedBrandKit.primary_color }}>{selectedBrandKit.logo_text}</div>}
             {watermark && <div className="canvas-watermark">✦ ClipKaro AI</div>}
@@ -462,7 +575,26 @@ export default function Editor() {
               <p className="field-note">Zoom changes the video framing in the final MP4, not just this preview.</p>
               {preserveSourceCaptions && <p className="zoom-safe-note"><AlertTriangle size={12}/><span>Zoom is held at 100% while source-caption preservation is on so burned-in subtitles are not cropped.</span></p>}
             </div>
-            <div className="editor-section"><label>Caption position</label><div className="segmented three"><button className={captionPosition === "bottom" ? "active" : ""} onClick={() => setCaptionPosition("bottom")}>Lower</button><button className={captionPosition === "above" ? "active" : ""} onClick={() => setCaptionPosition("above")}>Above</button><button className={captionPosition === "center" ? "active" : ""} onClick={() => setCaptionPosition("center")}>Centre</button></div></div>
+            <div className="editor-section caption-layout-section">
+              <div className="caption-control-head"><label><MoveHorizontal size={13}/> Caption placement</label><button type="button" onClick={resetCaptionLayout} disabled={captionY === null && captionPosition === "bottom" && captionX === 50 && captionScale === 1 && captionAlignment === "center"}>Reset</button></div>
+              <div className="segmented three caption-presets">
+                <button type="button" className={captionY === null && captionPosition === "bottom" ? "active" : ""} onClick={() => captionPreset("bottom")}>Lower</button>
+                <button type="button" className={captionY === null && captionPosition === "center" ? "active" : ""} onClick={() => captionPreset("center")}>Centre</button>
+                <button type="button" className={captionY === null && captionPosition === "above" ? "active" : ""} onClick={() => captionPreset("above")}>Upper</button>
+              </div>
+              <div className="caption-placement-status"><span>{captionY === null ? "Preset placement" : `Custom · X ${Math.round(captionX)}% · Y ${Math.round(captionY)}%`}</span><b>Drag caption on preview</b></div>
+              <p className="field-note">Drag the caption directly inside the video. ClipKaro keeps it inside the safe zone and applies the placement to every caption in this Short.</p>
+              <div className="caption-size-heading"><label>Caption size</label><b>{Math.round(captionScale * 100)}%</b></div>
+              <div className="zoom-control caption-size-control"><button type="button" aria-label="Make caption smaller" disabled={captionScale <= .65} onClick={() => setCaptionScale(value => clamp(Number((value - .05).toFixed(2)), .65, 1.6))}><ZoomOut size={15}/></button><input aria-label="Caption size" type="range" min=".65" max="1.6" step=".05" value={captionScale} onChange={event => setCaptionScale(Number(event.target.value))}/><button type="button" aria-label="Make caption larger" disabled={captionScale >= 1.6} onClick={() => setCaptionScale(value => clamp(Number((value + .05).toFixed(2)), .65, 1.6))}><ZoomIn size={15}/></button></div>
+              <div className="caption-size-scale"><span>65%</span><span>100%</span><span>160%</span></div>
+              <div className="caption-size-heading caption-align-heading"><label>Text alignment</label><b>{captionAlignment}</b></div>
+              <div className="segmented three caption-align-controls" role="group" aria-label="Caption text alignment">
+                <button type="button" aria-label="Align captions left" className={captionAlignment === "left" ? "active" : ""} onClick={() => setCaptionAlignment("left")}><AlignLeft size={14}/> Left</button>
+                <button type="button" aria-label="Center captions" className={captionAlignment === "center" ? "active" : ""} onClick={() => setCaptionAlignment("center")}><AlignCenter size={14}/> Centre</button>
+                <button type="button" aria-label="Align captions right" className={captionAlignment === "right" ? "active" : ""} onClick={() => setCaptionAlignment("right")}><AlignRight size={14}/> Right</button>
+              </div>
+              <p className="field-note caption-reflow-note"><Check size={12}/> Text wraps and reflows automatically as caption size changes.</p>
+            </div>
             <div className="toggle-row"><div><b>Preserve source captions</b><span>{sourceHasCaptions ? `Detected near ${Math.round((sourceCaptionBand ?? .82) * 100)}% height` : "Use when the source already has subtitles"}</span></div><button className={preserveSourceCaptions ? "on" : ""} aria-pressed={preserveSourceCaptions} onClick={() => setPreserveSourceCaptions(value => !value)}><i /></button></div>
           </>}
 
@@ -474,7 +606,7 @@ export default function Editor() {
 
           {activeTab === "export" && <>
             <div className="editor-section"><label>Export quality</label><select value={resolution} onChange={event => setResolution(event.target.value)}><option value="720p">720p · Fast and efficient</option><option value="1080p">1080p · Any paid plan</option></select></div>
-            <div className="export-summary"><span>Format <b>{ratio}</b></span><span>Duration <b>{Math.round(end - start)}s</b></span><span>Captions <b>{styles.find(style => style[0] === captionStyle)?.[1]}</b></span><span>Frame <b>{preserveSourceCaptions ? "Full" : `${focusX}%`}</b></span><span>Zoom <b>{preserveSourceCaptions ? "100% safe" : `${Math.round(zoom * 100)}%`}</b></span><span>India <b>{indiaQualityMode ? captionLanguageStyle.replace("_", " ") : "Off"}</b></span><span>Brand <b>{selectedBrandKit?.name || "None"}</b></span></div>
+            <div className="export-summary"><span>Format <b>{ratio}</b></span><span>Duration <b>{Math.round(end - start)}s</b></span><span>Captions <b>{styles.find(style => style[0] === captionStyle)?.[1]}</b></span><span>Caption size <b>{Math.round(captionScale * 100)}%</b></span><span>Placement <b>{captionY === null ? (captionPosition === "bottom" ? "Lower" : captionPosition === "above" ? "Upper" : "Centre") : "Custom"}</b></span><span>Align <b>{captionAlignment}</b></span><span>Frame <b>{preserveSourceCaptions ? "Full" : `${focusX}%`}</b></span><span>Zoom <b>{preserveSourceCaptions ? "100% safe" : `${Math.round(zoom * 100)}%`}</b></span><span>India <b>{indiaQualityMode ? captionLanguageStyle.replace("_", " ") : "Off"}</b></span><span>Brand <b>{selectedBrandKit?.name || "None"}</b></span></div>
             <div className="toggle-row"><div><b>ClipKaro watermark</b><span>{freePlan ? "Required on Free" : "Optional on your paid plan"}</span></div><button className={watermark ? "on" : ""} aria-pressed={watermark} disabled={freePlan} onClick={() => { if (!freePlan) setWatermark(value => !value); }}><i /></button></div>
             <button className="primary-btn render-panel-button" onClick={render} disabled={renderBusy}>{renderBusy ? <Loader2 className="spin" size={15} /> : <Sparkles size={15} />} {startingRender ? "Starting securely…" : renderBusy ? "Rendering Short…" : "Render verified Short"}</button>
           </>}

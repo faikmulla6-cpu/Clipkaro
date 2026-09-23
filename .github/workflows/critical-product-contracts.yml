@@ -95,6 +95,9 @@ jobs:
       - name: Search discovery, GEO and AEO contract
         working-directory: frontend
         run: npm run check:search-discovery
+      - name: Caption composition contract
+        working-directory: frontend
+        run: npm run check:caption-composition
       - name: Clean frontend job workspace
         if: always()
         run: rm -rf frontend/node_modules frontend/.next

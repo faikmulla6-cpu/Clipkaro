@@ -1,6 +1,11 @@
 from pathlib import Path
-from app.services.rendering import _base_video_filters, _build_ass, create_edited_srt, create_srt, format_srt_time, subtitle_ass_filter, timed_words
+from app.services.rendering import (
+    _base_video_filters, _build_ass, _scaled_caption_max_chars,
+    create_edited_srt, create_srt, format_srt_time, subtitle_ass_filter, timed_words,
+)
 from app.services.video import probe_metadata
+from app.schemas.api import ExportRequest
+from pydantic import ValidationError
 import pytest
 
 
@@ -68,6 +73,64 @@ def test_ass_contains_active_word_events(tmp_path: Path):
     assert "HELLO" in content and "WORLD" in content
     assert "\\1c&H0057FFDF" in content
     assert "Style: Studio,Arial" in content
+
+
+def test_caption_scale_changes_font_size_and_custom_position(tmp_path: Path):
+    srt = tmp_path / "caption-size.srt"
+    base_ass = tmp_path / "base.ass"
+    scaled_ass = tmp_path / "scaled.ass"
+    srt.write_text("1\n00:00:00,100 --> 00:00:00,800\nHello\n", encoding="utf-8")
+
+    _build_ass(srt, base_ass, 720, 1280, "kinetic", "bottom")
+    _build_ass(
+        srt, scaled_ass, 720, 1280, "kinetic", "bottom",
+        caption_x=30, caption_y=25, caption_scale=1.4,
+    )
+
+    base_style = next(line for line in base_ass.read_text(encoding="utf-8-sig").splitlines() if line.startswith("Style: Studio"))
+    scaled = scaled_ass.read_text(encoding="utf-8-sig")
+    scaled_style = next(line for line in scaled.splitlines() if line.startswith("Style: Studio"))
+    assert int(scaled_style.split(",")[2]) > int(base_style.split(",")[2])
+    assert "\\pos(216,320)" in scaled
+
+
+def test_caption_alignment_changes_multiline_word_positions(tmp_path: Path):
+    srt = tmp_path / "caption-align.srt"
+    left_ass = tmp_path / "left.ass"
+    right_ass = tmp_path / "right.ass"
+    srt.write_text(
+        "1\n00:00:00,000 --> 00:00:00,300\ncreator\n\n"
+        "2\n00:00:00,350 --> 00:00:00,650\nworkflow\n\n"
+        "3\n00:00:00,700 --> 00:00:01,000\ncaption\n\n"
+        "4\n00:00:01,050 --> 00:00:01,350\ncontrols\n",
+        encoding="utf-8",
+    )
+    _build_ass(srt, left_ass, 720, 1280, "kinetic", "bottom", caption_alignment="left")
+    _build_ass(srt, right_ass, 720, 1280, "kinetic", "bottom", caption_alignment="right")
+    left = left_ass.read_text(encoding="utf-8-sig")
+    right = right_ass.read_text(encoding="utf-8-sig")
+    assert "\\an5\\pos(" in left and "\\an5\\pos(" in right
+    assert left != right
+
+
+def test_larger_caption_scale_reduces_safe_text_width():
+    style = {"max_line_width": 30}
+    assert _scaled_caption_max_chars(style, .65) > _scaled_caption_max_chars(style, 1.0)
+    assert _scaled_caption_max_chars(style, 1.0) > _scaled_caption_max_chars(style, 1.6)
+
+
+def test_export_request_bounds_caption_composition():
+    request = ExportRequest(caption_x=0, caption_y=100, caption_scale=.65, caption_alignment="left")
+    assert request.caption_x == 0 and request.caption_y == 100 and request.caption_scale == .65
+    assert request.caption_alignment == "left"
+    with pytest.raises(ValidationError):
+        ExportRequest(caption_x=-.1)
+    with pytest.raises(ValidationError):
+        ExportRequest(caption_y=100.1)
+    with pytest.raises(ValidationError):
+        ExportRequest(caption_scale=1.61)
+    with pytest.raises(ValidationError):
+        ExportRequest(caption_alignment="justify")
 
 
 def test_india_pop_ass_uses_real_rounded_active_word_pill_and_short_cards(tmp_path: Path):

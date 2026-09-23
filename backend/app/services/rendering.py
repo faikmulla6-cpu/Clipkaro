@@ -209,18 +209,50 @@ def _india_pop_round_rect(width: int, height: int, radius: int) -> str:
     )
 
 
-def _caption_y_center(height: int, style: dict[str, Any], caption_position: str) -> int:
-    """Resolve the creator's vertical caption choice identically for every style."""
+def _normalized_caption_scale(value: float) -> float:
+    """Clamp public caption scale before it reaches any layout arithmetic."""
+    return max(0.65, min(float(value), 1.60))
+
+
+def _scaled_caption_max_chars(style: dict[str, Any], caption_scale: float) -> int:
+    """Keep larger text readable by reducing the amount of text per visual line."""
+    base = max(8, int(style["max_line_width"]))
+    scale = _normalized_caption_scale(caption_scale)
+    return max(8, min(64, round(base / scale)))
+
+
+def _caption_x_center(width: int, caption_x: float) -> float:
+    normalized = max(0.0, min(float(caption_x), 100.0)) / 100.0
+    return width * normalized
+
+
+def _caption_y_center(height: int, style: dict[str, Any], caption_position: str,
+                      caption_y: float | None = None) -> float:
+    """Resolve preset or creator-dragged vertical placement in output pixels."""
+    if caption_y is not None:
+        normalized = max(0.0, min(float(caption_y), 100.0)) / 100.0
+        return height * normalized
     if caption_position == "center":
-        return height // 2
+        return height / 2
     if caption_position == "above":
-        return round(height * float(style["above_safe_ratio"]))
-    return round(height * (1 - float(style["bottom_safe_ratio"])))
+        return height * float(style["above_safe_ratio"])
+    return height * (1 - float(style["bottom_safe_ratio"]))
+
+
+def _clamp_caption_center(center: float, content_size: float, canvas_size: int,
+                          safe_inset: float) -> float:
+    """Keep the rendered caption fully inside the creator safe area."""
+    half = max(0.0, content_size / 2)
+    low = min(canvas_size / 2, safe_inset + half)
+    high = max(canvas_size / 2, canvas_size - safe_inset - half)
+    return min(max(center, low), high)
 
 
 def _build_india_pop_ass(words: list[dict[str, Any]], ass: Path, width: int, height: int,
                          style: dict[str, Any], caption_position: str,
-                         font_name: str | None) -> None:
+                         font_name: str | None, caption_x: float = 50.0,
+                         caption_y: float | None = None, caption_scale: float = 1.0,
+                         caption_alignment: str = "center") -> None:
     """Render India Pop as word-positioned text plus a real active-word pill.
 
     Generic karaoke ASS tags can recolour a word but cannot create a tight,
@@ -228,15 +260,18 @@ def _build_india_pop_ass(words: list[dict[str, Any]], ass: Path, width: int, hei
     background events and separate word events, preserving the original SRT
     word timing while matching the Creator Studio's visual primitives.
     """
-    size = max(18, round(width * float(style["font_size_width_ratio"])))
+    scale = _normalized_caption_scale(caption_scale)
+    size = max(18, round(width * float(style["font_size_width_ratio"]) * scale))
     normal = _ass_color(str(style["text_color"]))
     outline = _ass_color(str(style["outline_color"]))
     active = _ass_color(str(style["highlight_color"]))
     pill = _ass_color(str(style["highlight_background"]))
-    border = max(1, round(width * float(style["outline_width_width_ratio"])))
+    border = max(1, round(width * float(style["outline_width_width_ratio"]) * scale))
     inset = round(width * float(style["horizontal_inset_ratio"]))
     resolved_font = font_name or str(style["font_family"])
-    y_center = _caption_y_center(height, style, caption_position)
+    requested_x = _caption_x_center(width, caption_x)
+    requested_y = _caption_y_center(height, style, caption_position, caption_y)
+    max_chars = _scaled_caption_max_chars(style, scale)
     header = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {width}
@@ -250,10 +285,10 @@ Style: IndiaPop,{resolved_font},{size},{normal},{normal},{outline},&H00000000,-1
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
-    cards = build_caption_cards(words, max_chars=int(style["max_line_width"]),
+    cards = build_caption_cards(words, max_chars=max_chars,
                                 max_words=int(style["words_per_chunk"]),
                                 max_duration=float(style["max_duration"]))
-    errors = validate_cards(cards, max_chars=int(style["max_line_width"]))
+    errors = validate_cards(cards, max_chars=max_chars)
     if any("overflow" in error or "invalid_time" in error for error in errors):
         raise RuntimeError("Caption layout failed safe-area validation; review the transcript before export.")
     events: list[str] = []
@@ -274,11 +309,26 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         lines = [(0, split_at)]
         if split_at < len(display_words):
             lines.append((split_at, len(display_words)))
+        line_widths = [
+            sum(widths[first:last]) + gap * max(0, last - first - 1)
+            for first, last in lines
+        ]
+        line_step = round(size * float(style["line_height"]))
+        content_width = max(line_widths, default=0.0)
+        card_width = content_width + padding_x * 2
+        card_height = pill_height + max(0, len(lines) - 1) * line_step
+        x_center = _clamp_caption_center(requested_x, card_width, width, inset)
+        y_center = _clamp_caption_center(requested_y, card_height, height, round(height * .06))
         positions: dict[int, tuple[float, float]] = {}
         for line_number, (first, last) in enumerate(lines):
-            line_width = sum(widths[first:last]) + gap * max(0, last - first - 1)
-            cursor = (width - line_width) / 2
-            line_y = y_center + (line_number - (len(lines) - 1) / 2) * round(size * float(style["line_height"]))
+            line_width = line_widths[line_number]
+            if caption_alignment == "left":
+                cursor = x_center - content_width / 2
+            elif caption_alignment == "right":
+                cursor = x_center + content_width / 2 - line_width
+            else:
+                cursor = x_center - line_width / 2
+            line_y = y_center + (line_number - (len(lines) - 1) / 2) * line_step
             for item_index in range(first, last):
                 positions[item_index] = (cursor + widths[item_index] / 2, line_y)
                 cursor += widths[item_index] + gap
@@ -309,7 +359,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 def _build_studio_personality_ass(words: list[dict[str, Any]], ass: Path, width: int, height: int,
                                   style_id: str, style: dict[str, Any], caption_position: str,
-                                  font_name: str | None) -> None:
+                                  font_name: str | None, caption_x: float = 50.0,
+                                  caption_y: float | None = None, caption_scale: float = 1.0,
+                                  caption_alignment: str = "center") -> None:
     """Render the non-India-Pop Studio personalities with their own primitives.
 
     This intentionally does not use the legacy colour-only karaoke renderer:
@@ -317,17 +369,20 @@ def _build_studio_personality_ass(words: list[dict[str, Any]], ass: Path, width:
     Minimal has a restrained card plus underline, and Kinetic remains bare
     heavyweight type with a lime active word.
     """
-    size = max(18, round(width * float(style["font_size_width_ratio"])))
+    scale = _normalized_caption_scale(caption_scale)
+    size = max(18, round(width * float(style["font_size_width_ratio"]) * scale))
     normal = _ass_color(str(style["text_color"]))
     outline = _ass_color(str(style["outline_color"]))
     active = _ass_color(str(style["highlight_color"]))
     highlight_background = _ass_color(str(style["highlight_background"]))
-    border = max(1, round(width * float(style["outline_width_width_ratio"])))
+    border = max(1, round(width * float(style["outline_width_width_ratio"]) * scale))
     inset = round(width * float(style["horizontal_inset_ratio"]))
     font = font_name or str(style["font_family"])
     shadow = 3 if style_id == "kinetic" else 4 if style_id == "bold" else 0
     back = outline if style_id in {"kinetic", "bold"} else "&H00000000"
-    y_center = _caption_y_center(height, style, caption_position)
+    requested_x = _caption_x_center(width, caption_x)
+    requested_y = _caption_y_center(height, style, caption_position, caption_y)
+    max_chars = _scaled_caption_max_chars(style, scale)
     header = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {width}
@@ -341,10 +396,10 @@ Style: Studio,{font},{size},{normal},{normal},{outline},{back},-1,0,0,0,100,100,
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
-    cards = build_caption_cards(words, max_chars=int(style["max_line_width"]),
+    cards = build_caption_cards(words, max_chars=max_chars,
                                 max_words=int(style["words_per_chunk"]),
                                 max_duration=float(style["max_duration"]))
-    errors = validate_cards(cards, max_chars=int(style["max_line_width"]))
+    errors = validate_cards(cards, max_chars=max_chars)
     if any("overflow" in error or "invalid_time" in error for error in errors):
         raise RuntimeError("Caption layout failed safe-area validation; review the transcript before export.")
     events: list[str] = []
@@ -361,18 +416,28 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         lines = [(0, first_count)]
         if first_count < len(display_words):
             lines.append((first_count, len(display_words)))
+        line_widths = [
+            sum(widths[first:last]) + gap * max(0, last - first - 1)
+            for first, last in lines
+        ]
+        card_width = max(line_widths, default=0.0)
+        card_height = round(size * (1 + (len(lines) - 1) * float(style["line_height"]))) + pad_y * 2
+        x_center = _clamp_caption_center(requested_x, card_width + pad_x * 2, width, inset)
+        y_center = _clamp_caption_center(requested_y, card_height, height, round(height * .06))
         positions: dict[int, tuple[float, float]] = {}
-        card_width = 0.0
         for line_number, (first, last) in enumerate(lines):
-            line_width = sum(widths[first:last]) + gap * max(0, last - first - 1)
-            card_width = max(card_width, line_width)
-            cursor = (width - line_width) / 2
+            line_width = line_widths[line_number]
+            if caption_alignment == "left":
+                cursor = x_center - card_width / 2
+            elif caption_alignment == "right":
+                cursor = x_center + card_width / 2 - line_width
+            else:
+                cursor = x_center - line_width / 2
             line_y = y_center + (line_number - (len(lines) - 1) / 2) * round(size * float(style["line_height"]))
             for word_index in range(first, last):
                 positions[word_index] = (cursor + widths[word_index] / 2, line_y)
                 cursor += widths[word_index] + gap
-        card_height = round(size * (1 + (len(lines) - 1) * float(style["line_height"]))) + pad_y * 2
-        card_left = round((width - card_width) / 2 - pad_x)
+        card_left = round(x_center - card_width / 2 - pad_x)
         card_top = round(y_center - card_height / 2)
         card_shape = _india_pop_round_rect(round(card_width + pad_x * 2), card_height, radius)
         for active_index, item in enumerate(card.words):
@@ -424,24 +489,36 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 
 def _build_ass(srt: Path, ass: Path, width: int, height: int, caption_style: str,
-               caption_position: str, font_name: str | None = None) -> None:
+               caption_position: str, font_name: str | None = None,
+               caption_x: float = 50.0, caption_y: float | None = None,
+               caption_scale: float = 1.0, caption_alignment: str = "center") -> None:
     words = [{"start": s, "end": e, "text": t} for s, e, t in _read_srt_cards(srt)]
     style = get_caption_style(caption_style)
     if caption_style == "hindi-pop":
-        _build_india_pop_ass(words, ass, width, height, style, caption_position, font_name)
+        _build_india_pop_ass(
+            words, ass, width, height, style, caption_position, font_name,
+            caption_x=caption_x, caption_y=caption_y, caption_scale=caption_scale,
+            caption_alignment=caption_alignment,
+        )
         return
     if caption_style in {"kinetic", "clean", "bold", "minimal"}:
-        _build_studio_personality_ass(words, ass, width, height, caption_style, style, caption_position, font_name)
+        _build_studio_personality_ass(
+            words, ass, width, height, caption_style, style, caption_position, font_name,
+            caption_x=caption_x, caption_y=caption_y, caption_scale=caption_scale,
+            caption_alignment=caption_alignment,
+        )
         return
-    size = max(18, round(width * float(style["font_size_width_ratio"])))
+    scale = _normalized_caption_scale(caption_scale)
+    size = max(18, round(width * float(style["font_size_width_ratio"]) * scale))
     normal = _ass_color(str(style["text_color"]))
     outline = _ass_color(str(style["outline_color"]))
     active = _ass_color(str(style["highlight_color"]))
-    border = max(1, round(width * float(style["outline_width_width_ratio"])))
+    border = max(1, round(width * float(style["outline_width_width_ratio"]) * scale))
     background = str(style.get("background") or "")
     border_style = 3 if background != "transparent" else 1
     back = "&H60000000" if "0,0,0" in background else "&H20FFFFFF" if "255,255,255" in background else "&H00000000"
-    alignment = 5 if caption_position == "center" else 2
+    horizontal_alignment = {"left": 1, "center": 2, "right": 3}.get(caption_alignment, 2)
+    alignment = horizontal_alignment + (3 if caption_position == "center" else 0)
     margin_v = 0 if caption_position == "center" else round(height * float(style["above_safe_ratio"] if caption_position == "above" else style["bottom_safe_ratio"]))
     inset = round(width * float(style["horizontal_inset_ratio"]))
     transform = str(style.get("text_transform") or "none")
@@ -460,8 +537,14 @@ Style: Caption,{resolved_font},{size},{normal},{normal},{outline},{back},-1,0,0,
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     events = []
-    cards = build_caption_cards(words, max_chars=int(style["max_line_width"]), max_words=int(style["words_per_chunk"]), max_duration=float(style["max_duration"]))
-    errors = validate_cards(cards, max_chars=int(style["max_line_width"]))
+    max_chars = _scaled_caption_max_chars(style, scale)
+    cards = build_caption_cards(words, max_chars=max_chars, max_words=int(style["words_per_chunk"]), max_duration=float(style["max_duration"]))
+    errors = validate_cards(cards, max_chars=max_chars)
+    custom_position = caption_y is not None or abs(float(caption_x) - 50.0) > 0.001
+    position_x = round(_clamp_caption_center(_caption_x_center(width, caption_x), size, width, inset))
+    position_y = round(_clamp_caption_center(_caption_y_center(height, style, caption_position, caption_y), size * 2, height, round(height * .06)))
+    middle_alignment = {"left": 4, "center": 5, "right": 6}.get(caption_alignment, 5)
+    position_override = f"{{\\an{middle_alignment}\\pos({position_x},{position_y})}}" if custom_position else ""
     if any("overflow" in error or "invalid_time" in error for error in errors):
         raise RuntimeError("Caption layout failed safe-area validation; review the transcript before export.")
     for card in cards:
@@ -478,7 +561,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             first_count = len(card.lines[0].split()) if len(card.lines) == 2 else len(styled_words)
             styled = " ".join(styled_words[:first_count])
             if len(card.lines) == 2: styled += r"\N" + " ".join(styled_words[first_count:])
-            events.append(f"Dialogue: 0,{_ass_time(word_start)},{_ass_time(state_end)},Caption,,0,0,0,,{styled}")
+            events.append(f"Dialogue: 0,{_ass_time(word_start)},{_ass_time(state_end)},Caption,,0,0,0,,{position_override}{styled}")
     ass.write_text(header + "\n".join(events) + "\n", encoding="utf-8-sig")
 
 
@@ -546,7 +629,9 @@ async def render_short(source: Path, output: Path, start: float, end: float, srt
                        primary_color: str = "#DFFF57", focus_x: float = 50,
                        caption_position: str = "bottom",
                        crop_keyframes: list[dict[str, float]] | None = None,
-                       source_caption_band: float | None = None) -> None:
+                       source_caption_band: float | None = None,
+                       caption_x: float = 50.0, caption_y: float | None = None,
+                       caption_scale: float = 1.0, caption_alignment: str = "center") -> None:
     if not ffmpeg_available():
         raise RuntimeError("FFmpeg and FFprobe are required to export video.")
     ffmpeg, ffprobe = find_media_tool("ffmpeg"), find_media_tool("ffprobe")
@@ -578,7 +663,11 @@ async def render_short(source: Path, output: Path, start: float, end: float, srt
         source_text = " ".join(card[2] for card in _read_srt_cards(srt))
         resolved_font, font_dir, fallback_used = _caption_font(source_text, str(style["font_family"]))
         logger.info("caption_style_render style=%s requested_font=%s resolved_font=%s font_fallback_used=%s", caption_style, style["font_family"], resolved_font, fallback_used)
-        _build_ass(srt, ass, width, height, caption_style, caption_position, resolved_font)
+        _build_ass(
+            srt, ass, width, height, caption_style, caption_position, resolved_font,
+            caption_x=caption_x, caption_y=caption_y, caption_scale=caption_scale,
+            caption_alignment=caption_alignment,
+        )
         # Pass an explicitly escaped absolute path.  On Windows, FFmpeg's ASS
         # filter can resolve a basename against the source instead of its cwd,
         # silently producing a valid-looking export with no caption overlay.

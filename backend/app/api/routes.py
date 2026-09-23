@@ -583,6 +583,10 @@ async def _render_export(job_id:str,export_id:str,clip:dict,video:dict,request:E
             (brand or {}).get("logo_text") or "", (brand or {}).get("primary_color") or "#DFFF57",
             request.focus_x, caption_position, [item.model_dump() for item in request.crop_keyframes],
             preserve_band,
+            caption_x=request.caption_x,
+            caption_y=request.caption_y,
+            caption_scale=request.caption_scale,
+            caption_alignment=request.caption_alignment,
         )
         await update_job(job_id,92,"optimizing","Optimizing MP4 for fast social upload")
         await execute("UPDATE exports SET status='ready',progress=100 WHERE id=?",(export_id,))
