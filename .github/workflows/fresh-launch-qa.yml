@@ -179,6 +179,12 @@ jobs:
         working-directory: frontend
         run: npm run check:search-discovery
 
+      - name: Check Caption composition contract
+        id: caption_composition
+        continue-on-error: true
+        working-directory: frontend
+        run: npm run check:caption-composition
+
 
       - name: Check Behavioral learning contract
         id: behavioral_learning
@@ -351,6 +357,7 @@ jobs:
           --check security_foundation=${{ steps.security_foundation.outcome }}
           --check legal_privacy=${{ steps.legal_privacy.outcome }}
           --check search_discovery=${{ steps.search_discovery.outcome }}
+          --check caption_composition=${{ steps.caption_composition.outcome }}
           --check behavioral_learning=${{ steps.behavioral_learning.outcome }}
           --check landscape_reframe=${{ steps.landscape_reframe.outcome }}
           --check release_identity_postinstall=${{ steps.release_identity_postinstall.outcome }}
