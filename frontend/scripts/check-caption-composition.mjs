@@ -22,6 +22,8 @@ for (const field of ["caption_x", "caption_y", "caption_scale", "caption_alignme
 }
 
 requireText(editor, "onPointerDown={beginCaptionDrag}", "caption must be directly draggable");
+requireText(editor, "onKeyDown={nudgeCaption}", "caption placement must remain keyboard-accessible");
+requireText(editor, 'tabIndex={0}', "caption preview must be focusable for keyboard placement");
 requireText(editor, "Drag caption on preview", "UI must explain direct caption placement");
 requireText(editor, 'aria-label="Caption size"', "caption size needs an accessible slider");
 requireText(editor, 'aria-label="Caption text alignment"', "caption alignment needs an accessible control group");
