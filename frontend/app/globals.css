@@ -88,5 +88,9 @@
 .caption-size-heading b{font-size:9px;color:var(--green);font-variant-numeric:tabular-nums}
 .caption-size-control{margin-top:0}
 .caption-size-scale{display:flex;justify-content:space-between;color:var(--muted);font-size:7px;margin-top:4px}
+.caption-align-heading{margin-top:14px}
+.caption-align-heading b{text-transform:capitalize}
+.caption-align-controls button{display:flex;align-items:center;justify-content:center;gap:4px}
+.caption-align-controls button svg{flex:none}
 .caption-reflow-note{display:flex;align-items:center;gap:5px;color:#54705f!important;margin-top:9px!important}
 .caption-reflow-note svg{flex:none;color:var(--green)}
