@@ -12,7 +12,7 @@ import { AuthProvider } from "@/components/AuthProvider";
 const brandIcon = "/assets/clipkaro-icon.png?v=2";
 const tabIcon = "/assets/clipkaro-icon.png?v=4";
 
-const browserCsp = "default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self' https://*.razorpay.com; img-src 'self' data: blob: https://storage.googleapis.com https://*.razorpay.com; media-src 'self' blob: https://storage.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self' 'unsafe-inline' https://checkout.razorpay.com https://*.razorpay.com; connect-src 'self' https://storage.googleapis.com https://*.razorpay.com wss://*.razorpay.com; frame-src https://*.razorpay.com; worker-src 'self' blob:; manifest-src 'self'; upgrade-insecure-requests";
+const browserCsp = "default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self' https://*.razorpay.com; img-src 'self' data: blob: https://storage.googleapis.com https://*.razorpay.com; media-src 'self' blob: https://storage.googleapis.com https://*.backblazeb2.com; font-src 'self' data: https://fonts.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self' 'unsafe-inline' https://checkout.razorpay.com https://*.razorpay.com; connect-src 'self' https://storage.googleapis.com https://*.backblazeb2.com https://*.razorpay.com wss://*.razorpay.com; frame-src https://*.razorpay.com; worker-src 'self' blob:; manifest-src 'self'; upgrade-insecure-requests";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://clipkaro.pro"),
