@@ -230,6 +230,16 @@ async def _scan_source(source: Path, storage=None, source_key: str = "", generat
             await storage.delete(source_key, generation=generation)
         raise RuntimeError("MEDIA_VALIDATION_FAILED")
     except UploadScannerUnavailable as exc:
+        try:
+            size_bytes = source.stat().st_size
+        except OSError:
+            size_bytes = -1
+        logger.exception(
+            "Upload security scan unavailable file=%s size_bytes=%s error_type=%s",
+            source.name,
+            size_bytes,
+            type(exc).__name__,
+        )
         raise RuntimeError("MEDIA_VALIDATION_FAILED") from exc
 
 
