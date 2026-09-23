@@ -89,6 +89,21 @@ def _clamd_scan(path: Path) -> str:
     raise UploadScannerUnavailable(f"ClamAV returned an unexpected response: {text[:240] or 'empty response'}")
 
 
+def _local_scan_timeout_seconds(path: Path) -> float:
+    """Give larger bounded uploads enough time to complete a fail-closed local scan."""
+    configured = max(2.0, float(get_settings().clamav_timeout_seconds))
+    try:
+        size_mb = max(0, path.stat().st_size) / (1024 * 1024)
+    except OSError:
+        return configured
+    # Production allows uploads up to 500 MB. A fixed 30-second subprocess
+    # timeout is too tight even for clean ~50 MB MP4s on a cold/contended CPU.
+    # Keep the configured floor, scale with bytes, and bound the automatic
+    # extension so malformed inputs cannot hold a worker indefinitely.
+    adaptive = min(600.0, 30.0 + size_mb * 2.0)
+    return max(configured, adaptive)
+
+
 def _local_clamscan(path: Path) -> str:
     executable = shutil.which("clamscan")
     if not executable:
@@ -97,7 +112,7 @@ def _local_clamscan(path: Path) -> str:
         result = subprocess.run(
             [executable, "--no-summary", "--infected", str(path)],
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False,
-            timeout=max(2.0, float(get_settings().clamav_timeout_seconds)),
+            timeout=_local_scan_timeout_seconds(path),
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise UploadScannerUnavailable("Local ClamAV scan failed.") from exc
