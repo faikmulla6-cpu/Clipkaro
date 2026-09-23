@@ -243,8 +243,10 @@ export default function Editor() {
     const centerY = clientY - drag.offsetY;
     const halfWidthPercent = Math.min(44, captionRect.width / canvasRect.width * 50);
     const halfHeightPercent = Math.min(44, captionRect.height / canvasRect.height * 50);
-    const minX = Math.min(50, 6 + halfWidthPercent);
-    const maxX = Math.max(50, 94 - halfWidthPercent);
+    const styleInset = captionStyles.find(style => style.id === captionStyle)?.horizontal_inset_ratio ?? .06;
+    const horizontalSafe = clamp(styleInset * 100, 4, 20);
+    const minX = Math.min(50, horizontalSafe + halfWidthPercent);
+    const maxX = Math.max(50, 100 - horizontalSafe - halfWidthPercent);
     const minY = Math.min(50, 6 + halfHeightPercent);
     const maxY = Math.max(50, 94 - halfHeightPercent);
     const x = clamp((centerX - canvasRect.left) / canvasRect.width * 100, minX, maxX);
@@ -447,6 +449,7 @@ export default function Editor() {
   const positionClass = captionY === null ? `position-${captionPosition}` : "caption-custom-position";
   const selectedCaptionStyle = captionStyles.find(style => style.id === captionStyle);
   const baseCaptionRatio = selectedCaptionStyle?.font_size_width_ratio ?? .065;
+  const captionInsetRatio = selectedCaptionStyle?.horizontal_inset_ratio ?? .06;
   const previewStyle = {
     ...(selectedCaptionStyle ? {
       "--caption-font-family": `${selectedCaptionStyle.font_family}, sans-serif`,
@@ -465,6 +468,7 @@ export default function Editor() {
       "--caption-background": selectedCaptionStyle.background,
     } : {}),
     "--caption-font-size-ratio-effective": baseCaptionRatio * captionScale,
+    "--caption-safe-width": `${Math.max(60, (1 - captionInsetRatio * 2) * 100)}%`,
     "--caption-x": `${captionX}%`,
     "--caption-y": `${captionY ?? 50}%`,
   } as CSSProperties;
