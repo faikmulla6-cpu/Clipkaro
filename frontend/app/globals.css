@@ -71,9 +71,9 @@
 
 /* Creator Studio caption composition: direct manipulation stays normalized so
    the preview and final ASS render use the same resolution-independent model. */
-.caption-preview.caption-draggable{touch-action:none;user-select:none;cursor:grab;max-width:88%;overflow-wrap:normal;word-break:normal}
+.caption-preview.caption-draggable{touch-action:none;user-select:none;cursor:grab;max-width:var(--caption-safe-width,88%);overflow-wrap:normal;word-break:normal}
 .caption-preview.caption-dragging{cursor:grabbing;transition:none!important;outline:1px solid rgba(223,255,87,.85);outline-offset:7px}
-.caption-preview.caption-custom-position{left:var(--caption-x,50%)!important;right:auto!important;top:var(--caption-y,50%)!important;bottom:auto!important;width:max-content;max-width:88%;transform:translate(-50%,-50%)!important}
+.caption-preview.caption-custom-position{left:var(--caption-x,50%)!important;right:auto!important;top:var(--caption-y,50%)!important;bottom:auto!important;width:max-content;max-width:var(--caption-safe-width,88%);transform:translate(-50%,-50%)!important}
 .video-canvas:has(.caption-dragging) .safe-zone{border-color:rgba(223,255,87,.58);background:rgba(223,255,87,.025)}
 .caption-layout-section{background:linear-gradient(180deg,#fff,#fbfdf9)}
 .caption-control-head,.caption-size-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px}
