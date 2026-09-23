@@ -94,6 +94,25 @@ def test_caption_scale_changes_font_size_and_custom_position(tmp_path: Path):
     assert "\\pos(216,320)" in scaled
 
 
+def test_caption_alignment_changes_multiline_word_positions(tmp_path: Path):
+    srt = tmp_path / "caption-align.srt"
+    left_ass = tmp_path / "left.ass"
+    right_ass = tmp_path / "right.ass"
+    srt.write_text(
+        "1\n00:00:00,000 --> 00:00:00,300\ncreator\n\n"
+        "2\n00:00:00,350 --> 00:00:00,650\nworkflow\n\n"
+        "3\n00:00:00,700 --> 00:00:01,000\ncaption\n\n"
+        "4\n00:00:01,050 --> 00:00:01,350\ncontrols\n",
+        encoding="utf-8",
+    )
+    _build_ass(srt, left_ass, 720, 1280, "kinetic", "bottom", caption_alignment="left")
+    _build_ass(srt, right_ass, 720, 1280, "kinetic", "bottom", caption_alignment="right")
+    left = left_ass.read_text(encoding="utf-8-sig")
+    right = right_ass.read_text(encoding="utf-8-sig")
+    assert "\\an5\\pos(" in left and "\\an5\\pos(" in right
+    assert left != right
+
+
 def test_larger_caption_scale_reduces_safe_text_width():
     style = {"max_line_width": 30}
     assert _scaled_caption_max_chars(style, .65) > _scaled_caption_max_chars(style, 1.0)
@@ -101,14 +120,17 @@ def test_larger_caption_scale_reduces_safe_text_width():
 
 
 def test_export_request_bounds_caption_composition():
-    request = ExportRequest(caption_x=0, caption_y=100, caption_scale=.65)
+    request = ExportRequest(caption_x=0, caption_y=100, caption_scale=.65, caption_alignment="left")
     assert request.caption_x == 0 and request.caption_y == 100 and request.caption_scale == .65
+    assert request.caption_alignment == "left"
     with pytest.raises(ValidationError):
         ExportRequest(caption_x=-.1)
     with pytest.raises(ValidationError):
         ExportRequest(caption_y=100.1)
     with pytest.raises(ValidationError):
         ExportRequest(caption_scale=1.61)
+    with pytest.raises(ValidationError):
+        ExportRequest(caption_alignment="justify")
 
 
 def test_india_pop_ass_uses_real_rounded_active_word_pill_and_short_cards(tmp_path: Path):
