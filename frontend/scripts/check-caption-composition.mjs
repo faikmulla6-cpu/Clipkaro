@@ -11,12 +11,14 @@ const editor = read("frontend/app/editor/[clipId]/page.tsx");
 const css = read("frontend/app/globals.css");
 const schema = read("backend/app/schemas/api.py");
 const routes = read("backend/app/api/routes.py");
+const mediaWorker = read("backend/app/media_job.py");
 const renderer = read("backend/app/services/rendering.py");
 
 for (const field of ["caption_x", "caption_y", "caption_scale", "caption_alignment"]) {
   requireText(editor, field + ":", `editor export payload must send ${field}`);
   requireText(schema, field + ":", `server schema must validate ${field}`);
-  requireText(routes, "request." + field, `render boundary must forward ${field}`);
+  requireText(routes, "request." + field, `local render boundary must forward ${field}`);
+  requireText(mediaWorker, field + "=request." + field, `durable media worker must forward ${field}`);
 }
 
 requireText(editor, "onPointerDown={beginCaptionDrag}", "caption must be directly draggable");
