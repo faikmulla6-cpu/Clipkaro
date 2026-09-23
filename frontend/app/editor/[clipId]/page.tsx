@@ -6,7 +6,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { API_URL, api, patchJSON, postJSON } from "@/lib/api";
 import { downloadExport, newBehaviorSession, trackClipBehavior } from "@/lib/behavior";
 import {
-  AlertTriangle, AlignCenter, ArrowRight, Captions, Check, Download, Film, Loader2, LockKeyhole, MoveHorizontal,
+  AlertTriangle, AlignCenter, AlignLeft, AlignRight, ArrowRight, Captions, Check, Download, Film, Loader2, LockKeyhole, MoveHorizontal,
   Palette, Pause, Play, Save, Send, Smartphone, Sparkles, Square, Type, X, ZoomIn, ZoomOut,
 } from "lucide-react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
@@ -32,6 +32,7 @@ type CaptionStyle = { id: string; name: string; font_family: string; font_weight
 type BrandKit = { id: string; name: string; primary_color: string; logo_text?: string | null; caption_preset: string; is_default: boolean };
 type Tab = "style" | "transcript" | "export";
 type CaptionLanguageStyle = "auto" | "roman_hinglish" | "original";
+type CaptionAlignment = "left" | "center" | "right";
 type PostKaroStatus = { plan_eligible: boolean; ready: boolean };
 
 const styles = [
@@ -77,6 +78,7 @@ export default function Editor() {
   const [captionX, setCaptionX] = useState(50);
   const [captionY, setCaptionY] = useState<number | null>(null);
   const [captionScale, setCaptionScale] = useState(1);
+  const [captionAlignment, setCaptionAlignment] = useState<CaptionAlignment>("center");
   const [captionDragging, setCaptionDragging] = useState(false);
   const [ratio, setRatio] = useState("9:16");
   const [focusX, setFocusX] = useState(50);
@@ -227,6 +229,7 @@ export default function Editor() {
     setCaptionX(50);
     setCaptionY(null);
     setCaptionScale(1);
+    setCaptionAlignment("center");
   }
 
   function updateCaptionPlacement(clientX: number, clientY: number) {
@@ -399,6 +402,7 @@ export default function Editor() {
       const output = await postJSON<ExportResponse>(`/clips/${clip.id}/export`, {
         resolution, aspect_ratio: ratio, caption_style: captionStyle,
         caption_position: captionPosition, caption_x: captionX, caption_y: captionY, caption_scale: captionScale,
+        caption_alignment: captionAlignment,
         focus_x: focusX, zoom, hook_text: hook, watermark, brand_kit_id: brandKitId || null,
         preserve_source_captions: preserveSourceCaptions,
         india_quality_mode: indiaQualityMode,
@@ -471,6 +475,7 @@ export default function Editor() {
     "--caption-safe-width": `${Math.max(60, (1 - captionInsetRatio * 2) * 100)}%`,
     "--caption-x": `${captionX}%`,
     "--caption-y": `${captionY ?? 50}%`,
+    textAlign: captionAlignment,
   } as CSSProperties;
   const visibleHook = hook.trim().split(/\s+/).slice(0, 8).join(" ");
   const showHook = playhead - start < 4.5;
@@ -565,6 +570,12 @@ export default function Editor() {
               <div className="caption-size-heading"><label>Caption size</label><b>{Math.round(captionScale * 100)}%</b></div>
               <div className="zoom-control caption-size-control"><button type="button" aria-label="Make caption smaller" disabled={captionScale <= .65} onClick={() => setCaptionScale(value => clamp(Number((value - .05).toFixed(2)), .65, 1.6))}><ZoomOut size={15}/></button><input aria-label="Caption size" type="range" min=".65" max="1.6" step=".05" value={captionScale} onChange={event => setCaptionScale(Number(event.target.value))}/><button type="button" aria-label="Make caption larger" disabled={captionScale >= 1.6} onClick={() => setCaptionScale(value => clamp(Number((value + .05).toFixed(2)), .65, 1.6))}><ZoomIn size={15}/></button></div>
               <div className="caption-size-scale"><span>65%</span><span>100%</span><span>160%</span></div>
+              <div className="caption-size-heading caption-align-heading"><label>Text alignment</label><b>{captionAlignment}</b></div>
+              <div className="segmented three caption-align-controls" role="group" aria-label="Caption text alignment">
+                <button type="button" aria-label="Align captions left" className={captionAlignment === "left" ? "active" : ""} onClick={() => setCaptionAlignment("left")}><AlignLeft size={14}/> Left</button>
+                <button type="button" aria-label="Center captions" className={captionAlignment === "center" ? "active" : ""} onClick={() => setCaptionAlignment("center")}><AlignCenter size={14}/> Centre</button>
+                <button type="button" aria-label="Align captions right" className={captionAlignment === "right" ? "active" : ""} onClick={() => setCaptionAlignment("right")}><AlignRight size={14}/> Right</button>
+              </div>
               <p className="field-note caption-reflow-note"><Check size={12}/> Text wraps and reflows automatically as caption size changes.</p>
             </div>
             <div className="toggle-row"><div><b>Preserve source captions</b><span>{sourceHasCaptions ? `Detected near ${Math.round((sourceCaptionBand ?? .82) * 100)}% height` : "Use when the source already has subtitles"}</span></div><button className={preserveSourceCaptions ? "on" : ""} aria-pressed={preserveSourceCaptions} onClick={() => setPreserveSourceCaptions(value => !value)}><i /></button></div>
@@ -578,7 +589,7 @@ export default function Editor() {
 
           {activeTab === "export" && <>
             <div className="editor-section"><label>Export quality</label><select value={resolution} onChange={event => setResolution(event.target.value)}><option value="720p">720p · Fast and efficient</option><option value="1080p">1080p · Any paid plan</option></select></div>
-            <div className="export-summary"><span>Format <b>{ratio}</b></span><span>Duration <b>{Math.round(end - start)}s</b></span><span>Captions <b>{styles.find(style => style[0] === captionStyle)?.[1]}</b></span><span>Caption size <b>{Math.round(captionScale * 100)}%</b></span><span>Placement <b>{captionY === null ? (captionPosition === "bottom" ? "Lower" : captionPosition === "above" ? "Upper" : "Centre") : "Custom"}</b></span><span>Frame <b>{preserveSourceCaptions ? "Full" : `${focusX}%`}</b></span><span>Zoom <b>{preserveSourceCaptions ? "100% safe" : `${Math.round(zoom * 100)}%`}</b></span><span>India <b>{indiaQualityMode ? captionLanguageStyle.replace("_", " ") : "Off"}</b></span><span>Brand <b>{selectedBrandKit?.name || "None"}</b></span></div>
+            <div className="export-summary"><span>Format <b>{ratio}</b></span><span>Duration <b>{Math.round(end - start)}s</b></span><span>Captions <b>{styles.find(style => style[0] === captionStyle)?.[1]}</b></span><span>Caption size <b>{Math.round(captionScale * 100)}%</b></span><span>Placement <b>{captionY === null ? (captionPosition === "bottom" ? "Lower" : captionPosition === "above" ? "Upper" : "Centre") : "Custom"}</b></span><span>Align <b>{captionAlignment}</b></span><span>Frame <b>{preserveSourceCaptions ? "Full" : `${focusX}%`}</b></span><span>Zoom <b>{preserveSourceCaptions ? "100% safe" : `${Math.round(zoom * 100)}%`}</b></span><span>India <b>{indiaQualityMode ? captionLanguageStyle.replace("_", " ") : "Off"}</b></span><span>Brand <b>{selectedBrandKit?.name || "None"}</b></span></div>
             <div className="toggle-row"><div><b>ClipKaro watermark</b><span>{freePlan ? "Required on Free" : "Optional on your paid plan"}</span></div><button className={watermark ? "on" : ""} aria-pressed={watermark} disabled={freePlan} onClick={() => { if (!freePlan) setWatermark(value => !value); }}><i /></button></div>
             <button className="primary-btn render-panel-button" onClick={render} disabled={renderBusy}>{renderBusy ? <Loader2 className="spin" size={15} /> : <Sparkles size={15} />} {startingRender ? "Starting securely…" : renderBusy ? "Rendering Short…" : "Render verified Short"}</button>
           </>}
