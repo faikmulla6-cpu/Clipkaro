@@ -194,6 +194,38 @@ def test_export_render_uses_effective_corrected_caption_text(client: TestClient,
     assert "thyme" not in captured["srt"]
 
 
+def test_export_render_can_disable_hook_overlay(client: TestClient, tmp_path):
+    login_demo(client)
+    project_id, _ = ready_project(client)
+    clip = client.get(f"/api/v1/projects/{project_id}").json()["clips"][0]
+    db_clip = asyncio.run(fetch_one(
+        "SELECT c.*,p.user_id FROM clips c JOIN videos v ON v.id=c.video_id "
+        "JOIN projects p ON p.id=v.project_id WHERE c.id=?",
+        (clip["id"],),
+    ))
+    video = asyncio.run(fetch_one("SELECT * FROM videos WHERE id=?", (db_clip["video_id"],)))
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"fake-video")
+    output = tmp_path / "output.mp4"
+    captured = {}
+
+    async def fake_render(*args, **kwargs):
+        captured["hook"] = args[5]
+        output.write_bytes(b"rendered")
+
+    async def fake_scan(*args, **kwargs):
+        return {"detected": False, "confidence": 0}
+
+    request = ExportRequest(hook_text="Keep this text for later", hook_enabled=False)
+    with patch.object(routes, "render_short_limited", new=fake_render), patch.object(routes, "detect_burned_captions", new=fake_scan):
+        asyncio.run(routes._render_export(
+            "job-hook-off", "export-hook-off", db_clip, video, request, output, None,
+            source_override=source,
+        ))
+
+    assert captured["hook"] == ""
+
+
 def test_transcript_review_reset_restores_original_and_preserves_timestamps(client: TestClient):
     login_demo(client)
     project_id, _ = ready_project(client)

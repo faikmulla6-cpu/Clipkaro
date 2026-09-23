@@ -149,7 +149,7 @@ async def _render_export_durable(
                 clip["start_time"],
                 clip["end_time"],
                 srt if srt.exists() else None,
-                request.hook_text or clip["hook"],
+                request.resolved_hook_text(clip["hook"]),
                 request.watermark,
                 request.resolution,
                 request.aspect_ratio,

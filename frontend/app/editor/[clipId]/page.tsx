@@ -67,6 +67,7 @@ export default function Editor() {
   const [clip, setClip] = useState<Clip | null>(null);
   const [loadError, setLoadError] = useState("");
   const [hook, setHook] = useState("");
+  const [hookEnabled, setHookEnabled] = useState(true);
   const [title, setTitle] = useState("");
   const [transcript, setTranscript] = useState("");
   const [start, setStart] = useState(0);
@@ -417,7 +418,7 @@ export default function Editor() {
         resolution, aspect_ratio: ratio, caption_style: captionStyle,
         caption_position: captionPosition, caption_x: captionX, caption_y: captionY, caption_scale: captionScale,
         caption_alignment: captionAlignment,
-        focus_x: focusX, zoom, hook_text: hook, watermark, brand_kit_id: brandKitId || null,
+        focus_x: focusX, zoom, hook_text: hook, hook_enabled: hookEnabled, watermark, brand_kit_id: brandKitId || null,
         preserve_source_captions: preserveSourceCaptions,
         india_quality_mode: indiaQualityMode,
         caption_language_style: captionLanguageStyle,
@@ -523,7 +524,7 @@ export default function Editor() {
               }}
             />
             <button className="canvas-play" onClick={togglePlayback}>{playing ? <Pause fill="currentColor" /> : <Play fill="currentColor" />}</button>
-            {showHook && visibleHook && <div className="canvas-hook">{visibleHook}</div>}
+            {hookEnabled && showHook && visibleHook && <div className="canvas-hook">{visibleHook}</div>}
             <div
               ref={captionRef}
               className={`caption-preview caption-draggable style-${captionStyle} ${positionClass} ${captionDragging ? "caption-dragging" : ""}`}
@@ -561,7 +562,8 @@ export default function Editor() {
           {activeTab === "style" && <>
             {sourceHasCaptions && <div className="editor-section"><p className="field-note"><b>Existing subtitles detected.</b> Preserve source captions keeps the full video frame inside the export so original subtitle pixels are not cropped.</p></div>}
             {reviewSuggested && <div className="editor-section"><p className="field-note review-note"><AlertTriangle size={13}/><span><b>Review suggested.</b> {reviewReasons.slice(0, 2).join(", ") || "Some words look uncertain."}</span></p></div>}
-            <div className="editor-section"><label>Hook text</label><textarea value={hook} onChange={event => setHook(event.target.value)} maxLength={120} /><div className="input-count">{hook.length}/120</div></div>
+            <div className="toggle-row"><div><b>Hook text</b><span>{hookEnabled ? "Show an opening hook for the first 4.5 seconds" : "Off — no opening hook will appear in the exported MP4"}</span></div><button type="button" className={hookEnabled ? "on" : ""} aria-pressed={hookEnabled} aria-label="Toggle hook text" onClick={() => setHookEnabled(value => !value)}><i /></button></div>
+            <div className="editor-section"><label>Hook text</label><textarea value={hook} onChange={event => setHook(event.target.value)} maxLength={120} disabled={!hookEnabled} /><div className="input-count">{hook.length}/120</div></div>
             {brandKits.length > 0 && <div className="editor-section"><label><Palette size={13}/> Brand kit</label><select value={brandKitId} onChange={event => { const id = event.target.value; setBrandKitId(id); const kit = brandKits.find(item => item.id === id); if (kit && styles.some(style => style[0] === kit.caption_preset)) setCaptionStyle(kit.caption_preset); }}><option value="">No brand kit</option>{brandKits.map(kit => <option key={kit.id} value={kit.id}>{kit.name}{kit.is_default ? " · Default" : ""}</option>)}</select><p className="field-note">Applies your saved wordmark, brand color and preferred caption personality to this export.</p></div>}
             <div className="toggle-row"><div><b>India Quality Mode</b><span>{indiaQualityHint || "Better defaults for Hindi, Hinglish and Indian English"}</span></div><button className={indiaQualityMode ? "on" : ""} aria-pressed={indiaQualityMode} onClick={() => setIndiaQualityMode(value => !value)}><i /></button></div>
             {indiaQualityMode && <div className="editor-section"><label>Caption language style</label><select value={captionLanguageStyle} onChange={event => setCaptionLanguageStyle(event.target.value as CaptionLanguageStyle)}><option value="auto">Auto</option><option value="roman_hinglish">Roman Hinglish</option><option value="original">Original transcript</option></select><p className="field-note">Roman Hinglish keeps suitable Hindi/Hinglish captions readable in Latin script without translating the clip.</p></div>}
