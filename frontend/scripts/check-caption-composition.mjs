@@ -29,7 +29,7 @@ requireText(editor, "captionY === null", "preset and custom placement states mus
 
 requireText(css, ".caption-preview.caption-custom-position", "custom normalized placement CSS must exist");
 requireText(css, "touch-action:none", "pointer dragging must be touch-safe");
-requireText(css, "max-width:88%", "caption preview must retain a safe horizontal boundary");
+requireText(css, "--caption-safe-width", "caption preview must retain the selected style safe horizontal boundary");
 requireText(css, "--caption-font-size-ratio-effective", "preview font size must drive browser reflow");
 
 requireText(renderer, "def _normalized_caption_scale", "renderer must clamp caption scale");
