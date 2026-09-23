@@ -38,6 +38,7 @@ requireText(caddy, "Content-Security-Policy", "edge CSP must be present");
 requireText(caddy, "frame-ancestors 'none'", "CSP must block framing");
 requireText(caddy, "object-src 'none'", "CSP must block plugin/object content");
 requireText(caddy, "https://*.razorpay.com", "CSP must explicitly scope payment origins");
+requireText(caddy, "https://*.backblazeb2.com", "edge CSP must allow private B2 browser upload and media delivery");
 
 // The current Hostinger + Modal production path does not traverse Caddy, so
 // equivalent browser policy must also be emitted by Next.js itself.
@@ -48,12 +49,14 @@ requireText(nextConfig, 'key: "Content-Security-Policy"', "Hostinger frontend mu
 requireText(nextConfig, "frame-ancestors 'none'", "Hostinger CSP must block framing");
 requireText(nextConfig, "object-src 'none'", "Hostinger CSP must block plugin/object content");
 requireText(nextConfig, "https://*.razorpay.com", "Hostinger CSP must scope payment origins");
-requireText(nextConfig, "https://storage.googleapis.com", "Hostinger CSP must allow direct GCS upload and signed media delivery");
+requireText(nextConfig, "https://storage.googleapis.com", "Hostinger CSP must preserve GCS rollback upload and media delivery");
+requireText(nextConfig, "https://*.backblazeb2.com", "Hostinger CSP must allow direct B2 upload and signed media delivery");
 requireText(nextConfig, "https://fonts.googleapis.com", "Hostinger CSP must allow the declared Google Fonts stylesheet");
 requireText(nextConfig, "https://fonts.gstatic.com", "Hostinger CSP must allow the declared Google Fonts files");
 requireText(nextConfig, "same-origin-allow-popups", "Hostinger frontend must keep Razorpay popups compatible while isolating openers");
 requireText(rootLayout, 'httpEquiv="Content-Security-Policy"', "Hostinger frontend must keep an in-document CSP fallback when the edge replaces the upstream CSP header");
-requireText(rootLayout, "https://storage.googleapis.com", "CSP fallback must preserve direct GCS upload and media delivery");
+requireText(rootLayout, "https://storage.googleapis.com", "CSP fallback must preserve GCS rollback upload and media delivery");
+requireText(rootLayout, "https://*.backblazeb2.com", "CSP fallback must allow direct B2 upload and signed media delivery");
 requireText(rootLayout, "https://checkout.razorpay.com", "CSP fallback must preserve Razorpay checkout");
 requireText(rootLayout, "https://fonts.googleapis.com", "CSP fallback must preserve the declared Google Fonts stylesheet");
 
