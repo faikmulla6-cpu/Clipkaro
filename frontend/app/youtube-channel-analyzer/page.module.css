@@ -4,3 +4,14 @@
 @media(max-width:760px){.desktopNav{display:none!important}.hero{padding:62px 16px 68px}.hero h1{font-size:clamp(42px,12vw,58px);letter-spacing:-2.8px}.heroCopy>p{font-size:15px}.actions{display:grid;grid-template-columns:1fr}.primary,.secondary{width:100%}.microTrust{display:grid}.preview{padding:14px;border-radius:20px}.nextMove{grid-template-columns:1fr}.thumb{min-height:155px}.audienceStrip{justify-content:flex-start;overflow-x:auto;flex-wrap:nowrap;padding:18px 16px}.audienceStrip>*{flex:0 0 auto}.section,.workflowSection,.peopleSection,.faqSection{padding:72px 16px}.featureGrid,.steps,.peopleGrid{grid-template-columns:1fr}.featureGrid article{min-height:auto}.decisionSection{padding:72px 16px}.decisionList{grid-template-columns:1fr}.noGuessGrid{grid-template-columns:repeat(2,1fr)}.steps article{min-height:auto}.steps h3{margin-top:28px}.finalCta{margin:12px 16px 72px;padding:28px 22px;display:grid}.finalButton{width:100%}.footerInner{display:grid}.footerLinks{justify-content:flex-start}.stats{grid-template-columns:1fr 1fr}.stats>div:last-child{grid-column:1/-1}}
 @media(max-width:430px){.chart>div:not(.chartTitle){grid-template-columns:80px 1fr 30px}.hero h1{font-size:clamp(39px,12vw,52px)}.previewHead h2{font-size:20px}}
 @media(prefers-reduced-motion:reduce){.primary,.secondary,.finalButton{transition:none}.faqs summary span{transition:none}}
+
+/* Mobile hardening: Creator Pulse public page */
+@media(max-width:760px){
+  .page{overflow-x:hidden}.heroGrid{grid-template-columns:minmax(0,1fr)!important}.heroCopy,.preview{min-width:0}.kicker{max-width:100%;white-space:normal;line-height:1.35}
+  .actions{display:grid;grid-template-columns:1fr}.primary,.secondary{width:100%;min-height:50px}.microTrust{display:grid;grid-template-columns:1fr}.microTrust span{overflow-wrap:anywhere}
+  .preview{transform:none}.previewHead{gap:10px}.previewHead>span{flex:0 0 auto}.nextMove{grid-template-columns:1fr}.sectionHead{text-align:left}.faqs summary{min-height:52px}
+}
+@media(max-width:430px){
+  .hero h1{font-size:clamp(38px,12vw,50px);letter-spacing:-2.5px}.preview{padding:12px}.previewHead{align-items:flex-start}.previewHead>span{font-size:8px}.stats{grid-template-columns:1fr 1fr}.stats>div:last-child{grid-column:1/-1}
+  .chart>div:not(.chartTitle){grid-template-columns:74px minmax(0,1fr) 30px}.thumb{min-height:140px}.audienceStrip{scrollbar-width:none}.audienceStrip::-webkit-scrollbar{display:none}
+}

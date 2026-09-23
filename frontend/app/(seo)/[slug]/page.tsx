@@ -53,7 +53,7 @@ const capabilities = [
   { icon: Scissors, title: "Start from ranked moments", text: "ClipKaro analyses the source before asking you to edit, so the first screen is a shortlist of moments with titles, hooks, reasons and scores — not a blank timeline." },
   { icon: Subtitles, title: "Review speech before captions", text: "Transcript Review helps you inspect uncertain lines before corrected text flows into captions and downstream creator assets." },
   { icon: Languages, title: "Built for Indian creator speech", text: "Hindi, Hinglish and Indian-English workflows are treated as real creator inputs, with India Quality Mode available where the creator wants that extra review layer." },
-  { icon: Clapperboard, title: "Finish inside one creator workflow", text: "Choose the moment, adjust framing and captions, render the Short, then publish to Instagram Reels or YouTube Shorts with Post Karo or download the MP4." },
+  { icon: Clapperboard, title: "Creator Studio keeps the final edit yours", text: "Drag captions, resize them from 65% to 160%, change text alignment, zoom or reframe video, switch Hook Text on or off, preserve source subtitles and export 9:16, 4:5 or 1:1." },
 ] as const;
 
 export default async function SeoLandingPage({ params }: PageProps) {
@@ -73,13 +73,9 @@ export default async function SeoLandingPage({ params }: PageProps) {
     mainEntityOfPage: { "@id": `https://clipkaro.pro/${page.slug}#page` },
     publisher: { "@id": "https://clipkaro.pro/#organization" },
     audience: { "@type": "Audience", audienceType: page.audience },
-    featureList: ["AI-ranked clip discovery", "Transcript and caption review", "Vertical framing controls", "Post Karo publishing to Instagram Reels and YouTube Shorts"],
-    offers: { "@type": "Offer", priceCurrency: "INR", price: "0", url: "https://clipkaro.pro/pricing", availability: "https://schema.org/InStock" },
-  };
-  const faqSchema = {
-    "@context": "https://schema.org",
-    "@type": "FAQPage",
-    mainEntity: page.faq.map((item) => ({ "@type": "Question", name: item.question, acceptedAnswer: { "@type": "Answer", text: item.answer } })),
+    featureList: ["AI-ranked clip discovery", "Smart Transcript Review", "Drag-and-place caption controls", "65% to 160% caption sizing with automatic reflow", "Caption alignment controls", "Video zoom and manual horizontal reframe", "Hook Text On/Off", "9:16, 4:5 and 1:1 exports", "Unlimited Post Karo publishing access on every plan", "₹1 Creator Pulse channel intelligence"],
+    isAccessibleForFree: true,
+    offers: { "@type": "Offer", priceCurrency: "INR", price: "0", url: "https://clipkaro.pro/pricing", availability: "https://schema.org/InStock", description: "Start free; ₹59 one-time Mini Pass and Creator from ₹199/month are available. Unlimited Post Karo access is included on every plan." },
   };
   const breadcrumbSchema = {
     "@context": "https://schema.org",
@@ -98,6 +94,8 @@ export default async function SeoLandingPage({ params }: PageProps) {
     description: page.description,
     about: { "@id": "https://clipkaro.pro/#software" },
     publisher: { "@id": "https://clipkaro.pro/#organization" },
+    inLanguage: "en-IN",
+    dateModified: "2026-09-23",
   };
 
   const words = page.h1.split(" ");
@@ -110,7 +108,6 @@ export default async function SeoLandingPage({ params }: PageProps) {
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }} />
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(webPageSchema) }} />
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }} />
-        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }} />
         <PublicSiteNav />
 
         <header className={styles.hero} data-public-reveal>
@@ -126,7 +123,7 @@ export default async function SeoLandingPage({ params }: PageProps) {
             <div className={styles.microTrust}>
               <span><ShieldCheck size={13}/> Use content you own or can process</span>
               <span><Scissors size={13}/> AI-ranked moments</span>
-              <span><Clapperboard size={13}/> Export or Post Karo</span>
+              <span><Clapperboard size={13}/> Unlimited Post Karo · every plan</span>
             </div>
           </div>
 
@@ -159,6 +156,8 @@ export default async function SeoLandingPage({ params }: PageProps) {
             <div className={styles.audienceCard}><span>WHO IT IS FOR</span><h3>{page.audience}</h3><div className={styles.usePills}>{page.useCases.slice(0,6).map((item)=><b key={item}>{item}</b>)}</div></div>
           </section>
 
+          <section className={styles.section} data-public-reveal><div className={styles.sectionHead}><span>CLIPKARO FACTS AT A GLANCE</span><h2>Affordable creation. Creator-controlled editing. Unlimited publishing access.</h2><p>These product facts stay consistent across ClipKaro so creators and search systems can understand the same offering without hidden conditions.</p></div><div className={styles.useGrid}><div className={styles.useItem}><Check size={15}/><span>Start free · Mini Pass ₹59 one-time · Creator ₹199/month</span></div><div className={styles.useItem}><Check size={15}/><span>Unlimited Post Karo access on every plan · no ClipKaro per-post quota</span></div><div className={styles.useItem}><Check size={15}/><span>Creator Studio: drag, resize and align captions · zoom · reframe · Hook Text On/Off</span></div><div className={styles.useItem}><Check size={15}/><span>Creator Pulse: ₹1 per successful public-channel analysis</span></div></div></section>
+
           <section className={styles.darkSection} data-public-reveal>
             <div className={styles.darkInner}>
               <div className={styles.darkCopy}><span>FROM A LONG TIMELINE TO A SHORTLIST</span><h2>Let the product do the searching before you do the editing.</h2><p>ClipKaro is designed around the expensive part of repurposing: finding the moment that can survive outside the full video. The creator sees ranked possibilities first, then chooses what actually deserves an export.</p><div className={styles.darkList}><div><Check size={15}/><span>Rank moments by hook, clarity, value and clean endings.</span></div><div><Check size={15}/><span>Keep the surrounding context visible before you commit to a cut.</span></div><div><Check size={15}/><span>Move from selection into captions, framing and export without restarting.</span></div></div></div>
@@ -176,7 +175,7 @@ export default async function SeoLandingPage({ params }: PageProps) {
 
           <section className={styles.section} id="faq" data-public-reveal><div className={styles.sectionHead}><span>QUESTIONS BEFORE YOU START</span><h2>Know what the workflow does before you upload.</h2></div><div className={styles.faq}>{page.faq.map((item)=><details key={item.question}><summary>{item.question}</summary><p>{item.answer}</p></details>)}</div></section>
 
-          <section className={styles.finalCta} data-public-reveal><h2>Start with one video. Judge the clips yourself.</h2><p>The useful test is simple: does ClipKaro surface moments you would actually want to publish?</p><TransitionLink href="/signup" className={styles.primary}>Create your first clips <ArrowRight size={16}/></TransitionLink></section>
+          <section className={styles.finalCta} data-public-reveal><h2>Start free. Find the moment. Finish the edit. Post Karo.</h2><p>Try the clipping workflow at ₹0, keep final control in Creator Studio, then use unlimited Post Karo publishing access on any plan when the Short is ready.</p><TransitionLink href="/signup" className={styles.primary}>Create my first Short free <ArrowRight size={16}/></TransitionLink></section>
         </main>
 
         <PublicSiteFooter />

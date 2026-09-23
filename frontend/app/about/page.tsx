@@ -4,8 +4,8 @@ import { PublicSiteNav } from "@/components/PublicSiteNav";
 import { AboutExperience } from "./AboutExperience";
 import unified from "./unified.module.css";
 
-const title = "About ClipKaro AI — YouTube URL to Shorts & Creator Video AI";
-const description = "ClipKaro AI is an India-first AI video clipper that turns authorised long videos into creator-ready Shorts with ranked moments, transcript review, captions, vertical editing and Post Karo publishing.";
+const title = "About ClipKaro AI — Affordable AI Video Clipping, Creator Studio & Post Karo";
+const description = "Learn how ClipKaro combines long-video-to-Shorts AI, creator-controlled editing, ₹1 Creator Pulse intelligence and unlimited Post Karo publishing access in an affordable India-first workflow.";
 
 export const metadata: Metadata = {
   title,
@@ -44,9 +44,10 @@ const aboutStructuredData = {
         "Smart Transcript Review",
         "Hindi, Hinglish and Indian-English creator workflows",
         "Caption-safe vertical rendering",
-        "Creator Studio editing and export controls",
-        "Creator Pulse YouTube channel intelligence",
-        "Post Karo publishing to connected Instagram Reels and YouTube Shorts accounts",
+        "Creator Studio drag-and-place captions, 65% to 160% sizing, alignment, zoom, reframe and Hook Text On/Off",
+        "₹1 Creator Pulse YouTube channel intelligence",
+        "Unlimited Post Karo publishing access to connected Instagram Reels and YouTube Shorts accounts on every plan",
+        "Free plan, ₹59 one-time Mini Pass and Creator plan from ₹199 per month",
       ],
     },
     {
@@ -57,6 +58,8 @@ const aboutStructuredData = {
       description,
       about: { "@id": "https://clipkaro.pro/#software" },
       publisher: { "@id": "https://clipkaro.pro/#organization" },
+      inLanguage: "en-IN",
+      dateModified: "2026-09-23",
     },
     {
       "@type": "BreadcrumbList",

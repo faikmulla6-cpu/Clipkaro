@@ -3,8 +3,8 @@ import { HomeExperience } from "@/components/HomeExperience";
 import { LEGAL_LINKS, TRUST_PROFILE } from "@/lib/legal";
 
 export const metadata: Metadata = {
-  title: { absolute: "ClipKaro AI — AI Video Clipper for YouTube Shorts & Reels" },
-  description: "Turn long videos into Shorts with ClipKaro AI: import a supported YouTube URL or upload a file, find strong moments, edit captions and framing, then publish to Instagram Reels or YouTube Shorts with free Post Karo.",
+  title: { absolute: "ClipKaro AI — Long Video to Shorts + Unlimited Post Karo" },
+  description: "Turn long videos into Shorts with AI-ranked moments, Creator Studio editing and unlimited Post Karo publishing access to Instagram Reels + YouTube Shorts. Start free.",
   keywords: [
     "AI video clipper",
     "YouTube URL to Shorts",
@@ -24,6 +24,9 @@ export const metadata: Metadata = {
     "AI video clipper India",
     "post Shorts to Instagram",
     "post Shorts to YouTube",
+    "unlimited social publishing for creators",
+    "affordable AI video clipper India",
+    "AI Shorts editor captions",
     "long video to Reels",
   ],
   alternates: { canonical: "/" },
@@ -42,14 +45,14 @@ export const metadata: Metadata = {
     type: "website",
     url: "/",
     siteName: "ClipKaro AI",
-    title: "ClipKaro AI — AI Video Clipper for YouTube Shorts & Reels",
-    description: "From one long video to strong Shorts: find moments with AI, review captions and framing, export, then publish to Instagram Reels or YouTube Shorts from ClipKaro.",
+    title: "ClipKaro AI — Long Video to Shorts + Unlimited Post Karo",
+    description: "Turn long videos into Shorts, refine them in Creator Studio and publish with unlimited Post Karo access on every plan.",
     images: [{ url: "/assets/clipkaro-icon.png", width: 1024, height: 1024, alt: "ClipKaro AI creator workflow platform" }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "ClipKaro AI — AI Video Clipper for YouTube Shorts & Reels",
-    description: "ClipKaro AI turns long videos into creator-ready Shorts and lets you publish finished clips to Instagram Reels and YouTube Shorts with free Post Karo.",
+    title: "ClipKaro AI — Long Video to Shorts + Unlimited Post Karo",
+    description: "AI clipping, creator-controlled editing, ₹1 Creator Pulse intelligence and unlimited Post Karo publishing access for Instagram Reels + YouTube Shorts.",
     images: ["/assets/clipkaro-icon.png"],
   },
 };
@@ -73,7 +76,8 @@ const organizationStructuredData = {
     email: TRUST_PROFILE.supportEmail,
     url: "https://clipkaro.pro/contact",
   },
-  description: "ClipKaro AI is an AI video clipper and video repurposing platform for creators, educators, podcasters and businesses that turns long-form video into short-form clips and supports direct publishing to Instagram Reels and YouTube Shorts.",
+  description: "ClipKaro AI is an India-first AI video clipping and creator workflow platform that turns long-form video into creator-reviewed Shorts, provides Creator Studio editing and supports unlimited Post Karo publishing access to Instagram Reels and YouTube Shorts on every plan.",
+  knowsAbout: ["AI video clipping", "short-form video repurposing", "YouTube Shorts", "Instagram Reels", "Hindi and Hinglish creator workflows", "creator publishing workflows"],
 };
 
 const websiteStructuredData = {
@@ -84,6 +88,7 @@ const websiteStructuredData = {
   alternateName: ["ClipKaro", "ClipKaroAI"],
   url: "https://clipkaro.pro/",
   publisher: { "@id": "https://clipkaro.pro/#organization" },
+  inLanguage: "en-IN",
   hasPart: LEGAL_LINKS.map(([name, href]) => ({
     "@type": "WebPage",
     name,
@@ -91,9 +96,23 @@ const websiteStructuredData = {
   })),
 };
 
+const homePageStructuredData = {
+  "@context": "https://schema.org",
+  "@type": "WebPage",
+  "@id": "https://clipkaro.pro/#home",
+  url: "https://clipkaro.pro/",
+  name: "ClipKaro AI — Long Video to Shorts + Unlimited Post Karo",
+  description: "Turn long videos into Shorts with AI-ranked moments, Creator Studio editing, ₹1 Creator Pulse intelligence and unlimited Post Karo publishing access.",
+  isPartOf: { "@id": "https://clipkaro.pro/#website" },
+  about: { "@id": "https://clipkaro.pro/#software" },
+  publisher: { "@id": "https://clipkaro.pro/#organization" },
+  inLanguage: "en-IN",
+  dateModified: "2026-09-23",
+};
+
 const softwareStructuredData = {
   "@context": "https://schema.org",
-  "@type": "SoftwareApplication",
+  "@type": ["SoftwareApplication", "WebApplication"],
   "@id": "https://clipkaro.pro/#software",
   name: "ClipKaro AI",
   url: "https://clipkaro.pro/",
@@ -101,13 +120,15 @@ const softwareStructuredData = {
   operatingSystem: "Web",
   publisher: { "@id": "https://clipkaro.pro/#organization" },
   mainEntityOfPage: { "@id": "https://clipkaro.pro/#website" },
-  description: "AI video clipping and repurposing for Indian creators: supported YouTube URL import, original-file upload fallback, ranked clip discovery, transcript review, Hindi/Hinglish workflows, captions, vertical editing, export, free Post Karo publishing to Instagram Reels and YouTube Shorts, Content Packs and Creator Pulse.",
+  description: "India-first AI video clipping and creator workflow software: turn long videos into ranked Shorts, refine them in Creator Studio, use ₹1 Creator Pulse for next-video intelligence, and publish with unlimited Post Karo access to Instagram Reels and YouTube Shorts.",
+  isAccessibleForFree: true,
+  browserRequirements: "Modern web browser with internet access",
   offers: {
     "@type": "Offer",
     priceCurrency: "INR",
     price: "0",
     url: "https://clipkaro.pro/pricing",
-    description: "A free plan is available; paid plans are listed on the pricing page.",
+    description: "Start free. A ₹59 one-time Mini Pass and monthly creator plans are also available; unlimited Post Karo publishing access is included on every plan.",
   },
   audience: {
     "@type": "Audience",
@@ -122,11 +143,14 @@ const softwareStructuredData = {
     "India Quality Mode for Hindi, Hinglish and Indian-English creator workflows",
     "Roman Hinglish caption support",
     "Caption-safe vertical video rendering",
-    "Creator Studio zoom and horizontal reframe controls",
+    "Creator Studio zoom and manual horizontal reframe controls",
     "9:16, 4:5 and 1:1 export controls",
-    "Caption style and caption position controls",
+    "Drag-and-place captions with 65% to 160% size control and automatic text reflow",
+    "Left, centre and right caption alignment",
+    "Hook Text on/off control",
+    "Caption presets, source-caption preservation and Brand Kit controls",
     "One video to complete Content Pack",
-    "Free Post Karo publishing to connected Instagram Reels and YouTube Shorts accounts",
+    "Unlimited Post Karo publishing access to connected Instagram Reels and YouTube Shorts accounts on every plan",
     "Publishing copy for additional social workflows",
     "₹1 Creator Pulse YouTube channel analysis",
     "Verified recent-upload momentum comparison",
@@ -134,78 +158,11 @@ const softwareStructuredData = {
     "One downloadable Creator Pulse thumbnail when generation is available",
     "Saved Creator Pulse history and previous-scan comparison",
     "Private source and export media handling",
-    "Brand Kit support",
-    "Free plan with Post Karo included",
+    "Free plan with 15 Karo Minutes and 2 Shorts per month",
+    "₹59 one-time Mini Pass and Creator plan from ₹199 per month",
   ],
 };
 
-const faqStructuredData = {
-  "@context": "https://schema.org",
-  "@type": "FAQPage",
-  mainEntity: [
-    {
-      "@type": "Question",
-      name: "Can I paste a YouTube URL into ClipKaro?",
-      acceptedAnswer: {
-        "@type": "Answer",
-        text: "Yes. ClipKaro accepts supported YouTube video, Shorts and live-replay URLs. You must own the video or have permission to process it.",
-      },
-    },
-    {
-      "@type": "Question",
-      name: "What happens if a YouTube URL cannot be imported?",
-      acceptedAnswer: {
-        "@type": "Answer",
-        text: "If direct acquisition is unavailable for a source, ClipKaro provides an original-file upload fallback so the creator can continue the same analysis, editing and export workflow.",
-      },
-    },
-    {
-      "@type": "Question",
-      name: "Can ClipKaro turn a long YouTube video into Shorts?",
-      acceptedAnswer: {
-        "@type": "Answer",
-        text: "ClipKaro can analyse an authorised source video, rank promising moments, support transcript review, captions and reframing, and render creator-approved short-form exports.",
-      },
-    },
-    {
-      "@type": "Question",
-      name: "Can ClipKaro publish finished Shorts directly to Instagram and YouTube?",
-      acceptedAnswer: {
-        "@type": "Answer",
-        text: "Yes. Post Karo lets signed-in users publish finished Shorts to connected Instagram Reels and YouTube Shorts accounts after the creator reviews and confirms the post. Post Karo is included on every ClipKaro plan, including Free.",
-      },
-    },
-    {
-      "@type": "Question",
-      name: "Is Post Karo free?",
-      acceptedAnswer: {
-        "@type": "Answer",
-        text: "Yes. Post Karo is included on every ClipKaro plan, including Free. Plan limits still control Karo Minutes, Short creation capacity, export resolution and watermark rules.",
-      },
-    },
-    {
-      "@type": "Question",
-      name: "Who is ClipKaro built for?",
-      acceptedAnswer: {
-        "@type": "Answer",
-        text: "ClipKaro is built for YouTubers, podcasters, educators, coaches, founders, businesses and creator teams that already have long-form video and want a faster create-to-publish workflow.",
-      },
-    },
-  ],
-};
-
-const urlToShortsHowToStructuredData = {
-  "@context": "https://schema.org",
-  "@type": "HowTo",
-  name: "How to turn a YouTube URL into Shorts with ClipKaro",
-  description: "Start from a supported YouTube link or upload the original file, then analyse, review and export creator-approved Shorts.",
-  step: [
-    { "@type": "HowToStep", name: "Paste the YouTube URL", text: "Paste an authorised YouTube video, Shorts or live-replay URL. If direct acquisition is unavailable, upload the original file instead." },
-    { "@type": "HowToStep", name: "Analyse the video", text: "ClipKaro transcribes the source and ranks promising moments." },
-    { "@type": "HowToStep", name: "Review and refine", text: "Review the suggested moments, transcript, captions and framing." },
-    { "@type": "HowToStep", name: "Export or publish the Short", text: "Render the creator-approved short-form output, then download it or publish to a connected Instagram Reels or YouTube Shorts account with Post Karo." },
-  ],
-};
 
 export default function Home() {
   return (
@@ -213,8 +170,7 @@ export default function Home() {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationStructuredData) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteStructuredData) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareStructuredData) }} />
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqStructuredData) }} />
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(urlToShortsHowToStructuredData) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(homePageStructuredData) }} />
       <HomeExperience />
     </>
   );

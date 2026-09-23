@@ -16,8 +16,10 @@ const browserCsp = "default-src 'self'; base-uri 'self'; object-src 'none'; form
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://clipkaro.pro"),
-  title: "ClipKaro AI — AI Video Clipper for YouTube Shorts & Reels",
-  description: "ClipKaro AI turns long videos into creator-ready Shorts with AI clip discovery, transcript review, captions, vertical editing and free Post Karo publishing to Instagram Reels and YouTube Shorts.",
+  title: "ClipKaro AI — AI Video Clipper for Shorts, Reels & Post Karo",
+  description: "Turn long videos into creator-ready Shorts with AI-ranked moments, Creator Studio editing, ₹1 Creator Pulse intelligence and unlimited Post Karo publishing access on every plan.",
+  creator: "ClipKaro AI",
+  publisher: "ClipKaro AI",
   applicationName: "ClipKaro AI",
   keywords: [
     "AI video clipper",
@@ -36,11 +38,10 @@ export const metadata: Metadata = {
     "ClipKaro AI",
     "AI video clipper India",
     "Post Karo",
+    "unlimited Post Karo publishing",
+    "affordable AI video clipper India",
     "publish Shorts to Instagram and YouTube",
   ],
-  alternates: {
-    canonical: "/",
-  },
   manifest: "/site.webmanifest",
   category: "video",
   icons: {
@@ -52,26 +53,29 @@ export const metadata: Metadata = {
     type: "website",
     url: "https://clipkaro.pro",
     siteName: "ClipKaro AI",
-    title: "ClipKaro AI — AI Video Clipper for YouTube Shorts & Reels",
-    description: "Turn one long video into strong Shorts, edit captions and framing, then publish finished clips to Instagram Reels or YouTube Shorts with ClipKaro AI.",
+    title: "ClipKaro AI — Long Video to Shorts + Unlimited Post Karo",
+    description: "AI clipping, Creator Studio editing, ₹1 Creator Pulse and unlimited Post Karo publishing access for finished Instagram Reels and YouTube Shorts.",
     images: [{ url: "/assets/clipkaro-icon.png", width: 1024, height: 1024, alt: "ClipKaro AI video clipping and content repurposing platform" }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "ClipKaro AI — AI Video Clipper for YouTube Shorts & Reels",
-    description: "AI video clipping, captions, vertical editing and direct Instagram Reels + YouTube Shorts publishing for creators in one ClipKaro workflow.",
+    title: "ClipKaro AI — Long Video to Shorts + Unlimited Post Karo",
+    description: "Turn long video into Shorts, refine the edit, get ₹1 Creator Pulse intelligence and publish with unlimited Post Karo access.",
     images: ["/assets/clipkaro-icon.png"],
   },
 };
 
 export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
   themeColor: "#07110d",
   colorScheme: "light",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" data-scroll-behavior="smooth">
+    <html lang="en-IN" data-scroll-behavior="smooth">
       <head>
         {/* Hostinger currently replaces upstream CSP headers with only upgrade-insecure-requests.
             Keep an in-document CSP as a browser-enforced fallback. X-Frame-Options still handles framing. */}

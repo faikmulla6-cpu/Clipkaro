@@ -168,12 +168,17 @@ const productSurfaces = [
   {
     icon: Clapperboard,
     title: "Creator Studio controls",
-    text: "The editor exposes zoom, manual horizontal reframe, aspect ratio, caption style, caption position, watermark, quality and Brand Kit controls before export.",
+    text: "Drag captions anywhere, resize them from 65% to 160% with automatic reflow, align text left/centre/right, zoom or manually reframe the video, choose 9:16/4:5/1:1, toggle Hook Text, preserve source captions and apply Brand Kit settings before export.",
   },
   {
     icon: Scissors,
     title: "Caption-safe framing",
     text: "If the source already contains burned-in subtitles, ClipKaro can preserve the subtitle area instead of destroying it during vertical conversion.",
+  },
+  {
+    icon: Youtube,
+    title: "Unlimited Post Karo publishing access",
+    text: "Every plan, including Free, can use Post Karo without a ClipKaro per-post quota. Creators connect Instagram Reels or YouTube Shorts, review each publishing draft and confirm the post; platform rules can still apply.",
   },
   {
     icon: Zap,

@@ -21,29 +21,34 @@ const pricing = read("frontend/app/pricing/page.tsx");
 const nav = read("frontend/components/PublicSiteNav.tsx");
 const footer = read("frontend/components/PublicSiteFooter.tsx");
 
-requireText(layout, "AI Video Clipper for YouTube Shorts & Reels", "global metadata must describe the primary product");
+requireText(layout, "AI Video Clipper for Shorts, Reels & Post Karo", "global metadata must describe the primary product");
+if (layout.includes("canonical:")) throw new Error("Search discovery contract failed: root layout must not impose a homepage canonical on child routes");
+if (layout.includes('"max-video-preview"') || layout.includes("robots: {")) throw new Error("Search discovery contract failed: global layout must not force index directives onto private app routes");
 requireText(homePage, '"max-video-preview": -1', "Googlebot may use full video previews on the public homepage");
 requireText(homePage, '"max-image-preview": "large"', "Googlebot may use large image previews on the public homepage");
-if (layout.includes('"max-video-preview"') || layout.includes('robots: {')) throw new Error("Search discovery contract failed: global layout must not force index directives onto private app routes");
 requireText(home, "AI VIDEO CLIPPER FOR INDIA", "homepage must state the primary category visibly");
-requireText(home, "Post Karo free on every plan", "homepage must state the free publishing differentiator visibly");
-requireText(home, "Can ClipKaro publish Shorts to Instagram and YouTube?", "homepage must expose an answer-first publishing question");
-requireText(homePage, '"SoftwareApplication"', "homepage must publish SoftwareApplication structured data");
-requireText(homePage, "Free Post Karo publishing", "homepage structured data must reflect current publishing capability");
-requireText(homePage, "Is Post Karo free?", "homepage answer schema must reflect current pricing truth");
+requireText(home, "Unlimited Post Karo on every plan", "homepage must state the unlimited publishing differentiator");
+requireText(home, "Is Post Karo unlimited?", "homepage must answer the publishing-limit question directly");
+requireText(home, "What can Creator Studio edit?", "homepage must expose editor controls in answer-first copy");
+requireText(homePage, '"WebApplication"', "homepage must identify ClipKaro as web software");
+requireText(homePage, "Unlimited Post Karo publishing access", "homepage structured data must reflect current publishing capability");
+requireText(homePage, "65% to 160%", "homepage structured data must reflect current Creator Studio caption controls");
+if (homePage.includes('"FAQPage"') || homePage.includes('"HowTo"')) throw new Error("Search discovery contract failed: homepage must not emit retired Google FAQ/HowTo rich-result markup");
 
-for (const slug of ["ai-video-clipper-india", "post-shorts-instagram-youtube"]) {
+for (const slug of ["ai-video-clipper-india", "post-shorts-instagram-youtube", "shorts-video-editor-ai"]) {
   requireText(slugs, `"${slug}"`, `public SEO slug ${slug} must remain registered`);
 }
 requireText(seoPages, 'title: "AI Video Clipper India"', "AI video clipper acquisition content must remain defined");
 requireText(seoPages, 'title: "Post Shorts to Instagram and YouTube"', "Post Karo acquisition content must remain defined");
+requireText(seoPages, 'title: "Creator Studio AI Shorts Editor"', "Creator Studio acquisition content must remain defined");
 requireText(seoTemplate, "QUICK ANSWER", "SEO pages must expose answer-first visible copy");
-requireText(seoTemplate, '"FAQPage"', "SEO pages must keep visible FAQs machine-readable");
 requireText(seoTemplate, '"SoftwareApplication"', "SEO pages must identify the product entity");
+requireText(seoTemplate, '"BreadcrumbList"', "SEO pages must keep breadcrumb structured data");
+if (seoTemplate.includes('"FAQPage"')) throw new Error("Search discovery contract failed: SEO template must not emit FAQPage rich-result markup");
 requireText(pricing, "pricingStructuredData", "pricing page must expose machine-readable current offers");
 requireText(pricing, 'name: "Free", price: "0"', "pricing schema must include the free plan");
 requireText(pricing, 'name: "Mini Pass", price: "59"', "pricing schema must include the ₹59 Mini Pass");
-
+requireText(pricing, 'name: "Creator", price: "199"', "pricing schema must include the ₹199 Creator plan");
 for (const privatePath of ['"/account"', '"/admin"', '"/api"', '"/creator-pulse"', '"/dashboard"', '"/editor"', '"/post-karo"', '"/projects"', '"/upload"']) {
   requireText(robots, privatePath, `${privatePath} must stay excluded from search indexing`);
 }
@@ -55,16 +60,19 @@ requireText(nextConfig, '"noindex, nofollow, noarchive"', "private app routes mu
 requireText(nextConfig, '"/post-karo/:path*"', "authenticated Post Karo must stay out of the search index");
 requireText(nextConfig, '"/creator-pulse/:path*"', "authenticated Creator Pulse must stay out of the search index");
 requireText(sitemap, "SEO_PAGES.map", "sitemap must automatically include all public SEO pages");
-requireText(sitemap, "2026-09-22", "sitemap freshness signal must reflect this launch update");
+requireText(sitemap, "2026-09-23", "sitemap freshness signal must reflect the current public update");
 
-requireText(llms, "Post Karo is included on every ClipKaro plan, including Free.", "answer-engine facts must reflect Post Karo pricing");
+requireText(llms, "no ClipKaro per-post publishing quota", "answer-engine facts must define unlimited Post Karo accurately");
 requireText(llms, "does not guarantee virality", "answer-engine facts must preserve performance boundaries");
-requireText(llms, "https://clipkaro.pro/ai-video-clipper-india", "answer-engine index must include AI video clipper landing page");
-requireText(llms, "https://clipkaro.pro/post-shorts-instagram-youtube", "answer-engine index must include Post Karo landing page");
+requireText(llms, "https://clipkaro.pro/shorts-video-editor-ai", "answer-engine index must include Creator Studio");
+requireText(llms, "₹1-per-successful-analysis", "answer-engine facts must reflect Creator Pulse pricing");
+for (const href of ["/ai-video-clipper-india", "/shorts-video-editor-ai", "/post-shorts-instagram-youtube"]) {
+  requireText(nav, `href: "${href}"`, `${href} must be internally linked in navigation`);
+  requireText(footer, `href="${href}"`, `${href} must be internally linked in footer`);
+}
 
-requireText(nav, 'href: "/ai-video-clipper-india"', "primary AI video clipper page must be internally linked in navigation");
-requireText(nav, 'href: "/post-shorts-instagram-youtube"', "Post Karo landing page must be internally linked in navigation");
-requireText(footer, 'href="/ai-video-clipper-india"', "primary AI video clipper page must be internally linked in footer");
-requireText(footer, 'href="/post-shorts-instagram-youtube"', "Post Karo landing page must be internally linked in footer");
-
+for (const route of ["terms", "privacy", "refund-policy", "acceptable-use", "copyright", "legal-notice"]) {
+  const legalLayout = read(`frontend/app/${route}/layout.tsx`);
+  requireText(legalLayout, `canonical: "/${route}"`, `${route} must have its own canonical`);
+}
 console.log("Search discovery / GEO / AEO contract: passed");

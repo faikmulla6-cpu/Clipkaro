@@ -23,10 +23,10 @@ export function PublicPricingView({ plans }: { plans: PublicPlanView[] }) {
         <PublicSiteNav />
         <main>
           <header className={styles.hero} data-public-reveal>
-            <span><Sparkles size={14}/> Fair access pricing</span>
-            <h1>Start small. <em>Grow when you grow.</em></h1>
-            <p>Start free, create your first Shorts, and use Post Karo to publish finished clips to Instagram Reels or YouTube Shorts. Pay only when you need more creation capacity, 1080p exports or no watermark.</p>
-            <div className={styles.heroTrust}><b>No card required to start</b><b>Post Karo included on every plan</b><b>Mini Pass never auto-renews</b><b>Monthly plans can be changed or cancelled</b></div>
+            <span><Sparkles size={14}/> Extremely affordable creator pricing</span>
+            <h1>Start free. <em>Pay for creation capacity, not every post.</em></h1>
+            <p>ClipKaro starts at ₹0, offers a ₹59 one-time Mini Pass and Creator from ₹199/month. Every plan includes unlimited Post Karo publishing access to connected Instagram Reels and YouTube Shorts accounts.</p>
+            <div className={styles.heroTrust}><b>No card required to start</b><b>Unlimited Post Karo on every plan</b><b>Mini Pass never auto-renews</b><b>Platform publishing rules may apply</b></div>
           </header>
 
           <section className={styles.planSection} data-public-reveal>
@@ -50,7 +50,7 @@ export function PublicPricingView({ plans }: { plans: PublicPlanView[] }) {
           </section>
 
           <section className={styles.pulseCard} data-public-reveal>
-            <div><span><Sparkles size={13}/> Separate from clipping plans</span><h2>Creator Pulse stays simple: ₹1 per successful channel analysis.</h2><p>Creator Pulse uses its own wallet balance and does not consume Karo Minutes or Short-export quota.</p></div>
+            <div><span><Sparkles size={13}/> Separate from clipping plans</span><h2>Creator Pulse stays simple: ₹1 per successful channel analysis.</h2><p>Creator Pulse uses its own wallet balance and does not consume Karo Minutes or Short-export quota. Use the recommendation to plan the next video, then bring the finished recording back into ClipKaro for clipping, editing and Post Karo publishing.</p></div>
             <TransitionLink href="/youtube-channel-analyzer">Explore Creator Pulse <ArrowRight size={15}/></TransitionLink>
           </section>
 
