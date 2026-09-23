@@ -10,10 +10,10 @@ export function PublicSiteFooter() {
       <div className={styles.top}>
         <div className={styles.brand}>
           <Logo light transition />
-          <p>ClipKaro AI turns long-form video into creator-ready Shorts, then lets you publish finished clips to Instagram Reels and YouTube Shorts with free Post Karo.</p>
+          <p>ClipKaro AI turns long videos into Shorts, gives creators final control in Creator Studio, offers ₹1 Creator Pulse intelligence and includes unlimited Post Karo publishing access on every plan.</p>
         </div>
         <div className={styles.columns}>
-          <div><b>Product</b><TransitionLink href="/youtube-video-to-shorts-ai">YouTube URL → Shorts</TransitionLink><TransitionLink href="/ai-video-clipper-india">AI Video Clipper India</TransitionLink><TransitionLink href="/post-shorts-instagram-youtube">Post Shorts to Instagram + YouTube</TransitionLink><TransitionLink href="/youtube-channel-analyzer">Creator Pulse</TransitionLink><TransitionLink href="/pricing">Pricing</TransitionLink></div>
+          <div><b>Product</b><TransitionLink href="/youtube-video-to-shorts-ai">YouTube URL → Shorts</TransitionLink><TransitionLink href="/ai-video-clipper-india">AI Video Clipper India</TransitionLink><TransitionLink href="/shorts-video-editor-ai">Creator Studio Editor</TransitionLink><TransitionLink href="/post-shorts-instagram-youtube">Unlimited Post Karo Publishing</TransitionLink><TransitionLink href="/youtube-channel-analyzer">Creator Pulse · ₹1</TransitionLink><TransitionLink href="/pricing">Pricing</TransitionLink></div>
           <div><b>Company</b><TransitionLink href="/about">About</TransitionLink><TransitionLink href="/contact">Contact</TransitionLink><TransitionLink href="/about#founder">Founder</TransitionLink></div>
           <div><b>Legal</b>{LEGAL_LINKS.map(([label, href]) => <TransitionLink key={href} href={href}>{label}</TransitionLink>)}</div>
         </div>

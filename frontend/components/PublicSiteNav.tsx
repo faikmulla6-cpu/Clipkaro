@@ -4,6 +4,7 @@ import {
   Activity,
   ArrowRight,
   ChevronDown,
+  Clapperboard,
   Languages,
   Link2,
   Menu,
@@ -46,9 +47,15 @@ const products = [
     icon: Languages,
   },
   {
+    href: "/shorts-video-editor-ai",
+    label: "Creator Studio",
+    text: "Drag captions, reframe video, toggle Hook Text and control the final Short.",
+    icon: Clapperboard,
+  },
+  {
     href: "/post-shorts-instagram-youtube",
     label: "Post Karo",
-    text: "Publish finished Shorts to Instagram + YouTube.",
+    text: "Unlimited publishing access to Instagram + YouTube on every plan.",
     icon: ArrowRight,
   },
   {
@@ -174,7 +181,7 @@ export function PublicSiteNav({ cta = "start" }: PublicSiteNavProps) {
                         ClipKaro workspace
                       </span>
                       <p className="mt-2 max-w-[430px] text-[17px] font-extrabold leading-snug tracking-[-0.02em]">
-                        One connected workflow to clip, edit and publish creator-ready Shorts.
+                        One affordable workflow to clip, edit and publish creator-ready Shorts.
                       </p>
                     </div>
                     <span className="shrink-0 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[10px] font-extrabold text-emerald-50">
@@ -261,7 +268,7 @@ export function PublicSiteNav({ cta = "start" }: PublicSiteNavProps) {
             <TransitionLink
               href={primaryHref}
               onClick={closeAll}
-              className="inline-flex h-10 items-center rounded-[12px] bg-emerald-800 px-3 text-[10.5px] font-black text-white shadow-[0_8px_20px_rgba(22,101,72,0.18)] sm:px-4 sm:text-[11px]"
+              className="inline-flex h-11 items-center rounded-[12px] bg-emerald-800 px-3 text-[10.5px] font-black text-white shadow-[0_8px_20px_rgba(22,101,72,0.18)] sm:px-4 sm:text-[11px]"
             >
               {cta === "pulse" ? "Pulse · ₹1" : "Start free"}
             </TransitionLink>
@@ -271,7 +278,7 @@ export function PublicSiteNav({ cta = "start" }: PublicSiteNavProps) {
               aria-expanded={mobileOpen}
               aria-controls="clipkaro-mobile-menu"
               onClick={() => setMobileOpen((value) => !value)}
-              className="grid h-10 w-10 place-items-center rounded-[12px] border border-emerald-950/10 bg-white text-emerald-950 shadow-sm transition-all duration-200 active:scale-95"
+              className="grid h-11 w-11 place-items-center rounded-[12px] border border-emerald-950/10 bg-white text-emerald-950 shadow-sm transition-all duration-200 active:scale-95"
             >
               {mobileOpen ? <X size={20} /> : <Menu size={21} />}
             </button>
@@ -295,7 +302,7 @@ export function PublicSiteNav({ cta = "start" }: PublicSiteNavProps) {
         aria-hidden={!mobileOpen}
         aria-label="Explore ClipKaro"
         className={cn(
-          "fixed bottom-3 right-3 top-[82px] z-[95] flex w-[calc(100%-1.5rem)] max-w-[430px] flex-col overflow-y-auto overscroll-contain rounded-[24px] border border-emerald-950/10 bg-white/95 p-4 shadow-[0_28px_90px_rgba(7,39,23,0.28)] backdrop-blur-2xl transition-all duration-300 lg:hidden",
+          "fixed bottom-[max(0.75rem,env(safe-area-inset-bottom))] right-3 top-[82px] z-[95] flex w-[calc(100%-1.5rem)] max-w-[430px] flex-col overflow-y-auto overscroll-contain rounded-[24px] border border-emerald-950/10 bg-white/95 p-4 shadow-[0_28px_90px_rgba(7,39,23,0.28)] backdrop-blur-2xl transition-all duration-300 lg:hidden",
           mobileOpen
             ? "visible translate-x-0 opacity-100"
             : "invisible translate-x-[108%] pointer-events-none opacity-0",
@@ -303,8 +310,8 @@ export function PublicSiteNav({ cta = "start" }: PublicSiteNavProps) {
       >
         <div className="rounded-[18px] bg-gradient-to-br from-emerald-950 via-emerald-900 to-emerald-800 p-4 text-white">
           <span className="text-[10px] font-black uppercase tracking-[0.18em] text-lime-300">Explore ClipKaro</span>
-          <h2 className="mt-2 text-[19px] font-black leading-tight tracking-[-0.03em]">Create, edit and publish Shorts from one connected workflow.</h2>
-          <p className="mt-2 text-[11px] leading-relaxed text-emerald-100/85">AI clipping, captions, Post Karo publishing, creator intelligence and pricing in one place.</p>
+          <h2 className="mt-2 text-[19px] font-black leading-tight tracking-[-0.03em]">Find it. Edit it. Post Karo.</h2>
+          <p className="mt-2 text-[11px] leading-relaxed text-emerald-100/85">AI clipping, Creator Studio, ₹1 Creator Pulse and unlimited Post Karo publishing access in one affordable creator workflow.</p>
         </div>
 
         <div className="mt-3 grid gap-2">

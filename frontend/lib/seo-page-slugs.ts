@@ -9,4 +9,5 @@ export const SEO_PAGE_SLUGS = [
   "talking-head-video-to-reels",
   "ai-video-clipper-india",
   "post-shorts-instagram-youtube",
+  "shorts-video-editor-ai",
 ] as const;

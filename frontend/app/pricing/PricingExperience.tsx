@@ -80,12 +80,12 @@ declare global {
 }
 
 const copy: Record<string, { tagline: string; features: string[] }> = {
-  free: { tagline: "Try ClipKaro before paying", features: ["15 Karo Minutes / month", "2 Shorts / month", "720p with ClipKaro watermark", "Post Karo · Instagram + YouTube"] },
-  mini_pass: { tagline: "No subscription. Use it when you need it.", features: ["25 Karo Minutes", "5 Shorts", "1080p · no watermark", "Valid for 30 days", "Post Karo · Instagram + YouTube"] },
-  creator: { tagline: "For new creators building consistency", features: ["60 Karo Minutes / month", "15 Shorts / month", "1080p · no watermark", "Full AI clip quality", "Post Karo · Instagram + YouTube"] },
-  growth: { tagline: "For serious creators publishing every week", features: ["180 Karo Minutes / month", "50 Shorts / month", "1080p · no watermark", "Brand kit + creator workflow", "Post Karo · Instagram + YouTube"] },
-  pro: { tagline: "For daily creators and growing channels", features: ["480 Karo Minutes / month", "150 Shorts / month", "1080p · no watermark", "Priority creator workflow", "Post Karo · Instagram + YouTube"] },
-  agency: { tagline: "For client work and high-volume teams", features: ["1,500 Karo Minutes / month", "500 Shorts / month", "1080p · no watermark", "Agency-scale usage", "Post Karo · Instagram + YouTube"] },
+  free: { tagline: "Try ClipKaro before paying", features: ["15 Karo Minutes / month", "2 Shorts / month", "720p with ClipKaro watermark", "Unlimited Post Karo · Instagram + YouTube"] },
+  mini_pass: { tagline: "No subscription. Use it when you need it.", features: ["25 Karo Minutes", "5 Shorts", "1080p · no watermark", "Valid for 30 days", "Unlimited Post Karo · Instagram + YouTube"] },
+  creator: { tagline: "For new creators building consistency", features: ["60 Karo Minutes / month", "15 Shorts / month", "1080p · no watermark", "Full AI clip quality", "Unlimited Post Karo · Instagram + YouTube"] },
+  growth: { tagline: "For serious creators publishing every week", features: ["180 Karo Minutes / month", "50 Shorts / month", "1080p · no watermark", "Brand kit + creator workflow", "Unlimited Post Karo · Instagram + YouTube"] },
+  pro: { tagline: "For daily creators and growing channels", features: ["480 Karo Minutes / month", "150 Shorts / month", "1080p · no watermark", "Priority creator workflow", "Unlimited Post Karo · Instagram + YouTube"] },
+  agency: { tagline: "For client work and high-volume teams", features: ["1,500 Karo Minutes / month", "500 Shorts / month", "1080p · no watermark", "Agency-scale usage", "Unlimited Post Karo · Instagram + YouTube"] },
 };
 
 const fallbackPlans: Plan[] = [
@@ -439,7 +439,7 @@ export function PricingExperience({ publicFallback }: { publicFallback?: React.R
   }
 
   return <AppShell title="Plans & billing" subtitle="Fair Access Pricing — same strong AI, pay only for the usage you need.">
-    <div className="billing-principle"><Sparkles size={18}/><div><b>Start small. Grow when you grow.</b><span>Every paid plan includes 1080p, no watermark and the same core AI clipping quality. Post Karo publishing is free on every plan, including Free.</span></div><ShieldCheck size={18}/></div>
+    <div className="billing-principle"><Sparkles size={18}/><div><b>Start small. Grow when you grow.</b><span>Every paid plan includes 1080p, no watermark and the same core AI clipping quality. Unlimited Post Karo publishing access is included on every plan, including Free; third-party platform rules can still apply.</span></div><ShieldCheck size={18}/></div>
     {legalStatus && legalStatus.razorpay_mode === "test" && <div className="info-banner" style={{background: "#e8f5e9", border: "1px solid #c8e6c9", color: "#1b5e20", padding: 12, borderRadius: 8, marginBottom: 16}}>🧪 <b>Razorpay Test Mode</b> — Payments are simulated. No real money will be charged. Use test card numbers from Razorpay documentation.</div>}
     {legalStatus && legalStatus.razorpay_mode === "live" && legalStatus.development_live_opt_in && <div className="error-banner"><span>⚠️ <b>Razorpay LIVE Mode</b> — this local checkout can charge real money. Use only an account/payment method you intentionally want to charge.</span></div>}
     {error && <div className="error-banner"><span>{error}</span></div>}

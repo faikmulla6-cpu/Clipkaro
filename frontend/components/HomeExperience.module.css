@@ -54,3 +54,21 @@
 @media(max-width:940px){.answerSection{grid-template-columns:1fr;gap:34px}.answerLead{position:relative;top:auto;max-width:760px}.answerGrid{max-width:900px}}
 @media(max-width:680px){.answerSection{padding:76px 18px}.answerLead h2{font-size:42px;letter-spacing:-2.4px}.answerGrid{grid-template-columns:1fr}.answerGrid article{min-height:auto}}
 @media(prefers-reduced-motion:reduce){.answerGrid article{transition:none!important}}
+
+/* Mobile hardening: public homepage */
+@media(max-width:760px){
+  .page{overflow-x:hidden}.hero,.pulse,.workflowSection,.featureStage,.audienceSection,.pricing,.creatorStory,.faqSection{padding-left:16px;padding-right:16px}
+  .heroGrid,.pulseInner{grid-template-columns:minmax(0,1fr)!important;gap:38px;min-width:0}.heroCopy,.workspaceWrap,.pulseCopy,.pulsePanel{min-width:0;width:100%}
+  .eyebrow{max-width:100%;white-space:normal;line-height:1.35}.heroActions{display:grid;grid-template-columns:1fr}.heroActions a,.limeButton{width:100%;min-height:50px}
+  .workspaceWrap{animation:none;filter:none}.workspace{transform:none!important;border-radius:22px}.floatNote{display:none}.workspaceGrid{grid-template-columns:1fr;min-height:0}.workspaceSide{display:none}.workspaceMain{padding:12px}
+  .videoRow{grid-template-columns:minmax(0,1fr) 108px;gap:8px;min-height:225px}.momentsPanel{display:none}.timeline{margin-top:8px}.workspaceActions{position:static;display:grid;grid-template-columns:1fr;margin-top:10px;padding:0 2px}.workspaceActions span{min-height:44px;justify-content:center}
+  .productRail{grid-template-columns:1fr 1fr;gap:9px;margin-top:42px}.productRail>a{grid-template-columns:40px 1fr;padding:13px;min-width:0}.productRail>a>svg{width:40px;height:40px;padding:10px}.productRail b,.productRail small{overflow-wrap:anywhere}
+  .pulse{padding-top:76px;padding-bottom:76px}.pulsePanel{padding:14px;border-radius:21px;transform:none!important}.pulseDashboard{grid-template-columns:1fr}.opportunities>div{grid-template-columns:repeat(3,minmax(0,1fr))}.pulseChecks{grid-template-columns:1fr}
+  .workflowIntro{margin-top:20px;padding-left:0}.workflowGrid,.featureGrid,.audienceGrid,.planGrid{grid-template-columns:1fr!important}.workflowGrid:before,.workflowGrid:after,.stepArrow{display:none}.featureAside{margin-top:22px;padding-left:0}.featureAside a{min-height:44px;align-items:center}.answerLead h2{overflow-wrap:anywhere}
+}
+@media(max-width:430px){
+  .hero{padding-top:58px}.hero h1{font-size:clamp(38px,12vw,50px);letter-spacing:-2.6px}.heroCopy>p{font-size:15px}.heroTrust{display:grid;grid-template-columns:1fr}
+  .videoRow{grid-template-columns:1fr}.shortVideo{display:none}.workspaceTop small{font-size:6px}.workspaceTitle{align-items:flex-start}.workspaceTitle>span{white-space:nowrap}
+  .productRail{grid-template-columns:1fr}.productRail>a{min-height:68px}.pulseStats{grid-template-columns:1fr 1fr}.pulseStats>div:last-child{grid-column:1/-1}.opportunities>div{grid-template-columns:1fr}.opportunities article{min-height:96px}
+  .answerSection{padding-left:16px;padding-right:16px}.answerGrid article{padding:20px}.pricingHead h2,.featureLead h2,.audienceHead h2,.faqHead h2{overflow-wrap:anywhere}
+}

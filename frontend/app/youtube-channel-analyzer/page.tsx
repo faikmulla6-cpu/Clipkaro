@@ -21,8 +21,8 @@ import { PublicSiteFooter } from "@/components/PublicSiteFooter";
 import { PublicSiteNav } from "@/components/PublicSiteNav";
 import styles from "./page.module.css";
 
-const title = "AI YouTube Channel Analyzer India — Creator Pulse | ClipKaro AI";
-const description = "Analyse public YouTube channel performance with Creator Pulse for ₹1 per successful Pulse. Compare recent upload momentum and get one evidence-led next-video idea, hook, angle and downloadable thumbnail.";
+const title = "₹1 YouTube Channel Analyzer & Next Video Idea — Creator Pulse | ClipKaro AI";
+const description = "Run Creator Pulse for ₹1 per successful YouTube channel analysis. Compare verified public upload momentum and get one evidence-led next-video title, angle, opening hook and thumbnail when available.";
 
 export const metadata: Metadata = {
   title,
@@ -39,7 +39,9 @@ const webPageSchema = {
   url: "https://clipkaro.pro/youtube-channel-analyzer",
   description,
   isPartOf: { "@type": "WebSite", name: "ClipKaro AI", url: "https://clipkaro.pro/" },
-  about: { "@type": "SoftwareApplication", name: "Creator Pulse by ClipKaro AI", applicationCategory: "MultimediaApplication", operatingSystem: "Web" },
+  about: { "@id": "https://clipkaro.pro/youtube-channel-analyzer#service" },
+  inLanguage: "en-IN",
+  dateModified: "2026-09-23",
 };
 
 const breadcrumbSchema = {
@@ -64,7 +66,7 @@ const steps = [
   ["01", "Enter your public YouTube channel", "Use the channel handle or supported channel identifier. Creator Pulse starts from public YouTube evidence rather than asking for private Studio access."],
   ["02", "Verify and calculate the snapshot", "ClipKaro checks the channel, calculates recent performance and compares the new Pulse with saved history when a previous snapshot exists."],
   ["03", "Turn evidence into one next move", "The result explains what deserves attention and prepares one evidence-led next-video title, reason, angle, opening hook and confidence state."],
-  ["04", "Take the idea into production", "Use the recommendation and download the prepared thumbnail when available. The creator remains responsible for the final topic, claims, edit and publishing decision."],
+  ["04", "Take the idea into production", "Use the recommendation and download the prepared thumbnail when available. Record the idea, then bring the long video into ClipKaro to find Shorts, finish them in Creator Studio and publish with Post Karo."],
 ] as const;
 
 const audiences = [
@@ -82,14 +84,23 @@ const faqs = [
   ["What happens if the recommendation or thumbnail service is unavailable?", "Your verified channel analysis remains the important result. Optional intelligence is designed to fail without erasing the successful Pulse data."],
 ] as const;
 
-const faqSchema = {
+const serviceSchema = {
   "@context": "https://schema.org",
-  "@type": "FAQPage",
-  mainEntity: faqs.map(([question, answer]) => ({
-    "@type": "Question",
-    name: question,
-    acceptedAnswer: { "@type": "Answer", text: answer },
-  })),
+  "@type": "Service",
+  "@id": "https://clipkaro.pro/youtube-channel-analyzer#service",
+  name: "Creator Pulse by ClipKaro AI",
+  serviceType: "Public YouTube channel analysis and next-video decision support",
+  provider: { "@id": "https://clipkaro.pro/#organization" },
+  url: "https://clipkaro.pro/youtube-channel-analyzer",
+  description,
+  areaServed: { "@type": "Country", name: "India" },
+  offers: {
+    "@type": "Offer",
+    price: "1",
+    priceCurrency: "INR",
+    url: "https://clipkaro.pro/youtube-channel-analyzer",
+    description: "₹1 for a successful Creator Pulse analysis.",
+  },
 };
 
 export default function YoutubeChannelAnalyzerPage() {
@@ -98,7 +109,7 @@ export default function YoutubeChannelAnalyzerPage() {
       <div className={`landing ${styles.page}`}>
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(webPageSchema) }} />
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }} />
-        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }} />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(serviceSchema) }} />
         <PublicSiteNav cta="pulse" />
 
         <header className={styles.hero} data-public-reveal>
