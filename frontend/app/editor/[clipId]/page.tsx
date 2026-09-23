@@ -284,6 +284,20 @@ export default function Editor() {
     setCaptionDragging(false);
   }
 
+  function nudgeCaption(event: React.KeyboardEvent<HTMLDivElement>) {
+    const direction = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key];
+    if (!direction) return;
+    event.preventDefault();
+    const step = event.shiftKey ? 5 : 1;
+    const style = captionStyles.find(item => item.id === captionStyle);
+    const inset = clamp((style?.horizontal_inset_ratio ?? .06) * 100, 4, 20);
+    const baseY = captionY ?? (captionPosition === "center" ? 50 : captionPosition === "above"
+      ? (style?.above_safe_ratio ?? .34) * 100
+      : (1 - (style?.bottom_safe_ratio ?? .18)) * 100);
+    setCaptionX(value => Number(clamp(value + direction[0] * step, inset, 100 - inset).toFixed(1)));
+    setCaptionY(Number(clamp(baseY + direction[1] * step, 6, 94).toFixed(1)));
+  }
+
   function seekToClipStart() {
     if (!videoRef.current) return;
     videoRef.current.currentTime = start;
@@ -515,6 +529,9 @@ export default function Editor() {
               className={`caption-preview caption-draggable style-${captionStyle} ${positionClass} ${captionDragging ? "caption-dragging" : ""}`}
               style={previewStyle}
               title="Drag caption to place it"
+              tabIndex={0}
+              aria-label="Caption preview. Drag to place it, or use arrow keys for precise movement."
+              onKeyDown={nudgeCaption}
               onPointerDown={beginCaptionDrag}
               onPointerMove={moveCaptionDrag}
               onPointerUp={endCaptionDrag}
