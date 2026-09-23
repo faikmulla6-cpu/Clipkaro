@@ -559,7 +559,7 @@ export default function Editor() {
               {preserveSourceCaptions && <p className="zoom-safe-note"><AlertTriangle size={12}/><span>Zoom is held at 100% while source-caption preservation is on so burned-in subtitles are not cropped.</span></p>}
             </div>
             <div className="editor-section caption-layout-section">
-              <div className="caption-control-head"><label><MoveHorizontal size={13}/> Caption placement</label><button type="button" onClick={resetCaptionLayout} disabled={captionY === null && captionPosition === "bottom" && captionX === 50 && captionScale === 1}>Reset</button></div>
+              <div className="caption-control-head"><label><MoveHorizontal size={13}/> Caption placement</label><button type="button" onClick={resetCaptionLayout} disabled={captionY === null && captionPosition === "bottom" && captionX === 50 && captionScale === 1 && captionAlignment === "center"}>Reset</button></div>
               <div className="segmented three caption-presets">
                 <button type="button" className={captionY === null && captionPosition === "bottom" ? "active" : ""} onClick={() => captionPreset("bottom")}>Lower</button>
                 <button type="button" className={captionY === null && captionPosition === "center" ? "active" : ""} onClick={() => captionPreset("center")}>Centre</button>
