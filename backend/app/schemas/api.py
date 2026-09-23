@@ -117,6 +117,7 @@ class ExportRequest(BaseModel):
     aspect_ratio: str = Field(default="9:16", pattern="^(9:16|1:1|4:5)$")
     caption_style: str = Field(default="kinetic", pattern="^(kinetic|clean|bold|minimal|hindi-pop)$")
     hook_text: str | None = Field(default=None, max_length=120)
+    hook_enabled: bool = True
     watermark: bool = True
     brand_kit_id: str | None = None
     focus_x: float = Field(default=50, ge=0, le=100)
@@ -133,6 +134,12 @@ class ExportRequest(BaseModel):
     preserve_source_captions: bool = False
     india_quality_mode: bool = False
     caption_language_style: str = Field(default="auto", pattern="^(auto|roman_hinglish|original)$")
+
+    def resolved_hook_text(self, fallback: str | None) -> str:
+        """Return the creator-authoritative opening hook for the renderer."""
+        if not self.hook_enabled:
+            return ""
+        return str(self.hook_text or fallback or "")
 
     @model_validator(mode="after")
     def carry_render_controls(self):

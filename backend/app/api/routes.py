@@ -578,7 +578,8 @@ async def _render_export(job_id:str,export_id:str,clip:dict,video:dict,request:E
         )
         await render_short_limited(
             source_path, output, clip["start_time"], clip["end_time"],
-            srt if srt.exists() else None, request.hook_text or clip["hook"], request.watermark,
+            srt if srt.exists() else None,
+            request.resolved_hook_text(clip["hook"]), request.watermark,
             request.resolution, request.aspect_ratio, request.caption_style,
             (brand or {}).get("logo_text") or "", (brand or {}).get("primary_color") or "#DFFF57",
             request.focus_x, caption_position, [item.model_dump() for item in request.crop_keyframes],

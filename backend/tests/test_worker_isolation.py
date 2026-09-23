@@ -140,6 +140,7 @@ def test_worker_reconstructs_full_export_request_before_render(client: TestClien
         resolution="1080p",
         caption_style="bold",
         hook_text="Custom durable hook",
+        hook_enabled=False,
         watermark=False,
         focus_x=37,
         caption_position="above",
@@ -157,6 +158,8 @@ def test_worker_reconstructs_full_export_request_before_render(client: TestClien
     render.assert_awaited_once()
     restored = render.await_args.args[4]
     assert restored.hook_text == "Custom durable hook"
+    assert restored.hook_enabled is False
+    assert restored.resolved_hook_text("Original hook") == ""
     assert restored.resolution == "1080p"
     assert restored.caption_style == "bold"
     assert restored.focus_x == 37
