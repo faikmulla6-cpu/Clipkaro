@@ -160,6 +160,10 @@ async def _render_export_durable(
                 caption_position,
                 [item.model_dump() for item in request.crop_keyframes],
                 preserve_band,
+                caption_x=request.caption_x,
+                caption_y=request.caption_y,
+                caption_scale=request.caption_scale,
+                caption_alignment=request.caption_alignment,
             )
         except Exception as exc:
             # Keep the creator-facing failure generic, but preserve the actual
