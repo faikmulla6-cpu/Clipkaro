@@ -16,12 +16,13 @@ const routes = [
 ];
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const publicRefresh = new Date("2026-09-23T13:30:00Z");
+  const publicRefresh = new Date("2026-09-24T12:00:00Z");
   const highIntentSlugs = new Set([
     "youtube-video-to-shorts-ai",
     "ai-video-clipper-india",
     "post-shorts-instagram-youtube",
     "shorts-video-editor-ai",
+    "affordable-ai-video-clipper-unlimited-posting",
   ]);
 
   const staticRoutes = routes.map((route) => ({

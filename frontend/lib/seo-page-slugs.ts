@@ -10,4 +10,5 @@ export const SEO_PAGE_SLUGS = [
   "ai-video-clipper-india",
   "post-shorts-instagram-youtube",
   "shorts-video-editor-ai",
+  "affordable-ai-video-clipper-unlimited-posting",
 ] as const;

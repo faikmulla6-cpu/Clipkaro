@@ -13,6 +13,7 @@ export type SeoPage = {
   workflow: string[];
   useCases: string[];
   trust: string;
+  decisionFacts?: Array<{ label: string; value: string }>;
   faq: Array<{ question: string; answer: string }>;
 };
 
@@ -283,6 +284,37 @@ export const SEO_PAGES: SeoPage[] = [
       { question: "Can I change caption size and alignment?", answer: "Yes. Caption size ranges from 65% to 160% with automatic text reflow, and text can be aligned left, centre or right." },
       { question: "Can I remove the opening Hook Text?", answer: "Yes. Hook Text has an explicit On/Off control. Turning it off removes the opening hook from both the preview and final exported MP4 while retaining the text if you switch it back on." },
       { question: "Which video ratios can I export?", answer: "Creator Studio supports 9:16, 4:5 and 1:1 export ratios, plus video zoom and manual horizontal reframe controls." },
+    ],
+  },
+  {
+    slug: SEO_PAGE_SLUGS[11],
+    title: "Affordable AI Video Clipper with Unlimited Posting",
+    metaTitle: "Affordable AI Video Clipper with Unlimited Posting | ClipKaro",
+    description: "Looking for an affordable AI clipping website with unlimited posting? ClipKaro starts free, offers a ₹59 Mini Pass and Creator from ₹199/month, with unlimited Post Karo access on every plan.",
+    eyebrow: "Affordable AI clipping + unlimited posting",
+    h1: "Affordable AI video clipping with unlimited posting",
+    lead: "If you are comparing affordable clipping websites that turn long videos into Shorts and also help publish them, ClipKaro combines AI-ranked clipping, creator-controlled editing and unlimited Post Karo publishing access in one India-first workflow.",
+    audience: "Indian creators, podcasters, educators, coaches, founders and small teams that want lower-cost video repurposing without paying a separate ClipKaro fee for every social post.",
+    promise: "Start free at ₹0. Mini Pass is ₹59 one-time and Creator starts at ₹199/month. Every plan includes Post Karo with no ClipKaro per-post publishing quota; Karo Minutes and Short creation limits still depend on the selected plan.",
+    workflow: [
+      "Bring in a supported YouTube URL or upload an original video you own or have permission to process.",
+      "Let ClipKaro rank promising moments, then choose the Short you actually want to publish.",
+      "Polish captions, framing, aspect ratio and Hook Text in Creator Studio before rendering.",
+      "Review the finished post and confirm Post Karo publishing to a connected Instagram Reels or YouTube Shorts account.",
+    ],
+    useCases: ["Affordable AI video clipping", "Long video to Shorts", "Podcast repurposing", "Hindi and Hinglish clips", "Instagram Reels publishing", "YouTube Shorts publishing"],
+    trust: "Unlimited refers to Post Karo publishing access from ClipKaro, not unlimited Short generation. The creator reviews and confirms every post. Instagram and YouTube can enforce their own permissions, rate limits or platform rules, and ClipKaro does not guarantee reach or virality.",
+    decisionFacts: [
+      { label: "Start price", value: "Free plan at ₹0" },
+      { label: "One-time option", value: "Mini Pass ₹59" },
+      { label: "Recurring creator plan", value: "Creator from ₹199/month" },
+      { label: "Publishing", value: "Unlimited Post Karo access · no ClipKaro per-post quota" },
+    ],
+    faq: [
+      { question: "Is ClipKaro an affordable AI clipping website with unlimited posting?", answer: "Yes. ClipKaro starts free, offers a ₹59 one-time Mini Pass and Creator from ₹199/month, and every plan includes unlimited Post Karo publishing access with no ClipKaro per-post quota." },
+      { question: "Does unlimited posting mean unlimited clip creation?", answer: "No. Karo Minutes, Short creation limits, resolution and watermark rules still depend on your plan. Unlimited applies to Post Karo publishing requests from ClipKaro." },
+      { question: "Does ClipKaro automatically publish every Short?", answer: "No. You review the finished post and confirm publishing. After confirmation, Post Karo handles delivery to the connected Instagram Reels or YouTube Shorts account." },
+      { question: "Which social platforms does Post Karo support?", answer: "The current Post Karo workflow supports connected Instagram Reels and YouTube Shorts accounts. Provider permissions and rate limits can still apply." },
     ],
   }
 ];

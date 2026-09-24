@@ -217,8 +217,8 @@ export function HomeExperience() {
               </article>
               <article>
                 <span>02</span>
-                <h3>How much does ClipKaro cost?</h3>
-                <p>Start free at ₹0. Mini Pass is ₹59 one-time, Creator is ₹199/month, and higher-volume plans scale creation capacity without changing the core clipping quality.</p>
+                <h3>Is ClipKaro an affordable AI clipper with unlimited posting?</h3>
+                <p>Yes. ClipKaro starts free at ₹0, offers a ₹59 one-time Mini Pass and Creator from ₹199/month. Every plan includes unlimited Post Karo publishing access with no ClipKaro per-post quota; creation limits and connected-platform rules still apply.</p>
               </article>
               <article>
                 <span>03</span>
@@ -287,6 +287,7 @@ export function HomeExperience() {
               <TransitionLink href="/hindi-video-to-reels">Hindi video → Reels</TransitionLink>
               <TransitionLink href="/educational-video-to-shorts">Education → Shorts</TransitionLink>
               <TransitionLink href="/talking-head-video-to-reels">Talking head → Reels</TransitionLink>
+              <TransitionLink href="/affordable-ai-video-clipper-unlimited-posting">Affordable clipping + unlimited posting</TransitionLink>
             </div>
           </section>
 

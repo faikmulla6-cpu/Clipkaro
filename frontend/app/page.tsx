@@ -26,6 +26,8 @@ export const metadata: Metadata = {
     "post Shorts to YouTube",
     "unlimited social publishing for creators",
     "affordable AI video clipper India",
+    "affordable clipping website with unlimited posting",
+    "AI video clipper unlimited posting",
     "AI Shorts editor captions",
     "long video to Reels",
   ],
@@ -107,7 +109,7 @@ const homePageStructuredData = {
   about: { "@id": "https://clipkaro.pro/#software" },
   publisher: { "@id": "https://clipkaro.pro/#organization" },
   inLanguage: "en-IN",
-  dateModified: "2026-09-23",
+  dateModified: "2026-09-24",
 };
 
 const softwareStructuredData = {

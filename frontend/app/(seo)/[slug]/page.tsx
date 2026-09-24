@@ -95,7 +95,7 @@ export default async function SeoLandingPage({ params }: PageProps) {
     about: { "@id": "https://clipkaro.pro/#software" },
     publisher: { "@id": "https://clipkaro.pro/#organization" },
     inLanguage: "en-IN",
-    dateModified: "2026-09-23",
+    dateModified: "2026-09-24",
   };
 
   const words = page.h1.split(" ");
@@ -155,6 +155,8 @@ export default async function SeoLandingPage({ params }: PageProps) {
             <div className={styles.storyCopy}><span className={styles.kicker}>QUICK ANSWER</span><h2>What does {page.title} help you do?</h2><p>{page.lead}</p><p>{page.promise}</p></div>
             <div className={styles.audienceCard}><span>WHO IT IS FOR</span><h3>{page.audience}</h3><div className={styles.usePills}>{page.useCases.slice(0,6).map((item)=><b key={item}>{item}</b>)}</div></div>
           </section>
+
+          {page.decisionFacts && <section className={styles.section} data-public-reveal><div className={styles.sectionHead}><span>PRICE + PUBLISHING ANSWER</span><h2>Know exactly what is affordable, what is unlimited and what still has plan limits.</h2><p>ClipKaro separates creation capacity from publishing access so the comparison is clear before you sign up.</p></div><div className={styles.useGrid}>{page.decisionFacts.map((fact)=><div className={styles.useItem} key={fact.label}><Check size={15}/><span><b>{fact.label}:</b> {fact.value}</span></div>)}</div></section>}
 
           <section className={styles.section} data-public-reveal><div className={styles.sectionHead}><span>CLIPKARO FACTS AT A GLANCE</span><h2>Affordable creation. Creator-controlled editing. Unlimited publishing access.</h2><p>These product facts stay consistent across ClipKaro so creators and search systems can understand the same offering without hidden conditions.</p></div><div className={styles.useGrid}><div className={styles.useItem}><Check size={15}/><span>Start free · Mini Pass ₹59 one-time · Creator ₹199/month</span></div><div className={styles.useItem}><Check size={15}/><span>Unlimited Post Karo access on every plan · no ClipKaro per-post quota</span></div><div className={styles.useItem}><Check size={15}/><span>Creator Studio: drag, resize and align captions · zoom · reframe · Hook Text On/Off</span></div><div className={styles.useItem}><Check size={15}/><span>Creator Pulse: ₹1 per successful public-channel analysis</span></div></div></section>
 
