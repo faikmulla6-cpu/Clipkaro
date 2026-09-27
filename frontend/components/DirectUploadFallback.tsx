@@ -42,7 +42,7 @@ const stages = [
   ["finishing", "Build previews"],
 ];
 
-export function DirectUploadFallback() {
+export function DirectUploadFallback({ embedded = false, disabled = false, onActivityChange }: { embedded?: boolean; disabled?: boolean; onActivityChange?: (active: boolean) => void } = {}) {
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -76,7 +76,7 @@ export function DirectUploadFallback() {
   }, []);
 
   function choose(next?: File) {
-    if (!next) return;
+    if (!next || disabled) return;
     const extension = next.name.split(".").pop()?.toLowerCase() || "";
     const knownExtension = SUPPORTED_VIDEO_EXTENSIONS.has(extension);
     const browserSaysVideo = next.type.startsWith("video/");
@@ -114,6 +114,7 @@ export function DirectUploadFallback() {
       activeJobRef.current = null;
       stopWatch();
       setBusy(false);
+      onActivityChange?.(false);
       if (data.status === "completed") setTimeout(() => router.push(`/projects/${projectId}`), 500);
     };
 
@@ -146,8 +147,9 @@ export function DirectUploadFallback() {
   }
 
   async function upload() {
-    if (!file) return;
+    if (!file || disabled) return;
     setBusy(true);
+    onActivityChange?.(true);
     setError("");
     setUploadProgress(0);
     const title = (document.getElementById("project-title") as HTMLInputElement)?.value || file.name.replace(/\.[^.]+$/, "");
@@ -182,6 +184,7 @@ export function DirectUploadFallback() {
       try { message = JSON.parse(message).detail || message; } catch { /* plain network diagnostic */ }
       setError(message);
       setBusy(false);
+      onActivityChange?.(false);
     }
   }
 
@@ -211,10 +214,10 @@ export function DirectUploadFallback() {
   }
 
   return (
-    <div className="upload-studio">
-      {preflight && !preflight.ready && <div className="preflight-warning"><AlertCircle size={20}/><div><b>Processing engine is not ready</b>{preflight.problems.map((problem) => <p key={problem}>{problem}</p>)}<small>{preflight.recommendation}</small></div></div>}
-      <div className={`drop-zone ${file ? "has-file" : ""}`} onClick={() => !file && input.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); choose(event.dataTransfer.files[0]); }}>
-        <input ref={input} type="file" accept=".mp4,.mov,.webm,.mkv,video/mp4,video/quicktime,video/webm,video/x-matroska,video/matroska,application/x-matroska,application/matroska" hidden onChange={(event) => choose(event.target.files?.[0])}/>
+    <div className={`upload-studio ${embedded ? "upload-studio--embedded" : ""}`}>
+      {preflight && !preflight.ready && !embedded && <div className="preflight-warning"><AlertCircle size={20}/><div><b>Processing engine is not ready</b>{preflight.problems.map((problem) => <p key={problem}>{problem}</p>)}<small>{preflight.recommendation}</small></div></div>}
+      <div className={`drop-zone ${file ? "has-file" : ""} ${disabled ? "is-disabled" : ""}`} onClick={() => !disabled && !file && input.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); choose(event.dataTransfer.files[0]); }}>
+        <input ref={input} type="file" disabled={disabled} accept=".mp4,.mov,.webm,.mkv,video/mp4,video/quicktime,video/webm,video/x-matroska,video/matroska,application/x-matroska,application/matroska" hidden onChange={(event) => choose(event.target.files?.[0])}/>
         {file ? <div className="selected-file"><div className="file-icon"><FileVideo size={27}/></div><div className="file-copy"><b>{file.name}</b><span>{(file.size / 1024 / 1024).toFixed(1)} MB · Ready for AI analysis</span></div><span className="ready-pill"><Check size={14}/> Ready</span><button className="icon-btn" onClick={(event) => { event.stopPropagation(); setFile(null); }}><X size={18}/></button></div> : <><div className="upload-orb"><CloudUpload size={30}/></div><h2>Drop your long video here</h2><p>We&apos;ll find the strongest hooks, lessons and stories.</p><button className="secondary-btn"><Upload size={16}/> Choose video</button><span className="file-help">MP4, MOV, WebM or MKV · Up to 500 MB · Private by default</span></>}
       </div>
 
@@ -226,8 +229,8 @@ export function DirectUploadFallback() {
 
       {busy && uploadProgress < 100 && <div className="processing-box"><div><Loader2 className="spin" size={20}/><div><b>Uploading securely</b><span>{uploadProgress}% transferred</span></div><strong>{uploadProgress}%</strong><button type="button" className="secondary-btn" onClick={() => activeUpload.current?.abort()}>Cancel</button></div><div className="progress large"><span style={{ width: `${uploadProgress}%` }}/></div></div>}
       {error && <div className="error-banner"><AlertCircle size={18}/><span>{error}</span></div>}
-      <div className="studio-actions"><span><Check size={15}/> I own or have permission to use this video.</span><button className="primary-btn" disabled={!file || busy || preflight?.ready === false} onClick={upload}><Sparkles size={17}/> {preflight?.ready === false ? "Fix processing engine first" : "Find my best moments"} <ChevronRight size={17}/></button></div>
-      <div className="how-grid">{[["01", "Upload privately", "Your original stays yours."], ["02", "Watch AI work", "Live stages, no mystery spinner."], ["03", "Choose & polish", "Edit only the moments you want."]].map((item) => <div key={item[0]}><span>{item[0]}</span><div><b>{item[1]}</b><p>{item[2]}</p></div></div>)}</div>
+      <div className="studio-actions"><span><Check size={15}/> I own or have permission to use this video.</span><button className="primary-btn" disabled={!file || busy || disabled || preflight?.ready === false} onClick={upload}><Sparkles size={17}/> {preflight?.ready === false ? "Fix processing engine first" : "Find my best moments"} <ChevronRight size={17}/></button></div>
+      {!embedded && <div className="how-grid">{[["01", "Upload privately", "Your original stays yours."], ["02", "Watch AI work", "Live stages, no mystery spinner."], ["03", "Choose & polish", "Edit only the moments you want."]].map((item) => <div key={item[0]}><span>{item[0]}</span><div><b>{item[1]}</b><p>{item[2]}</p></div></div>)}</div>}
     </div>
   );
 }
