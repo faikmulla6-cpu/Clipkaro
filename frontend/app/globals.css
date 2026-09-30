@@ -94,3 +94,20 @@
 .caption-align-controls button svg{flex:none}
 .caption-reflow-note{display:flex;align-items:center;gap:5px;color:#54705f!important;margin-top:9px!important}
 .caption-reflow-note svg{flex:none;color:var(--green)}
+
+/* Dual-source creation workspace */
+.upload-studio--embedded{max-width:none;margin:0}
+.upload-studio--embedded .drop-zone{min-height:260px;border-color:#d8e3d2;background:#fbfdf8;border-radius:18px;padding:24px 18px}
+.upload-studio--embedded .drop-zone:hover{border-color:#84a96e;background:#f8fff1}
+.upload-studio--embedded .upload-orb{width:58px;height:58px;border-radius:18px}
+.upload-studio--embedded .upload-options{grid-template-columns:1fr;padding:14px;margin-top:10px}
+.upload-studio--embedded .studio-actions{margin:14px 0 0;align-items:stretch;flex-direction:column;gap:10px}
+.upload-studio--embedded .studio-actions>span{align-self:flex-start;line-height:1.45}
+.upload-studio--embedded .studio-actions .primary-btn{width:100%;min-height:50px}
+.upload-studio--embedded .processing-box{padding:14px}
+.upload-studio--embedded .processing-experience{max-width:none}
+.upload-studio--embedded .processing-hero{padding:34px 20px;border-radius:18px}
+.upload-studio--embedded .processing-hero h2{font-size:23px}
+.dual-upload-card .secondary-btn{border-color:#d9e2d5!important}
+@media(max-width:600px){.upload-studio--embedded .drop-zone{min-height:240px;padding:22px 16px}.dual-upload-card{padding:15px!important}}
+.upload-studio--embedded .drop-zone.is-disabled{opacity:.56;cursor:not-allowed;pointer-events:none}

@@ -1,8 +1,8 @@
 "use client";
 
 import {
-  AlertCircle, Check, ChevronRight, Clipboard, Clock3, Link2, Loader2,
-  LockKeyhole, Play, Scissors, ShieldCheck, Sparkles, WandSparkles, Youtube,
+  AlertCircle, AlertTriangle, Check, ChevronRight, Clipboard, Clock3, CloudUpload, Link2, Loader2,
+  LockKeyhole, Play, ShieldCheck, Sparkles, WandSparkles, Youtube,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -44,6 +44,7 @@ export function UploadStudio() {
   const [title, setTitle] = useState("");
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [fileUploadActive, setFileUploadActive] = useState(false);
   const [showFileFallback, setShowFileFallback] = useState(false);
   const [job, setJob] = useState<Job | null>(null);
   const [error, setError] = useState("");
@@ -115,7 +116,7 @@ export function UploadStudio() {
   }
 
   async function startImport() {
-    if (!videoId || !rightsConfirmed || busy || preflight?.ready === false) return;
+    if (!videoId || !rightsConfirmed || busy || fileUploadActive || preflight?.ready === false) return;
     setBusy(true); setError("");
     try {
       const result = await api<YouTubeImport>("/imports/youtube", {
@@ -164,23 +165,23 @@ export function UploadStudio() {
 
       <section className="relative overflow-hidden rounded-[34px] border border-[#143c2d]/15 bg-[#07110d] text-white shadow-[0_30px_100px_rgba(7,40,28,.18)]">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_14%_12%,rgba(223,255,87,.14),transparent_30%),radial-gradient(circle_at_90%_82%,rgba(30,190,120,.12),transparent_34%)]" />
-        <Scissors className="pointer-events-none absolute left-[7%] top-12 rotate-[-12deg] text-white/[.035]" size={150}/>
         <WandSparkles className="pointer-events-none absolute bottom-4 right-[5%] rotate-12 text-[#dfff57]/[.045]" size={170}/>
         <div className="relative grid gap-8 p-5 sm:p-8 lg:grid-cols-[1.05fr_.95fr] lg:p-10">
-          <div className="flex flex-col justify-center py-3 lg:py-8">
-            <div className="mb-5 flex flex-wrap gap-2"><span className="inline-flex items-center gap-1.5 rounded-full border border-[#dfff57]/25 bg-[#dfff57]/10 px-3 py-1.5 text-[11px] font-extrabold tracking-[.12em] text-[#dfff57]"><Sparkles size={13}/> LINK-FIRST CREATION</span>{minutesLeft !== null && <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[.05] px-3 py-1.5 text-xs font-semibold text-white/65"><Clock3 size={13}/>{minutesLeft} Karo Minutes left</span>}</div>
-            <h2 className="max-w-xl text-[clamp(2.3rem,5vw,4.5rem)] font-black leading-[.95] tracking-[-.055em]">Paste a video.<br/><span className="text-[#dfff57]">Get the moments.</span></h2>
-            <p className="mt-5 max-w-lg text-sm leading-6 text-white/60 sm:text-base">Paste your YouTube link. ClipKaro securely imports the source, transcribes it, ranks the strongest moments and takes you straight into the existing creator workflow.</p>
-            <div className="mt-7 grid max-w-lg grid-cols-3 gap-2">
-              <Step icon={<Link2 size={16}/>} number="01" label="Paste"/><Step icon={<Sparkles size={16}/>} number="02" label="Analyse"/><Step icon={<Scissors size={16}/>} number="03" label="Clip"/>
+          <div className="dual-upload-card rounded-[28px] border border-[#dfff57]/25 bg-white p-4 text-[#10271d] shadow-[0_24px_70px_rgba(0,0,0,.2)] sm:p-5">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3"><span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#ecff9f] text-[#165f43]"><CloudUpload size={22}/></span><div><div className="flex flex-wrap items-center gap-2"><b className="text-sm">Upload video</b><span className="rounded-full bg-[#165f43] px-2.5 py-1 text-[9px] font-black tracking-[.08em] text-white">RECOMMENDED</span></div><span className="mt-1 block text-xs text-[#607067]">The most reliable way to start</span></div></div>
+              {minutesLeft !== null && <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#165f43]/10 bg-[#f5f8f3] px-2.5 py-1 text-[10px] font-bold text-[#52685f]"><Clock3 size={12}/>{minutesLeft} min</span>}
             </div>
+            <div className="mb-4 flex items-start gap-2.5 rounded-2xl border border-[#cfe3b4] bg-[#f4faea] p-3 text-xs leading-5 text-[#365443]"><Check className="mt-0.5 shrink-0 text-[#165f43]" size={15}/><span><b>Best compatibility.</b> Uploading a supported video file does not depend on YouTube link access or video permissions.</span></div>
+            <DirectUploadFallback embedded disabled={busy} onActivityChange={setFileUploadActive} />
           </div>
 
           <div className="rounded-[28px] border border-white/10 bg-white/[.07] p-4 shadow-[inset_0_1px_rgba(255,255,255,.08),0_24px_60px_rgba(0,0,0,.18)] backdrop-blur-xl sm:p-5">
-            <div className="mb-4 flex items-center justify-between"><div className="flex items-center gap-3"><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#ff0033]"><Youtube size={23}/></span><div><b className="block text-sm">YouTube source</b><span className="text-xs text-white/45">One video at a time</span></div></div><span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/10 px-2.5 py-1 text-[10px] font-bold text-emerald-200"><ShieldCheck size={12}/> PRIVATE</span></div>
+            <div className="mb-4 flex items-center justify-between gap-3"><div className="flex items-center gap-3"><span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#ff0033]"><Youtube size={23}/></span><div><b className="block text-sm">Paste YouTube link</b><span className="text-xs text-white/45">Fast when the source allows importing</span></div></div><span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/10 px-2.5 py-1 text-[10px] font-bold text-emerald-200"><ShieldCheck size={12}/> PRIVATE</span></div>
+            <div className="mb-4 flex items-start gap-2.5 rounded-2xl border border-amber-300/20 bg-amber-300/[.08] p-3 text-xs leading-5 text-amber-50"><AlertTriangle className="mt-0.5 shrink-0 text-amber-300" size={16}/><span><b>Some YouTube links may not work.</b> YouTube restrictions, video permissions or source access can block an import. If that happens, use <b>Upload video</b> — file upload does not depend on YouTube link access.</span></div>
             <label className="mb-2 block text-xs font-bold text-white/65">Paste your YouTube video link</label>
             <div className={`flex items-center gap-2 rounded-2xl border bg-black/25 p-2 ${youtubeUrl && !videoId ? "border-rose-300/45" : videoId ? "border-[#dfff57]/40" : "border-white/10 focus-within:border-[#dfff57]/35"}`}>
-              <Link2 className="ml-2 shrink-0 text-white/35" size={17}/><input type="url" value={youtubeUrl} onChange={(e) => { setYoutubeUrl(e.target.value); setError(""); }} onKeyDown={(e) => { if (e.key === "Enter") void startImport(); }} placeholder="https://youtube.com/watch?v=..." className="min-w-0 flex-1 border-0 bg-transparent px-1 py-3 text-sm text-white outline-none placeholder:text-white/30" autoComplete="off" spellCheck={false}/><button type="button" onClick={pasteLink} className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-white/10 bg-white/[.06] px-3 py-2.5 text-xs font-bold text-white/75 hover:bg-white/10"><Clipboard size={14}/><span className="hidden sm:inline">Paste</span></button>
+              <Link2 className="ml-2 shrink-0 text-white/35" size={17}/><input type="url" value={youtubeUrl} disabled={fileUploadActive} onChange={(e) => { setYoutubeUrl(e.target.value); setError(""); }} onKeyDown={(e) => { if (e.key === "Enter") void startImport(); }} placeholder="https://youtube.com/watch?v=..." className="min-w-0 flex-1 border-0 bg-transparent px-1 py-3 text-sm text-white outline-none placeholder:text-white/30 disabled:cursor-not-allowed disabled:opacity-45" autoComplete="off" spellCheck={false}/><button type="button" disabled={fileUploadActive} onClick={pasteLink} className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-white/10 bg-white/[.06] px-3 py-2.5 text-xs font-bold text-white/75 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"><Clipboard size={14}/><span className="hidden sm:inline">Paste</span></button>
             </div>
             {youtubeUrl && !videoId && <p className="mt-2 text-xs text-rose-200">Use a direct YouTube video, Shorts, or live-replay link.</p>}
 
@@ -188,22 +189,20 @@ export function UploadStudio() {
 
             {videoId && <div className="mt-4 grid gap-3 sm:grid-cols-2"><Field label="PROJECT TITLE · OPTIONAL" className="sm:col-span-2"><input value={title} onChange={(e) => setTitle(e.target.value.slice(0, 120))} placeholder="Use YouTube title automatically" className="w-full rounded-xl border border-white/10 bg-black/20 px-3.5 py-3 text-sm text-white outline-none placeholder:text-white/30 focus:border-[#dfff57]/35"/></Field><Field label="SPOKEN LANGUAGE"><select value={language} onChange={(e) => setLanguage(e.target.value as AccountSettings["default_language"])} className="w-full rounded-xl border border-white/10 bg-[#0d1b15] px-3 py-3 text-sm text-white outline-none"><option value="hi">Hindi · Recommended</option><option value="hinglish">Hinglish</option><option value="en">English</option><option value="mr">Marathi</option><option value="auto">Auto detect</option></select></Field><Field label="CONTENT TYPE"><select value={category} onChange={(e) => setCategory(e.target.value as AccountSettings["creator_category"])} className="w-full rounded-xl border border-white/10 bg-[#0d1b15] px-3 py-3 text-sm text-white outline-none"><option value="auto">Let AI decide</option><option value="education">Education</option><option value="podcast">Podcast</option><option value="business">Business</option><option value="motivation">Motivation</option><option value="spiritual">Spiritual</option><option value="local-business">Local business</option></select></Field></div>}
 
-            <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-2xl border border-white/10 bg-white/[.03] p-3.5"><input type="checkbox" checked={rightsConfirmed} onChange={(e) => setRightsConfirmed(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[#dfff57]"/><span className="text-xs leading-5 text-white/60"><b className="text-white/85">Rights confirmation.</b> I own this video or have permission to create clips from it.</span></label>
+            <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-2xl border border-white/10 bg-white/[.03] p-3.5"><input type="checkbox" checked={rightsConfirmed} disabled={fileUploadActive} onChange={(e) => setRightsConfirmed(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[#dfff57] disabled:cursor-not-allowed disabled:opacity-45"/><span className="text-xs leading-5 text-white/60"><b className="text-white/85">Rights confirmation.</b> I own this video or have permission to create clips from it.</span></label>
+            {fileUploadActive && <div className="mt-4 flex gap-2 rounded-xl border border-[#dfff57]/20 bg-[#dfff57]/10 p-3 text-xs leading-5 text-[#efffb2]"><Loader2 className="mt-0.5 shrink-0 animate-spin" size={15}/> File upload is active. YouTube import is temporarily paused to prevent duplicate processing.</div>}
             {error && <div className="mt-4 flex gap-2 rounded-xl border border-rose-300/20 bg-rose-400/10 p-3 text-xs leading-5 text-rose-50"><AlertCircle className="shrink-0" size={16}/>{error}</div>}
-            <button type="button" disabled={!videoId || !rightsConfirmed || busy || preflight?.ready === false} onClick={startImport} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#dfff57] px-5 py-4 text-sm font-black text-[#07110d] shadow-[0_14px_35px_rgba(223,255,87,.16)] transition hover:-translate-y-0.5 hover:bg-[#e8ff84] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0">{busy ? <Loader2 className="animate-spin" size={17}/> : <Sparkles size={17}/>} {busy ? "Starting secure import…" : "Find my best moments"} {!busy && <ChevronRight size={17}/>}</button>
+            <button type="button" disabled={!videoId || !rightsConfirmed || busy || fileUploadActive || preflight?.ready === false} onClick={startImport} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#dfff57] px-5 py-4 text-sm font-black text-[#07110d] shadow-[0_14px_35px_rgba(223,255,87,.16)] transition hover:-translate-y-0.5 hover:bg-[#e8ff84] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0">{busy ? <Loader2 className="animate-spin" size={17}/> : <Sparkles size={17}/>} {busy ? "Starting secure import…" : "Find my best moments"} {!busy && <ChevronRight size={17}/>}</button>
             <div className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1 text-[10px] font-semibold text-white/35"><span>500 MB source cap</span><span>Plan minute limits apply</span><span>Private processing</span></div>
           </div>
         </div>
       </section>
 
-      <div className="mt-5 grid gap-3 md:grid-cols-3"><Trust icon={<Link2 size={17}/>} title="Paste, don't hunt for files" copy="Start from the YouTube link you already have."/><Trust icon={<WandSparkles size={17}/>} title="One connected AI flow" copy="Import, transcript and ranked moments stay inside ClipKaro."/><Trust icon={<LockKeyhole size={17}/>} title="Private by design" copy="Source media keeps the same access controls and retention rules."/></div>
+      <div className="mt-5 grid gap-3 md:grid-cols-3"><Trust icon={<CloudUpload size={17}/>} title="Upload when reliability matters" copy="Supported video files avoid YouTube link-access restrictions."/><Trust icon={<Link2 size={17}/>} title="Paste when the link is available" copy="Use YouTube import for convenience when the source allows it."/><Trust icon={<WandSparkles size={17}/>} title="Same AI workflow" copy="Either route continues into transcription, ranking and clip creation."/></div>
     </div>
   );
 }
 
-function Step({ icon, number, label }: { icon: React.ReactNode; number: string; label: string }) {
-  return <div className="rounded-2xl border border-white/10 bg-white/[.035] p-3"><span className="mb-2 flex h-8 w-8 items-center justify-center rounded-xl bg-white/[.06] text-[#dfff57]">{icon}</span><b className="text-xs text-white/80">{number} · {label}</b></div>;
-}
 function Field({ label, className = "", children }: { label: string; className?: string; children: React.ReactNode }) {
   return <label className={className}><span className="mb-1.5 block text-[11px] font-bold text-white/50">{label}</span>{children}</label>;
 }
