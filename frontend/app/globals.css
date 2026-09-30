@@ -111,3 +111,188 @@
 .dual-upload-card .secondary-btn{border-color:#d9e2d5!important}
 @media(max-width:600px){.upload-studio--embedded .drop-zone{min-height:240px;padding:22px 16px}.dual-upload-card{padding:15px!important}}
 .upload-studio--embedded .drop-zone.is-disabled{opacity:.56;cursor:not-allowed;pointer-events:none}
+
+
+/* Dual-source premium polish */
+.dual-source-workspace{
+  background:
+    radial-gradient(circle at 12% 8%,rgba(223,255,87,.12),transparent 28%),
+    radial-gradient(circle at 88% 88%,rgba(36,156,104,.12),transparent 30%),
+    linear-gradient(145deg,#07110d 0%,#0a1712 55%,#0b1c15 100%);
+  box-shadow:0 28px 80px rgba(6,24,17,.18),inset 0 1px rgba(255,255,255,.035);
+}
+.dual-source-grid{align-items:stretch}
+.source-card{
+  min-width:0;
+  height:100%;
+  border:1px solid;
+  box-shadow:0 20px 48px rgba(0,0,0,.13);
+  transition:transform .2s ease,border-color .2s ease,box-shadow .2s ease;
+}
+.source-card:hover{transform:translateY(-2px)}
+.source-card--upload{
+  background:linear-gradient(180deg,#f8fbf6 0%,#f1f6ee 100%);
+  border-color:#dfe9d9;
+  box-shadow:0 20px 52px rgba(7,34,24,.14);
+}
+.source-card--upload:hover{
+  border-color:#cadfbd;
+  box-shadow:0 24px 58px rgba(7,34,24,.17);
+}
+.source-card--youtube{
+  background:linear-gradient(180deg,rgba(24,42,35,.96) 0%,rgba(17,34,27,.98) 100%);
+  border-color:rgba(255,255,255,.12);
+  box-shadow:0 20px 52px rgba(0,0,0,.18),inset 0 1px rgba(255,255,255,.05);
+}
+.source-card--youtube:hover{
+  border-color:rgba(223,255,87,.18);
+  box-shadow:0 24px 60px rgba(0,0,0,.22),inset 0 1px rgba(255,255,255,.06);
+}
+.source-card-header{min-height:50px}
+.source-card-notice{
+  min-height:76px;
+  align-items:flex-start;
+  border:1px solid;
+  backdrop-filter:blur(8px);
+}
+.source-card-notice--success{
+  border-color:#d6e6c9;
+  background:linear-gradient(180deg,#f4faed,#eef7e6);
+  color:#365443;
+}
+.source-card-notice--warning{
+  border-color:rgba(245,190,55,.22);
+  background:linear-gradient(180deg,rgba(245,190,55,.085),rgba(245,190,55,.045));
+  color:#f6f0de;
+}
+.source-card-notice--warning b{color:#fff8e8}
+.source-card--upload .upload-studio--embedded{
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+}
+.source-card--upload .upload-studio--embedded .drop-zone{
+  min-height:278px;
+  flex:1;
+  border-color:#d4dfcf;
+  background:rgba(255,255,255,.88);
+  box-shadow:inset 0 1px rgba(255,255,255,.9);
+}
+.source-card--upload .upload-studio--embedded .drop-zone:hover{
+  border-color:#8eb37a;
+  background:#fbfff8;
+  box-shadow:0 10px 28px rgba(31,76,51,.07),inset 0 1px rgba(255,255,255,.95);
+}
+.source-card--upload .upload-studio--embedded .upload-orb{
+  background:linear-gradient(145deg,#f4ffd2,#e4f7c7);
+  box-shadow:0 10px 24px rgba(22,95,67,.08),inset 0 0 0 6px rgba(255,255,255,.66);
+}
+.source-card--upload .upload-studio--embedded .secondary-btn{
+  min-height:46px;
+  border-radius:14px;
+  border-color:#d6dfd2!important;
+  background:#fff;
+  box-shadow:0 7px 20px rgba(20,49,34,.06);
+  transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease;
+}
+.source-card--upload .upload-studio--embedded .secondary-btn:hover{
+  transform:translateY(-1px);
+  border-color:#a8bea0!important;
+  box-shadow:0 10px 24px rgba(20,49,34,.09);
+}
+.source-card--upload .upload-studio--embedded .studio-actions{
+  margin-top:16px;
+  padding-top:2px;
+}
+.source-card--upload .upload-studio--embedded .studio-actions>span{
+  color:#6d776f;
+  font-size:10px;
+}
+.source-card--upload .upload-studio--embedded .primary-btn{
+  min-height:54px;
+  border-radius:16px;
+  background:linear-gradient(180deg,#1b6b4c,#165f43);
+  box-shadow:0 12px 28px rgba(22,95,67,.18);
+  font-weight:800;
+}
+.source-card--upload .upload-studio--embedded .primary-btn:hover{
+  background:linear-gradient(180deg,#1e7654,#165f43);
+  box-shadow:0 15px 32px rgba(22,95,67,.22);
+}
+.youtube-link-control{
+  min-height:58px;
+  background:rgba(5,14,10,.36);
+  box-shadow:inset 0 1px rgba(255,255,255,.025);
+  transition:border-color .18s ease,box-shadow .18s ease,background .18s ease;
+}
+.youtube-link-control:focus-within{
+  background:rgba(5,14,10,.48);
+  box-shadow:0 0 0 3px rgba(223,255,87,.07),inset 0 1px rgba(255,255,255,.03);
+}
+#youtube-source-input{
+  min-width:0;
+  background:transparent!important;
+  color:#f5fff8!important;
+  -webkit-text-fill-color:#f5fff8!important;
+  caret-color:#dfff57;
+  border-radius:10px;
+}
+#youtube-source-input::placeholder{
+  color:rgba(237,248,241,.34)!important;
+  -webkit-text-fill-color:rgba(237,248,241,.34)!important;
+}
+#youtube-source-input:-webkit-autofill,
+#youtube-source-input:-webkit-autofill:hover,
+#youtube-source-input:-webkit-autofill:focus{
+  -webkit-box-shadow:0 0 0 1000px #101f19 inset!important;
+  -webkit-text-fill-color:#f5fff8!important;
+  caret-color:#dfff57;
+}
+.youtube-paste-button{
+  border-color:rgba(255,255,255,.11);
+  background:rgba(255,255,255,.055);
+  color:rgba(255,255,255,.8);
+  transition:background .18s ease,border-color .18s ease,color .18s ease;
+}
+.youtube-paste-button:hover{
+  border-color:rgba(223,255,87,.2);
+  background:rgba(255,255,255,.095);
+  color:#fff;
+}
+.source-rights{
+  border-color:rgba(255,255,255,.105);
+  background:rgba(255,255,255,.035);
+  transition:border-color .18s ease,background .18s ease;
+}
+.source-rights:hover{
+  border-color:rgba(223,255,87,.18);
+  background:rgba(255,255,255,.05);
+}
+.source-rights input{accent-color:#dfff57}
+.source-cta--youtube{
+  min-height:54px;
+  background:linear-gradient(180deg,#e6ff76,#dfff57);
+  color:#0b1d14;
+  box-shadow:0 12px 28px rgba(223,255,87,.13);
+}
+.source-cta--youtube:hover{
+  transform:translateY(-1px);
+  background:linear-gradient(180deg,#ecff8d,#e4ff68);
+  box-shadow:0 16px 32px rgba(223,255,87,.18);
+}
+.source-meta{color:rgba(255,255,255,.34)}
+@media(max-width:1023px){
+  .dual-source-grid{gap:18px}
+  .source-card{height:auto}
+  .source-card:hover{transform:none}
+  .source-card-notice{min-height:0}
+}
+@media(max-width:600px){
+  .dual-source-workspace{border-radius:24px!important}
+  .dual-source-grid{padding:14px!important;gap:14px}
+  .source-card{border-radius:22px!important;padding:15px!important}
+  .source-card-header{min-height:0}
+  .youtube-link-control{min-height:54px}
+  .youtube-paste-button{padding-left:10px!important;padding-right:10px!important}
+  .source-card--upload .upload-studio--embedded .drop-zone{min-height:230px}
+}
