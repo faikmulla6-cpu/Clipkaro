@@ -20,7 +20,7 @@
     "check:search-discovery": "node scripts/check-search-discovery.mjs",
     "check:caption-composition": "node scripts/check-caption-composition.mjs",
     "check:public-mobile": "node scripts/check-public-mobile.mjs",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "check:release": "npm run check:settings-trust && npm run check:analytics-truth && npm run check:billing-lifecycle && npm run check:email-verification && npm run check:security-foundation && npm run check:legal-privacy && npm run check:behavioral-learning && npm run check:landscape-reframe && npm run check:content-pack && npm run check:transcript-review && npm run check:quality-fixes && npm run check:caption-composition && npm run check:search-discovery && npm run check:public-mobile && npm run check:release-identity"
@@ -29,7 +29,7 @@
     "@radix-ui/react-progress": "^1.1.7",
     "framer-motion": "12.27.1",
     "lucide-react": "^0.468.0",
-    "next": "16.3.6",
+    "next": "16.3.8",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },
