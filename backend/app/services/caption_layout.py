@@ -6,6 +6,7 @@ END = re.compile(r"[.!?।…]+$")
 SOFT_END = re.compile(r"[,;:]$")
 CONJUNCTIONS = {"and", "but", "because", "so", "then", "or", "aur", "lekin", "par",
                 "kyunki", "toh", "phir", "magar", "ya", "isliye"}
+CAPTION_PAUSE_BREAK_SECONDS = .35
 
 
 @dataclass(frozen=True)
@@ -46,7 +47,7 @@ def _wrap(words: list[str], max_chars: int) -> tuple[str, ...]:
 
 def build_caption_cards(words: list[dict[str, Any]], max_chars: int = 28,
                         max_words: int = 7, max_duration: float = 3.2,
-                        pause_break: float = .42) -> list[CaptionCard]:
+                        pause_break: float = CAPTION_PAUSE_BREAK_SECONDS) -> list[CaptionCard]:
     """Create readable phrase cards from aligned words; never emits >2 lines."""
     valid = [w for w in words if str(w.get("text", "")).strip()
              and float(w.get("end", 0)) > float(w.get("start", 0))]
