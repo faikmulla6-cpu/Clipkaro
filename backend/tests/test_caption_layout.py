@@ -40,3 +40,18 @@ def test_india_pop_splits_projected_phrase_before_visual_overflow():
         ["assessment"],
     ]
     assert not [error for error in validate_cards(cards, max_chars=18) if "overflow" in error]
+
+
+def test_pause_threshold_uses_real_speech_gap():
+    stream = [
+        {"start": 0.00, "end": 0.30, "text": "hello", "confidence": .9},
+        {"start": 0.64, "end": 0.90, "text": "again", "confidence": .9},
+    ]
+    assert len(build_caption_cards(stream)) == 1
+
+    stream[1]["start"] = 0.65
+    stream[1]["end"] = 0.91
+    cards = build_caption_cards(stream)
+    assert len(cards) == 2
+    assert cards[0].end == .30
+    assert cards[1].start == .65
