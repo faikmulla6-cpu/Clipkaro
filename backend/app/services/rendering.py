@@ -76,40 +76,56 @@ def create_srt(segments: list[dict[str, Any]], clip_start: float, clip_end: floa
     _write_word_srt(timed_words(segments, clip_start, clip_end), path, clip_start)
 
 
-def create_edited_srt(text: str, duration: float, path: Path,
-                      reference_words: list[dict[str, Any]] | None = None,
-                      clip_start: float = 0) -> None:
-    """Keep correction text attached to the closest original audio word timestamps."""
+def align_edited_words(text: str, duration: float,
+                       reference_words: list[dict[str, Any]] | None = None,
+                       clip_start: float = 0) -> list[dict[str, Any]]:
+    """Map corrected display text onto the original spoken-word anchors.
+
+    Keeping this as a shared primitive makes Creator Studio preview and final
+    export use the same timing model. When native reference words exist, real
+    speech gaps are preserved instead of stretching corrected text across silence.
+    """
     edited = re.sub(r"\s+", " ", text).strip().split()
     if not edited or duration <= 0:
-        path.write_text("", encoding="utf-8")
-        return
+        return []
     reference = reference_words or []
     if not reference:
         span = duration / len(edited)
-        aligned = [{"start": index * span, "end": min(duration, (index + 1) * span), "text": word}
-                   for index, word in enumerate(edited)]
-        _write_word_srt(aligned, path)
-        return
+        return [{"start": index * span, "end": min(duration, (index + 1) * span), "text": word}
+                for index, word in enumerate(edited)]
     original_tokens = [re.sub(r"\W+", "", str(word["text"]), flags=re.UNICODE).casefold() for word in reference]
     edited_tokens = [re.sub(r"\W+", "", word, flags=re.UNICODE).casefold() for word in edited]
     exact: dict[int, int] = {}
     for block in SequenceMatcher(None, original_tokens, edited_tokens, autojunk=False).get_matching_blocks():
-        for delta in range(block.size): exact[block.b + delta] = block.a + delta
-    aligned = []
+        for delta in range(block.size):
+            exact[block.b + delta] = block.a + delta
+    aligned: list[dict[str, Any]] = []
     for index, word in enumerate(edited):
         mapped = exact.get(index)
         if mapped is None:
             mapped = round(index * (len(reference) - 1) / max(1, len(edited) - 1))
         source = reference[max(0, min(mapped, len(reference) - 1))]
         aligned.append({"start": float(source["start"]) - clip_start,
-                        "end": float(source["end"]) - clip_start, "text": word})
-    # Corrections may add words; guarantee monotonic non-zero events without moving matched audio anchors.
+                        "end": float(source["end"]) - clip_start, "text": word,
+                        "confidence": float(source.get("confidence", 1))})
+    # Corrections may add words; guarantee monotonic non-zero events without
+    # moving matched audio anchors or filling the silence between anchors.
     for index in range(1, len(aligned)):
         if aligned[index]["start"] < aligned[index - 1]["start"]:
             aligned[index]["start"] = aligned[index - 1]["start"]
         if aligned[index]["end"] <= aligned[index]["start"]:
             aligned[index]["end"] = min(duration, aligned[index]["start"] + .12)
+    return aligned
+
+
+def create_edited_srt(text: str, duration: float, path: Path,
+                      reference_words: list[dict[str, Any]] | None = None,
+                      clip_start: float = 0) -> None:
+    """Keep correction text attached to the closest original audio word timestamps."""
+    aligned = align_edited_words(text, duration, reference_words, clip_start)
+    if not aligned:
+        path.write_text("", encoding="utf-8")
+        return
     _write_word_srt(aligned, path)
 
 
