@@ -1,6 +1,6 @@
 from pathlib import Path
 from app.services.rendering import (
-    _base_video_filters, _build_ass, _scaled_caption_max_chars,
+    _base_video_filters, _build_ass, _scaled_caption_max_chars, align_edited_words,
     create_edited_srt, create_srt, format_srt_time, subtitle_ass_filter, timed_words,
 )
 from app.services.video import probe_metadata
@@ -200,3 +200,33 @@ def test_clip_local_srt_offsets_work_for_early_middle_and_late_clips(tmp_path: P
     create_srt(segments, clip_start, clip_start + 1, path)
     assert "00:00:00,100 --> 00:00:00,450" in path.read_text()
     assert "roman" in path.read_text()
+
+
+def test_corrected_caption_alignment_preserves_reference_silence():
+    reference = [
+        {"start": 10.10, "end": 10.40, "text": "hello", "confidence": .9},
+        {"start": 11.10, "end": 11.40, "text": "world", "confidence": .9},
+    ]
+    aligned = align_edited_words("hello world", 2.0, reference, 10.0)
+    assert aligned[0]["start"] == pytest.approx(.10)
+    assert aligned[0]["end"] == pytest.approx(.40)
+    assert aligned[1]["start"] == pytest.approx(1.10)
+    assert aligned[1]["end"] == pytest.approx(1.40)
+
+
+def test_ass_does_not_bridge_real_silence_between_caption_cards(tmp_path: Path):
+    srt, ass = tmp_path / "pause.srt", tmp_path / "pause.ass"
+    srt.write_text(
+        "1\n00:00:00,000 --> 00:00:00,300\nhello\n\n"
+        "2\n00:00:00,900 --> 00:00:01,200\nworld\n",
+        encoding="utf-8",
+    )
+    _build_ass(srt, ass, 720, 1280, "kinetic", "bottom")
+    dialogue = [line for line in ass.read_text(encoding="utf-8-sig").splitlines() if line.startswith("Dialogue:")]
+    assert dialogue
+    assert all(
+        not (",0:00:00.30," in line and ",0:00:00.90," in line)
+        for line in dialogue
+    )
+    assert any(",0:00:00.00,0:00:00.30," in line for line in dialogue)
+    assert any(",0:00:00.90,0:00:01.20," in line for line in dialogue)

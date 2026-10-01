@@ -17,7 +17,7 @@ from app.schemas.api import (
 )
 from app.services.auth import current_user, require_role
 from app.services.jobs import create_job, event_payload, update_job, utcnow
-from app.services.rendering import create_edited_srt, create_srt, timed_words
+from app.services.rendering import align_edited_words, create_edited_srt, create_srt, timed_words
 from app.services.render_gate import render_short_limited
 from app.services.caption_layout import build_caption_cards
 from app.services.caption_styles import public_caption_styles
@@ -506,9 +506,31 @@ async def clip_captions(clip_id:str,user:dict=Depends(current_user))->dict:
     if not clip: raise HTTPException(404,"Clip not found.")
     if clip.get("status") == "superseded": raise HTTPException(409,"This moment belongs to an earlier analysis and cannot be edited against the new transcript.")
     transcript, segments = await effective_segments_for_video(clip["video_id"])
-    words=timed_words(segments,clip["start_time"],clip["end_time"], allow_synthetic=True)
-    relative_words=[{**word,"start":round(float(word["start"])-clip["start_time"],3),
-                     "end":round(float(word["end"])-clip["start_time"],3)} for word in words]
+    raw_segments = json.loads(transcript["segments_json"]) if transcript else []
+    correction_in_clip = any(
+        segment.get("corrected_text")
+        and float(segment.get("end", 0)) > clip["start_time"]
+        and float(segment.get("start", 0)) < clip["end_time"]
+        for segment in segments
+    )
+    if correction_in_clip and raw_segments:
+        reference = timed_words(raw_segments, clip["start_time"], clip["end_time"])
+        corrected_text = " ".join(
+            str(segment.get("display_text") or segment.get("text") or "").strip()
+            for segment in segments
+            if float(segment.get("end", 0)) > clip["start_time"]
+            and float(segment.get("start", 0)) < clip["end_time"]
+        )
+        relative_words = align_edited_words(
+            corrected_text,
+            clip["end_time"] - clip["start_time"],
+            reference,
+            clip["start_time"],
+        )
+    else:
+        words=timed_words(segments,clip["start_time"],clip["end_time"], allow_synthetic=True)
+        relative_words=[{**word,"start":round(float(word["start"])-clip["start_time"],3),
+                         "end":round(float(word["end"])-clip["start_time"],3)} for word in words]
     cards=build_caption_cards(relative_words)
     language=(transcript or {}).get("language","unknown")
     profile=language_profile(segments, language)

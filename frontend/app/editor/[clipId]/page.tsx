@@ -181,42 +181,33 @@ export default function Editor() {
 
   const captionWords = useMemo(() => transcript.trim().split(/\s+/).filter(Boolean), [transcript]);
   const captionState = useMemo(() => {
-    if (!captionWords.length) return { words: ["Add", "your", "caption", "text"], active: 0, uncertain: [] as boolean[], breakAfter: -1 };
+    if (!captionWords.length) return { words: ["Add", "your", "caption", "text"], active: 0, uncertain: [] as boolean[], breakAfter: -1, visible: true };
     const duration = Math.max(end - start, 1);
     const relative = playhead - start;
-    const liveCard = captionCards.find(card => relative >= card.start && relative <= card.end);
+    const liveCard = captionCards.find(card => relative >= card.start && relative < card.end);
     if (liveCard) {
       const flat = liveCard.lines.join(" ").split(/\s+/).filter(Boolean);
       let active = liveCard.words.findIndex(word => relative >= word.start && relative < word.end);
       if (active < 0) liveCard.words.forEach((word, index) => { if (word.start <= relative) active = index; });
       return { words: flat, active: clamp(active, 0, Math.max(flat.length - 1, 0)),
                uncertain: liveCard.words.map(word => (word.confidence ?? 1) < .6),
-               breakAfter: liveCard.lines.length === 2 ? liveCard.lines[0].split(/\s+/).length : -1 };
+               breakAfter: liveCard.lines.length === 2 ? liveCard.lines[0].split(/\s+/).length : -1,
+               visible: true };
+    }
+    // Once real word/card timing exists, silence must be visually silent too.
+    // Do not keep the previous phrase pinned on screen between speech regions.
+    if (timedCaptionWords.length || captionCards.length) {
+      return { words: [] as string[], active: -1, uncertain: [] as boolean[], breakAfter: -1, visible: false };
     }
     const chunkSize = 4;
-    let wordIndex: number;
-    if (timedCaptionWords.length) {
-      const sourceIndex = timedCaptionWords.findIndex(word => relative >= word.start && relative < word.end);
-      let settledIndex = sourceIndex;
-      if (settledIndex < 0) {
-        settledIndex = 0;
-        timedCaptionWords.forEach((word, index) => { if (word.start <= relative) settledIndex = index; });
-      }
-      wordIndex = Math.round(Math.max(0, settledIndex) * Math.max(0, captionWords.length - 1) /
-                             Math.max(1, timedCaptionWords.length - 1));
-    } else {
-      wordIndex = Math.floor(clamp((playhead - start) / duration, 0, .999) * captionWords.length);
-    }
-    wordIndex = clamp(wordIndex, 0, captionWords.length - 1);
+    const wordIndex = clamp(
+      Math.floor(clamp((playhead - start) / duration, 0, .999) * captionWords.length),
+      0,
+      captionWords.length - 1,
+    );
     const chunkStart = Math.floor(wordIndex / chunkSize) * chunkSize;
     const chunk = captionWords.slice(chunkStart, chunkStart + chunkSize);
-    const uncertain = chunk.map((_, offset) => {
-      if (!timedCaptionWords.length) return false;
-      const sourceIndex = Math.round((chunkStart + offset) * Math.max(0, timedCaptionWords.length - 1) /
-                                     Math.max(1, captionWords.length - 1));
-      return (timedCaptionWords[sourceIndex]?.confidence ?? 1) < .6;
-    });
-    return { words: chunk, active: wordIndex - chunkStart, uncertain, breakAfter: -1 };
+    return { words: chunk, active: wordIndex - chunkStart, uncertain: chunk.map(() => false), breakAfter: -1, visible: true };
   }, [captionWords, timedCaptionWords, captionCards, playhead, start, end]);
 
   function captionPreset(position: "bottom" | "above" | "center") {
@@ -525,7 +516,7 @@ export default function Editor() {
             />
             <button className="canvas-play" onClick={togglePlayback}>{playing ? <Pause fill="currentColor" /> : <Play fill="currentColor" />}</button>
             {hookEnabled && showHook && visibleHook && <div className="canvas-hook">{visibleHook}</div>}
-            <div
+            {captionState.visible && <div
               ref={captionRef}
               className={`caption-preview caption-draggable style-${captionStyle} ${positionClass} ${captionDragging ? "caption-dragging" : ""}`}
               style={previewStyle}
@@ -541,7 +532,7 @@ export default function Editor() {
               <span ref={captionContentRef} className="caption-content">
                 {captionState.words.map((word, index) => <span className={`${index === captionState.active ? "active-word" : ""} ${captionState.uncertain[index] ? "low-confidence" : ""}`} key={`${word}-${index}`}>{word} </span>)}
               </span>
-            </div>
+            </div>}
             {selectedBrandKit?.logo_text && <div className="canvas-brandmark" style={{ color: selectedBrandKit.primary_color }}>{selectedBrandKit.logo_text}</div>}
             {watermark && <div className="canvas-watermark">✦ ClipKaro AI</div>}
             <div className="safe-zone" />
