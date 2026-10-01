@@ -30,6 +30,8 @@ requireText(editor, 'aria-label="Caption text alignment"', "caption alignment ne
 requireText(editor, 'caption_alignment: captionAlignment', "editor must send selected caption alignment");
 requireText(editor, "textAlign: captionAlignment", "preview must render selected caption alignment");
 requireText(editor, "Text wraps and reflows automatically", "UI must explain responsive wrapping");
+requireText(editor, "silence must be visually silent too", "timed caption preview must hide between speech regions");
+requireText(editor, "captionState.visible &&", "caption overlay must be conditional on speech visibility");
 requireText(editor, "applies the placement to every caption in this Short", "layout scope must be explicit");
 requireText(editor, '"--caption-font-size-ratio-effective"', "preview must scale actual font size, not bitmap-transform text");
 requireText(editor, "captionY === null", "preset and custom placement states must stay distinct");
