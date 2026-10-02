@@ -34,7 +34,10 @@ export function LegalOperatorCard() {
   if (!config) return <div style={muted}>Loading public operator and support details…</div>;
 
   return <div style={card}>
-    {!config.paid_launch_ready && <div style={warningInline}>
+    {config.paid_launch_ready ? <div style={noticeInline}>
+      <b>Production paid checkout is enabled.</b><br/>
+      Operator identity, principal address, customer-care and grievance particulars are configured for the live service.
+    </div> : <div style={warningInline}>
       <b>Paid launch details are incomplete.</b><br/>
       Checkout remains disabled until operator identity, customer-care and grievance particulars are configured on the production server.
     </div>}
@@ -53,7 +56,7 @@ function FallbackOperatorCard({ failed }: { failed: boolean }) {
   return <div style={card}>
     <div style={failed ? warningInline : noticeInline}>
       <b>{failed ? "Official operator details are temporarily unavailable." : "Official operator details are taking longer than expected."}</b><br/>
-      Public support channels are shown below. Paid checkout remains gated until full operator, principal address, customer-care and grievance particulars are available from the production server.
+      Public support channels are shown below. Live checkout eligibility is enforced server-side using the configured production legal particulars.
     </div>
     <div><span style={label}>Service</span><b>{TRUST_PROFILE.serviceName}</b></div>
     <div><span style={label}>Built by</span><b>{TRUST_PROFILE.founderName}, {TRUST_PROFILE.founderTitle}</b></div>
