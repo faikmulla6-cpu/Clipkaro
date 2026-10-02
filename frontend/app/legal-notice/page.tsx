@@ -7,7 +7,7 @@ export default function LegalNoticePage() {
   return <LegalPage title="Legal Notice & Consumer Information" summary="Public operator, customer-care and grievance information plus the key billing disclosures ClipKaro publishes before accepting paid users.">
     <LegalSection title="1. Service provider particulars">
       <LegalOperatorCard />
-      <p>ClipKaro AI is built by {TRUST_PROFILE.founderName}, {TRUST_PROFILE.founderTitle}. Production paid checkout remains disabled until the required operator identity, principal address, customer-care and grievance details contain real deployment values.</p>
+      <p>ClipKaro AI is built by {TRUST_PROFILE.founderName}, {TRUST_PROFILE.founderTitle}. Production paid checkout is enabled with the required operator identity, principal address, customer-care and grievance particulars configured for the live service.</p>
     </LegalSection>
 
     <LegalSection title="2. Digital service and prices">
