@@ -2,11 +2,12 @@ import hashlib
 import json
 from typing import Any
 
-PIPELINE_VERSION = "7.8.0"
+PIPELINE_VERSION = "7.8.1"
 PIPELINE_COMPONENTS = {
     "asr": "faster-whisper-medium+small-conditional-wer-v4",
     "alignment": "honest-native-or-whisperx-forced-v3",
-    "captions": "hinglish-phrase-layout-v3",
+    "captions": "speech-gated-hinglish-phrase-layout-v4",
+    "speech_activity": "webrtc-vad-20ms-v1",
     "source_caption_scan": "tesseract-hin-eng-band-mask-v2",
     "media_runtime": "validated-ffmpeg-windows-v2",
     "ranking": "multilingual-density-overlap-v2",
@@ -33,6 +34,13 @@ def transcript_state(segments: list[dict[str, Any]], require_consensus: bool = T
     if not current:
         return {"current": False, "export_safe": False, "reason": "stale_pipeline"}
     asr = [s for s in segments if s.get("transcript_origin") == "asr"]
+    if asr and not any(
+        s.get("speech_activity_version") == "webrtc-vad-20ms-v1"
+        and isinstance(s.get("speech_regions"), list)
+        and bool(s.get("speech_regions"))
+        for s in asr
+    ):
+        return {"current": True, "export_safe": False, "reason": "missing_speech_activity"}
     if require_consensus and asr and any(float(s.get("agreement_score") or 0) < .58 for s in asr):
         return {"current": True, "export_safe": False, "reason": "missing_consensus"}
     accepted_alignment = {"forced_aligned"} if require_forced_alignment else {"native_stabilized", "forced_aligned"}
