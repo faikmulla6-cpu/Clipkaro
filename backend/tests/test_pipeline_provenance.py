@@ -17,6 +17,12 @@ def test_asr_transcript_requires_consensus_and_stable_word_alignment():
         "text": "main theek hoon", "start": 0, "end": 1, "transcript_origin": "asr",
         "pipeline_version": PIPELINE_VERSION, "pipeline_fingerprint": PIPELINE_FINGERPRINT,
     }
+    assert transcript_state([base])["reason"] == "missing_speech_activity"
+    base = {
+        **base,
+        "speech_activity_version": "webrtc-vad-20ms-v1",
+        "speech_regions": [{"start": 0.0, "end": 1.0}],
+    }
     assert transcript_state([{**base, "agreement_score": .3}])["reason"] == "missing_consensus"
     assert transcript_state([{**base, "agreement_score": .9}])["reason"] == "missing_alignment"
     verified = {**base, "agreement_score": .9, "alignment_status": "native_stabilized",
