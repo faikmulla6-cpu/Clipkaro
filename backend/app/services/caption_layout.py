@@ -56,6 +56,11 @@ def build_caption_cards(words: list[dict[str, Any]], max_chars: int = 28,
     for word in valid:
         if current:
             pause = float(word["start"]) - float(current[-1]["end"])
+            current_region = current[-1].get("speech_region_id")
+            next_region = word.get("speech_region_id")
+            speech_boundary = (
+                current_region is not None and next_region is not None and current_region != next_region
+            )
             projected = [str(w["text"]).strip() for w in current + [word]]
             projected_lines = _wrap(projected, max_chars)
             too_long = len(projected) > max_words or sum(map(len, projected)) + len(projected) - 1 > max_chars * 2
@@ -64,7 +69,7 @@ def build_caption_cards(words: list[dict[str, Any]], max_chars: int = 28,
             # Break before the new word instead of failing the whole export.
             too_wide = any(_visual_width(line) > max_chars for line in projected_lines)
             too_slow = float(word["end"]) - float(current[0]["start"]) > max_duration
-            if pause >= pause_break or too_long or too_wide or too_slow or END.search(str(current[-1]["text"])):
+            if speech_boundary or pause >= pause_break or too_long or too_wide or too_slow or END.search(str(current[-1]["text"])):
                 texts = [str(w["text"]).strip() for w in current]
                 cards.append(CaptionCard(float(current[0]["start"]), float(current[-1]["end"]),
                                          tuple(current), _wrap(texts, max_chars)))
