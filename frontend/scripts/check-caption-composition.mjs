@@ -31,6 +31,8 @@ requireText(editor, 'caption_alignment: captionAlignment', "editor must send sel
 requireText(editor, "textAlign: captionAlignment", "preview must render selected caption alignment");
 requireText(editor, "Text wraps and reflows automatically", "UI must explain responsive wrapping");
 requireText(editor, "silence must be visually silent too", "timed caption preview must hide between speech regions");
+requireText(editor, "speechRegions.some", "preview visibility must use the persisted speech activity mask");
+requireText(editor, "speechActive", "preview must gate captions on real speech activity");
 requireText(editor, "captionState.visible &&", "caption overlay must be conditional on speech visibility");
 requireText(editor, "applies the placement to every caption in this Short", "layout scope must be explicit");
 requireText(editor, '"--caption-font-size-ratio-effective"', "preview must scale actual font size, not bitmap-transform text");
