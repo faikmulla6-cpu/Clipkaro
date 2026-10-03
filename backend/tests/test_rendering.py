@@ -202,6 +202,19 @@ def test_clip_local_srt_offsets_work_for_early_middle_and_late_clips(tmp_path: P
     assert "roman" in path.read_text()
 
 
+def test_timed_words_clamp_asr_tail_to_persisted_speech_region():
+    segments = [{
+        "start": 0.0,
+        "end": 1.5,
+        "text": "designate",
+        "speech_regions": [{"start": 0.0, "end": 1.0}],
+        "words": [{"start": 0.20, "end": 1.30, "text": "designate", "confidence": .9}],
+    }]
+    words = timed_words(segments, 0.0, 1.5)
+    assert words[0]["end"] == pytest.approx(1.0)
+    assert words[0]["speech_region_id"] == 0
+
+
 def test_corrected_alignment_preserves_speech_region_identity():
     reference = [
         {"start": 10.10, "end": 10.40, "text": "hello", "confidence": .9, "speech_region_id": 4, "speech_aligned": True},
