@@ -2,7 +2,7 @@ import hashlib
 import json
 from typing import Any
 
-PIPELINE_VERSION = "7.8.1"
+PIPELINE_VERSION = "7.8.0"
 PIPELINE_COMPONENTS = {
     "asr": "faster-whisper-medium+small-conditional-wer-v4",
     "alignment": "honest-native-or-whisperx-forced-v3",
