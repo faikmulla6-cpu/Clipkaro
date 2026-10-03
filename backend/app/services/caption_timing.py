@@ -70,7 +70,13 @@ def reconcile_caption_words(
             if min(end, region_end) > max(start, region_start)
         ]
         if overlaps:
-            _, region_id, region_start, region_end = max(overlaps, key=lambda item: item[0])
+            starts_inside = [
+                item for item in overlaps
+                if item[2] <= start < item[3]
+            ]
+            _, region_id, region_start, region_end = (
+                starts_inside[0] if starts_inside else max(overlaps, key=lambda item: item[0])
+            )
             gated_start = max(start, region_start)
             gated_end = min(end, region_end)
             if gated_end > gated_start:
