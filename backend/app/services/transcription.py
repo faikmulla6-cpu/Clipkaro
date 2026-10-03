@@ -46,7 +46,17 @@ async def _transcribe_impl(video_path: Path, model_name: str = "small", language
         path = settings.transcription_fixture_path
         if not path.exists(): raise RuntimeError(f"E2E transcript fixture was not found: {path}")
         payload = json.loads(path.read_text(encoding="utf-8"))
-        return payload.get("language", "en"), payload.get("segments", [])
+        segments = payload.get("segments", [])
+        if segments and not any(segment.get("speech_regions") for segment in segments):
+            fixture_regions = [
+                {"start": round(float(segment.get("start", 0)), 3), "end": round(float(segment.get("end", 0)), 3)}
+                for segment in segments
+                if float(segment.get("end", 0)) > float(segment.get("start", 0))
+            ]
+            if fixture_regions:
+                segments[0]["speech_activity_version"] = SPEECH_ACTIVITY_VERSION
+                segments[0]["speech_regions"] = fixture_regions
+        return payload.get("language", "en"), segments
     if settings.normalized_asr_mode == "api":
         return await _transcribe_api_impl(video_path, language_hint, request_id, asr_route)
     try:
