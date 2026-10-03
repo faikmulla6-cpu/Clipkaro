@@ -80,4 +80,15 @@ def reconcile_caption_words(
                 word["speech_aligned"] = True
         output.append(word)
 
-    return sorted(output, key=lambda item: (float(item["start"]), float(item["end"])))
+    ordered = sorted(output, key=lambda item: (float(item["start"]), float(item["end"])))
+    for index in range(len(ordered) - 1):
+        current = ordered[index]
+        following = ordered[index + 1]
+        current_region = current.get("speech_region_id")
+        if (
+            current_region is not None
+            and current_region == following.get("speech_region_id")
+            and float(following["start"]) > float(current["end"])
+        ):
+            current["end"] = round(float(following["start"]), 3)
+    return ordered
