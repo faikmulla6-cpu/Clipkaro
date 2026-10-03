@@ -38,3 +38,17 @@ def test_clip_speech_regions_are_relative_and_keep_source_ids():
         {"id": 0, "start": 0.0, "end": .3},
         {"id": 1, "start": .7, "end": 1.0},
     ]
+
+
+def test_words_bridge_only_inside_same_speech_region():
+    regions = [{"start": 0.0, "end": 1.0}, {"start": 1.2, "end": 2.0}]
+    words = [
+        {"start": 0.10, "end": 0.30, "text": "one"},
+        {"start": 0.50, "end": 0.70, "text": "two"},
+        {"start": 1.30, "end": 1.50, "text": "three"},
+    ]
+    gated = reconcile_caption_words(words, regions, 0.0, 2.0)
+    assert gated[0]["end"] == pytest.approx(.50)
+    assert gated[1]["end"] == pytest.approx(.70)
+    assert gated[1]["speech_region_id"] == 0
+    assert gated[2]["speech_region_id"] == 1
