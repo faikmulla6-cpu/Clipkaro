@@ -17,7 +17,7 @@ FONT_DIR = Path(__file__).resolve().parents[2] / "assets" / "fonts"
 BUNDLED_DEVANAGARI_FONT = FONT_DIR / "NotoSansDevanagari.ttf"
 logger = logging.getLogger("clipkaro.rendering")
 
-CAPTION_INTERWORD_HOLD_SECONDS = .06
+CAPTION_INTERWORD_HOLD_SECONDS = .02
 
 
 def _caption_state_end(item: dict[str, Any], next_item: dict[str, Any] | None, card_end: float) -> float:
