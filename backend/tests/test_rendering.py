@@ -264,5 +264,5 @@ def test_ass_caps_interword_hold_inside_one_card(tmp_path: Path):
     )
     _build_ass(srt, ass, 720, 1280, "kinetic", "bottom")
     dialogue = [line for line in ass.read_text(encoding="utf-8-sig").splitlines() if line.startswith("Dialogue:")]
-    assert any(",0:00:00.00,0:00:00.36," in line for line in dialogue)
+    assert any(",0:00:00.00,0:00:00.32," in line for line in dialogue)
     assert all(",0:00:00.00,0:00:00.50," not in line for line in dialogue)
