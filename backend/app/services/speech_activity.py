@@ -146,8 +146,12 @@ def detect_speech_regions(audio_path: Path, aggressiveness: int = 2) -> list[dic
         raise RuntimeError("Speech activity analysis exceeded the media safety limit.") from exc
 
     if proc.returncode != 0:
-        detail = proc.stderr.decode(errors="ignore")[-500:]
-        raise RuntimeError(f"Speech activity analysis could not decode audio: {detail}")
+        logger.error(
+            "speech_activity_decode_failed file=%s detail=%s",
+            audio_path.name,
+            proc.stderr.decode(errors="ignore")[-500:],
+        )
+        raise RuntimeError("Speech activity analysis could not decode audio.")
 
     pcm = proc.stdout
     frame_bytes = int(SAMPLE_RATE * FRAME_MS / 1000) * SAMPLE_WIDTH_BYTES
