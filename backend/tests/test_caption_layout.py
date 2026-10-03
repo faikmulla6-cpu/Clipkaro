@@ -55,3 +55,14 @@ def test_pause_threshold_uses_real_speech_gap():
     assert len(cards) == 2
     assert cards[0].end == .30
     assert cards[1].start == .65
+
+
+def test_speech_region_boundary_splits_even_when_timestamp_gap_is_short():
+    stream = [
+        {"start": 0.00, "end": 0.30, "text": "hello", "confidence": .9, "speech_region_id": 0},
+        {"start": 0.36, "end": 0.62, "text": "again", "confidence": .9, "speech_region_id": 1},
+    ]
+    cards = build_caption_cards(stream)
+    assert len(cards) == 2
+    assert cards[0].end == .30
+    assert cards[1].start == .36
