@@ -52,3 +52,12 @@ def test_words_bridge_only_inside_same_speech_region():
     assert gated[1]["end"] == pytest.approx(.70)
     assert gated[1]["speech_region_id"] == 0
     assert gated[2]["speech_region_id"] == 1
+
+
+def test_long_asr_tail_stays_with_region_where_word_started():
+    regions = [{"start": 0.0, "end": 1.0}, {"start": 1.2, "end": 2.0}]
+    words = [{"start": 0.80, "end": 1.70, "text": "designate"}]
+    gated = reconcile_caption_words(words, regions, 0.0, 2.0)
+    assert gated[0]["speech_region_id"] == 0
+    assert gated[0]["start"] == pytest.approx(.80)
+    assert gated[0]["end"] == pytest.approx(1.0)
