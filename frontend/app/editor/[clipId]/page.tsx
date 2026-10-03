@@ -21,9 +21,10 @@ type ExportResponse = { id: string; job_id: string; status: string; expires_at: 
 type ExportStatus = { id: string; status: string; progress: number; download_url?: string | null; expires_at: string };
 type Job = { id?: string; status: string; progress: number; message: string; error?: string; export_id?: string };
 type TimedWord = { start: number; end: number; text: string; confidence?: number };
+type SpeechRegion = { id: number; start: number; end: number };
 type CaptionCard = { start: number; end: number; lines: string[]; words: TimedWord[] };
 type CaptionTrack = {
-  language: string; clip_start: number; clip_end: number; words: TimedWord[]; cards: CaptionCard[];
+  language: string; clip_start: number; clip_end: number; words: TimedWord[]; cards: CaptionCard[]; speech_regions?: SpeechRegion[];
   source_has_burned_captions?: boolean; source_caption_band?: number | null;
   review_suggested?: boolean; review_reasons?: string[];
   india_quality?: { india_quality_suitable?: boolean; likely_language_style?: string; code_switch_score?: number };
@@ -96,6 +97,7 @@ export default function Editor() {
   const [drawerDismissed, setDrawerDismissed] = useState(false);
   const [timedCaptionWords, setTimedCaptionWords] = useState<TimedWord[]>([]);
   const [captionCards, setCaptionCards] = useState<CaptionCard[]>([]);
+  const [speechRegions, setSpeechRegions] = useState<SpeechRegion[]>([]);
   const [sourceHasCaptions, setSourceHasCaptions] = useState(false);
   const [sourceCaptionBand, setSourceCaptionBand] = useState<number | null>(null);
   const [preserveSourceCaptions, setPreserveSourceCaptions] = useState(false);
@@ -134,12 +136,12 @@ export default function Editor() {
       setStart(selected.start_time); setEnd(selected.end_time); setPlayhead(selected.start_time);
       api<CaptionTrack>(`/clips/${clipId}/captions`).then(track => {
         const hasSourceCaptions = !!track.source_has_burned_captions;
-        setTimedCaptionWords(track.words); setCaptionCards(track.cards || []);
+        setTimedCaptionWords(track.words); setCaptionCards(track.cards || []); setSpeechRegions(track.speech_regions || []);
         setSourceHasCaptions(hasSourceCaptions); setSourceCaptionBand(track.source_caption_band ?? null);
         setReviewSuggested(!!track.review_suggested); setReviewReasons(track.review_reasons || []);
         setIndiaQualityHint(track.india_quality?.india_quality_suitable ? `${track.india_quality.likely_language_style || "Indian speech"} detected` : "");
         if (hasSourceCaptions) setPreserveSourceCaptions(true);
-      }).catch(() => { setTimedCaptionWords([]); setCaptionCards([]); setSourceHasCaptions(false); setSourceCaptionBand(null); setPreserveSourceCaptions(false); setReviewSuggested(false); setReviewReasons([]); setIndiaQualityHint(""); });
+      }).catch(() => { setTimedCaptionWords([]); setCaptionCards([]); setSpeechRegions([]); setSourceHasCaptions(false); setSourceCaptionBand(null); setPreserveSourceCaptions(false); setReviewSuggested(false); setReviewReasons([]); setIndiaQualityHint(""); });
     } catch (cause) {
       setLoadError(cause instanceof Error ? cause.message : "The project could not be loaded.");
     }
@@ -184,6 +186,10 @@ export default function Editor() {
     if (!captionWords.length) return { words: ["Add", "your", "caption", "text"], active: 0, uncertain: [] as boolean[], breakAfter: -1, visible: true };
     const duration = Math.max(end - start, 1);
     const relative = playhead - start;
+    const speechActive = !speechRegions.length || speechRegions.some(region => relative >= region.start && relative < region.end);
+    if (!speechActive) {
+      return { words: [] as string[], active: -1, uncertain: [] as boolean[], breakAfter: -1, visible: false };
+    }
     const liveCard = captionCards.find(card => relative >= card.start && relative < card.end);
     if (liveCard) {
       const flat = liveCard.lines.join(" ").split(/\s+/).filter(Boolean);
@@ -208,7 +214,7 @@ export default function Editor() {
     const chunkStart = Math.floor(wordIndex / chunkSize) * chunkSize;
     const chunk = captionWords.slice(chunkStart, chunkStart + chunkSize);
     return { words: chunk, active: wordIndex - chunkStart, uncertain: chunk.map(() => false), breakAfter: -1, visible: true };
-  }, [captionWords, timedCaptionWords, captionCards, playhead, start, end]);
+  }, [captionWords, timedCaptionWords, captionCards, speechRegions, playhead, start, end]);
 
   function captionPreset(position: "bottom" | "above" | "center") {
     setCaptionPosition(position);
