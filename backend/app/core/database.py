@@ -22,7 +22,7 @@ T = TypeVar("T")
 logger = logging.getLogger("clipkaro.database")
 _LOCK_MESSAGES = ("database is locked", "database table is locked", "database schema is locked")
 _LOCK_PRIMARY_CODES = {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}
-POSTGRES_SCHEMA_REVISION = "20260920_05"
+POSTGRES_SCHEMA_REVISION = "20261004_06"
 _postgres_pool: Any = None
 
 
@@ -187,6 +187,10 @@ CREATE TABLE IF NOT EXISTS clips (
   score REAL NOT NULL, score_breakdown_json TEXT NOT NULL DEFAULT '{}', platform TEXT NOT NULL,
   status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
   FOREIGN KEY(video_id) REFERENCES videos(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS clip_edit_plans (
+  clip_id TEXT PRIMARY KEY, plan_json TEXT NOT NULL DEFAULT '{}', updated_at TEXT NOT NULL,
+  FOREIGN KEY(clip_id) REFERENCES clips(id) ON DELETE CASCADE
 );
 CREATE TABLE IF NOT EXISTS exports (
   id TEXT PRIMARY KEY, clip_id TEXT NOT NULL, user_id TEXT NOT NULL, output_path TEXT NOT NULL,
