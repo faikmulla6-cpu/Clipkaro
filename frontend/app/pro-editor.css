@@ -135,3 +135,199 @@ radial-gradient(circle at 50% 12%,rgba(255,255,255,.9),rgba(242,245,240,.5) 45%,
   .pro-video-canvas.ratio-4-5{height:390px!important}.pro-video-canvas.ratio-1-1{height:360px!important}
   .pro-editor-player-controls>span:nth-last-child(-n+2){display:none}
 }
+
+
+/* Professional polish pass — visual-only refinements. */
+@media(min-width:1281px){
+  .pro-editor-body{grid-template-columns:72px 304px minmax(430px,1fr) 330px}
+}
+.pro-editor-topbar{
+  min-height:58px;
+  padding:0 20px;
+  border-bottom-color:#d8dfd5;
+  box-shadow:0 1px 0 rgba(22,53,37,.04),0 5px 18px rgba(22,53,37,.035);
+}
+.pro-editor-title span{font-size:7.5px;color:#637067}
+.pro-editor-title strong{font-size:13.5px;letter-spacing:-.2px}
+.pro-editor-topbar-actions .small{min-height:36px;border-radius:10px;padding-inline:14px}
+.pro-editor-icon-button,.pro-editor-back{transition:background .16s ease,border-color .16s ease,transform .16s ease}
+.pro-editor-icon-button:not(:disabled):active,.pro-editor-back:active{transform:translateY(1px)}
+
+.pro-editor-toolrail{padding:12px 8px;gap:7px}
+.pro-editor-toolrail button{
+  position:relative;
+  min-height:57px;
+  border:1px solid transparent;
+  transition:background .16s ease,color .16s ease,border-color .16s ease,transform .16s ease;
+}
+.pro-editor-toolrail button:hover{border-color:#e4e9e1;transform:translateY(-1px)}
+.pro-editor-toolrail button.active{
+  border-color:#d7e8cd;
+  box-shadow:inset 0 0 0 1px rgba(53,101,74,.03),0 4px 12px rgba(43,92,64,.06);
+}
+.pro-editor-toolrail button.active:before{
+  content:"";
+  position:absolute;
+  left:-8px;
+  width:3px;
+  height:24px;
+  border-radius:0 4px 4px 0;
+  background:var(--green);
+}
+.pro-editor-toolrail button span{font-size:7.5px;letter-spacing:.01em}
+
+.pro-editor-context,.pro-editor-inspector{box-shadow:0 0 0 1px rgba(23,63,49,.01)}
+.pro-editor-panel-head,.pro-editor-inspector-head{padding:15px 16px 12px;background:linear-gradient(180deg,#fff 0%,#fdfefd 100%)}
+.pro-editor-panel-head h2,.pro-editor-inspector-head h3{font-size:16.5px}
+.pro-editor-panel-head p{font-size:8.5px;max-width:250px}
+.pro-editor-context-scroll,.pro-editor-inspector-scroll{padding:12px 13px 16px}
+.pro-editor-field{border-color:#dde4da;box-shadow:0 1px 1px rgba(24,51,35,.015)}
+.pro-editor-field>label{font-size:8.5px}
+.pro-editor-field input,.pro-editor-field textarea,.pro-editor-field select{font-size:9.5px;background:#fff}
+.pro-editor-field input:hover,.pro-editor-field textarea:hover,.pro-editor-field select:hover{border-color:#cdd7c9}
+.pro-editor-toggle{border-radius:10px;padding:9px 7px!important;margin-bottom:5px}
+.pro-editor-toggle:hover{background:#f8faf6}
+.pro-editor-note,.pro-editor-alert p{font-size:8px}
+
+.pro-editor-transcript{
+  padding:13px 12px;
+  line-height:1.9;
+  border-color:#d9e2d5;
+  background:linear-gradient(180deg,#fff,#fcfdfb);
+  box-shadow:inset 0 1px 2px rgba(25,53,36,.025);
+}
+.pro-editor-transcript .smart-word{
+  font-size:11.5px;
+  line-height:1.55;
+  padding:3px 3px;
+  transition:background .13s ease,color .13s ease,box-shadow .13s ease;
+}
+.pro-editor-transcript .smart-word:hover{background:#e9f5e3;box-shadow:0 0 0 1px #d9e9cf}
+.pro-editor-transcript .pause-block{margin:0 4px;border-radius:6px;padding:2px 5px;background:#f4f6f2}
+.pro-editor-smart-actions button{min-height:31px;border-radius:8px}
+.pro-editor-smart-actions button:first-child:not(:disabled){box-shadow:0 5px 14px rgba(23,63,49,.12)}
+
+.pro-editor-stage{
+  padding:18px 18px 9px;
+  background:
+    radial-gradient(circle at 50% 6%,rgba(255,255,255,.98),rgba(247,249,246,.76) 35%,rgba(235,239,233,.94) 100%);
+}
+.pro-editor-stage:before{
+  content:"";
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  opacity:.32;
+  background-image:linear-gradient(rgba(40,72,52,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(40,72,52,.025) 1px,transparent 1px);
+  background-size:26px 26px;
+}
+.pro-editor-stage-meta{top:12px;left:16px;right:16px}
+.pro-editor-stage-meta span{
+  background:rgba(255,255,255,.74);
+  border:1px solid rgba(216,224,214,.88);
+  backdrop-filter:blur(7px);
+  border-radius:999px;
+  padding:4px 8px;
+  box-shadow:0 3px 10px rgba(30,52,38,.035);
+}
+.pro-video-canvas{
+  height:min(52vh,530px)!important;
+  border-radius:14px!important;
+  box-shadow:0 22px 58px rgba(23,45,31,.22),0 0 0 1px rgba(255,255,255,.42)!important;
+  transition:height .18s ease,box-shadow .18s ease;
+}
+.pro-video-canvas:hover{box-shadow:0 25px 64px rgba(23,45,31,.25),0 0 0 1px rgba(255,255,255,.5)!important}
+.pro-canvas-play{backdrop-filter:blur(6px);box-shadow:0 7px 22px rgba(0,0,0,.17)}
+.pro-editor-player-controls{
+  margin-top:9px;
+  background:rgba(255,255,255,.72);
+  border:1px solid rgba(214,222,211,.95);
+  border-radius:11px;
+  padding:3px 7px;
+  min-height:38px;
+  backdrop-filter:blur(8px);
+  box-shadow:0 5px 16px rgba(34,58,42,.045);
+}
+.pro-editor-player-controls>button{border-radius:8px;box-shadow:0 2px 6px rgba(31,68,47,.05)}
+.pro-editor-player-controls>span:last-child,.pro-editor-player-controls>span:nth-last-child(2){background:#f8faf7}
+
+.pro-editor-stat-grid>span{border-color:#dce4d9;background:linear-gradient(180deg,#fbfdf9,#f6f9f4)}
+.pro-editor-help-card{border-color:#d8e7d0;background:linear-gradient(180deg,#f5faef,#eef7e9)}
+.pro-editor-brand-preview{background:linear-gradient(180deg,#fff,#f7faf5)}
+.pro-editor-render-button{min-height:39px;border-radius:10px;box-shadow:0 8px 18px rgba(23,63,49,.12)}
+
+.pro-editor-timeline{
+  padding:8px 14px 11px;
+  border-top-color:#d4dcd1;
+  box-shadow:0 -7px 22px rgba(28,52,37,.035);
+}
+.pro-editor-timeline-toolbar{height:32px}
+.pro-editor-timeline-play button{background:#fff;border-color:#d6dfd3}
+.pro-editor-timeline-status{gap:5px}
+.pro-editor-timeline-status span{border:1px solid #e5e9e2;background:#fafbf9;color:#6e7770}
+.pro-editor-ruler{height:23px}
+.pro-editor-ruler>div:after{
+  content:"";
+  position:absolute;
+  left:0;right:0;bottom:0;
+  height:1px;
+  background:#edf0eb;
+}
+.pro-editor-ruler>div span{font-size:6.5px;color:#7d867f}
+.pro-editor-track-label{font-size:7.5px;color:#68736b;letter-spacing:.1em}
+.pro-editor-track-row{height:35px}
+.pro-editor-video-track,.pro-editor-audio-track,.pro-editor-caption-track{
+  height:31px;
+  border-color:#d8e0d5;
+  border-radius:7px;
+  background:#f8faf7;
+}
+.pro-editor-video-segment{
+  inset:3px;
+  background:
+    repeating-linear-gradient(90deg,rgba(255,255,255,.055) 0 42px,rgba(255,255,255,.14) 42px 43px),
+    linear-gradient(90deg,#285e47,#6f9564);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.22),0 1px 2px rgba(32,67,47,.1);
+}
+.pro-editor-audio-track{gap:2px!important}
+.pro-editor-audio-track>i{border-radius:2px;min-width:2px;background:#9cb2a3!important}
+.pro-editor-caption-track>span:not(.pro-editor-playhead){
+  top:5px;height:19px;
+  border-color:#b7d29f;
+  background:linear-gradient(180deg,#e5f5d6,#dcefc9);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.7);
+}
+.pro-editor-playhead{
+  width:2px;
+  background:#dfff57;
+  box-shadow:0 0 0 1px #285b43,0 0 6px rgba(223,255,87,.45);
+}
+.pro-editor-playhead:before{
+  content:"";
+  position:absolute;
+  top:-4px;left:50%;
+  transform:translate(-50%,-100%);
+  width:0;height:0;
+  border-left:5px solid transparent;
+  border-right:5px solid transparent;
+  border-top:6px solid #285b43;
+}
+.pro-editor-timeline .timeline-removal{background:rgba(230,101,79,.34);border-color:#d9614e}
+.pro-editor-timeline .timeline-split{background:#6754c7;box-shadow:0 0 0 1px #fff,0 0 5px rgba(103,84,199,.28)}
+
+.pro-editor-context-scroll button,.pro-editor-inspector-scroll button,.pro-editor-topbar button,.pro-editor-toolrail button{
+  outline-offset:2px;
+}
+.pro-editor-root button:focus-visible,.pro-editor-root input:focus-visible,.pro-editor-root select:focus-visible,.pro-editor-root textarea:focus-visible{
+  outline:2px solid rgba(53,102,75,.52);
+  outline-offset:2px;
+}
+
+@media(max-height:760px) and (min-width:981px){
+  .pro-editor-root{grid-template-rows:56px minmax(0,1fr) 178px}
+  .pro-editor-panel-head,.pro-editor-inspector-head{padding-top:12px;padding-bottom:10px}
+  .pro-editor-panel-head h2,.pro-editor-inspector-head h3{font-size:15px}
+  .pro-editor-stage{padding-top:12px}
+  .pro-video-canvas{height:min(48vh,455px)!important}
+  .pro-editor-context-scroll,.pro-editor-inspector-scroll{padding-top:9px}
+}
