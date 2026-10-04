@@ -22,6 +22,7 @@ from app.api.secure_upload import router as secure_upload_router
 from app.api.worker_jobs import router as worker_jobs_router
 from app.api.legal import router as legal_router
 from app.api.behavioral_learning import router as behavioral_learning_router
+from app.api.founder_admin import router as founder_admin_router
 from app.api.cloud_uploads import init_cloud_uploads, router as cloud_uploads_router
 from app.api.creator_pulse import init_creator_pulse, router as creator_pulse_router
 from app.core.config import get_settings
@@ -390,6 +391,7 @@ app.include_router(secure_upload_router, prefix=settings.api_prefix)
 app.include_router(worker_jobs_router, prefix=settings.api_prefix)
 app.include_router(legal_router, prefix=settings.api_prefix)
 app.include_router(behavioral_learning_router, prefix=settings.api_prefix)
+app.include_router(founder_admin_router, prefix=settings.api_prefix)
 app.include_router(cloud_uploads_router, prefix=settings.api_prefix)
 app.include_router(creator_pulse_router, prefix=settings.api_prefix)
 app.include_router(router, prefix=settings.api_prefix)
