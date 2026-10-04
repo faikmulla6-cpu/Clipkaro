@@ -11,6 +11,7 @@ from .asr_quality import assess_transcript
 from .transcript_verification import attach_provenance, transcript_agreement, verify_segments
 from .roman_hindi import add_roman_display_text
 from .timestamp_stabilization import stabilize_word_timestamps
+from .speech_activity import SPEECH_ACTIVITY_VERSION, detect_speech_regions
 from .asr_providers import ASRProviderError, transcribe_api, merge_chunk_results
 from .hinglish_roman_pipeline import apply_roman_v3_display_v1
 
@@ -45,7 +46,17 @@ async def _transcribe_impl(video_path: Path, model_name: str = "small", language
         path = settings.transcription_fixture_path
         if not path.exists(): raise RuntimeError(f"E2E transcript fixture was not found: {path}")
         payload = json.loads(path.read_text(encoding="utf-8"))
-        return payload.get("language", "en"), payload.get("segments", [])
+        segments = payload.get("segments", [])
+        if segments and not any(segment.get("speech_regions") for segment in segments):
+            fixture_regions = [
+                {"start": round(float(segment.get("start", 0)), 3), "end": round(float(segment.get("end", 0)), 3)}
+                for segment in segments
+                if float(segment.get("end", 0)) > float(segment.get("start", 0))
+            ]
+            if fixture_regions:
+                segments[0]["speech_activity_version"] = SPEECH_ACTIVITY_VERSION
+                segments[0]["speech_regions"] = fixture_regions
+        return payload.get("language", "en"), segments
     if settings.normalized_asr_mode == "api":
         return await _transcribe_api_impl(video_path, language_hint, request_id, asr_route)
     try:
@@ -56,6 +67,7 @@ async def _transcribe_impl(video_path: Path, model_name: str = "small", language
         ) from exc
     audio_path = video_path.with_suffix(".wav")
     await extract_audio(video_path, audio_path)
+    speech_regions = await asyncio.to_thread(detect_speech_regions, audio_path)
 
     def run() -> tuple[str, list[dict[str, Any]]]:
         settings.model_cache_dir.mkdir(parents=True, exist_ok=True)
@@ -183,6 +195,10 @@ async def _transcribe_impl(video_path: Path, model_name: str = "small", language
         language, rows = await asyncio.to_thread(run)
         if not rows:
             raise RuntimeError("No clear speech was detected. Use a video with audible dialogue and less background music.")
+        if not speech_regions:
+            raise RuntimeError("Speech activity analysis could not verify spoken regions. Try clearer dialogue with less background noise.")
+        rows[0]["speech_activity_version"] = SPEECH_ACTIVITY_VERSION
+        rows[0]["speech_regions"] = speech_regions
         return language, rows
     except RuntimeError:
         raise
@@ -210,6 +226,7 @@ async def _transcribe_api_impl(video_path: Path, language_hint: str, request_id:
         duration = await probe_audio_duration(audio_path)
         if duration > settings.asr_api_max_audio_minutes * 60:
             raise RuntimeError(f"Audio is {duration / 60:.1f} minutes; API ASR limit is {settings.asr_api_max_audio_minutes} minutes. Split the source and retry.")
+        speech_regions = await asyncio.to_thread(detect_speech_regions, audio_path)
         # A ten-minute FLAC is safe for the legacy API providers but can exceed
         # the practical batch response window for Scribe v2.  Keep the general
         # API limit unchanged and make only the already-selected Stage-1 route
@@ -306,6 +323,10 @@ async def _transcribe_api_impl(video_path: Path, language_hint: str, request_id:
             # Store attempts trace as JSON string to avoid bloating segment objects
             if result.attempts_trace:
                 verified[0]["provider_attempts_trace"] = json.dumps(result.attempts_trace, separators=(",", ":"))
+        if not speech_regions:
+            raise RuntimeError("Speech activity analysis could not verify spoken regions. Try clearer dialogue with less background noise.")
+        verified[0]["speech_activity_version"] = SPEECH_ACTIVITY_VERSION
+        verified[0]["speech_regions"] = speech_regions
         # The Roman V3 -> Display V1 chain is a Hinglish-only, operator-enabled
         # candidate.  It is never applied to legacy fallback output or Hindi /
         # Marathi jobs, and it leaves native word start/end values unchanged.

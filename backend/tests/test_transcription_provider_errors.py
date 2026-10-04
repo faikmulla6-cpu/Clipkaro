@@ -24,6 +24,7 @@ def test_api_auth_failure_is_not_misreported_as_transient(monkeypatch: pytest.Mo
 
     monkeypatch.setattr(transcription, "extract_api_audio", fake_extract)
     monkeypatch.setattr(transcription, "probe_audio_duration", fake_duration)
+    monkeypatch.setattr(transcription, "detect_speech_regions", lambda _audio: [{"start": 0.0, "end": 1.0}])
     monkeypatch.setattr(transcription, "chunk_api_audio", fake_chunks)
     monkeypatch.setattr(transcription, "transcribe_api", rejected)
 
@@ -55,6 +56,7 @@ def test_auto_hindi_foreign_script_retries_with_explicit_hindi(monkeypatch: pyte
 
     monkeypatch.setattr(transcription, "extract_api_audio", fake_extract)
     monkeypatch.setattr(transcription, "probe_audio_duration", fake_duration)
+    monkeypatch.setattr(transcription, "detect_speech_regions", lambda _audio: [{"start": 0.0, "end": 30.0}])
     monkeypatch.setattr(transcription, "chunk_api_audio", fake_chunks)
     monkeypatch.setattr(transcription, "transcribe_api", fake_transcribe)
     language, segments = asyncio.run(transcription._transcribe_api_impl(tmp_path / "source.mp4", "auto"))

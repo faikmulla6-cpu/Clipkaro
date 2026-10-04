@@ -33,6 +33,15 @@ def test_s3_presigned_upload_and_bucket_probe(monkeypatch) -> None:
             captured["head_bucket"] = kwargs
             return {"ResponseMetadata": {"HTTPStatusCode": 200}}
 
+        def head_object(self, **kwargs):
+            captured["head_object"] = kwargs
+            error = RuntimeError("not found")
+            error.response = {
+                "ResponseMetadata": {"HTTPStatusCode": 404},
+                "Error": {"Code": "NoSuchKey"},
+            }
+            raise error
+
         def generate_presigned_url(self, operation, **kwargs):
             captured["operation"] = operation
             captured.update(kwargs)
@@ -58,6 +67,10 @@ def test_s3_presigned_upload_and_bucket_probe(monkeypatch) -> None:
     )
     assert url.startswith("https://")
     assert captured["head_bucket"] == {"Bucket": "private-bucket"}
+    assert captured["head_object"] == {
+        "Bucket": "private-bucket",
+        "Key": "system/clipkaro-storage-readiness-probe",
+    }
     assert captured["operation"] == "put_object"
     assert captured["Params"] == {
         "Bucket": "private-bucket",
@@ -65,6 +78,31 @@ def test_s3_presigned_upload_and_bucket_probe(monkeypatch) -> None:
         "ContentType": "video/mp4",
     }
     assert captured["HttpMethod"] == "PUT"
+
+
+def test_s3_probe_rejects_bucket_key_without_object_read_permission(monkeypatch) -> None:
+    class FakeS3:
+        def head_bucket(self, **kwargs):
+            return {"ResponseMetadata": {"HTTPStatusCode": 200}}
+
+        def head_object(self, **kwargs):
+            error = RuntimeError("forbidden")
+            error.response = {
+                "ResponseMetadata": {"HTTPStatusCode": 403},
+                "Error": {"Code": "403"},
+            }
+            raise error
+
+    import boto3
+
+    monkeypatch.setattr(boto3, "client", lambda *args, **kwargs: FakeS3())
+    monkeypatch.setenv("S3_ENDPOINT_URL", "https://s3.example.invalid")
+    monkeypatch.setenv("S3_REGION", "region-1")
+    monkeypatch.setenv("S3_BUCKET_NAME", "private-bucket")
+    monkeypatch.setenv("S3_ACCESS_KEY_ID", "access-key")
+    monkeypatch.setenv("S3_SECRET_ACCESS_KEY", "secret-key-value-1234567890")
+
+    assert asyncio.run(S3StorageProvider().probe()) is False
 
 
 def test_modal_launcher_spawns_only_the_durable_job_id(monkeypatch) -> None:

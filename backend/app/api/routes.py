@@ -18,6 +18,7 @@ from app.schemas.api import (
 from app.services.auth import current_user, require_role
 from app.services.jobs import create_job, event_payload, update_job, utcnow
 from app.services.rendering import align_edited_words, create_edited_srt, create_srt, timed_words
+from app.services.caption_timing import clip_speech_regions
 from app.services.render_gate import render_short_limited
 from app.services.caption_layout import build_caption_cards
 from app.services.caption_styles import public_caption_styles
@@ -537,6 +538,7 @@ async def clip_captions(clip_id:str,user:dict=Depends(current_user))->dict:
     review=transcript_review_summary(segments, language)
     return {"language":language,"clip_start":clip["start_time"],
             "clip_end":clip["end_time"],"words":relative_words,
+            "speech_regions":clip_speech_regions(segments,clip["start_time"],clip["end_time"]),
             "india_quality":profile,
             "review_suggested":review["review_suggested"],
             "review_reasons":review["review_reasons"],

@@ -9,12 +9,24 @@ from typing import Any
 from app.core.config import get_settings
 from .video import ffmpeg_available, find_media_tool
 from .caption_layout import build_caption_cards, validate_cards
+from .caption_timing import reconcile_caption_words, speech_regions_from_segments
 from .caption_styles import get_caption_style
 from .crop_tracking import ffmpeg_focus_expression
 
 FONT_DIR = Path(__file__).resolve().parents[2] / "assets" / "fonts"
 BUNDLED_DEVANAGARI_FONT = FONT_DIR / "NotoSansDevanagari.ttf"
 logger = logging.getLogger("clipkaro.rendering")
+
+CAPTION_INTERWORD_HOLD_SECONDS = .02
+
+
+def _caption_state_end(item: dict[str, Any], next_item: dict[str, Any] | None, card_end: float) -> float:
+    """Keep connected words visually stable without painting through silence."""
+    word_end = float(item["end"])
+    if next_item is None:
+        return min(float(card_end), word_end)
+    next_start = float(next_item["start"])
+    return max(word_end, min(next_start, word_end + CAPTION_INTERWORD_HOLD_SECONDS))
 
 
 def subtitle_ass_filter(ass_path: str | Path, fonts_path: str | Path) -> str:
@@ -62,7 +74,11 @@ def timed_words(segments: list[dict[str, Any]], clip_start: float, clip_end: flo
         result.extend({"start": start + index * span, "end": min(end, start + (index + 1) * span),
                        "text": token, "confidence": 0.5}
                       for index, token in enumerate(tokens))
-    return sorted(result, key=lambda item: (item["start"], item["end"]))
+    ordered = sorted(result, key=lambda item: (item["start"], item["end"]))
+    speech_regions = speech_regions_from_segments(segments)
+    if speech_regions and ordered:
+        return reconcile_caption_words(ordered, speech_regions, clip_start, clip_end)
+    return ordered
 
 
 def _write_word_srt(words: list[dict[str, Any]], path: Path, offset: float = 0) -> None:
@@ -105,9 +121,13 @@ def align_edited_words(text: str, duration: float,
         if mapped is None:
             mapped = round(index * (len(reference) - 1) / max(1, len(edited) - 1))
         source = reference[max(0, min(mapped, len(reference) - 1))]
-        aligned.append({"start": float(source["start"]) - clip_start,
+        aligned_word = {"start": float(source["start"]) - clip_start,
                         "end": float(source["end"]) - clip_start, "text": word,
-                        "confidence": float(source.get("confidence", 1))})
+                        "confidence": float(source.get("confidence", 1))}
+        if source.get("speech_region_id") is not None:
+            aligned_word["speech_region_id"] = source["speech_region_id"]
+            aligned_word["speech_aligned"] = bool(source.get("speech_aligned", True))
+        aligned.append(aligned_word)
     # Corrections may add words; guarantee monotonic non-zero events without
     # moving matched audio anchors or filling the silence between anchors.
     for index in range(1, len(aligned)):
@@ -350,8 +370,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 cursor += widths[item_index] + gap
         for active_index, item in enumerate(card.words):
             start = float(item["start"])
-            end = float(card.words[active_index + 1]["start"]) if active_index + 1 < len(card.words) else card.end
-            end = max(float(item["end"]), end)
+            next_item = card.words[active_index + 1] if active_index + 1 < len(card.words) else None
+            end = _caption_state_end(item, next_item, card.end)
             if end <= start:
                 continue
             center_x, center_y = positions[active_index]
@@ -458,8 +478,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         card_shape = _india_pop_round_rect(round(card_width + pad_x * 2), card_height, radius)
         for active_index, item in enumerate(card.words):
             start = float(item["start"])
-            end = float(card.words[active_index + 1]["start"]) if active_index + 1 < len(card.words) else card.end
-            end = max(float(item["end"]), end)
+            next_item = card.words[active_index + 1] if active_index + 1 < len(card.words) else None
+            end = _caption_state_end(item, next_item, card.end)
             if end <= start:
                 continue
             if style_id == "clean":
@@ -567,9 +587,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         card_end = card.end
         card_texts = [str(item["text"]).upper() if transform == "uppercase" else str(item["text"]) for item in card.words]
         for index, item in enumerate(card.words):
-            word_start, word_end = float(item["start"]), float(item["end"])
-            state_end = float(card.words[index + 1]["start"]) if index + 1 < len(card.words) else card_end
-            state_end = max(word_end, state_end)
+            word_start = float(item["start"])
+            next_item = card.words[index + 1] if index + 1 < len(card.words) else None
+            state_end = _caption_state_end(item, next_item, card_end)
             styled_words = [
                 f"{{\\c{active}}}{_ass_safe(value)}{{\\c{normal}}}" if item_index == index else _ass_safe(value)
                 for item_index, value in enumerate(card_texts)

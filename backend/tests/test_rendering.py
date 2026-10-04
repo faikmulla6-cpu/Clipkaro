@@ -202,6 +202,29 @@ def test_clip_local_srt_offsets_work_for_early_middle_and_late_clips(tmp_path: P
     assert "roman" in path.read_text()
 
 
+def test_timed_words_clamp_asr_tail_to_persisted_speech_region():
+    segments = [{
+        "start": 0.0,
+        "end": 1.5,
+        "text": "designate",
+        "speech_regions": [{"start": 0.0, "end": 1.0}],
+        "words": [{"start": 0.20, "end": 1.30, "text": "designate", "confidence": .9}],
+    }]
+    words = timed_words(segments, 0.0, 1.5)
+    assert words[0]["end"] == pytest.approx(1.0)
+    assert words[0]["speech_region_id"] == 0
+
+
+def test_corrected_alignment_preserves_speech_region_identity():
+    reference = [
+        {"start": 10.10, "end": 10.40, "text": "hello", "confidence": .9, "speech_region_id": 4, "speech_aligned": True},
+        {"start": 11.10, "end": 11.40, "text": "world", "confidence": .9, "speech_region_id": 5, "speech_aligned": True},
+    ]
+    aligned = align_edited_words("hello world", 2.0, reference, 10.0)
+    assert aligned[0]["speech_region_id"] == 4
+    assert aligned[1]["speech_region_id"] == 5
+
+
 def test_corrected_caption_alignment_preserves_reference_silence():
     reference = [
         {"start": 10.10, "end": 10.40, "text": "hello", "confidence": .9},
@@ -230,3 +253,16 @@ def test_ass_does_not_bridge_real_silence_between_caption_cards(tmp_path: Path):
     )
     assert any(",0:00:00.00,0:00:00.30," in line for line in dialogue)
     assert any(",0:00:00.90,0:00:01.20," in line for line in dialogue)
+
+
+def test_ass_caps_interword_hold_inside_one_card(tmp_path: Path):
+    srt, ass = tmp_path / "short-pause.srt", tmp_path / "short-pause.ass"
+    srt.write_text(
+        "1\n00:00:00,000 --> 00:00:00,300\nhello\n\n"
+        "2\n00:00:00,500 --> 00:00:00,800\nworld\n",
+        encoding="utf-8",
+    )
+    _build_ass(srt, ass, 720, 1280, "kinetic", "bottom")
+    dialogue = [line for line in ass.read_text(encoding="utf-8-sig").splitlines() if line.startswith("Dialogue:")]
+    assert any(",0:00:00.00,0:00:00.32," in line for line in dialogue)
+    assert all(",0:00:00.00,0:00:00.50," not in line for line in dialogue)

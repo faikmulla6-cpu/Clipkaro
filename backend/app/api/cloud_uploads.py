@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -20,6 +21,7 @@ from app.services.video import upload_type_supported
 from app.services.youtube_import import canonicalize_youtube_url
 
 router = APIRouter()
+logger = logging.getLogger("clipkaro.cloud_uploads")
 _ALLOWED_MIME = {"video/mp4", "video/quicktime", "video/webm", "video/x-matroska", "video/matroska", "application/octet-stream"}
 _ALLOWED_LANGUAGES = {"auto", "en", "hi", "hinglish", "mr"}
 _ALLOWED_CATEGORIES = {"auto", "education", "podcast", "business", "motivation", "spiritual", "local-business"}
@@ -117,7 +119,17 @@ async def complete_upload(session_id: str, user: dict = Depends(current_user)) -
         return {"project_id": session["project_id"], "job_id": session["job_id"], "status": (job or {}).get("status", "queued")}
     if session.get("status") != "initiated" or datetime.fromisoformat(session["expires_at"]) <= _now():
         raise HTTPException(410, "Upload session expired or is no longer usable.")
-    metadata = await get_storage_provider().stat(session["object_key"])
+    try:
+        metadata = await get_storage_provider().stat(session["object_key"])
+    except Exception:
+        logger.exception(
+            "uploaded_object_verification_failed upload_session_id=%s",
+            session_id,
+        )
+        raise HTTPException(
+            503,
+            "Private media storage could not verify the uploaded video. Please retry shortly.",
+        ) from None
     if not metadata:
         raise HTTPException(409, "The uploaded object is not available yet.")
     if metadata.size != int(session["expected_size"]):

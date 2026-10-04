@@ -313,6 +313,23 @@ class S3StorageProvider:
                 self.client.head_bucket,
                 Bucket=self.bucket,
             )
+            # A bucket-level check can succeed for a key that may list and
+            # write objects but cannot read them. ClipKaro must be able to read
+            # uploaded media before accepting traffic. Probing a reserved,
+            # nonexistent object validates HeadObject/read permission without
+            # creating or deleting any data; 404 is the expected healthy result.
+            try:
+                await asyncio.to_thread(
+                    self.client.head_object,
+                    Bucket=self.bucket,
+                    Key="system/clipkaro-storage-readiness-probe",
+                )
+            except Exception as exc:
+                error_response = getattr(exc, "response", {}) or {}
+                status = error_response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+                code = str(error_response.get("Error", {}).get("Code", ""))
+                if status != 404 and code not in {"404", "NoSuchKey", "NotFound"}:
+                    return False
             return True
         except Exception:
             return False
