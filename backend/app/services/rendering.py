@@ -92,6 +92,11 @@ def create_srt(segments: list[dict[str, Any]], clip_start: float, clip_end: floa
     _write_word_srt(timed_words(segments, clip_start, clip_end), path, clip_start)
 
 
+def create_word_srt(words: list[dict[str, Any]], path: Path) -> None:
+    """Write already clip-local words, including Smart Edit retimed words."""
+    _write_word_srt(words, path)
+
+
 def align_edited_words(text: str, duration: float,
                        reference_words: list[dict[str, Any]] | None = None,
                        clip_start: float = 0) -> list[dict[str, Any]]:
@@ -659,6 +664,20 @@ def _base_video_filters(width: int, height: int, focus_expression: str,
     ]
 
 
+def smart_edit_filter_complex(filters: list[str], ranges: list[dict[str, float]]) -> str:
+    """Concatenate kept A/V ranges, then apply the normal visual stack once."""
+    pieces: list[str] = []
+    concat_inputs: list[str] = []
+    for index, item in enumerate(ranges):
+        start, end = float(item["start"]), float(item["end"])
+        pieces.append(f"[0:v]trim=start={start:.3f}:end={end:.3f},setpts=PTS-STARTPTS[v{index}]")
+        pieces.append(f"[0:a]atrim=start={start:.3f}:end={end:.3f},asetpts=PTS-STARTPTS[a{index}]")
+        concat_inputs.extend((f"[v{index}]", f"[a{index}]"))
+    pieces.append("".join(concat_inputs) + f"concat=n={len(ranges)}:v=1:a=1[vcat][acat]")
+    pieces.append(f"[vcat]{','.join(filters)}[vout]")
+    return ";".join(pieces)
+
+
 async def render_short(source: Path, output: Path, start: float, end: float, srt: Path | None,
                        hook: str, watermark: bool, resolution: str = "720p", aspect_ratio: str = "9:16",
                        caption_style: str = "kinetic", brand_text: str = "",
@@ -667,7 +686,8 @@ async def render_short(source: Path, output: Path, start: float, end: float, srt
                        crop_keyframes: list[dict[str, float]] | None = None,
                        source_caption_band: float | None = None,
                        caption_x: float = 50.0, caption_y: float | None = None,
-                       caption_scale: float = 1.0, caption_alignment: str = "center") -> None:
+                       caption_scale: float = 1.0, caption_alignment: str = "center",
+                       edit_ranges: list[dict[str, float]] | None = None) -> None:
     if not ffmpeg_available():
         raise RuntimeError("FFmpeg and FFprobe are required to export video.")
     ffmpeg, ffprobe = find_media_tool("ffmpeg"), find_media_tool("ffprobe")
@@ -726,15 +746,26 @@ async def render_short(source: Path, output: Path, start: float, end: float, srt
             "boxcolor=black@0.34:boxborderw=8:x=24:y=24"
         )
     try:
+        has_smart_cuts = bool(edit_ranges) and not (
+            len(edit_ranges or []) == 1
+            and abs(float(edit_ranges[0]["start"])) < .001
+            and abs(float(edit_ranges[0]["end"]) - (end - start)) < .001
+        )
+        input_args = [ffmpeg, "-nostdin", "-threads", str(ffmpeg_threads), "-y", "-ss", str(start), "-i", str(source.resolve())]
+        if has_smart_cuts:
+            render_args = input_args + ["-filter_complex", smart_edit_filter_complex(filters, edit_ranges or []),
+                "-map", "[vout]", "-map", "[acat]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(output.resolve())]
+        else:
+            render_args = input_args + ["-t", str(end-start), "-vf", ",".join(filters), "-c:v", "libx264",
+                "-preset", "veryfast", "-crf", "23", "-c:a", "aac", "-b:a", "128k",
+                "-movflags", "+faststart", str(output.resolve())]
         proc = await asyncio.to_thread(
             subprocess.run,
             # Input seeking gives the filter graph a clip-local timeline.  With
             # output seeking, ASS subtitle events could be evaluated against
             # the original source timestamp and vanish on later clips.
-            [ffmpeg, "-nostdin", "-threads", str(ffmpeg_threads), "-y", "-ss", str(start), "-i", str(source.resolve()),
-             "-t", str(end-start), "-vf", ",".join(filters), "-c:v", "libx264",
-             "-preset", "veryfast", "-crf", "23", "-c:a", "aac", "-b:a", "128k",
-             "-movflags", "+faststart", str(output.resolve())],
+            render_args,
             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=False,
             cwd=str(output.parent.resolve()), timeout=process_timeout,
         )
@@ -771,6 +802,8 @@ async def render_short(source: Path, output: Path, start: float, end: float, srt
     except (ValueError, TypeError, json.JSONDecodeError):
         rendered_duration, rendered_size, has_video = 0.0, 0, False
     expected = end - start
+    if edit_ranges:
+        expected = sum(float(item["end"]) - float(item["start"]) for item in edit_ranges)
     if probe.returncode != 0 or not has_video or rendered_size < 10_000 or rendered_duration < max(1.0, expected * .9):
         output.unlink(missing_ok=True)
         raise RuntimeError("Video render failed validation because the source ended early or is incomplete. Upload the complete original MP4 and retry.")

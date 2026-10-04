@@ -97,6 +97,7 @@ class ClipPatch(BaseModel):
     hook: str | None = Field(default=None, max_length=120)
     title: str | None = Field(default=None, max_length=120)
     transcript_text: str | None = Field(default=None, max_length=10000)
+    edit_plan: dict | None = None
 
 
 class TranscriptCorrectionRequest(BaseModel):

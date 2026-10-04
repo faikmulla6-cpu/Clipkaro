@@ -19,6 +19,7 @@
     "check:release-identity": "node scripts/check-release-identity.mjs",
     "check:search-discovery": "node scripts/check-search-discovery.mjs",
     "check:caption-composition": "node scripts/check-caption-composition.mjs",
+    "check:smart-edit": "node scripts/check-smart-edit.mjs",
     "check:public-mobile": "node scripts/check-public-mobile.mjs",
     "build": "next build --webpack",
     "start": "next start",

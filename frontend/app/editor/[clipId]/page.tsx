@@ -7,7 +7,7 @@ import { API_URL, api, patchJSON, postJSON } from "@/lib/api";
 import { downloadExport, newBehaviorSession, trackClipBehavior } from "@/lib/behavior";
 import {
   AlertTriangle, AlignCenter, AlignLeft, AlignRight, ArrowRight, Captions, Check, Download, Film, Loader2, LockKeyhole, MoveHorizontal,
-  Palette, Pause, Play, Save, Send, Smartphone, Sparkles, Square, Type, X, ZoomIn, ZoomOut,
+  Palette, Pause, Play, Redo2, Save, Scissors, Send, Smartphone, Sparkles, Square, Type, Undo2, WandSparkles, X, ZoomIn, ZoomOut,
 } from "lucide-react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -20,11 +20,14 @@ type Project = { id: string; title: string; duration: number; clips: Clip[] };
 type ExportResponse = { id: string; job_id: string; status: string; expires_at: string };
 type ExportStatus = { id: string; status: string; progress: number; download_url?: string | null; expires_at: string };
 type Job = { id?: string; status: string; progress: number; message: string; error?: string; export_id?: string };
-type TimedWord = { start: number; end: number; text: string; confidence?: number };
+type TimedWord = { start: number; end: number; text: string; confidence?: number; source_start?: number; source_end?: number };
+type RemovedRange = { start: number; end: number; reason: string };
+type EditPlan = { version: 1; removed_ranges: RemovedRange[]; split_points: number[] };
 type SpeechRegion = { id: number; start: number; end: number };
 type CaptionCard = { start: number; end: number; lines: string[]; words: TimedWord[] };
 type CaptionTrack = {
   language: string; clip_start: number; clip_end: number; words: TimedWord[]; cards: CaptionCard[]; speech_regions?: SpeechRegion[];
+  source_words?: TimedWord[]; edit_plan?: EditPlan; clean_speech_ranges?: RemovedRange[];
   source_has_burned_captions?: boolean; source_caption_band?: number | null;
   review_suggested?: boolean; review_reasons?: string[];
   india_quality?: { india_quality_suitable?: boolean; likely_language_style?: string; code_switch_score?: number };
@@ -45,6 +48,8 @@ const styles = [
 ] as const;
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+const emptyEditPlan = (): EditPlan => ({ version: 1, removed_ranges: [], split_points: [] });
+const rangeContains = (range: RemovedRange, time: number) => time >= range.start && time < range.end;
 
 export default function Editor() {
   const { clipId } = useParams<{ clipId: string }>();
@@ -96,6 +101,11 @@ export default function Editor() {
   const [error, setError] = useState("");
   const [drawerDismissed, setDrawerDismissed] = useState(false);
   const [timedCaptionWords, setTimedCaptionWords] = useState<TimedWord[]>([]);
+  const [sourceWords, setSourceWords] = useState<TimedWord[]>([]);
+  const [editPlan, setEditPlan] = useState<EditPlan>(emptyEditPlan);
+  const [cleanSpeechRanges, setCleanSpeechRanges] = useState<RemovedRange[]>([]);
+  const [undoPlans, setUndoPlans] = useState<EditPlan[]>([]);
+  const [redoPlans, setRedoPlans] = useState<EditPlan[]>([]);
   const [captionCards, setCaptionCards] = useState<CaptionCard[]>([]);
   const [speechRegions, setSpeechRegions] = useState<SpeechRegion[]>([]);
   const [sourceHasCaptions, setSourceHasCaptions] = useState(false);
@@ -136,12 +146,14 @@ export default function Editor() {
       setStart(selected.start_time); setEnd(selected.end_time); setPlayhead(selected.start_time);
       api<CaptionTrack>(`/clips/${clipId}/captions`).then(track => {
         const hasSourceCaptions = !!track.source_has_burned_captions;
-        setTimedCaptionWords(track.words); setCaptionCards(track.cards || []); setSpeechRegions(track.speech_regions || []);
+        const source = track.source_words || track.words;
+        setSourceWords(source); setTimedCaptionWords(source); setCaptionCards(track.source_words ? [] : (track.cards || [])); setSpeechRegions(track.speech_regions || []);
+        setEditPlan(track.edit_plan || emptyEditPlan()); setCleanSpeechRanges(track.clean_speech_ranges || []); setUndoPlans([]); setRedoPlans([]);
         setSourceHasCaptions(hasSourceCaptions); setSourceCaptionBand(track.source_caption_band ?? null);
         setReviewSuggested(!!track.review_suggested); setReviewReasons(track.review_reasons || []);
         setIndiaQualityHint(track.india_quality?.india_quality_suitable ? `${track.india_quality.likely_language_style || "Indian speech"} detected` : "");
         if (hasSourceCaptions) setPreserveSourceCaptions(true);
-      }).catch(() => { setTimedCaptionWords([]); setCaptionCards([]); setSpeechRegions([]); setSourceHasCaptions(false); setSourceCaptionBand(null); setPreserveSourceCaptions(false); setReviewSuggested(false); setReviewReasons([]); setIndiaQualityHint(""); });
+      }).catch(() => { setTimedCaptionWords([]); setSourceWords([]); setEditPlan(emptyEditPlan()); setCleanSpeechRanges([]); setCaptionCards([]); setSpeechRegions([]); setSourceHasCaptions(false); setSourceCaptionBand(null); setPreserveSourceCaptions(false); setReviewSuggested(false); setReviewReasons([]); setIndiaQualityHint(""); });
     } catch (cause) {
       setLoadError(cause instanceof Error ? cause.message : "The project could not be loaded.");
     }
@@ -182,6 +194,13 @@ export default function Editor() {
   useEffect(() => () => stopJobWatch(), [stopJobWatch]);
 
   const captionWords = useMemo(() => transcript.trim().split(/\s+/).filter(Boolean), [transcript]);
+  const wordRemoved = useCallback((word: TimedWord, plan = editPlan) => plan.removed_ranges.some(range => word.start < range.end && word.end > range.start), [editPlan]);
+  const editedDuration = useMemo(() => Math.max(.25, end - start - editPlan.removed_ranges.reduce((total, range) => total + range.end - range.start, 0)), [editPlan, start, end]);
+  const pauseBlocks = useMemo(() => sourceWords.slice(1).map((word, index) => ({ start: sourceWords[index].end, end: word.start, reason: "silence" })).filter(item => item.end - item.start >= .25), [sourceWords]);
+  useEffect(() => {
+    if (!sourceWords.length) return;
+    setTranscript(sourceWords.filter(word => !wordRemoved(word)).map(word => word.text).join(" "));
+  }, [sourceWords, editPlan, wordRemoved]);
   const captionState = useMemo(() => {
     if (!captionWords.length) return { words: ["Add", "your", "caption", "text"], active: 0, uncertain: [] as boolean[], breakAfter: -1, visible: true };
     const duration = Math.max(end - start, 1);
@@ -200,6 +219,15 @@ export default function Editor() {
                breakAfter: liveCard.lines.length === 2 ? liveCard.lines[0].split(/\s+/).length : -1,
                visible: true };
     }
+    if (sourceWords.length) {
+      const visible = sourceWords.filter(word => !wordRemoved(word));
+      let active = visible.findIndex(word => relative >= word.start && relative < word.end);
+      if (active < 0) return { words: [] as string[], active: -1, uncertain: [] as boolean[], breakAfter: -1, visible: false };
+      const chunkStart = Math.floor(active / 4) * 4;
+      const chunk = visible.slice(chunkStart, chunkStart + 4);
+      return { words: chunk.map(word => word.text), active: active - chunkStart,
+        uncertain: chunk.map(word => (word.confidence ?? 1) < .6), breakAfter: -1, visible: true };
+    }
     // Once real word/card timing exists, silence must be visually silent too.
     // Do not keep the previous phrase pinned on screen between speech regions.
     if (timedCaptionWords.length || captionCards.length) {
@@ -214,7 +242,45 @@ export default function Editor() {
     const chunkStart = Math.floor(wordIndex / chunkSize) * chunkSize;
     const chunk = captionWords.slice(chunkStart, chunkStart + chunkSize);
     return { words: chunk, active: wordIndex - chunkStart, uncertain: chunk.map(() => false), breakAfter: -1, visible: true };
-  }, [captionWords, timedCaptionWords, captionCards, speechRegions, playhead, start, end]);
+  }, [captionWords, timedCaptionWords, captionCards, sourceWords, wordRemoved, speechRegions, playhead, start, end]);
+
+  function commitEditPlan(next: EditPlan) {
+    setUndoPlans(history => [...history.slice(-49), editPlan]);
+    setRedoPlans([]);
+    setEditPlan(next);
+    const kept = sourceWords.filter(word => !wordRemoved(word, next)).map(word => word.text).join(" ");
+    if (kept) setTranscript(kept);
+  }
+
+  function removeRange(range: RemovedRange) {
+    if (editPlan.removed_ranges.some(item => Math.abs(item.start - range.start) < .01 && Math.abs(item.end - range.end) < .01)) return;
+    commitEditPlan({ ...editPlan, removed_ranges: [...editPlan.removed_ranges, range].sort((a, b) => a.start - b.start) });
+  }
+
+  function restoreRange(range: RemovedRange) {
+    commitEditPlan({ ...editPlan, removed_ranges: editPlan.removed_ranges.filter(item => item !== range) });
+  }
+
+  function undoEdit() {
+    const previous = undoPlans.at(-1); if (!previous) return;
+    setUndoPlans(history => history.slice(0, -1)); setRedoPlans(history => [...history, editPlan]); setEditPlan(previous);
+  }
+
+  function redoEdit() {
+    const next = redoPlans.at(-1); if (!next) return;
+    setRedoPlans(history => history.slice(0, -1)); setUndoPlans(history => [...history, editPlan]); setEditPlan(next);
+  }
+
+  function splitAtPlayhead() {
+    const point = Number(clamp(playhead - start, .05, end - start - .05).toFixed(3));
+    if (editPlan.split_points.some(item => Math.abs(item - point) < .05)) return;
+    commitEditPlan({ ...editPlan, split_points: [...editPlan.split_points, point].sort((a, b) => a - b) });
+  }
+
+  function cleanSpeech() {
+    const additions = cleanSpeechRanges.filter(range => !editPlan.removed_ranges.some(item => range.start < item.end && range.end > item.start));
+    if (additions.length) commitEditPlan({ ...editPlan, removed_ranges: [...editPlan.removed_ranges, ...additions].sort((a, b) => a.start - b.start) });
+  }
 
   function captionPreset(position: "bottom" | "above" | "center") {
     setCaptionPosition(position);
@@ -305,6 +371,9 @@ export default function Editor() {
   function onLoaded() { seekToClipStart(); }
   function onTimeUpdate() {
     const video = videoRef.current; if (!video) return;
+    const relative = video.currentTime - start;
+    const removed = editPlan.removed_ranges.find(range => rangeContains(range, relative));
+    if (removed) { video.currentTime = Math.min(end, start + removed.end + .002); setPlayhead(video.currentTime); return; }
     if (video.currentTime < start - .2 || video.currentTime >= end) {
       video.currentTime = start;
       if (!video.paused) void video.play();
@@ -340,7 +409,7 @@ export default function Editor() {
     setSaving(true); setError("");
     try {
       const updated = await patchJSON<Clip>(`/clips/${clip.id}`, {
-        hook, title, transcript_text: transcript, start_time: start, end_time: end,
+        hook, title, transcript_text: transcript, start_time: start, end_time: end, edit_plan: editPlan,
       });
       setClip(updated);
       if (changedFields.length) {
@@ -545,8 +614,12 @@ export default function Editor() {
           </div>
 
           <div className="timeline">
-            <div className="timeline-head"><button onClick={togglePlayback}>{playing ? <Pause size={13} /> : <Play size={13} />} {playing ? "Pause clip" : "Play selected clip"}</button><b>{Math.round(end - start)} sec</b></div>
-            <div className="waveform">{Array.from({ length: 64 }).map((_, i) => <i key={i} style={{ height: `${18 + Math.abs(Math.sin(i * .7)) * 35}px` }} />)}<div className="trim-region" style={{ "--playhead": `${clamp((playhead - start) / Math.max(end - start, 1), 0, 1) * 100}%` } as React.CSSProperties} /></div>
+            <div className="timeline-head"><button onClick={togglePlayback}>{playing ? <Pause size={13} /> : <Play size={13} />} {playing ? "Pause clip" : "Play selected clip"}</button><b>{editedDuration.toFixed(1)} sec edited</b></div>
+            <div className="waveform smart-waveform">{Array.from({ length: 64 }).map((_, i) => <i key={i} style={{ height: `${18 + Math.abs(Math.sin(i * .7)) * 35}px` }} />)}
+              {editPlan.removed_ranges.map((range, index) => <span className="timeline-removal" key={`${range.start}-${index}`} style={{ left: `${range.start / Math.max(end - start, 1) * 100}%`, width: `${(range.end - range.start) / Math.max(end - start, 1) * 100}%` }} />)}
+              {editPlan.split_points.map(point => <span className="timeline-split" key={point} style={{ left: `${point / Math.max(end - start, 1) * 100}%` }} />)}
+              <div className="trim-region" style={{ "--playhead": `${clamp((playhead - start) / Math.max(end - start, 1), 0, 1) * 100}%` } as React.CSSProperties} />
+            </div>
             <div className="time-ruler"><span>{start.toFixed(1)}s</span><span>{playhead.toFixed(1)}s live</span><span>{end.toFixed(1)}s</span></div>
           </div>
         </section>
@@ -598,7 +671,19 @@ export default function Editor() {
           </>}
 
           {activeTab === "transcript" && <>
-            <div className="editor-section"><label>Editable transcript</label><textarea className="transcript-editor" value={transcript} onChange={event => setTranscript(event.target.value)} /><p className="field-note">Changes appear in the live caption preview and are saved with this clip.</p></div>
+            <div className="editor-section smart-edit-section">
+              <div className="smart-edit-head"><div><label>Smart Edit V1</label><p>Click words or pauses to remove them from video, audio and captions.</p></div><div><button type="button" title="Undo" aria-label="Undo Smart Edit" disabled={!undoPlans.length} onClick={undoEdit}><Undo2 size={14}/></button><button type="button" title="Redo" aria-label="Redo Smart Edit" disabled={!redoPlans.length} onClick={redoEdit}><Redo2 size={14}/></button></div></div>
+              <div className="smart-edit-actions"><button type="button" onClick={cleanSpeech} disabled={!cleanSpeechRanges.length}><WandSparkles size={13}/> Clean Speech</button><button type="button" onClick={splitAtPlayhead}><Scissors size={13}/> Split at {Math.max(0, playhead-start).toFixed(1)}s</button></div>
+              <div className="smart-transcript" aria-label="Text based video editor">
+                {sourceWords.map((word, index) => {
+                  const removed = editPlan.removed_ranges.find(range => word.start < range.end && word.end > range.start);
+                  const pause = index < sourceWords.length - 1 ? pauseBlocks.find(item => Math.abs(item.start - word.end) < .01) : undefined;
+                  return <span className="smart-token-group" key={`${word.start}-${index}`}><button type="button" className={`smart-word ${removed ? "removed" : ""}`} title={removed ? "Restore word" : "Remove word from media"} onClick={() => removed ? restoreRange(removed) : removeRange({ start: word.start, end: word.end, reason: "word" })}>{word.text}</button>{pause && <button type="button" className={`pause-block ${editPlan.removed_ranges.some(range => rangeContains(range, (pause.start+pause.end)/2)) ? "removed" : ""}`} title={`${(pause.end-pause.start).toFixed(1)}s pause — click to remove`} onClick={() => removeRange(pause)}><Pause size={9}/>{(pause.end-pause.start).toFixed(1)}s</button>}</span>;
+                })}
+              </div>
+              {!!editPlan.removed_ranges.length && <div className="removed-edit-list"><b>{editPlan.removed_ranges.length} removals</b>{editPlan.removed_ranges.map((range, index) => <button type="button" key={`${range.start}-${index}`} onClick={() => restoreRange(range)}><X size={10}/>{range.reason} {range.start.toFixed(1)}–{range.end.toFixed(1)}s</button>)}</div>}
+              <p className="field-note">Edits are non-destructive. Preview skips the same source ranges used by export; click a struck-through word or removal chip to restore it.</p>
+            </div>
             <div className="editor-section"><label>Clip title</label><input value={title} onChange={event => setTitle(event.target.value)} /></div>
             <div className="editor-section"><label>Precise trim</label><div className="trim-inputs"><div><span>Start</span><input type="number" step=".1" min="0" max={end - 1} value={start} onChange={event => { const value = Number(event.target.value); setStart(value); if (videoRef.current) videoRef.current.currentTime = value; }} /></div><div><span>End</span><input type="number" step=".1" min={start + 1} max={project.duration} value={end} onChange={event => setEnd(Number(event.target.value))} /></div></div></div>
           </>}

@@ -19,7 +19,8 @@ from app.services.india_quality import caption_segments_for_export, effective_ca
 from app.services.jobs import claim_job, heartbeat_job_claim, init_job_queue, release_claim, update_job, utcnow
 from app.services.pipeline_provenance import transcript_state
 from app.services.render_gate import render_short_limited
-from app.services.rendering import create_edited_srt, create_srt, timed_words
+from app.services.rendering import create_edited_srt, create_srt, create_word_srt, timed_words
+from app.services.smart_edit import apply_plan_to_words, kept_ranges, normalize_edit_plan
 from app.services.source_caption_detection import detect_burned_captions
 from app.services.storage import get_storage_provider, validate_object_key
 from app.services.transcript_review import effective_segments_for_video
@@ -104,7 +105,14 @@ async def _render_export_durable(
             and float(segment.get("start", 0)) < clip["end_time"]
             for segment in segments
         )
-        if correction_in_clip:
+        stored_plan = await fetch_one("SELECT plan_json FROM clip_edit_plans WHERE clip_id=?", (clip["id"],))
+        plan = normalize_edit_plan(json.loads((stored_plan or {}).get("plan_json") or "{}"), clip["end_time"] - clip["start_time"])
+        source_words = timed_words(raw_segments if correction_in_clip else segments,clip["start_time"],clip["end_time"])
+        source_words = [{**word,"start":float(word["start"])-clip["start_time"],"end":float(word["end"])-clip["start_time"]} for word in source_words]
+        edited_words = apply_plan_to_words(source_words,plan,clip["end_time"]-clip["start_time"])
+        if plan["removed_ranges"]:
+            create_word_srt(edited_words,srt)
+        elif correction_in_clip:
             reference = timed_words(raw_segments, clip["start_time"], clip["end_time"])
             create_edited_srt(
                 source_text,
@@ -164,6 +172,7 @@ async def _render_export_durable(
                 caption_y=request.caption_y,
                 caption_scale=request.caption_scale,
                 caption_alignment=request.caption_alignment,
+                edit_ranges=kept_ranges(plan,clip["end_time"]-clip["start_time"]),
             )
         except Exception as exc:
             # Keep the creator-facing failure generic, but preserve the actual

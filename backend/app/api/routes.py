@@ -17,7 +17,8 @@ from app.schemas.api import (
 )
 from app.services.auth import current_user, require_role
 from app.services.jobs import create_job, event_payload, update_job, utcnow
-from app.services.rendering import align_edited_words, create_edited_srt, create_srt, timed_words
+from app.services.rendering import align_edited_words, create_edited_srt, create_srt, create_word_srt, timed_words
+from app.services.smart_edit import apply_plan_to_words, clean_speech_ranges, kept_ranges, normalize_edit_plan
 from app.services.caption_timing import clip_speech_regions
 from app.services.render_gate import render_short_limited
 from app.services.caption_layout import build_caption_cards
@@ -484,8 +485,19 @@ async def patch_clip(clip_id:str,body:ClipPatch,user:dict=Depends(current_user))
     if not clip: raise HTTPException(404,"Clip not found.")
     if clip.get("status") == "superseded": raise HTTPException(409,"This moment belongs to an earlier analysis. Open the current project moments instead.")
     values=body.model_dump(exclude_none=True)
+    edit_plan = values.pop("edit_plan", None)
     start,end=values.get("start_time",clip["start_time"]),values.get("end_time",clip["end_time"])
     if end<=start or end-start>180: raise HTTPException(422,"Clip must be between 1 and 180 seconds.")
+    if edit_plan is not None:
+        try:
+            plan = normalize_edit_plan(edit_plan, end - start)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        await execute(
+            """INSERT INTO clip_edit_plans(clip_id,plan_json,updated_at) VALUES (?,?,?)
+               ON CONFLICT(clip_id) DO UPDATE SET plan_json=excluded.plan_json,updated_at=excluded.updated_at""",
+            (clip_id, json.dumps(plan, separators=(",", ":")), utcnow()),
+        )
     if values:
         columns=",".join(f"{key}=?" for key in values)
         await execute(f"UPDATE clips SET {columns},updated_at=? WHERE id=?",tuple(values.values())+(utcnow(),clip_id))
@@ -532,12 +544,17 @@ async def clip_captions(clip_id:str,user:dict=Depends(current_user))->dict:
         words=timed_words(segments,clip["start_time"],clip["end_time"], allow_synthetic=True)
         relative_words=[{**word,"start":round(float(word["start"])-clip["start_time"],3),
                          "end":round(float(word["end"])-clip["start_time"],3)} for word in words]
+    stored_plan = await fetch_one("SELECT plan_json FROM clip_edit_plans WHERE clip_id=?", (clip_id,))
+    plan = normalize_edit_plan(json.loads((stored_plan or {}).get("plan_json") or "{}"), clip["end_time"] - clip["start_time"])
+    source_words = relative_words
+    relative_words = apply_plan_to_words(source_words, plan, clip["end_time"] - clip["start_time"])
     cards=build_caption_cards(relative_words)
     language=(transcript or {}).get("language","unknown")
     profile=language_profile(segments, language)
     review=transcript_review_summary(segments, language)
     return {"language":language,"clip_start":clip["start_time"],
-            "clip_end":clip["end_time"],"words":relative_words,
+            "clip_end":clip["end_time"],"words":relative_words,"source_words":source_words,
+            "edit_plan":plan,"clean_speech_ranges":clean_speech_ranges(source_words,clip["end_time"]-clip["start_time"]),
             "speech_regions":clip_speech_regions(segments,clip["start_time"],clip["end_time"]),
             "india_quality":profile,
             "review_suggested":review["review_suggested"],
@@ -576,7 +593,14 @@ async def _render_export(job_id:str,export_id:str,clip:dict,video:dict,request:E
             and float(segment.get("start", 0)) < clip["end_time"]
             for segment in segments
         )
-        if correction_in_clip:
+        stored_plan = await fetch_one("SELECT plan_json FROM clip_edit_plans WHERE clip_id=?", (clip["id"],))
+        plan = normalize_edit_plan(json.loads((stored_plan or {}).get("plan_json") or "{}"), clip["end_time"] - clip["start_time"])
+        source_words = timed_words(raw_segments if correction_in_clip else segments,clip["start_time"],clip["end_time"])
+        source_words = [{**word,"start":float(word["start"])-clip["start_time"],"end":float(word["end"])-clip["start_time"]} for word in source_words]
+        edited_words = apply_plan_to_words(source_words,plan,clip["end_time"]-clip["start_time"])
+        if plan["removed_ranges"]:
+            create_word_srt(edited_words,srt)
+        elif correction_in_clip:
             reference=timed_words(raw_segments,clip["start_time"],clip["end_time"])
             create_edited_srt(source_text,clip["end_time"]-clip["start_time"],srt,
                               reference,clip["start_time"])
@@ -612,6 +636,7 @@ async def _render_export(job_id:str,export_id:str,clip:dict,video:dict,request:E
             caption_y=request.caption_y,
             caption_scale=request.caption_scale,
             caption_alignment=request.caption_alignment,
+            edit_ranges=kept_ranges(plan,clip["end_time"]-clip["start_time"]),
         )
         await update_job(job_id,92,"optimizing","Optimizing MP4 for fast social upload")
         await execute("UPDATE exports SET status='ready',progress=100 WHERE id=?",(export_id,))
