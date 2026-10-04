@@ -1,0 +1,129 @@
+name: Creator Pulse Production Deploy
+
+on:
+  push:
+    branches: [feature/creator-pulse-write-actual]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: creator-pulse-production-deploy
+  cancel-in-progress: false
+
+env:
+  CERTIFIED_SHA: 20f6215a76fda7559040f081a04ecb0e718de990
+  MODAL_ENVIRONMENT: main
+  MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+  MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+
+jobs:
+  deploy-certified-backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Require Modal deployment credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${MODAL_TOKEN_ID:-}" || { echo "MODAL_TOKEN_ID GitHub Actions secret is not configured."; exit 2; }
+          test -n "${MODAL_TOKEN_SECRET:-}" || { echo "MODAL_TOKEN_SECRET GitHub Actions secret is not configured."; exit 2; }
+
+      - name: Checkout exact LAUNCH-CERTIFIED candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CERTIFIED_SHA }}
+          persist-credentials: false
+          clean: true
+
+      - name: Prove exact certified source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$CERTIFIED_SHA"
+          test -z "$(git status --porcelain)"
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install current Modal CLI
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install modal
+          modal --version
+
+      - name: Verify Modal authentication and production secret name
+        shell: bash
+        run: |
+          set -euo pipefail
+          modal token info
+          modal secret list -e main | tee /tmp/modal-secrets.txt
+          grep -Fq "clipkaro-production" /tmp/modal-secrets.txt
+
+      - name: Verify live production health before change
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --max-time 30 https://clipkaro.pro/api/v1/health | tee /tmp/pre-health.json
+          python - <<'PY'
+          import json
+          payload=json.load(open('/tmp/pre-health.json', encoding='utf-8'))
+          assert payload.get('status') in {'ok','degraded'}, payload
+          print('Pre-deploy public health accepted:', payload.get('status'))
+          PY
+
+      - name: Apply additive Creator Pulse PostgreSQL migration
+        working-directory: backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          modal run -q -e main modal_app.py::migrate_database | tee /tmp/migration.txt
+          grep -Eq "20260909_03|Alembic upgrade head completed successfully|Running upgrade" /tmp/migration.txt || true
+
+      - name: Deploy exact certified Modal backend
+        id: deploy
+        working-directory: backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          modal deploy -e main --strategy rolling --tag "${CERTIFIED_SHA:0:12}" modal_app.py
+
+      - name: Verify deployed public health and Creator Pulse route
+        id: verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 18); do
+            code=$(curl --silent --show-error --output /tmp/post-health.json --write-out '%{http_code}' --max-time 30 https://clipkaro.pro/api/v1/health || true)
+            if [ "$code" = "200" ]; then
+              python - <<'PY'
+          import json
+          payload=json.load(open('/tmp/post-health.json', encoding='utf-8'))
+          assert payload.get('status') in {'ok','degraded'}, payload
+          print('Post-deploy public health accepted:', payload.get('status'))
+          PY
+              break
+            fi
+            if [ "$attempt" = "18" ]; then
+              echo "Public health did not recover after rolling deployment."
+              exit 1
+            fi
+            sleep 10
+          done
+
+          pulse_code=$(curl --silent --show-error --output /tmp/pulse-status.txt --write-out '%{http_code}' --max-time 30 https://clipkaro.pro/api/v1/creator-pulse/status || true)
+          case "$pulse_code" in
+            401|403) echo "Creator Pulse route is live and protected (HTTP $pulse_code)." ;;
+            *) echo "Unexpected Creator Pulse unauthenticated status: HTTP $pulse_code"; cat /tmp/pulse-status.txt || true; exit 1 ;;
+          esac
+
+      - name: Roll back Modal if post-deploy verification failed
+        if: failure() && steps.deploy.outcome == 'success'
+        working-directory: backend
+        shell: bash
+        run: |
+          echo "Post-deploy verification failed; rolling clipkaro-production back one version."
+          modal app rollback clipkaro-production -e main --strategy rolling
