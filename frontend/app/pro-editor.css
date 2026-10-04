@@ -331,3 +331,66 @@ radial-gradient(circle at 50% 12%,rgba(255,255,255,.9),rgba(242,245,240,.5) 45%,
   .pro-video-canvas{height:min(48vh,455px)!important}
   .pro-editor-context-scroll,.pro-editor-inspector-scroll{padding-top:9px}
 }
+
+
+/* Final editor micro-polish: preserve architecture, reclaim space for the canvas. */
+@media(min-width:981px){
+  .pro-editor-root{grid-template-rows:58px minmax(0,1fr) 174px}
+  .pro-video-canvas{
+    height:min(56vh,575px)!important;
+    max-height:calc(100dvh - 272px);
+  }
+  .pro-video-canvas.ratio-4-5{height:min(50vh,500px)!important}
+  .pro-video-canvas.ratio-1-1{height:min(45vh,450px)!important}
+}
+
+.pro-editor-panel-head,.pro-editor-inspector-head{
+  position:relative;
+  z-index:4;
+  flex:none;
+  box-shadow:0 4px 12px rgba(26,52,36,.028);
+}
+
+.pro-editor-alert{
+  padding:8px 9px;
+  margin-bottom:7px;
+  border-radius:9px;
+}
+.pro-editor-alert.warning{gap:7px}
+.pro-editor-alert b{font-size:8.5px}
+.pro-editor-alert p{
+  font-size:7.25px;
+  line-height:1.38;
+  margin-top:2px;
+  display:-webkit-box;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:2;
+  overflow:hidden;
+}
+.pro-editor-alert svg{width:13px;height:13px}
+
+.pro-editor-timeline{padding-top:6px;padding-bottom:8px}
+.pro-editor-timeline-toolbar{height:28px;margin-bottom:2px}
+.pro-editor-ruler{height:19px}
+.pro-editor-ruler>div span{top:3px}
+.pro-editor-track-row{height:29px;margin-top:2px}
+.pro-editor-video-track,.pro-editor-audio-track,.pro-editor-caption-track{height:26px}
+.pro-editor-video-segment{inset:2px}
+.pro-editor-caption-track>span:not(.pro-editor-playhead){top:4px;height:16px}
+.pro-editor-audio-track>i{max-height:21px!important}
+.pro-editor-track-label{font-size:7px}
+.pro-editor-timeline-status span{padding:3px 6px}
+
+@media(max-height:760px) and (min-width:981px){
+  .pro-editor-root{grid-template-rows:56px minmax(0,1fr) 160px}
+  .pro-video-canvas{
+    height:min(52vh,485px)!important;
+    max-height:calc(100dvh - 245px);
+  }
+  .pro-video-canvas.ratio-4-5{height:min(47vh,450px)!important}
+  .pro-video-canvas.ratio-1-1{height:min(42vh,410px)!important}
+  .pro-editor-timeline-toolbar{height:26px}
+  .pro-editor-ruler{height:17px}
+  .pro-editor-track-row{height:27px}
+  .pro-editor-video-track,.pro-editor-audio-track,.pro-editor-caption-track{height:24px}
+}
