@@ -526,7 +526,7 @@ radial-gradient(circle at 50% 12%,rgba(255,255,255,.9),rgba(242,245,240,.5) 45%,
 }
 .pro-editor-segment-card-actions .reset-trim:hover{background:#eef7e8}
 
-.pro-editor-video-segment.selected{overflow:visible}
+.pro-editor-video-segment.selected{overflow:visible;z-index:9}
 .pro-editor-video-segment.trimmed{
   background:
     repeating-linear-gradient(90deg,rgba(255,255,255,.055) 0 38px,rgba(255,255,255,.15) 38px 39px),
