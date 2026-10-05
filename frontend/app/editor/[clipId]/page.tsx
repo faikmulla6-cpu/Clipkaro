@@ -512,7 +512,7 @@ export default function Editor() {
     const left = findSegmentTrimRange(selectedSegment, "left", editPlan.removed_ranges);
     const right = findSegmentTrimRange(selectedSegment, "right", editPlan.removed_ranges);
     if (!left && !right) return;
-    const trimRanges = new Set([left, right].filter(Boolean));
+    const trimRanges = new Set<RemovedRange>([left, right].filter((range): range is RemovedRange => !!range));
     commitEditPlan({ ...editPlan, removed_ranges: editPlan.removed_ranges.filter(range => !trimRanges.has(range)) });
   }
 
