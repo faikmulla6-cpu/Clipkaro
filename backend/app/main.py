@@ -33,6 +33,7 @@ from app.services.forced_alignment import validate_production_alignment_policy
 from app.services.production_configuration import production_boot_configuration_issues
 from app.services.jobs import init_job_queue, isolated_worker_enabled
 from app.services.hinglish_stage1_routing import persisted_stage1_route
+from app.services.media_retention import reconcile_active_paid_source_retention
 from app.services.storage_paths import confined_export_path
 from app.services.distributed_rate_limit import consume_rate_limit
 from app.core.version import APP_VERSION
@@ -66,6 +67,7 @@ async def lifespan(_: FastAPI):
     await init_account_security()
     await init_user_preferences()
     await init_subscription_lifecycle()
+    await reconcile_active_paid_source_retention()
     await init_creator_pulse()
     if settings.seed_demo_user and not await fetch_one("SELECT id FROM users WHERE email=?", (settings.demo_email,)):
         timestamp = datetime.now(timezone.utc).isoformat()

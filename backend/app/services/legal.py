@@ -9,8 +9,8 @@ from app.core.config import get_settings
 from app.core.database import execute, fetch_one
 
 
-LEGAL_VERSION = "2026-08-09"
-LEGAL_EFFECTIVE_DATE = "9 August 2026"
+LEGAL_VERSION = "2026-10-05"
+LEGAL_EFFECTIVE_DATE = "5 October 2026"
 LEGAL_DOCUMENTS = (
     "terms",
     "privacy",

@@ -46,7 +46,7 @@ export default function PrivacyPage() {
     <LegalSection title="6. Retention and deletion">
       <p>{TRUST_PROFILE.mediaRetention}</p>
       <LegalList items={[
-        <>Source media files and rendered export files expire automatically after ClipKaro&apos;s configured media-retention window (currently 24 hours by default) and are swept from storage. Processing or operational recovery can delay deletion briefly.</>,
+        <>Free-plan source media and rendered export files use ClipKaro&apos;s short retention window, currently 24 hours. Paid-plan source media is retained for up to 30 days so creators can return to processed projects and use remaining Short exports; Mini Pass source media never extends beyond the pass expiry. Rendered export files still use the short retention window and should be downloaded if you want to keep them. Processing or operational recovery can delay deletion briefly.</>,
         <>Project records, derived transcript text, clip suggestions, recommendation-interaction records, account settings, usage and billing records can remain after the source file expires so the account/project history and product-quality analysis continue to function.</>,
         <>Deleting a project removes its associated behavioural-learning generations/events through the application database relationship. Account deletion removes the user-linked learning ledger, subject only to records ClipKaro must lawfully retain for billing, fraud, security or disputes.</>,
         <>We retain billing, fraud, security, tax/accounting and legal records for the period reasonably required by law, dispute handling and legitimate operational needs.</>,

@@ -1,5 +1,5 @@
-export const LEGAL_VERSION = "2026-08-09";
-export const LEGAL_EFFECTIVE_DATE = "9 August 2026";
+export const LEGAL_VERSION = "2026-10-05";
+export const LEGAL_EFFECTIVE_DATE = "5 October 2026";
 
 export const LEGAL_LINKS = [
   ["Terms", "/terms"],
@@ -20,7 +20,7 @@ export const TRUST_PROFILE = {
   legalEmail: "legal@clipkaro.pro",
   grievanceEmail: "grievance@clipkaro.pro",
   supportExpectation: "Support and billing questions are normally acknowledged within 48 hours. Consumer grievances are targeted for resolution within one month, subject to the information and payment-provider investigation needed.",
-  mediaRetention: "Private source videos and rendered export files expire automatically after the configured media-retention window, currently 24 hours by default. Project records, derived transcripts, clip suggestions, billing records and security logs may be retained for account history, support, legal, fraud, security and product-quality reasons.",
+  mediaRetention: "Free-plan source videos and rendered export files expire automatically after the configured short media-retention window, currently 24 hours. Paid-plan source videos are retained for up to 30 days so creators can return to processed projects and use remaining Short exports; Mini Pass source media never extends beyond the pass expiry. Rendered export files still use the short retention window, so creators should download finished files they want to keep. Project records, derived transcripts, clip suggestions, billing records and security logs may be retained for account history, support, legal, fraud, security and product-quality reasons.",
   deletionSummary: "Creators can delete projects in the product. Account or personal-data deletion can be requested through the privacy or grievance contacts, subject to records ClipKaro must keep for billing, tax, fraud, security, dispute or legal reasons.",
 } as const;
 

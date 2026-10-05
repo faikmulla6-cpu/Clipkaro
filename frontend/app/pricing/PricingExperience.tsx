@@ -80,12 +80,12 @@ declare global {
 }
 
 const copy: Record<string, { tagline: string; features: string[] }> = {
-  free: { tagline: "Try ClipKaro before paying", features: ["15 Karo Minutes / month", "2 Shorts / month", "720p with ClipKaro watermark", "Unlimited Post Karo · Instagram + YouTube"] },
-  mini_pass: { tagline: "No subscription. Use it when you need it.", features: ["25 Karo Minutes", "5 Shorts", "1080p · no watermark", "Valid for 30 days", "Unlimited Post Karo · Instagram + YouTube"] },
-  creator: { tagline: "For new creators building consistency", features: ["60 Karo Minutes / month", "15 Shorts / month", "1080p · no watermark", "Full AI clip quality", "Unlimited Post Karo · Instagram + YouTube"] },
-  growth: { tagline: "For serious creators publishing every week", features: ["180 Karo Minutes / month", "50 Shorts / month", "1080p · no watermark", "Brand kit + creator workflow", "Unlimited Post Karo · Instagram + YouTube"] },
-  pro: { tagline: "For daily creators and growing channels", features: ["480 Karo Minutes / month", "150 Shorts / month", "1080p · no watermark", "Priority creator workflow", "Unlimited Post Karo · Instagram + YouTube"] },
-  agency: { tagline: "For client work and high-volume teams", features: ["1,500 Karo Minutes / month", "500 Shorts / month", "1080p · no watermark", "Agency-scale usage", "Unlimited Post Karo · Instagram + YouTube"] },
+  free: { tagline: "Try ClipKaro before paying", features: ["15 total source-processing minutes / month", "Up to 2 Short exports / month", "Source media kept 24 hours", "720p with ClipKaro watermark", "Unlimited Post Karo · Instagram + YouTube"] },
+  mini_pass: { tagline: "No subscription. Use it when you need it.", features: ["25 total source-processing minutes", "Up to 5 Short exports", "Processed source kept until pass expiry · max 30 days", "1080p · no watermark", "Unlimited Post Karo · Instagram + YouTube"] },
+  creator: { tagline: "For new creators building consistency", features: ["60 total source-processing minutes / month", "Up to 15 Short exports / month", "Paid source media kept up to 30 days", "1080p · no watermark", "Full AI clip quality", "Unlimited Post Karo · Instagram + YouTube"] },
+  growth: { tagline: "For serious creators publishing every week", features: ["180 total source-processing minutes / month", "Up to 50 Short exports / month", "Paid source media kept up to 30 days", "1080p · no watermark", "Brand kit + creator workflow", "Unlimited Post Karo · Instagram + YouTube"] },
+  pro: { tagline: "For daily creators and growing channels", features: ["480 total source-processing minutes / month", "Up to 150 Short exports / month", "Paid source media kept up to 30 days", "1080p · no watermark", "Priority creator workflow", "Unlimited Post Karo · Instagram + YouTube"] },
+  agency: { tagline: "For client work and high-volume teams", features: ["1,500 total source-processing minutes / month", "Up to 500 Short exports / month", "Paid source media kept up to 30 days", "1080p · no watermark", "Agency-scale usage", "Unlimited Post Karo · Instagram + YouTube"] },
 };
 
 const fallbackPlans: Plan[] = [

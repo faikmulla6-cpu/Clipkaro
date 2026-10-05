@@ -13,11 +13,11 @@ export default function LegalNoticePage() {
     <LegalSection title="2. Digital service and prices">
       <p>ClipKaro AI is a digital video-processing service. Plan prices are shown in Indian rupees before checkout. The amount sent to Razorpay matches the selected plan price configured in ClipKaro. There are no undisclosed ClipKaro product fees added after the displayed checkout price. Taxes and invoice particulars are handled as applicable.</p>
       <LegalList items={[
-        <>Mini Pass: ₹59 one-time, 25 Karo Minutes, 5 Shorts, valid 30 days, no automatic renewal.</>,
-        <>Creator: ₹199 per month, 60 Karo Minutes and 15 Shorts per billing period.</>,
-        <>Growth: ₹399 per month, 180 Karo Minutes and 50 Shorts per billing period.</>,
-        <>Pro: ₹799 per month, 480 Karo Minutes and 150 Shorts per billing period.</>,
-        <>Agency: ₹1,999 per month, 1,500 Karo Minutes and 500 Shorts per billing period.</>,
+        <>Mini Pass: ₹59 one-time, 25 total source-processing Karo Minutes, up to 5 Short exports, valid 30 days, no automatic renewal.</>,
+        <>Creator: ₹199 per month, 60 total source-processing Karo Minutes and up to 15 Short exports per billing period.</>,
+        <>Growth: ₹399 per month, 180 total source-processing Karo Minutes and up to 50 Short exports per billing period.</>,
+        <>Pro: ₹799 per month, 480 total source-processing Karo Minutes and up to 150 Short exports per billing period.</>,
+        <>Agency: ₹1,999 per month, 1,500 total source-processing Karo Minutes and up to 500 Short exports per billing period.</>,
       ]}/>
     </LegalSection>
 

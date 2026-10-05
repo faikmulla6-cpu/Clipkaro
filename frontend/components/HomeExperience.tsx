@@ -57,11 +57,11 @@ const audiences = [
 ] as const;
 
 const plans = [
-  { name: "Free", price: "₹0", suffix: "/month", note: "Try the full create-to-publish loop.", items: ["15 Karo Minutes", "2 Shorts", "720p with watermark", "Unlimited Post Karo"], href: "/signup", featured: false },
-  { name: "Mini Pass", price: "₹59", suffix: "one-time", note: "Use it when you need it.", items: ["25 Karo Minutes", "5 Shorts", "1080p · no watermark", "Unlimited Post Karo"], href: "/signup?plan=mini_pass", featured: false },
-  { name: "Growth", price: "₹399", suffix: "/month", note: "For serious weekly creators.", items: ["180 Karo Minutes", "50 Shorts", "1080p · no watermark", "Unlimited Post Karo"], href: "/signup?plan=growth", featured: true },
-  { name: "Pro", price: "₹799", suffix: "/month", note: "For daily creator output.", items: ["480 Karo Minutes", "150 Shorts", "1080p · no watermark", "Unlimited Post Karo"], href: "/signup?plan=pro", featured: false },
-  { name: "Agency", price: "₹1,999", suffix: "/month", note: "For higher-volume client work.", items: ["1,500 Karo Minutes", "500 Shorts", "1080p · no watermark", "Unlimited Post Karo"], href: "/signup?plan=agency", featured: false },
+  { name: "Free", price: "₹0", suffix: "/month", note: "Try the full create-to-publish loop.", items: ["15 source-processing minutes", "Up to 2 Short exports", "Source media kept 24 hours", "720p with watermark", "Unlimited Post Karo"], href: "/signup", featured: false },
+  { name: "Mini Pass", price: "₹59", suffix: "one-time", note: "Use it when you need it.", items: ["25 total source-processing minutes", "Up to 5 Short exports", "Source kept until pass expiry · max 30 days", "1080p · no watermark", "Unlimited Post Karo"], href: "/signup?plan=mini_pass", featured: false },
+  { name: "Growth", price: "₹399", suffix: "/month", note: "For serious weekly creators.", items: ["180 source-processing minutes", "Up to 50 Short exports", "Source media kept up to 30 days", "1080p · no watermark", "Unlimited Post Karo"], href: "/signup?plan=growth", featured: true },
+  { name: "Pro", price: "₹799", suffix: "/month", note: "For daily creator output.", items: ["480 source-processing minutes", "Up to 150 Short exports", "Source media kept up to 30 days", "1080p · no watermark", "Unlimited Post Karo"], href: "/signup?plan=pro", featured: false },
+  { name: "Agency", price: "₹1,999", suffix: "/month", note: "For higher-volume client work.", items: ["1,500 source-processing minutes", "Up to 500 Short exports", "Source media kept up to 30 days", "1080p · no watermark", "Unlimited Post Karo"], href: "/signup?plan=agency", featured: false },
 ] as const;
 
 const questions = [

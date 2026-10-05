@@ -16,6 +16,7 @@ from app.services.auth import current_user
 from app.services.email_verification import requires_verification_for_processing
 from app.services.hinglish_stage1_routing import resolve_stage1_route
 from app.services.job_launcher import JobLaunchError, get_job_launcher
+from app.services.media_retention import source_media_expiry
 from app.services.storage import cloud_object_storage_enabled, get_storage_provider
 from app.services.video import upload_type_supported
 from app.services.youtube_import import canonicalize_youtube_url
@@ -140,7 +141,7 @@ async def complete_upload(session_id: str, user: dict = Depends(current_user)) -
         raise HTTPException(422, "Uploaded object content type did not match the authorized upload.")
     project_id, video_id, job_id = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
     timestamp = _now().isoformat()
-    expires = (_now() + timedelta(hours=get_settings().file_expiry_hours)).isoformat()
+    expires = source_media_expiry(user, at=_now()).isoformat()
     route = resolve_stage1_route(str(session["language"]), str(user["id"]))
     payload = json.dumps({"video_id": video_id, **route}, separators=(",", ":"))
 
@@ -186,7 +187,7 @@ async def import_youtube(body: YouTubeImportRequest, user: dict = Depends(curren
 
     project_id, video_id, job_id = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
     timestamp = _now().isoformat()
-    expires = (_now() + timedelta(hours=get_settings().file_expiry_hours)).isoformat()
+    expires = source_media_expiry(user, at=_now()).isoformat()
     custom_title = body.title.strip()
     title = custom_title or "YouTube video"
     # The placeholder is already inside the project's authorized private prefix.

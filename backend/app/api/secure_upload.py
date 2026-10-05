@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import timedelta
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
@@ -14,6 +13,7 @@ from app.schemas.api import ProjectOut
 from app.services.auth import current_user
 from app.services.jobs import create_job, dispatch_job, utcnow
 from app.services.hinglish_stage1_routing import resolve_stage1_route
+from app.services.media_retention import source_media_expiry
 from app.services.upload_scanner import UploadMalwareDetected, UploadScannerUnavailable, scan_upload
 from app.services.video import save_upload
 
@@ -59,7 +59,7 @@ async def upload_project(
         raise HTTPException(503, "Video security scanning is temporarily unavailable. Please retry shortly.") from exc
 
     timestamp = utcnow()
-    expires = (project_routes.now() + timedelta(hours=settings.file_expiry_hours)).isoformat()
+    expires = source_media_expiry(user, at=project_routes.now()).isoformat()
     route = resolve_stage1_route(language, str(user["id"]))
     try:
         await execute(

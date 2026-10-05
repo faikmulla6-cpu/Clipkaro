@@ -7,6 +7,8 @@ function read(path) {
 const editor = read("app/editor/[clipId]/page.tsx");
 const project = read("app/projects/[id]/page.tsx");
 const shell = read("components/AppShell.tsx");
+const upload = read("components/UploadStudio.tsx");
+const pricing = read("app/pricing/PricingExperience.tsx");
 const css = read("app/quality-fixes.css");
 
 const requirements = [
@@ -17,6 +19,9 @@ const requirements = [
   [project.includes("No Content Pack yet"), "Missing Content Pack must render a normal empty state"],
   [project.includes("YouTube Shorts titles and descriptions"), "Content Pack empty state must explain full output value"],
   [shell.includes("Content Packs"), "Authenticated sidebar must expose Content Packs"],
+  [shell.includes("Karo Minutes left") && shell.includes("Shorts left") && shell.includes("min processed"), "Usage card must distinguish remaining minutes from processed minutes"],
+  [upload.includes("No Karo Minutes left for a new source.") && upload.includes("Open projects"), "Upload screen must explain that remaining Short exports can still be used"],
+  [pricing.includes("25 total source-processing minutes") && pricing.includes("Up to 5 Short exports") && pricing.includes("max 30 days"), "Mini Pass pricing must separate processing minutes, Short exports, and source retention"],
   [css.includes(".side-nav{flex:1;min-height:0;overflow-y:auto"), "Sidebar navigation must remain scrollable on short screens"],
 ];
 

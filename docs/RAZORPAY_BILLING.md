@@ -4,7 +4,7 @@ ClipKaro uses Razorpay Standard Checkout and keeps the Key Secret on the backend
 
 ## Locked products
 
-- Mini Pass — ₹59 one-time — 25 Karo Minutes — 5 Shorts — 30-day validity.
+- Mini Pass — ₹59 one-time — 25 total source-processing Karo Minutes — up to 5 Short exports — source retained until pass expiry (maximum 30 days).
 - Creator — ₹199/month — 60 Karo Minutes — 15 Shorts.
 - Growth — ₹399/month — 180 Karo Minutes — 50 Shorts.
 - Pro — ₹799/month — 480 Karo Minutes — 150 Shorts.
