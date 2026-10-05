@@ -1146,7 +1146,7 @@ export default function Editor() {
             title="Click or drag to seek. Click a segment to select it."
           >
             {displayTimelineSegments.map((segment,index) => <div
-              className={"pro-editor-video-segment" + (selectedSegmentIndex === index ? " selected" : "") + (segment.visibleStart > segment.start + .01 || segment.visibleEnd < segment.end - .01 ? " trimmed" : "")}
+              className={"pro-editor-video-segment" + (selectedSegmentIndex === index ? " selected" : "") + (segment.visibleStart > segment.start + .01 || segment.visibleEnd < segment.end - .01 ? " trimmed" : "") + (segment.fullyRemoved ? " removed" : "")}
               key={"segment-"+index}
               style={{ left:String(segment.visibleStart/timelineSpan*100)+"%", width:String((segment.visibleEnd-segment.visibleStart)/timelineSpan*100)+"%" }}
             >
