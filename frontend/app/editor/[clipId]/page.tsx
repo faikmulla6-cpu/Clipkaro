@@ -49,6 +49,52 @@ const styles = [
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 const emptyEditPlan = (): EditPlan => ({ version: 1, removed_ranges: [], split_points: [] });
 const rangeContains = (range: RemovedRange, time: number) => time >= range.start && time < range.end;
+const MIN_SEGMENT_KEEP = .25;
+
+function mergeRemovedRanges(ranges: RemovedRange[]): RemovedRange[] {
+  const sorted = ranges.map(range => ({ ...range })).sort((a, b) => a.start - b.start || a.end - b.end);
+  const merged: RemovedRange[] = [];
+  sorted.forEach(range => {
+    const previous = merged.at(-1);
+    if (previous && range.start <= previous.end + .001) {
+      previous.end = Math.max(previous.end, range.end);
+      if (previous.reason !== range.reason) previous.reason = "mixed";
+    } else {
+      merged.push(range);
+    }
+  });
+  return merged;
+}
+
+function segmentTrimReason(edge: "left" | "right", segment: { start: number; end: number }) {
+  return `trim-${edge === "left" ? "l" : "r"}-${(edge === "left" ? segment.start : segment.end).toFixed(3)}`;
+}
+
+function findSegmentTrimRange(segment: { start: number; end: number }, edge: "left" | "right", ranges: RemovedRange[]) {
+  const exactReason = segmentTrimReason(edge, segment);
+  const exact = ranges.find(range => range.reason === exactReason);
+  if (exact) return exact;
+  return ranges.find(range => {
+    if (!(range.reason === "mixed" || range.reason.startsWith("trim-"))) return false;
+    if (edge === "left") {
+      return Math.abs(range.start - segment.start) < .02 && range.end < segment.end - MIN_SEGMENT_KEEP;
+    }
+    return Math.abs(range.end - segment.end) < .02 && range.start > segment.start + MIN_SEGMENT_KEEP;
+  });
+}
+
+function segmentTrimBounds(segment: { start: number; end: number }, ranges: RemovedRange[]) {
+  const left = findSegmentTrimRange(segment, "left", ranges);
+  const right = findSegmentTrimRange(segment, "right", ranges);
+  const visibleStart = clamp(left?.end ?? segment.start, segment.start, segment.end - MIN_SEGMENT_KEEP);
+  const visibleEnd = clamp(right?.start ?? segment.end, segment.start + MIN_SEGMENT_KEEP, segment.end);
+  return {
+    visibleStart,
+    visibleEnd: Math.max(visibleEnd, visibleStart + MIN_SEGMENT_KEEP),
+    left,
+    right,
+  };
+}
 
 export default function Editor() {
   const { clipId } = useParams<{ clipId: string }>();
@@ -61,6 +107,17 @@ export default function Editor() {
   const captionContentRef = useRef<HTMLSpanElement>(null);
   const captionDragRef = useRef<{ pointerId: number; offsetX: number; offsetY: number } | null>(null);
   const timelineScrubRef = useRef<{ pointerId: number; element: HTMLDivElement } | null>(null);
+  const videoTrackRef = useRef<HTMLDivElement>(null);
+  const trimDragRef = useRef<{
+    pointerId: number;
+    segmentIndex: number;
+    edge: "left" | "right";
+    element: HTMLButtonElement;
+    track: HTMLDivElement;
+    segment: { start: number; end: number };
+    basePlan: EditPlan;
+    draftPlan: EditPlan;
+  } | null>(null);
   const behaviorSessionRef = useRef("");
   const previewLogged = useRef(false);
   const renderStartRef = useRef(false);
@@ -123,6 +180,7 @@ export default function Editor() {
   const [showPostKaroPrompt, setShowPostKaroPrompt] = useState(false);
   const [selectedSegmentIndex, setSelectedSegmentIndex] = useState<number | null>(null);
   const [timelineScrubbing, setTimelineScrubbing] = useState(false);
+  const [trimmingSegment, setTrimmingSegment] = useState(false);
 
   const freePlan = user?.plan === "free";
   const renderBusy = startingRender || (!!job && !["completed", "failed"].includes(job.status));
@@ -198,7 +256,8 @@ export default function Editor() {
   const captionWords = useMemo(() => transcript.trim().split(/\s+/).filter(Boolean), [transcript]);
   const wordRemoved = useCallback((word: TimedWord, plan = editPlan) => plan.removed_ranges.some(range => word.start < range.end && word.end > range.start), [editPlan]);
   const timelineSpan = Math.max(end - start, 1);
-  const editedDuration = useMemo(() => Math.max(.25, end - start - editPlan.removed_ranges.reduce((total, range) => total + range.end - range.start, 0)), [editPlan, start, end]);
+  const mergedRemovedRanges = useMemo(() => mergeRemovedRanges(editPlan.removed_ranges), [editPlan.removed_ranges]);
+  const editedDuration = useMemo(() => Math.max(.25, end - start - mergedRemovedRanges.reduce((total, range) => total + range.end - range.start, 0)), [mergedRemovedRanges, start, end]);
   const pauseBlocks = useMemo(() => sourceWords.slice(1).map((word, index) => ({ start: sourceWords[index].end, end: word.start, reason: "silence" })).filter(item => item.end - item.start >= .25), [sourceWords]);
   const timelineSegments = useMemo(() => {
     const duration = Math.max(end - start, .1);
@@ -209,8 +268,18 @@ export default function Editor() {
       end: boundaries[index + 1],
     }));
   }, [editPlan.split_points, start, end]);
+  const displayTimelineSegments = useMemo(() => timelineSegments.map(segment => {
+    const bounds = segmentTrimBounds(segment, editPlan.removed_ranges);
+    const fullyRemoved = mergedRemovedRanges.some(range => range.start <= segment.start + .01 && range.end >= segment.end - .01);
+    return { ...segment, ...bounds, fullyRemoved };
+  }), [timelineSegments, editPlan.removed_ranges, mergedRemovedRanges]);
   const selectedSegment = selectedSegmentIndex === null ? null : timelineSegments[selectedSegmentIndex] || null;
-  const selectedSegmentRemoved = !!selectedSegment && editPlan.removed_ranges.some(range => range.start <= selectedSegment.start + .01 && range.end >= selectedSegment.end - .01);
+  const selectedDisplaySegment = selectedSegmentIndex === null ? null : displayTimelineSegments[selectedSegmentIndex] || null;
+  const selectedSegmentRemoved = !!selectedDisplaySegment?.fullyRemoved;
+  const selectedSegmentHasTrim = !!selectedDisplaySegment && (
+    selectedDisplaySegment.visibleStart > selectedDisplaySegment.start + .01 ||
+    selectedDisplaySegment.visibleEnd < selectedDisplaySegment.end - .01
+  );
   useEffect(() => {
     if (!sourceWords.length) return;
     setTranscript(sourceWords.filter(word => !wordRemoved(word)).map(word => word.text).join(" "));
