@@ -411,19 +411,109 @@ export default function Editor() {
 
   function deleteSelectedSegment() {
     if (!selectedSegment || selectedSegmentRemoved) return;
-    const candidate = [...editPlan.removed_ranges, { ...selectedSegment, reason: "segment" as const }].sort((a, b) => a.start - b.start);
-    const merged: Array<{ start: number; end: number }> = [];
-    candidate.forEach(range => {
-      const previous = merged.at(-1);
-      if (previous && range.start <= previous.end + .001) previous.end = Math.max(previous.end, range.end);
-      else merged.push({ start: range.start, end: range.end });
-    });
-    const removedDuration = merged.reduce((total, range) => total + range.end - range.start, 0);
-    if (timelineSpan - removedDuration < .25) {
+    const candidate = mergeRemovedRanges([...editPlan.removed_ranges, { ...selectedSegment, reason: "segment" as const }]);
+    const removedDuration = candidate.reduce((total, range) => total + range.end - range.start, 0);
+    if (timelineSpan - removedDuration < MIN_SEGMENT_KEEP) {
       setError("Keep at least 0.25 seconds of the clip.");
       return;
     }
     removeRange({ ...selectedSegment, reason: "segment" });
+  }
+
+  function planWithSegmentTrim(basePlan: EditPlan, segment: { start: number; end: number }, edge: "left" | "right", relative: number) {
+    const currentTrim = findSegmentTrimRange(segment, edge, basePlan.removed_ranges);
+    const ranges = basePlan.removed_ranges.filter(range => range !== currentTrim);
+    const reason = segmentTrimReason(edge, segment);
+    if (edge === "left" && relative - segment.start >= .04) {
+      ranges.push({ start: segment.start, end: relative, reason });
+    }
+    if (edge === "right" && segment.end - relative >= .04) {
+      ranges.push({ start: relative, end: segment.end, reason });
+    }
+    return { ...basePlan, removed_ranges: ranges.sort((a, b) => a.start - b.start) };
+  }
+
+  function updateSegmentTrimFromPointer(clientX: number) {
+    const drag = trimDragRef.current;
+    if (!drag) return;
+    const rect = drag.track.getBoundingClientRect();
+    if (!rect.width) return;
+    const rawRelative = clamp((clientX - rect.left) / rect.width * timelineSpan, drag.segment.start, drag.segment.end);
+    const baseBounds = segmentTrimBounds(drag.segment, drag.basePlan.removed_ranges);
+    const relative = drag.edge === "left"
+      ? clamp(rawRelative, drag.segment.start, baseBounds.visibleEnd - MIN_SEGMENT_KEEP)
+      : clamp(rawRelative, baseBounds.visibleStart + MIN_SEGMENT_KEEP, drag.segment.end);
+    const next = planWithSegmentTrim(drag.basePlan, drag.segment, drag.edge, Number(relative.toFixed(3)));
+    const removedDuration = mergeRemovedRanges(next.removed_ranges).reduce((total, range) => total + range.end - range.start, 0);
+    if (timelineSpan - removedDuration < MIN_SEGMENT_KEEP) return;
+    drag.draftPlan = next;
+    setEditPlan(next);
+    const sourceTime = start + relative + (drag.edge === "left" ? .002 : -.002);
+    setPlayhead(sourceTime);
+    if (videoRef.current) videoRef.current.currentTime = sourceTime;
+  }
+
+  function beginSegmentTrim(event: React.PointerEvent<HTMLButtonElement>, segmentIndex: number, edge: "left" | "right") {
+    if (event.button !== 0) return;
+    const segment = timelineSegments[segmentIndex];
+    const track = videoTrackRef.current;
+    if (!segment || !track) return;
+    const fullyRemoved = mergedRemovedRanges.some(range => range.start <= segment.start + .01 && range.end >= segment.end - .01);
+    if (fullyRemoved) return;
+    event.preventDefault();
+    event.stopPropagation();
+    videoRef.current?.pause();
+    setPlaying(false);
+    setSelectedSegmentIndex(segmentIndex);
+    setError("");
+    event.currentTarget.setPointerCapture(event.pointerId);
+    trimDragRef.current = {
+      pointerId: event.pointerId,
+      segmentIndex,
+      edge,
+      element: event.currentTarget,
+      track,
+      segment,
+      basePlan: editPlan,
+      draftPlan: editPlan,
+    };
+    setTrimmingSegment(true);
+    updateSegmentTrimFromPointer(event.clientX);
+  }
+
+  function moveSegmentTrim(event: React.PointerEvent<HTMLButtonElement>) {
+    const drag = trimDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    updateSegmentTrimFromPointer(event.clientX);
+  }
+
+  function finishSegmentTrim(event: React.PointerEvent<HTMLButtonElement>, cancel = false) {
+    const drag = trimDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!cancel) updateSegmentTrimFromPointer(event.clientX);
+    const finalPlan = cancel ? drag.basePlan : drag.draftPlan;
+    if (cancel) {
+      setEditPlan(drag.basePlan);
+    } else if (JSON.stringify(finalPlan) !== JSON.stringify(drag.basePlan)) {
+      setUndoPlans(history => [...history.slice(-49), drag.basePlan]);
+      setRedoPlans([]);
+    }
+    try { drag.element.releasePointerCapture(event.pointerId); } catch {}
+    trimDragRef.current = null;
+    setTrimmingSegment(false);
+  }
+
+  function resetSelectedSegmentTrim() {
+    if (!selectedSegment) return;
+    const left = findSegmentTrimRange(selectedSegment, "left", editPlan.removed_ranges);
+    const right = findSegmentTrimRange(selectedSegment, "right", editPlan.removed_ranges);
+    if (!left && !right) return;
+    const trimRanges = new Set([left, right].filter(Boolean));
+    commitEditPlan({ ...editPlan, removed_ranges: editPlan.removed_ranges.filter(range => !trimRanges.has(range)) });
   }
 
   useEffect(() => {
@@ -437,6 +527,7 @@ export default function Editor() {
       const target = event.target as HTMLElement | null;
       const tag = target?.tagName?.toLowerCase();
       if (tag === "input" || tag === "textarea" || tag === "select" || target?.isContentEditable) return;
+      if (trimDragRef.current) return;
       const key = event.key.toLowerCase();
       if ((event.ctrlKey || event.metaKey) && key === "z") {
         event.preventDefault();
@@ -559,7 +650,7 @@ export default function Editor() {
   function onTimeUpdate() {
     const video = videoRef.current; if (!video) return;
     const relative = video.currentTime - start;
-    const removed = editPlan.removed_ranges.find(range => rangeContains(range, relative));
+    const removed = mergedRemovedRanges.find(range => rangeContains(range, relative));
     if (removed) { video.currentTime = Math.min(end, start + removed.end + .002); setPlayhead(video.currentTime); return; }
     if (video.currentTime < start - .2 || video.currentTime >= end) {
       video.currentTime = start;
