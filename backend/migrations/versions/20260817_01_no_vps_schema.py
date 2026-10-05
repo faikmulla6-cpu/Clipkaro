@@ -180,7 +180,7 @@ CREATE FUNCTION clipkaro_export_limit(plan_name TEXT) RETURNS INTEGER LANGUAGE S
  SELECT CASE plan_name WHEN 'mini_pass' THEN 5 WHEN 'creator' THEN 15 WHEN 'growth' THEN 50 WHEN 'pro' THEN 150 WHEN 'agency' THEN 500 ELSE 2 END
 $$;
 CREATE FUNCTION clipkaro_minute_limit(plan_name TEXT) RETURNS DOUBLE PRECISION LANGUAGE SQL IMMUTABLE AS $$
- SELECT CASE plan_name WHEN 'mini_pass' THEN 25 WHEN 'creator' THEN 60 WHEN 'growth' THEN 180 WHEN 'pro' THEN 480 WHEN 'agency' THEN 1500 ELSE 15 END
+ SELECT CASE plan_name WHEN 'mini_pass' THEN 125 WHEN 'creator' THEN 60 WHEN 'growth' THEN 180 WHEN 'pro' THEN 480 WHEN 'agency' THEN 1500 ELSE 15 END
 $$;
 CREATE FUNCTION reserve_video_minutes() RETURNS TRIGGER LANGUAGE plpgsql AS $$
 DECLARE owner users%ROWTYPE; period TEXT; amount DOUBLE PRECISION;

@@ -433,7 +433,8 @@ def test_locked_fair_access_plans(client: TestClient):
     rows = client.get("/api/v1/plans").json()
     by_id = {row["id"]: row for row in rows}
     assert by_id["free"]["price"] == 0 and by_id["free"]["processing_minutes"] == 15 and by_id["free"]["exports"] == 2
-    assert by_id["mini_pass"]["price"] == 59 and by_id["mini_pass"]["processing_minutes"] == 25 and by_id["mini_pass"]["exports"] == 5
+    assert by_id["mini_pass"]["price"] == 59 and by_id["mini_pass"]["processing_minutes"] == 125 and by_id["mini_pass"]["exports"] == 5
+    assert by_id["mini_pass"]["source_minutes_per_short"] == 25
     assert by_id["creator"]["price"] == 199 and by_id["creator"]["processing_minutes"] == 60 and by_id["creator"]["exports"] == 15
     assert by_id["growth"]["price"] == 399 and by_id["growth"]["processing_minutes"] == 180 and by_id["growth"]["exports"] == 50
     assert by_id["pro"]["price"] == 799 and by_id["pro"]["processing_minutes"] == 480 and by_id["pro"]["exports"] == 150
@@ -525,7 +526,8 @@ def test_mini_pass_order_is_verified_before_entitlement(client: TestClient):
     assert client.get("/api/v1/auth/me").json()["plan"] == "mini_pass"
     usage = client.get("/api/v1/usage").json()
     assert usage["exports_limit"] == 5
-    assert usage["processing_minutes_limit"] == 25
+    assert usage["processing_minutes_limit"] == 125
+    assert usage["source_minutes_per_short"] == 25
 
 
 def test_mini_pass_authorized_but_uncaptured_payment_does_not_activate(client: TestClient):

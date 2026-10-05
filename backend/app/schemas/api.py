@@ -178,6 +178,7 @@ class UsageOut(BaseModel):
     source_minutes: float
     processing_minutes_limit: float = 0
     processing_minutes_remaining: float = 0
+    source_minutes_per_short: float | None = None
     period_key: str = ""
 
 

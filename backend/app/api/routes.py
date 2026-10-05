@@ -137,6 +137,7 @@ async def plans() -> list[dict]:
             "price": value["price"],
             "exports": value["exports"],
             "processing_minutes": value["processing_minutes"],
+            "source_minutes_per_short": value.get("source_minutes_per_short"),
             "watermark": value["watermark"],
             "resolution": value["resolution"],
             "billing": value["billing"],
@@ -181,6 +182,7 @@ async def get_usage_for(user: dict) -> UsageOut:
         exports_remaining=max(export_limit-used, 0), source_minutes=round(minutes, 1),
         processing_minutes_limit=minute_limit,
         processing_minutes_remaining=round(max(minute_limit-minutes, 0), 1),
+        source_minutes_per_short=PLAN_CATALOG.get(plan, PLAN_CATALOG["free"]).get("source_minutes_per_short"),
         period_key=period,
     )
 
@@ -321,7 +323,11 @@ async def _process_project(
         active_plan = limits.plan
         max_minutes = PLAN_MAX_SOURCE_MINUTES.get(active_plan, PLAN_MAX_SOURCE_MINUTES["free"])
         source_minutes = float(metadata["duration"]) / 60
+        if active_plan == "mini_pass" and not force_transcribe and limits.exports_remaining <= 0:
+            raise ValueError("Your Mini Pass has no Short credits left. Buy another pass to process a new source video.")
         if source_minutes > max_minutes:
+            if active_plan == "mini_pass":
+                raise ValueError("Each Mini Pass Short includes up to 25 minutes of source-video processing.")
             raise ValueError(f"Your {PLAN_CATALOG[active_plan]['name']} plan supports a single source video up to {max_minutes} minutes.")
         # A successful project's source minutes were already finalized when it
         # was first processed. Explicit language correction must not charge the

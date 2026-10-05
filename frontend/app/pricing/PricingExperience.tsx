@@ -16,6 +16,7 @@ type Plan = {
   price: number;
   exports: number;
   processing_minutes: number;
+  source_minutes_per_short?: number | null;
   watermark: boolean;
   resolution: string;
   billing: "free" | "one_time" | "subscription";
@@ -81,7 +82,7 @@ declare global {
 
 const copy: Record<string, { tagline: string; features: string[] }> = {
   free: { tagline: "Try ClipKaro before paying", features: ["15 total source-processing minutes / month", "Up to 2 Short exports / month", "Source media kept 24 hours", "720p with ClipKaro watermark", "Unlimited Post Karo · Instagram + YouTube"] },
-  mini_pass: { tagline: "No subscription. Use it when you need it.", features: ["25 total source-processing minutes", "Up to 5 Short exports", "Processed source kept until pass expiry · max 30 days", "1080p · no watermark", "Unlimited Post Karo · Instagram + YouTube"] },
+  mini_pass: { tagline: "5 Shorts. Up to 25 minutes of source for each one.", features: ["5 Short credits", "Each Short can process a source video up to 25 min", "Up to 125 source-processing minutes across the pass", "Processed source kept until pass expiry · max 30 days", "1080p · no watermark", "Unlimited Post Karo · Instagram + YouTube"] },
   creator: { tagline: "For new creators building consistency", features: ["60 total source-processing minutes / month", "Up to 15 Short exports / month", "Paid source media kept up to 30 days", "1080p · no watermark", "Full AI clip quality", "Unlimited Post Karo · Instagram + YouTube"] },
   growth: { tagline: "For serious creators publishing every week", features: ["180 total source-processing minutes / month", "Up to 50 Short exports / month", "Paid source media kept up to 30 days", "1080p · no watermark", "Brand kit + creator workflow", "Unlimited Post Karo · Instagram + YouTube"] },
   pro: { tagline: "For daily creators and growing channels", features: ["480 total source-processing minutes / month", "Up to 150 Short exports / month", "Paid source media kept up to 30 days", "1080p · no watermark", "Priority creator workflow", "Unlimited Post Karo · Instagram + YouTube"] },
@@ -90,7 +91,7 @@ const copy: Record<string, { tagline: string; features: string[] }> = {
 
 const fallbackPlans: Plan[] = [
   { id: "free", name: "Free", price: 0, exports: 2, processing_minutes: 15, watermark: true, resolution: "720p", billing: "free", popular: false },
-  { id: "mini_pass", name: "Mini Pass", price: 59, exports: 5, processing_minutes: 25, watermark: false, resolution: "1080p", billing: "one_time", popular: false },
+  { id: "mini_pass", name: "Mini Pass", price: 59, exports: 5, processing_minutes: 125, source_minutes_per_short: 25, watermark: false, resolution: "1080p", billing: "one_time", popular: false },
   { id: "creator", name: "Creator", price: 199, exports: 15, processing_minutes: 60, watermark: false, resolution: "1080p", billing: "subscription", popular: false },
   { id: "growth", name: "Growth", price: 399, exports: 50, processing_minutes: 180, watermark: false, resolution: "1080p", billing: "subscription", popular: true },
   { id: "pro", name: "Pro", price: 799, exports: 150, processing_minutes: 480, watermark: false, resolution: "1080p", billing: "subscription", popular: false },

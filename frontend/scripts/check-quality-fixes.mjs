@@ -21,7 +21,7 @@ const requirements = [
   [shell.includes("Content Packs"), "Authenticated sidebar must expose Content Packs"],
   [shell.includes("Karo Minutes left") && shell.includes("Shorts left") && shell.includes("min processed"), "Usage card must distinguish remaining minutes from processed minutes"],
   [upload.includes("No Karo Minutes left for a new source.") && upload.includes("Open projects"), "Upload screen must explain that remaining Short exports can still be used"],
-  [pricing.includes("25 total source-processing minutes") && pricing.includes("Up to 5 Short exports") && pricing.includes("max 30 days"), "Mini Pass pricing must separate processing minutes, Short exports, and source retention"],
+  [pricing.includes("5 Short credits") && pricing.includes("Each Short can process a source video up to 25 min") && pricing.includes("Up to 125 source-processing minutes across the pass") && pricing.includes("max 30 days"), "Mini Pass pricing must state the 5 Shorts x 25-minute source entitlement clearly"],
   [css.includes(".side-nav{flex:1;min-height:0;overflow-y:auto"), "Sidebar navigation must remain scrollable on short screens"],
 ];
 

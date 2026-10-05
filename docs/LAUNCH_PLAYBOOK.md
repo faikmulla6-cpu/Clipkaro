@@ -18,7 +18,7 @@ Monitor job queue age, transcription duration/source minute, render duration/out
 
 ## Pricing rollout
 
-Use the locked Fair Access ladder: Free ₹0 (15 Karo Minutes / 2 Shorts), Mini Pass ₹59 one-time (25 / 5), Creator ₹199 (60 / 15), Growth ₹399 (180 / 50), Pro ₹799 (480 / 150), Agency ₹1,999 (1,500 / 500). Growth is the hero plan. Every paid plan receives the same core AI quality, 1080p and no watermark; higher tiers primarily buy more usage and workflow scale. Do not offer unlimited rendering. Monitor realized infrastructure cost per Karo Minute and keep healthy contribution margin before increasing quotas.
+Use the locked Fair Access ladder: Free ₹0 (15 Karo Minutes / 2 Shorts), Mini Pass ₹59 one-time (5 Short credits, each including up to 25 source-processing minutes; 125 minutes max across the pass), Creator ₹199 (60 / 15), Growth ₹399 (180 / 50), Pro ₹799 (480 / 150), Agency ₹1,999 (1,500 / 500). Growth is the hero plan. Every paid plan receives the same core AI quality, 1080p and no watermark; higher tiers primarily buy more usage and workflow scale. Do not offer unlimited rendering. Monitor realized infrastructure cost per Karo Minute and keep healthy contribution margin before increasing quotas.
 
 ## First 30 days
 

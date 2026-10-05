@@ -353,7 +353,7 @@ BEGIN
   SELECT CASE WHEN (
     SELECT COALESCE(us.source_minutes,0) + (NEW.duration / 60.0) >
       CASE u.plan
-        WHEN 'mini_pass' THEN 25.0 WHEN 'creator' THEN 60.0 WHEN 'growth' THEN 180.0
+        WHEN 'mini_pass' THEN 125.0 WHEN 'creator' THEN 60.0 WHEN 'growth' THEN 180.0
         WHEN 'pro' THEN 480.0 WHEN 'agency' THEN 1500.0 ELSE 15.0 END
     FROM projects p JOIN users u ON u.id=p.user_id
     LEFT JOIN usage us ON us.user_id=u.id AND us.month=(

@@ -16,7 +16,7 @@ ClipKaro is built for creators who already have long videos and want a faster cr
 - Post Karo publishes finished Shorts to connected Instagram Reels and YouTube Shorts accounts after the creator confirms the post.
 - Post Karo is included on every ClipKaro plan, including Free, with no ClipKaro per-post publishing quota. In product terms, Post Karo publishing access is unlimited; creators still review and confirm each post, and Instagram or YouTube provider rules or rate limits may apply.
 - The Free plan includes 15 Karo Minutes per month and 2 Shorts per month, with a ClipKaro watermark on 720p exports.
-- Mini Pass is a ₹59 one-time option with 25 total source-processing Karo Minutes and up to 5 Short exports, with 1080p export and no watermark for 30 days. Karo Minutes and Short-export allowances are separate.
+- Mini Pass is a ₹59 one-time option with 5 Short credits. Each Short includes up to 25 minutes of source-video processing, for up to 125 source-processing minutes across the pass, with 1080p export and no watermark for 30 days.
 - Paid source media is retained for up to 30 days so creators can return to processed projects; Mini Pass source media never extends beyond the pass expiry.
 - Creator costs ₹199/month. Growth, Pro and Agency increase creation capacity; current pricing and limits are published on the pricing page.
 - Creator Pulse is a separate ₹1-per-successful-analysis public YouTube channel-intelligence product that returns a verified channel snapshot, recent-upload momentum and one evidence-led next-video direction.

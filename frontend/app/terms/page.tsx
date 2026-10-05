@@ -29,9 +29,9 @@ export default function TermsPage() {
     <LegalSection title="5. Plans, usage and renewal">
       <LegalList items={[
         <>Free: no payment; usage limits reset according to the plan rules shown in the product.</>,
-        <>Mini Pass: ₹59 one-time, 25 total source-processing Karo Minutes and up to 5 Short exports, valid for 30 days. It does not auto-renew.</>,
+        <>Mini Pass: ₹59 one-time, 5 Short credits, each including up to 25 minutes of source-video processing (up to 125 source-processing minutes across the pass), valid for 30 days. It does not auto-renew.</>,
         <>Creator, Growth, Pro and Agency are monthly subscriptions. Unless cancelled or changed, the selected plan renews each month at the price shown at checkout.</>,
-        <>Karo Minutes measure source-video minutes processed. Short-export allowances are separate: processing one source consumes Karo Minutes once, while editing or exporting candidates from that already-processed source does not consume those source minutes again.</>,
+        <>For Mini Pass, each Short credit includes up to 25 minutes of source-video processing, with a maximum of 125 source minutes across the pass. On monthly plans, Karo Minutes and Short-export allowances remain separate. Re-editing an already-processed source does not process those source minutes again.</>,
         <>Free source media uses the short retention window. Paid source media is kept for up to 30 days so remaining Short exports can still be used; Mini Pass source media never extends beyond the pass expiry.</>,
         <>Upgrades may apply immediately and Razorpay may prorate the active cycle. Downgrades and cancellation apply at the end of the current paid cycle unless the product clearly says otherwise.</>,
         <>You can schedule cancellation from Plans & billing. There is no ClipKaro cancellation fee, and paid access continues until the end of the already-paid cycle.</>,

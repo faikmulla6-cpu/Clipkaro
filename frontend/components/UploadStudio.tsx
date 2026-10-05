@@ -159,12 +159,17 @@ export function UploadStudio() {
     );
   }
 
+  const miniPass = usage?.plan === "mini_pass";
   const minutesLeft = usage ? usage.processing_minutes_remaining.toLocaleString(undefined, { maximumFractionDigits: 1 }) : null;
-  const noKaroMinutes = Boolean(usage && usage.processing_minutes_remaining < 0.1);
+  const noKaroMinutes = Boolean(usage && (
+    usage.processing_minutes_remaining < 0.1 ||
+    (miniPass && usage.exports_remaining <= 0)
+  ));
+  const miniPassSourceCap = usage?.source_minutes_per_short || 25;
   return (
     <div className="mx-auto w-full max-w-6xl" data-upload-fallback={DIRECT_GCS_UPLOAD ? `${DIRECT_UPLOAD_FALLBACK.init}:${DIRECT_UPLOAD_FALLBACK.completeSuffix}` : "api"}>
       {preflight && !preflight.ready && <div className="mb-5 flex gap-3 rounded-2xl border border-amber-300/30 bg-amber-50 p-4 text-sm text-amber-950"><AlertCircle className="shrink-0" size={20}/><div><b>Processing engine needs attention</b>{preflight.problems.map((item) => <p className="mt-1" key={item}>{item}</p>)}<small className="mt-2 block opacity-70">{preflight.recommendation}</small></div></div>}
-      {noKaroMinutes && usage && <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-amber-300/35 bg-amber-50 p-4 text-sm text-amber-950 sm:flex-row sm:items-center"><Clock3 className="shrink-0" size={20}/><div className="flex-1"><b>No Karo Minutes left for a new source.</b><p className="mt-1">You still have {usage.exports_remaining} of {usage.exports_limit} Short exports left. Open a processed project to edit or export those Shorts; processing another source needs more Karo Minutes.</p></div><Link href="/projects" className="shrink-0 rounded-xl bg-[#165f43] px-4 py-2.5 text-xs font-black text-white">Open projects</Link></div>}
+      {noKaroMinutes && usage && <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-amber-300/35 bg-amber-50 p-4 text-sm text-amber-950 sm:flex-row sm:items-center"><Clock3 className="shrink-0" size={20}/><div className="flex-1"><b>{miniPass ? "No Mini Pass Short credits left for a new source." : "No Karo Minutes left for a new source."}</b><p className="mt-1">{miniPass ? "Each Mini Pass Short includes up to 25 minutes of source-video processing. Get another pass or open a processed project." : `You still have ${usage.exports_remaining} of ${usage.exports_limit} Short exports left. Open a processed project to edit or export those Shorts; processing another source needs more Karo Minutes.`}</p></div><Link href="/projects" className="shrink-0 rounded-xl bg-[#165f43] px-4 py-2.5 text-xs font-black text-white">Open projects</Link></div>}
 
       <section className="dual-source-workspace relative overflow-hidden rounded-[34px] border border-[#143c2d]/15 text-white">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_14%_12%,rgba(223,255,87,.14),transparent_30%),radial-gradient(circle_at_90%_82%,rgba(30,190,120,.12),transparent_34%)]" />
@@ -173,7 +178,7 @@ export function UploadStudio() {
           <div className="dual-upload-card source-card source-card--upload rounded-[28px] p-4 text-[#10271d] sm:p-5">
             <div className="source-card-header mb-4 flex items-start justify-between gap-3">
               <div className="flex items-center gap-3"><span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#ecff9f] text-[#165f43]"><CloudUpload size={22}/></span><div><div className="flex flex-wrap items-center gap-2"><b className="text-sm">Upload video</b><span className="rounded-full bg-[#165f43] px-2.5 py-1 text-[9px] font-black tracking-[.08em] text-white">RECOMMENDED</span></div><span className="mt-1 block text-xs text-[#607067]">The most reliable way to start</span></div></div>
-              {minutesLeft !== null && <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#165f43]/10 bg-[#f5f8f3] px-2.5 py-1 text-[10px] font-bold text-[#52685f]"><Clock3 size={12}/>{minutesLeft} min</span>}
+              {usage && <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#165f43]/10 bg-[#f5f8f3] px-2.5 py-1 text-[10px] font-bold text-[#52685f]"><Clock3 size={12}/>{miniPass ? `${usage.exports_remaining} Shorts · ${miniPassSourceCap} min each` : `${minutesLeft} min`}</span>}
             </div>
             <div className="source-card-notice source-card-notice--success mb-4 flex items-start gap-2.5 rounded-2xl p-3 text-xs leading-5 text-[#365443]"><Check className="mt-0.5 shrink-0 text-[#165f43]" size={15}/><span><b>Best compatibility.</b> Uploading a supported video file does not depend on YouTube link access or video permissions.</span></div>
             <DirectUploadFallback embedded disabled={busy || noKaroMinutes} onActivityChange={setFileUploadActive} />
@@ -196,7 +201,7 @@ export function UploadStudio() {
             {fileUploadActive && <div className="mt-4 flex gap-2 rounded-xl border border-[#dfff57]/20 bg-[#dfff57]/10 p-3 text-xs leading-5 text-[#efffb2]"><Loader2 className="mt-0.5 shrink-0 animate-spin" size={15}/> File upload is active. YouTube import is temporarily paused to prevent duplicate processing.</div>}
             {error && <div className="mt-4 flex gap-2 rounded-xl border border-rose-300/20 bg-rose-400/10 p-3 text-xs leading-5 text-rose-50"><AlertCircle className="shrink-0" size={16}/>{error}</div>}
             <button type="button" disabled={!videoId || !rightsConfirmed || busy || fileUploadActive || noKaroMinutes || preflight?.ready === false} onClick={startImport} className="source-cta source-cta--youtube mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-5 py-4 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0">{busy ? <Loader2 className="animate-spin" size={17}/> : <Sparkles size={17}/>} {busy ? "Starting secure import…" : "Find my best moments"} {!busy && <ChevronRight size={17}/>}</button>
-            <div className="source-meta mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1 text-[10px] font-semibold"><span>500 MB source cap</span><span>Plan minute limits apply</span><span>Private processing</span></div>
+            <div className="source-meta mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1 text-[10px] font-semibold"><span>500 MB source cap</span><span>{miniPass ? `Mini Pass · up to ${miniPassSourceCap} min per Short` : "Plan minute limits apply"}</span><span>Private processing</span></div>
           </div>
         </div>
       </section>

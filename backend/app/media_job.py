@@ -278,6 +278,8 @@ async def _run_youtube_import(job: dict, scratch: Path, storage) -> None:
         canonical_url = str(payload.get("canonical_url") or "")
         limits = await project_routes.get_usage_for(user)
         active_plan = limits.plan
+        if active_plan == "mini_pass" and limits.exports_remaining <= 0:
+            raise ValueError("Your Mini Pass has no Short credits left. Buy another pass to process a new source video.")
         max_minutes = project_routes.PLAN_MAX_SOURCE_MINUTES.get(
             active_plan, project_routes.PLAN_MAX_SOURCE_MINUTES["free"]
         )
