@@ -22,6 +22,7 @@
     "check:smart-edit": "node scripts/check-smart-edit.mjs",
     "check:pro-timeline": "node scripts/check-pro-timeline.mjs",
     "check:pro-trim": "node scripts/check-pro-trim.mjs",
+    "check:pro-reorder": "node scripts/check-pro-reorder.mjs",
     "check:public-mobile": "node scripts/check-public-mobile.mjs",
     "build": "next build --webpack",
     "start": "next start",

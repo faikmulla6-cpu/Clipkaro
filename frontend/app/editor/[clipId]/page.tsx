@@ -5,7 +5,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { API_URL, api, patchJSON, postJSON } from "@/lib/api";
 import { downloadExport, newBehaviorSession, trackClipBehavior } from "@/lib/behavior";
 import {
-  AlertTriangle, AlignCenter, AlignLeft, AlignRight, ArrowLeft, ArrowRight, Captions, Check, Download, Film, Loader2, LockKeyhole, MoveHorizontal,
+  AlertTriangle, AlignCenter, AlignLeft, AlignRight, ArrowLeft, ArrowRight, Captions, Check, Download, Film, GripVertical, Loader2, LockKeyhole, MoveHorizontal,
   Palette, Pause, Play, Redo2, Save, Scissors, Send, Smartphone, Sparkles, Square, Trash2, Type, Undo2, WandSparkles, X, ZoomIn, ZoomOut,
 } from "lucide-react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
@@ -21,7 +21,7 @@ type ExportStatus = { id: string; status: string; progress: number; download_url
 type Job = { id?: string; status: string; progress: number; message: string; error?: string; export_id?: string };
 type TimedWord = { start: number; end: number; text: string; confidence?: number; source_start?: number; source_end?: number };
 type RemovedRange = { start: number; end: number; reason: string };
-type EditPlan = { version: 1; removed_ranges: RemovedRange[]; split_points: number[] };
+type EditPlan = { version: number; removed_ranges: RemovedRange[]; split_points: number[]; segment_order?: number[] };
 type SpeechRegion = { id: number; start: number; end: number };
 type CaptionCard = { start: number; end: number; lines: string[]; words: TimedWord[] };
 type CaptionTrack = {
@@ -47,7 +47,7 @@ const styles = [
 ] as const;
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
-const emptyEditPlan = (): EditPlan => ({ version: 1, removed_ranges: [], split_points: [] });
+const emptyEditPlan = (): EditPlan => ({ version: 2, removed_ranges: [], split_points: [], segment_order: [0] });
 const rangeContains = (range: RemovedRange, time: number) => time >= range.start && time < range.end;
 const MIN_SEGMENT_KEEP = .25;
 
@@ -96,6 +96,29 @@ function segmentTrimBounds(segment: { start: number; end: number }, ranges: Remo
   };
 }
 
+function keptPiecesForSegment(segment: { start: number; end: number }, ranges: RemovedRange[]) {
+  let cursor = segment.start;
+  const pieces: Array<{ start: number; end: number }> = [];
+  for (const range of ranges) {
+    const cutStart = Math.max(segment.start, range.start);
+    const cutEnd = Math.min(segment.end, range.end);
+    if (cutEnd <= segment.start || cutStart >= segment.end) continue;
+    if (cutStart > cursor + .001) pieces.push({ start: cursor, end: cutStart });
+    cursor = Math.max(cursor, cutEnd);
+    if (cursor >= segment.end) break;
+  }
+  if (segment.end > cursor + .001) pieces.push({ start: cursor, end: segment.end });
+  return pieces;
+}
+
+function validSegmentOrder(plan: EditPlan, count: number) {
+  const natural = Array.from({ length: count }, (_, index) => index);
+  const order = plan.segment_order || [];
+  if (order.length !== count) return natural;
+  const sorted = [...order].sort((a, b) => a - b);
+  return sorted.every((value, index) => value === natural[index]) ? [...order] : natural;
+}
+
 export default function Editor() {
   const { clipId } = useParams<{ clipId: string }>();
   const projectId = useSearchParams().get("project");
@@ -108,6 +131,7 @@ export default function Editor() {
   const captionDragRef = useRef<{ pointerId: number; offsetX: number; offsetY: number } | null>(null);
   const timelineScrubRef = useRef<{ pointerId: number; element: HTMLDivElement } | null>(null);
   const videoTrackRef = useRef<HTMLDivElement>(null);
+  const playbackPieceIndexRef = useRef<number | null>(null);
   const trimDragRef = useRef<{
     pointerId: number;
     segmentIndex: number;
@@ -117,6 +141,11 @@ export default function Editor() {
     segment: { start: number; end: number };
     basePlan: EditPlan;
     draftPlan: EditPlan;
+    visualStart: number;
+    visualEnd: number;
+    visualSourceStart: number;
+    visualSourceEnd: number;
+    visualTimelineDuration: number;
   } | null>(null);
   const behaviorSessionRef = useRef("");
   const previewLogged = useRef(false);
@@ -181,6 +210,8 @@ export default function Editor() {
   const [selectedSegmentIndex, setSelectedSegmentIndex] = useState<number | null>(null);
   const [timelineScrubbing, setTimelineScrubbing] = useState(false);
   const [trimmingSegment, setTrimmingSegment] = useState(false);
+  const [draggedSegmentIndex, setDraggedSegmentIndex] = useState<number | null>(null);
+  const [dragOverSegmentIndex, setDragOverSegmentIndex] = useState<number | null>(null);
 
   const freePlan = user?.plan === "free";
   const renderBusy = startingRender || (!!job && !["completed", "failed"].includes(job.status));
@@ -257,7 +288,6 @@ export default function Editor() {
   const wordRemoved = useCallback((word: TimedWord, plan = editPlan) => plan.removed_ranges.some(range => word.start < range.end && word.end > range.start), [editPlan]);
   const timelineSpan = Math.max(end - start, 1);
   const mergedRemovedRanges = useMemo(() => mergeRemovedRanges(editPlan.removed_ranges), [editPlan.removed_ranges]);
-  const editedDuration = useMemo(() => Math.max(.25, end - start - mergedRemovedRanges.reduce((total, range) => total + range.end - range.start, 0)), [mergedRemovedRanges, start, end]);
   const pauseBlocks = useMemo(() => sourceWords.slice(1).map((word, index) => ({ start: sourceWords[index].end, end: word.start, reason: "silence" })).filter(item => item.end - item.start >= .25), [sourceWords]);
   const timelineSegments = useMemo(() => {
     const duration = Math.max(end - start, .1);
@@ -268,35 +298,202 @@ export default function Editor() {
       end: boundaries[index + 1],
     }));
   }, [editPlan.split_points, start, end]);
+  const segmentOrder = useMemo(() => validSegmentOrder(editPlan, timelineSegments.length), [editPlan.segment_order, timelineSegments.length]);
   const displayTimelineSegments = useMemo(() => timelineSegments.map(segment => {
     const bounds = segmentTrimBounds(segment, editPlan.removed_ranges);
     const fullyRemoved = mergedRemovedRanges.some(range => range.start <= segment.start + .01 && range.end >= segment.end - .01);
     return { ...segment, ...bounds, fullyRemoved };
   }), [timelineSegments, editPlan.removed_ranges, mergedRemovedRanges]);
+  const timelineLayout = useMemo(() => {
+    let outputCursor = 0;
+    const pieces: Array<{ sourceStart: number; sourceEnd: number; outputStart: number; outputEnd: number; segmentIndex: number }> = [];
+    const segments = segmentOrder.map(sourceIndex => {
+      const sourceSegment = displayTimelineSegments[sourceIndex];
+      const kept = sourceSegment ? keptPiecesForSegment(sourceSegment, mergedRemovedRanges) : [];
+      const outputStart = outputCursor;
+      kept.forEach(piece => {
+        const length = piece.end - piece.start;
+        pieces.push({
+          sourceStart: piece.start,
+          sourceEnd: piece.end,
+          outputStart: outputCursor,
+          outputEnd: outputCursor + length,
+          segmentIndex: sourceIndex,
+        });
+        outputCursor += length;
+      });
+      return sourceSegment ? {
+        ...sourceSegment,
+        sourceIndex,
+        outputStart,
+        outputEnd: outputCursor,
+        outputDuration: outputCursor - outputStart,
+      } : null;
+    }).filter((segment): segment is NonNullable<typeof segment> => !!segment);
+    return { pieces, segments, duration: outputCursor };
+  }, [segmentOrder, displayTimelineSegments, mergedRemovedRanges]);
+  const visualTimelineLayout = useMemo(() => {
+    let visualCursor = 0;
+    const segments = segmentOrder.map(sourceIndex => {
+      const sourceSegment = displayTimelineSegments[sourceIndex];
+      if (!sourceSegment) return null;
+      const visualStart = visualCursor;
+      const sourceDuration = sourceSegment.end - sourceSegment.start;
+      visualCursor += sourceDuration;
+      return {
+        ...sourceSegment,
+        sourceIndex,
+        visualStart,
+        visualEnd: visualCursor,
+        visualDuration: sourceDuration,
+      };
+    }).filter((segment): segment is NonNullable<typeof segment> => !!segment);
+    return { segments, duration: Math.max(visualCursor, .1) };
+  }, [segmentOrder, displayTimelineSegments]);
+  const visualRemovedRanges = useMemo(() => visualTimelineLayout.segments.flatMap(segment =>
+    mergedRemovedRanges.flatMap(range => {
+      const startInSegment = Math.max(segment.start, range.start);
+      const endInSegment = Math.min(segment.end, range.end);
+      if (endInSegment <= startInSegment + .001) return [];
+      return [{
+        start: segment.visualStart + (startInSegment - segment.start),
+        end: segment.visualStart + (endInSegment - segment.start),
+      }];
+    }),
+  ), [visualTimelineLayout.segments, mergedRemovedRanges]);
+  const editedDuration = Math.max(MIN_SEGMENT_KEEP, timelineLayout.duration);
   const selectedSegment = selectedSegmentIndex === null ? null : timelineSegments[selectedSegmentIndex] || null;
   const selectedDisplaySegment = selectedSegmentIndex === null ? null : displayTimelineSegments[selectedSegmentIndex] || null;
+  const selectedOrderPosition = selectedSegmentIndex === null ? -1 : segmentOrder.indexOf(selectedSegmentIndex);
   const selectedSegmentRemoved = !!selectedDisplaySegment?.fullyRemoved;
   const selectedSegmentHasTrim = !!selectedDisplaySegment && (
     selectedDisplaySegment.visibleStart > selectedDisplaySegment.start + .01 ||
     selectedDisplaySegment.visibleEnd < selectedDisplaySegment.end - .01
   );
+  const orderedAllSourceWords = useMemo(() => segmentOrder.flatMap(segmentIndex => {
+    const segment = timelineSegments[segmentIndex];
+    if (!segment) return [];
+    return sourceWords.filter(word =>
+      word.start >= segment.start - .001 &&
+      word.start < segment.end - .001
+    );
+  }), [segmentOrder, timelineSegments, sourceWords]);
+  const orderedSourceWords = useMemo(
+    () => orderedAllSourceWords.filter(word => !wordRemoved(word)),
+    [orderedAllSourceWords, editPlan, wordRemoved],
+  );
   useEffect(() => {
     if (!sourceWords.length) return;
-    setTranscript(sourceWords.filter(word => !wordRemoved(word)).map(word => word.text).join(" "));
-  }, [sourceWords, editPlan, wordRemoved]);
+    setTranscript(orderedSourceWords.map(word => word.text).join(" "));
+  }, [sourceWords, editPlan, orderedSourceWords]);
+
+  const sourceRelativeToOutput = useCallback((relative: number) => {
+    for (let index = 0; index < timelineLayout.pieces.length; index += 1) {
+      const piece = timelineLayout.pieces[index];
+      if (relative >= piece.sourceStart - .001 && relative <= piece.sourceEnd + .001) {
+        return piece.outputStart + clamp(relative - piece.sourceStart, 0, piece.sourceEnd - piece.sourceStart);
+      }
+    }
+    return null;
+  }, [timelineLayout.pieces]);
+
+  const outputToSourceRelative = useCallback((outputTime: number) => {
+    const safe = clamp(outputTime, 0, editedDuration);
+    const pieces = timelineLayout.pieces;
+    for (let index = 0; index < pieces.length; index += 1) {
+      const piece = pieces[index];
+      const isLast = index === pieces.length - 1;
+      if (safe < piece.outputEnd - .001 || (isLast && safe <= piece.outputEnd + .001)) {
+        return {
+          source: piece.sourceStart + clamp(safe - piece.outputStart, 0, piece.sourceEnd - piece.sourceStart),
+          pieceIndex: index,
+          segmentIndex: piece.segmentIndex,
+        };
+      }
+    }
+    const last = pieces.at(-1);
+    return last ? { source: last.sourceEnd, pieceIndex: pieces.length - 1, segmentIndex: last.segmentIndex } : null;
+  }, [timelineLayout.pieces, editedDuration]);
+
+  const sourceRelativeToVisual = useCallback((relative: number) => {
+    const sourceIndex = timelineSegments.findIndex((segment, index) =>
+      relative >= segment.start - .001 &&
+      (relative < segment.end - .001 || (index === timelineSegments.length - 1 && relative <= segment.end + .001)),
+    );
+    if (sourceIndex < 0) return null;
+    const visual = visualTimelineLayout.segments.find(segment => segment.sourceIndex === sourceIndex);
+    const source = timelineSegments[sourceIndex];
+    if (!visual || !source) return null;
+    return visual.visualStart + clamp(relative - source.start, 0, source.end - source.start);
+  }, [timelineSegments, visualTimelineLayout.segments]);
+
+  const visualToSourceRelative = useCallback((visualTime: number) => {
+    const safe = clamp(visualTime, 0, visualTimelineLayout.duration);
+    const segments = visualTimelineLayout.segments;
+    for (let index = 0; index < segments.length; index += 1) {
+      const segment = segments[index];
+      const isLast = index === segments.length - 1;
+      if (safe < segment.visualEnd - .001 || (isLast && safe <= segment.visualEnd + .001)) {
+        return {
+          source: segment.start + clamp(safe - segment.visualStart, 0, segment.end - segment.start),
+          segmentIndex: segment.sourceIndex,
+        };
+      }
+    }
+    const last = segments.at(-1);
+    return last ? { source: last.end, segmentIndex: last.sourceIndex } : null;
+  }, [visualTimelineLayout]);
+
+  const timelineCaptionBlocks = useMemo(() => {
+    const blocks: Array<{ start: number; end: number; text: string }> = [];
+    segmentOrder.forEach(segmentIndex => {
+      const segment = timelineSegments[segmentIndex];
+      if (!segment) return;
+      const mapped = orderedSourceWords
+        .filter(word => word.start >= segment.start - .001 && word.start < segment.end - .001)
+        .map(word => ({
+          word,
+          start: sourceRelativeToVisual(word.start),
+          end: sourceRelativeToVisual(word.end),
+        }))
+        .filter(item => item.start !== null && item.end !== null && (item.end as number) > (item.start as number));
+      for (let index = 0; index < mapped.length; index += 4) {
+        const chunk = mapped.slice(index, index + 4);
+        if (!chunk.length) continue;
+        blocks.push({
+          start: chunk[0].start as number,
+          end: chunk[chunk.length - 1].end as number,
+          text: chunk.map(item => item.word.text).join(" "),
+        });
+      }
+    });
+    return blocks;
+  }, [orderedSourceWords, segmentOrder, timelineSegments, sourceRelativeToVisual]);
+
   const captionState = useMemo(() => {
     if (!captionWords.length) return { words: ["Add", "your", "caption", "text"], active: 0, uncertain: [] as boolean[], breakAfter: -1, visible: true };
-    const duration = Math.max(end - start, 1);
-    const relative = playhead - start;
-    const speechActive = !speechRegions.length || speechRegions.some(region => relative >= region.start && relative < region.end);
+    const sourceRelative = playhead - start;
+    const outputRelative = sourceRelativeToOutput(sourceRelative) ?? 0;
+    const reordered = segmentOrder.some((value, index) => value !== index);
+    // Once real timing exists, silence must be visually silent too — even after segment reorder.
+    const speechActive = !speechRegions.length || speechRegions.some(region => sourceRelative >= region.start && sourceRelative < region.end);
     if (!speechActive) {
       return { words: [] as string[], active: -1, uncertain: [] as boolean[], breakAfter: -1, visible: false };
     }
-    const liveCard = captionCards.find(card => relative >= card.start && relative < card.end);
+    if (sourceWords.length && (editPlan.removed_ranges.length > 0 || reordered)) {
+      const visible = orderedSourceWords;
+      const active = visible.findIndex(word => sourceRelative >= word.start && sourceRelative < word.end);
+      if (active < 0) return { words: [] as string[], active: -1, uncertain: [] as boolean[], breakAfter: -1, visible: false };
+      const chunkStart = Math.floor(active / 4) * 4;
+      const chunk = visible.slice(chunkStart, chunkStart + 4);
+      return { words: chunk.map(word => word.text), active: active - chunkStart,
+        uncertain: chunk.map(word => (word.confidence ?? 1) < .6), breakAfter: -1, visible: true };
+    }
+    const liveCard = captionCards.find(card => outputRelative >= card.start && outputRelative < card.end);
     if (liveCard) {
       const flat = liveCard.lines.join(" ").split(/\s+/).filter(Boolean);
-      let active = liveCard.words.findIndex(word => relative >= word.start && relative < word.end);
-      if (active < 0) liveCard.words.forEach((word, index) => { if (word.start <= relative) active = index; });
+      let active = liveCard.words.findIndex(word => outputRelative >= word.start && outputRelative < word.end);
+      if (active < 0) liveCard.words.forEach((word, index) => { if (word.start <= outputRelative) active = index; });
       return { words: flat, active: clamp(active, 0, Math.max(flat.length - 1, 0)),
                uncertain: liveCard.words.map(word => (word.confidence ?? 1) < .6),
                breakAfter: liveCard.lines.length === 2 ? liveCard.lines[0].split(/\s+/).length : -1,
@@ -304,35 +501,31 @@ export default function Editor() {
     }
     if (sourceWords.length) {
       const visible = sourceWords.filter(word => !wordRemoved(word));
-      let active = visible.findIndex(word => relative >= word.start && relative < word.end);
+      const active = visible.findIndex(word => sourceRelative >= word.start && sourceRelative < word.end);
       if (active < 0) return { words: [] as string[], active: -1, uncertain: [] as boolean[], breakAfter: -1, visible: false };
       const chunkStart = Math.floor(active / 4) * 4;
       const chunk = visible.slice(chunkStart, chunkStart + 4);
       return { words: chunk.map(word => word.text), active: active - chunkStart,
         uncertain: chunk.map(word => (word.confidence ?? 1) < .6), breakAfter: -1, visible: true };
     }
-    // Once real word/card timing exists, silence must be visually silent too.
-    // Do not keep the previous phrase pinned on screen between speech regions.
     if (timedCaptionWords.length || captionCards.length) {
       return { words: [] as string[], active: -1, uncertain: [] as boolean[], breakAfter: -1, visible: false };
     }
     const chunkSize = 4;
     const wordIndex = clamp(
-      Math.floor(clamp((playhead - start) / duration, 0, .999) * captionWords.length),
+      Math.floor(clamp(outputRelative / editedDuration, 0, .999) * captionWords.length),
       0,
       captionWords.length - 1,
     );
     const chunkStart = Math.floor(wordIndex / chunkSize) * chunkSize;
     const chunk = captionWords.slice(chunkStart, chunkStart + chunkSize);
     return { words: chunk, active: wordIndex - chunkStart, uncertain: chunk.map(() => false), breakAfter: -1, visible: true };
-  }, [captionWords, timedCaptionWords, captionCards, sourceWords, wordRemoved, speechRegions, playhead, start, end]);
+  }, [captionWords, timedCaptionWords, captionCards, sourceWords, orderedSourceWords, wordRemoved, speechRegions, playhead, start, sourceRelativeToOutput, segmentOrder, editPlan.removed_ranges, editedDuration]);
 
   function commitEditPlan(next: EditPlan) {
     setUndoPlans(history => [...history.slice(-49), editPlan]);
     setRedoPlans([]);
     setEditPlan(next);
-    const kept = sourceWords.filter(word => !wordRemoved(word, next)).map(word => word.text).join(" ");
-    if (kept) setTranscript(kept);
   }
 
   function removeRange(range: RemovedRange) {
@@ -358,9 +551,18 @@ export default function Editor() {
     const point = Number(clamp(playhead - start, .05, end - start - .05).toFixed(3));
     if (editPlan.removed_ranges.some(range => rangeContains(range, point))) { setError("Move the playhead onto a kept section before splitting."); return; }
     if (editPlan.split_points.some(item => Math.abs(item - point) < .05)) return;
+    const sourceSegmentIndex = timelineSegments.findIndex((segment, index) =>
+      point >= segment.start && (point < segment.end || (index === timelineSegments.length - 1 && point <= segment.end)),
+    );
     const splitPoints = [...editPlan.split_points, point].sort((a, b) => a - b);
-    commitEditPlan({ ...editPlan, split_points: splitPoints });
-    setSelectedSegmentIndex(splitPoints.filter(item => item <= point + .001).length);
+    const currentOrder = segmentOrder;
+    const nextOrder = sourceSegmentIndex < 0 ? Array.from({ length: splitPoints.length + 1 }, (_, index) => index) :
+      currentOrder.flatMap(index => {
+        if (index === sourceSegmentIndex) return [index, index + 1];
+        return [index > sourceSegmentIndex ? index + 1 : index];
+      });
+    commitEditPlan({ ...editPlan, version: 2, split_points: splitPoints, segment_order: nextOrder });
+    setSelectedSegmentIndex(sourceSegmentIndex < 0 ? splitPoints.filter(item => item <= point + .001).length : sourceSegmentIndex + 1);
   }
 
   function selectSegmentForRelative(relative: number) {
@@ -371,18 +573,41 @@ export default function Editor() {
     if (index >= 0) setSelectedSegmentIndex(index);
   }
 
-  function seekTimelineRelative(relative: number, select = true) {
-    const safe = clamp(relative, 0, timelineSpan);
-    const sourceTime = start + safe;
+  function seekTimelineRelative(visualTime: number, select = true) {
+    const mapped = visualToSourceRelative(visualTime);
+    if (!mapped) return;
+    if (select) setSelectedSegmentIndex(mapped.segmentIndex);
+    let source = mapped.source;
+    let pieceIndex = timelineLayout.pieces.findIndex(piece =>
+      piece.segmentIndex === mapped.segmentIndex &&
+      source >= piece.sourceStart - .001 &&
+      source <= piece.sourceEnd + .001,
+    );
+    if (pieceIndex < 0) {
+      const candidates = timelineLayout.pieces
+        .map((piece, index) => ({ piece, index }))
+        .filter(item => item.piece.segmentIndex === mapped.segmentIndex);
+      if (!candidates.length) return;
+      let closest = { ...candidates[0], distance: Number.POSITIVE_INFINITY };
+      candidates.forEach(item => {
+        const distance = source < item.piece.sourceStart
+          ? item.piece.sourceStart - source
+          : source > item.piece.sourceEnd ? source - item.piece.sourceEnd : 0;
+        if (distance < closest.distance) closest = { ...item, distance };
+      });
+      pieceIndex = closest.index;
+      source = clamp(source, closest.piece.sourceStart, closest.piece.sourceEnd);
+    }
+    const sourceTime = start + source;
+    playbackPieceIndexRef.current = pieceIndex;
     setPlayhead(sourceTime);
     if (videoRef.current) videoRef.current.currentTime = sourceTime;
-    if (select) selectSegmentForRelative(safe);
   }
 
   function timelineRelativeFromPointer(clientX: number, element: HTMLDivElement) {
     const rect = element.getBoundingClientRect();
     if (!rect.width) return 0;
-    return clamp((clientX - rect.left) / rect.width * timelineSpan, 0, timelineSpan);
+    return clamp((clientX - rect.left) / rect.width * visualTimelineLayout.duration, 0, visualTimelineLayout.duration);
   }
 
   function beginTimelineScrub(event: React.PointerEvent<HTMLDivElement>) {
@@ -420,6 +645,66 @@ export default function Editor() {
     removeRange({ ...selectedSegment, reason: "segment" });
   }
 
+  function reorderSegment(sourceIndex: number, targetSourceIndex: number) {
+    if (sourceIndex === targetSourceIndex) return;
+    const nextOrder = [...segmentOrder];
+    const from = nextOrder.indexOf(sourceIndex);
+    const to = nextOrder.indexOf(targetSourceIndex);
+    if (from < 0 || to < 0) return;
+    const [moved] = nextOrder.splice(from, 1);
+    nextOrder.splice(to, 0, moved);
+    commitEditPlan({ ...editPlan, version: 2, segment_order: nextOrder });
+    setSelectedSegmentIndex(sourceIndex);
+    setDraggedSegmentIndex(null);
+    setDragOverSegmentIndex(null);
+    playbackPieceIndexRef.current = null;
+  }
+
+  function moveSelectedSegment(direction: -1 | 1) {
+    if (selectedSegmentIndex === null || selectedSegmentRemoved) return;
+    const position = segmentOrder.indexOf(selectedSegmentIndex);
+    const targetPosition = position + direction;
+    if (position < 0 || targetPosition < 0 || targetPosition >= segmentOrder.length) return;
+    reorderSegment(selectedSegmentIndex, segmentOrder[targetPosition]);
+  }
+
+  function beginSegmentReorder(event: React.DragEvent<HTMLElement>, sourceIndex: number) {
+    const display = displayTimelineSegments[sourceIndex];
+    if (!display || display.fullyRemoved || trimmingSegment) {
+      event.preventDefault();
+      return;
+    }
+    videoRef.current?.pause();
+    setPlaying(false);
+    setSelectedSegmentIndex(sourceIndex);
+    setDraggedSegmentIndex(sourceIndex);
+    setDragOverSegmentIndex(sourceIndex);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", String(sourceIndex));
+  }
+
+  function overSegmentReorder(event: React.DragEvent<HTMLDivElement>, targetSourceIndex: number) {
+    if (draggedSegmentIndex === null) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setDragOverSegmentIndex(targetSourceIndex);
+  }
+
+  function finishSegmentReorder(event: React.DragEvent<HTMLDivElement>, targetSourceIndex: number) {
+    event.preventDefault();
+    const sourceIndex = draggedSegmentIndex ?? Number(event.dataTransfer.getData("text/plain"));
+    if (Number.isInteger(sourceIndex)) reorderSegment(sourceIndex, targetSourceIndex);
+    else {
+      setDraggedSegmentIndex(null);
+      setDragOverSegmentIndex(null);
+    }
+  }
+
+  function cancelSegmentReorder() {
+    setDraggedSegmentIndex(null);
+    setDragOverSegmentIndex(null);
+  }
+
   function planWithSegmentTrim(basePlan: EditPlan, segment: { start: number; end: number }, edge: "left" | "right", relative: number) {
     const currentTrim = findSegmentTrimRange(segment, edge, basePlan.removed_ranges);
     const ranges = basePlan.removed_ranges.filter(range => range !== currentTrim);
@@ -438,7 +723,16 @@ export default function Editor() {
     if (!drag) return;
     const rect = drag.track.getBoundingClientRect();
     if (!rect.width) return;
-    const rawRelative = clamp((clientX - rect.left) / rect.width * timelineSpan, drag.segment.start, drag.segment.end);
+    const pointerVisual = clamp(
+      (clientX - rect.left) / rect.width * drag.visualTimelineDuration,
+      drag.visualStart,
+      drag.visualEnd,
+    );
+    const rawRelative = drag.visualSourceStart + clamp(
+      pointerVisual - drag.visualStart,
+      0,
+      drag.visualEnd - drag.visualStart,
+    );
     const baseBounds = segmentTrimBounds(drag.segment, drag.basePlan.removed_ranges);
     const relative = drag.edge === "left"
       ? clamp(rawRelative, drag.segment.start, baseBounds.visibleEnd - MIN_SEGMENT_KEEP)
@@ -448,6 +742,7 @@ export default function Editor() {
     if (timelineSpan - removedDuration < MIN_SEGMENT_KEEP) return;
     drag.draftPlan = next;
     setEditPlan(next);
+    playbackPieceIndexRef.current = null;
     const sourceTime = start + relative + (drag.edge === "left" ? .002 : -.002);
     setPlayhead(sourceTime);
     if (videoRef.current) videoRef.current.currentTime = sourceTime;
@@ -456,8 +751,9 @@ export default function Editor() {
   function beginSegmentTrim(event: React.PointerEvent<HTMLButtonElement>, segmentIndex: number, edge: "left" | "right") {
     if (event.button !== 0) return;
     const segment = timelineSegments[segmentIndex];
+    const layout = visualTimelineLayout.segments.find(item => item.sourceIndex === segmentIndex);
     const track = videoTrackRef.current;
-    if (!segment || !track) return;
+    if (!segment || !layout || !track) return;
     const fullyRemoved = mergedRemovedRanges.some(range => range.start <= segment.start + .01 && range.end >= segment.end - .01);
     if (fullyRemoved) return;
     event.preventDefault();
@@ -476,6 +772,11 @@ export default function Editor() {
       segment,
       basePlan: editPlan,
       draftPlan: editPlan,
+      visualStart: layout.visualStart,
+      visualEnd: layout.visualEnd,
+      visualSourceStart: segment.start,
+      visualSourceEnd: segment.end,
+      visualTimelineDuration: visualTimelineLayout.duration,
     };
     setTrimmingSegment(true);
     updateSegmentTrimFromPointer(event.clientX);
@@ -641,27 +942,66 @@ export default function Editor() {
   }
 
   function seekToClipStart() {
-    if (!videoRef.current) return;
-    videoRef.current.currentTime = start;
-    setPlayhead(start);
+    const video = videoRef.current;
+    const first = timelineLayout.pieces[0];
+    if (!video || !first) return;
+    playbackPieceIndexRef.current = 0;
+    video.currentTime = start + first.sourceStart;
+    setPlayhead(video.currentTime);
   }
 
   function onLoaded() { seekToClipStart(); }
   function onTimeUpdate() {
-    const video = videoRef.current; if (!video) return;
+    const video = videoRef.current;
+    const pieces = timelineLayout.pieces;
+    if (!video || !pieces.length) return;
     const relative = video.currentTime - start;
-    const removed = mergedRemovedRanges.find(range => rangeContains(range, relative));
-    if (removed) { video.currentTime = Math.min(end, start + removed.end + .002); setPlayhead(video.currentTime); return; }
-    if (video.currentTime < start - .2 || video.currentTime >= end) {
-      video.currentTime = start;
-      if (!video.paused) void video.play();
+    let pieceIndex = playbackPieceIndexRef.current;
+    if (
+      pieceIndex === null ||
+      !pieces[pieceIndex] ||
+      relative < pieces[pieceIndex].sourceStart - .03 ||
+      relative > pieces[pieceIndex].sourceEnd + .03
+    ) {
+      pieceIndex = pieces.findIndex(piece => relative >= piece.sourceStart - .02 && relative <= piece.sourceEnd + .02);
+      if (pieceIndex < 0) {
+        const first = pieces[0];
+        playbackPieceIndexRef.current = 0;
+        video.currentTime = start + first.sourceStart;
+        setPlayhead(video.currentTime);
+        return;
+      }
+      playbackPieceIndexRef.current = pieceIndex;
+    }
+    const piece = pieces[pieceIndex];
+    if (!video.paused && relative >= piece.sourceEnd - .015) {
+      const next = pieces[pieceIndex + 1];
+      if (next) {
+        playbackPieceIndexRef.current = pieceIndex + 1;
+        video.currentTime = start + next.sourceStart + .002;
+        setPlayhead(video.currentTime);
+        return;
+      }
+      video.pause();
+      setPlaying(false);
+      video.currentTime = start + piece.sourceEnd;
+      setPlayhead(video.currentTime);
+      return;
     }
     setPlayhead(video.currentTime);
   }
   async function togglePlayback() {
-    const video = videoRef.current; if (!video) return;
+    const video = videoRef.current;
+    const pieces = timelineLayout.pieces;
+    if (!video || !pieces.length) return;
     if (video.paused) {
-      if (video.currentTime < start || video.currentTime >= end) video.currentTime = start;
+      const relative = video.currentTime - start;
+      let pieceIndex = pieces.findIndex(piece => relative >= piece.sourceStart - .02 && relative < piece.sourceEnd - .015);
+      if (pieceIndex < 0) {
+        pieceIndex = 0;
+        video.currentTime = start + pieces[0].sourceStart;
+      }
+      playbackPieceIndexRef.current = pieceIndex;
       await video.play();
       if (clip && !previewLogged.current) {
         previewLogged.current = true;
@@ -846,10 +1186,12 @@ export default function Editor() {
     textAlign: captionAlignment,
   } as CSSProperties;
   const visibleHook = hook.trim().split(/\s+/).slice(0, 8).join(" ");
-  const showHook = playhead - start < 4.5;
-  const playheadOffset = clamp(playhead - start, 0, timelineSpan);
-  const playheadPercent = playheadOffset / timelineSpan * 100;
-  const timelineTicks = Array.from({ length: 7 }, (_, index) => timelineSpan * index / 6);
+  const outputPlayhead = sourceRelativeToOutput(playhead - start) ?? 0;
+  const visualPlayhead = sourceRelativeToVisual(playhead - start) ?? 0;
+  const showHook = outputPlayhead < 4.5;
+  const playheadOffset = clamp(outputPlayhead, 0, editedDuration);
+  const playheadPercent = visualTimelineLayout.duration > 0 ? clamp(visualPlayhead / visualTimelineLayout.duration * 100, 0, 100) : 0;
+  const timelineTicks = Array.from({ length: 7 }, (_, index) => visualTimelineLayout.duration * index / 6);
 
   return (
     <div className="pro-editor-root">
@@ -892,9 +1234,16 @@ export default function Editor() {
                 <button type="button" onClick={splitAtPlayhead}><Scissors size={13}/> Split at {Math.max(0, playhead-start).toFixed(1)}s</button>
               </div>
               <div className="smart-transcript pro-editor-transcript" aria-label="Text based video editor">
-                {sourceWords.map((word, index) => {
+                {orderedAllSourceWords.map((word, index) => {
                   const removed = editPlan.removed_ranges.find(range => word.start < range.end && word.end > range.start);
-                  const pause = index < sourceWords.length - 1 ? pauseBlocks.find(item => Math.abs(item.start - word.end) < .01) : undefined;
+                  const nextWord = orderedAllSourceWords[index + 1];
+                  const sameLogicalSegment = !!nextWord && timelineSegments.some(segment =>
+                    word.start >= segment.start - .001 &&
+                    word.start < segment.end - .001 &&
+                    nextWord.start >= segment.start - .001 &&
+                    nextWord.start < segment.end - .001,
+                  );
+                  const pause = sameLogicalSegment ? pauseBlocks.find(item => Math.abs(item.start - word.end) < .01) : undefined;
                   return <span className="smart-token-group" key={word.start + "-" + index}>
                     <button type="button" className={"smart-word" + (removed ? " removed" : "")} title={removed ? "Restore word" : "Remove word from media"} onClick={() => removed ? restoreRange(removed) : removeRange({ start: word.start, end: word.end, reason: "word" })}>{word.text}</button>
                     {pause && <button type="button" className={"pause-block" + (editPlan.removed_ranges.some(range => rangeContains(range, (pause.start+pause.end)/2)) ? " removed" : "")} title={(pause.end-pause.start).toFixed(1) + "s pause — click to remove"} onClick={() => removeRange(pause)}><Pause size={9}/>{(pause.end-pause.start).toFixed(1)}s</button>}
@@ -990,7 +1339,7 @@ export default function Editor() {
           <div className="pro-editor-player-controls">
             <button type="button" onClick={togglePlayback} aria-label={playing ? "Pause" : "Play"}>{playing ? <Pause size={16} fill="currentColor"/> : <Play size={16} fill="currentColor"/>}</button>
             <b>{playheadOffset.toFixed(1)}s</b>
-            <span>/ {timelineSpan.toFixed(1)}s</span>
+            <span>/ {editedDuration.toFixed(1)}s</span>
             <div className="pro-editor-player-spacer"/>
             <span>{editPlan.removed_ranges.length} removals</span>
             <span>{editPlan.split_points.length} markers</span>
@@ -1008,9 +1357,11 @@ export default function Editor() {
                 <div className="pro-editor-segment-card-copy">
                   <span>Selected segment</span>
                   <b>{selectedDisplaySegment ? selectedDisplaySegment.visibleStart.toFixed(1) + "s – " + selectedDisplaySegment.visibleEnd.toFixed(1) + "s" : "Click a timeline segment"}</b>
-                  {selectedSegmentHasTrim && selectedSegment && <small>Source {selectedSegment.start.toFixed(1)}s – {selectedSegment.end.toFixed(1)}s · drag yellow handles to adjust</small>}
+                  {selectedSegment && <small>Order {selectedOrderPosition + 1} of {segmentOrder.length}{selectedSegmentHasTrim ? " · source " + selectedSegment.start.toFixed(1) + "s – " + selectedSegment.end.toFixed(1) + "s" : ""}</small>}
                 </div>
                 <div className="pro-editor-segment-card-actions">
+                  <button type="button" className="reorder-step" onClick={() => moveSelectedSegment(-1)} disabled={!selectedSegment || selectedSegmentRemoved || selectedOrderPosition <= 0} title="Move segment earlier"><ArrowLeft size={13}/> Earlier</button>
+                  <button type="button" className="reorder-step" onClick={() => moveSelectedSegment(1)} disabled={!selectedSegment || selectedSegmentRemoved || selectedOrderPosition < 0 || selectedOrderPosition >= segmentOrder.length - 1} title="Move segment later">Later <ArrowRight size={13}/></button>
                   {selectedSegmentHasTrim && <button type="button" className="reset-trim" onClick={resetSelectedSegmentTrim} title="Restore this segment to its split boundaries">Reset trim</button>}
                   <button type="button" onClick={deleteSelectedSegment} disabled={!selectedSegment || selectedSegmentRemoved} title="Delete selected segment from video, audio and captions"><Trash2 size={14}/>{selectedSegmentRemoved ? "Removed" : "Delete"}</button>
                 </div>
@@ -1117,18 +1468,18 @@ export default function Editor() {
         </aside>
       </div>
 
-      <section className={"pro-editor-timeline" + (timelineScrubbing ? " scrubbing" : "") + (trimmingSegment ? " trimming" : "")}>
+      <section className={"pro-editor-timeline" + (timelineScrubbing ? " scrubbing" : "") + (trimmingSegment ? " trimming" : "") + (draggedSegmentIndex !== null ? " reordering" : "")}>
         <div className="pro-editor-timeline-toolbar">
           <div className="pro-editor-timeline-play">
             <button type="button" onClick={togglePlayback}>{playing ? <Pause size={14} fill="currentColor"/> : <Play size={14} fill="currentColor"/>}</button>
-            <b>{playheadOffset.toFixed(1)}s</b><span>/ {timelineSpan.toFixed(1)}s</span>
+            <b>{playheadOffset.toFixed(1)}s</b><span>/ {editedDuration.toFixed(1)}s</span>
           </div>
           <div className="pro-editor-timeline-actions">
             <button type="button" onClick={splitAtPlayhead} title="Split at playhead (S)"><Scissors size={13}/> Split</button>
             <button type="button" className="danger" onClick={deleteSelectedSegment} disabled={!selectedSegment || selectedSegmentRemoved} title="Delete selected segment (Delete)"><Trash2 size={13}/> Delete segment</button>
-            <span>Space Play · S Split · Delete Remove · Drag yellow edges Trim · Ctrl+Z Undo</span>
+            <span>Space Play · S Split · Delete Remove · Drag yellow edges Trim · Grip & drag Reorder · Ctrl+Z Undo</span>
           </div>
-          <div className="pro-editor-timeline-status"><span>{editedDuration.toFixed(1)} sec edited</span><span>{editPlan.removed_ranges.length} removals</span><span>{editPlan.split_points.length} split markers</span></div>
+          <div className="pro-editor-timeline-status"><span>{editedDuration.toFixed(1)} sec edited</span><span className="timeline-removal-summary">{editPlan.removed_ranges.length} removals</span><span>{editPlan.split_points.length} split markers</span></div>
         </div>
         <div className="pro-editor-ruler">
           <span className="pro-editor-track-label"/>
@@ -1143,41 +1494,69 @@ export default function Editor() {
             onPointerMove={moveTimelineScrub}
             onPointerUp={endTimelineScrub}
             onPointerCancel={endTimelineScrub}
-            title="Click or drag to seek. Click a segment to select it."
+            title="Click or drag to seek. Use the grip on a segment to reorder it."
           >
-            {displayTimelineSegments.map((segment,index) => <div
-              className={"pro-editor-video-segment" + (selectedSegmentIndex === index ? " selected" : "") + (segment.visibleStart > segment.start + .01 || segment.visibleEnd < segment.end - .01 ? " trimmed" : "") + (segment.fullyRemoved ? " removed" : "")}
-              key={"segment-"+index}
-              style={{ left:String(segment.visibleStart/timelineSpan*100)+"%", width:String((segment.visibleEnd-segment.visibleStart)/timelineSpan*100)+"%" }}
-            >
-              <span>{index+1}</span>
-              {selectedSegmentIndex === index && !segment.fullyRemoved && <>
-                <button
+            {visualTimelineLayout.segments.map(segment => {
+              const index = segment.sourceIndex;
+              const blockStart = segment.visualStart + (segment.visibleStart - segment.start);
+              const blockEnd = segment.visualStart + (segment.visibleEnd - segment.start);
+              return <div
+                className={"pro-editor-video-segment" +
+                  (selectedSegmentIndex === index ? " selected" : "") +
+                  (segment.visibleStart > segment.start + .01 || segment.visibleEnd < segment.end - .01 ? " trimmed" : "") +
+                  (segment.fullyRemoved ? " removed" : "") +
+                  (draggedSegmentIndex === index ? " dragging" : "") +
+                  (dragOverSegmentIndex === index && draggedSegmentIndex !== index ? " drop-target" : "")}
+                key={"segment-"+index}
+                style={{
+                  left:String(blockStart/visualTimelineLayout.duration*100)+"%",
+                  width:String(Math.max((blockEnd-blockStart)/visualTimelineLayout.duration*100,.6))+"%",
+                }}
+                onDragOver={event => overSegmentReorder(event,index)}
+                onDragEnter={event => overSegmentReorder(event,index)}
+                onDrop={event => finishSegmentReorder(event,index)}
+              >
+                <span>{index+1}</span>
+                {!segment.fullyRemoved && <button
                   type="button"
-                  className="segment-trim-handle left"
-                  aria-label={"Trim start of segment " + String(index+1)}
-                  title="Drag to trim segment start"
-                  onPointerDown={event => beginSegmentTrim(event,index,"left")}
-                  onPointerMove={moveSegmentTrim}
-                  onPointerUp={event => finishSegmentTrim(event)}
-                  onPointerCancel={event => finishSegmentTrim(event,true)}
-                  onClick={event => event.stopPropagation()}
-                ><i/></button>
-                <button
-                  type="button"
-                  className="segment-trim-handle right"
-                  aria-label={"Trim end of segment " + String(index+1)}
-                  title="Drag to trim segment end"
-                  onPointerDown={event => beginSegmentTrim(event,index,"right")}
-                  onPointerMove={moveSegmentTrim}
-                  onPointerUp={event => finishSegmentTrim(event)}
-                  onPointerCancel={event => finishSegmentTrim(event,true)}
-                  onClick={event => event.stopPropagation()}
-                ><i/></button>
-              </>}
-            </div>)}
-            {mergedRemovedRanges.map((range,index) => <span className="timeline-removal" key={"video-removal-"+index} style={{ left:String(range.start/timelineSpan*100)+"%", width:String((range.end-range.start)/timelineSpan*100)+"%" }}/>)}
-            {editPlan.split_points.map((point,index) => <span className="timeline-split" key={"video-split-"+index} style={{ left:String(point/timelineSpan*100)+"%" }}/>)}
+                  className="segment-reorder-grip"
+                  draggable
+                  aria-label={"Drag segment " + String(index+1) + " to reorder"}
+                  title="Drag to reorder segment"
+                  onPointerDown={event => event.stopPropagation()}
+                  onDragStart={event => beginSegmentReorder(event,index)}
+                  onDragEnd={cancelSegmentReorder}
+                ><GripVertical size={12}/></button>}
+                {selectedSegmentIndex === index && !segment.fullyRemoved && <>
+                  <button
+                    type="button"
+                    draggable={false}
+                    className="segment-trim-handle left"
+                    aria-label={"Trim start of segment " + String(index+1)}
+                    title="Drag to trim segment start"
+                    onPointerDown={event => beginSegmentTrim(event,index,"left")}
+                    onPointerMove={moveSegmentTrim}
+                    onPointerUp={event => finishSegmentTrim(event)}
+                    onPointerCancel={event => finishSegmentTrim(event,true)}
+                    onClick={event => event.stopPropagation()}
+                  ><i/></button>
+                  <button
+                    type="button"
+                    draggable={false}
+                    className="segment-trim-handle right"
+                    aria-label={"Trim end of segment " + String(index+1)}
+                    title="Drag to trim segment end"
+                    onPointerDown={event => beginSegmentTrim(event,index,"right")}
+                    onPointerMove={moveSegmentTrim}
+                    onPointerUp={event => finishSegmentTrim(event)}
+                    onPointerCancel={event => finishSegmentTrim(event,true)}
+                    onClick={event => event.stopPropagation()}
+                  ><i/></button>
+                </>}
+              </div>;
+            })}
+            {visualRemovedRanges.map((range,index) => <span className="timeline-removal" key={"video-removal-"+index} style={{ left:String(range.start/visualTimelineLayout.duration*100)+"%", width:String((range.end-range.start)/visualTimelineLayout.duration*100)+"%" }}/>)}
+            {visualTimelineLayout.segments.slice(0,-1).map((segment,index) => <span className="timeline-split" key={"video-output-split-"+index} style={{ left:String(segment.visualEnd/visualTimelineLayout.duration*100)+"%" }}/>)}
             <span className="pro-editor-playhead" style={{ left:String(playheadPercent)+"%" }}/>
           </div>
         </div>
@@ -1192,8 +1571,8 @@ export default function Editor() {
             title="Click or drag to seek"
           >
             {Array.from({length:96}).map((_,i)=><i key={i} style={{height:String(10+Math.abs(Math.sin(i*.63))*28)+"px"}}/>)}
-            {mergedRemovedRanges.map((range,index) => <span className="timeline-removal" key={"audio-removal-"+index} style={{ left:String(range.start/timelineSpan*100)+"%", width:String((range.end-range.start)/timelineSpan*100)+"%" }}/>)}
-            {editPlan.split_points.map((point,index) => <span className="timeline-split" key={"audio-split-"+index} style={{ left:String(point/timelineSpan*100)+"%" }}/>)}
+            {visualRemovedRanges.map((range,index) => <span className="timeline-removal" key={"audio-removal-"+index} style={{ left:String(range.start/visualTimelineLayout.duration*100)+"%", width:String((range.end-range.start)/visualTimelineLayout.duration*100)+"%" }}/>)}
+            {visualTimelineLayout.segments.slice(0,-1).map((segment,index) => <span className="timeline-split" key={"audio-output-split-"+index} style={{ left:String(segment.visualEnd/visualTimelineLayout.duration*100)+"%" }}/>)}
             <span className="pro-editor-playhead" style={{ left:String(playheadPercent)+"%" }}/>
           </div>
         </div>
@@ -1207,7 +1586,7 @@ export default function Editor() {
             onPointerCancel={endTimelineScrub}
             title="Click or drag to seek"
           >
-            {captionCards.map((card,index) => <span key={"caption-"+index} style={{ left:String(card.start/timelineSpan*100)+"%", width:String(Math.max((card.end-card.start)/timelineSpan*100,.4))+"%" }} title={card.lines.join(" ")} />)}
+            {timelineCaptionBlocks.map((block,index) => <span key={"caption-"+index} style={{ left:String(block.start/visualTimelineLayout.duration*100)+"%", width:String(Math.max((block.end-block.start)/visualTimelineLayout.duration*100,.4))+"%" }} title={block.text} />)}
             <span className="pro-editor-playhead" style={{ left:String(playheadPercent)+"%" }}/>
           </div>
         </div>

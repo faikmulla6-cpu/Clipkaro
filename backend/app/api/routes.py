@@ -18,7 +18,7 @@ from app.schemas.api import (
 from app.services.auth import current_user, require_role
 from app.services.jobs import create_job, event_payload, update_job, utcnow
 from app.services.rendering import align_edited_words, create_edited_srt, create_srt, create_word_srt, timed_words
-from app.services.smart_edit import apply_plan_to_words, clean_speech_ranges, kept_ranges, normalize_edit_plan
+from app.services.smart_edit import apply_plan_to_words, clean_speech_ranges, kept_ranges, normalize_edit_plan, plan_reorders_segments
 from app.services.caption_timing import clip_speech_regions
 from app.services.render_gate import render_short_limited
 from app.services.caption_layout import build_caption_cards
@@ -598,7 +598,7 @@ async def _render_export(job_id:str,export_id:str,clip:dict,video:dict,request:E
         source_words = timed_words(raw_segments if correction_in_clip else segments,clip["start_time"],clip["end_time"])
         source_words = [{**word,"start":float(word["start"])-clip["start_time"],"end":float(word["end"])-clip["start_time"]} for word in source_words]
         edited_words = apply_plan_to_words(source_words,plan,clip["end_time"]-clip["start_time"])
-        if plan["removed_ranges"]:
+        if plan["removed_ranges"] or plan_reorders_segments(plan, clip["end_time"] - clip["start_time"]):
             create_word_srt(edited_words,srt)
         elif correction_in_clip:
             reference=timed_words(raw_segments,clip["start_time"],clip["end_time"])

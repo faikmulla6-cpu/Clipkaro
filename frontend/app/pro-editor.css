@@ -576,3 +576,72 @@ radial-gradient(circle at 50% 12%,rgba(255,255,255,.9),rgba(242,245,240,.5) 45%,
   .pro-editor-segment-card-actions{width:100%}
   .pro-editor-segment-card-actions button{flex:1;justify-content:center}
 }
+
+
+/* Timeline reorder V1: drag whole segments while preserving trim/delete semantics. */
+.pro-editor-segment-card-actions .reorder-step{
+  border-color:#c8d8c2;
+  background:#f7fbf4;
+  color:#356248;
+}
+.pro-editor-segment-card-actions .reorder-step:hover:not(:disabled){
+  background:#eef7e8;
+  border-color:#aac89e;
+}
+.segment-reorder-grip{
+  position:absolute;
+  top:50%;
+  left:8px;
+  transform:translateY(-50%);
+  width:22px;
+  height:20px;
+  border:0;
+  padding:0;
+  margin:0;
+  border-radius:6px;
+  background:rgba(255,255,255,.16);
+  color:rgba(255,255,255,.88);
+  display:grid;
+  place-items:center;
+  cursor:grab;
+  z-index:10;
+  opacity:.68;
+  transition:opacity .12s ease,background .12s ease,transform .12s ease;
+}
+.segment-reorder-grip:hover{
+  opacity:1;
+  background:rgba(255,255,255,.27);
+  transform:translateY(-50%) scale(1.05);
+}
+.segment-reorder-grip:active{cursor:grabbing}
+.pro-editor-video-segment:hover .segment-reorder-grip,
+.pro-editor-video-segment.selected .segment-reorder-grip{opacity:1}
+.pro-editor-video-segment.dragging{
+  opacity:.38;
+  filter:saturate(.55);
+  transform:scale(.985);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.28);
+}
+.pro-editor-video-segment.drop-target{
+  box-shadow:inset 0 0 0 2px #dfff57,0 0 0 2px #315d46,0 0 12px rgba(223,255,87,.42);
+  filter:brightness(1.09) saturate(1.15);
+}
+.pro-editor-video-segment.drop-target:before{
+  content:"";
+  position:absolute;
+  left:-3px;
+  top:-5px;
+  bottom:-5px;
+  width:3px;
+  border-radius:99px;
+  background:#dfff57;
+  box-shadow:0 0 0 1px #315d46;
+  z-index:14;
+}
+.pro-editor-timeline.reordering .pro-editor-video-track{cursor:grabbing}
+.pro-editor-timeline.reordering .pro-editor-playhead{opacity:.32}
+.pro-editor-timeline.reordering .segment-trim-handle{pointer-events:none;opacity:.45}
+.pro-editor-timeline.reordering .pro-editor-video-segment:not(.dragging){transition:filter .1s ease,box-shadow .1s ease,transform .1s ease}
+@media(max-width:1120px){
+  .segment-reorder-grip{left:6px;width:19px}
+}

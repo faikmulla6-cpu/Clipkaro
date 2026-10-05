@@ -20,7 +20,7 @@ from app.services.jobs import claim_job, heartbeat_job_claim, init_job_queue, re
 from app.services.pipeline_provenance import transcript_state
 from app.services.render_gate import render_short_limited
 from app.services.rendering import create_edited_srt, create_srt, create_word_srt, timed_words
-from app.services.smart_edit import apply_plan_to_words, kept_ranges, normalize_edit_plan
+from app.services.smart_edit import apply_plan_to_words, kept_ranges, normalize_edit_plan, plan_reorders_segments
 from app.services.source_caption_detection import detect_burned_captions
 from app.services.storage import get_storage_provider, validate_object_key
 from app.services.transcript_review import effective_segments_for_video
@@ -110,7 +110,7 @@ async def _render_export_durable(
         source_words = timed_words(raw_segments if correction_in_clip else segments,clip["start_time"],clip["end_time"])
         source_words = [{**word,"start":float(word["start"])-clip["start_time"],"end":float(word["end"])-clip["start_time"]} for word in source_words]
         edited_words = apply_plan_to_words(source_words,plan,clip["end_time"]-clip["start_time"])
-        if plan["removed_ranges"]:
+        if plan["removed_ranges"] or plan_reorders_segments(plan, clip["end_time"] - clip["start_time"]):
             create_word_srt(edited_words,srt)
         elif correction_in_clip:
             reference = timed_words(raw_segments, clip["start_time"], clip["end_time"])
