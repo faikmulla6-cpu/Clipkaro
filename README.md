@@ -38,13 +38,13 @@ ClipKaro AI is an India-first creator product that turns owned long-form videos 
 | Plan | Price | Karo Minutes | Shorts | Quality |
 | --- | ---: | ---: | ---: | --- |
 | Free | ₹0 | 15/month | 2/month | 720p + watermark |
-| Mini Pass | ₹59 one-time | 25 | 5 | 1080p, no watermark |
+| Mini Pass | ₹59 one-time | 125 total (25 max per Short) | 5 | 1080p, no watermark |
 | Creator | ₹199/month | 60 | 15 | 1080p, no watermark |
 | Growth | ₹399/month | 180 | 50 | 1080p, no watermark |
 | Pro | ₹799/month | 480 | 150 | 1080p, no watermark |
 | Agency | ₹1,999/month | 1,500 | 500 | 1080p, no watermark |
 
-`1 Karo Minute = 1 source-video minute processed.` The backend enforces both processing minutes and export limits. Razorpay plan IDs are created or reused automatically on first checkout, so there are no manual `RAZORPAY_PLAN_*` IDs to maintain.
+`1 Karo Minute = 1 source-video minute processed.` Mini Pass includes 5 Short credits with up to 25 source-processing minutes per Short, capped at 125 source minutes across the pass. The backend enforces both processing minutes and export limits. Razorpay plan IDs are created or reused automatically on first checkout, so there are no manual `RAZORPAY_PLAN_*` IDs to maintain.
 
 The delivered private `backend/.env` contains the configured Razorpay server credentials. Never commit that file. The public key ID may be used by the browser; the key secret must remain backend-only. See `docs/RAZORPAY_BILLING.md`.
 
