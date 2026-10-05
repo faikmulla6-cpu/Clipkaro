@@ -1005,11 +1005,15 @@ export default function Editor() {
                 <button type="button" disabled={!redoPlans.length} onClick={redoEdit}><Redo2 size={14}/> Redo</button>
               </div>
               <div className={"pro-editor-segment-card" + (selectedSegment ? " active" : "")}>
-                <div>
+                <div className="pro-editor-segment-card-copy">
                   <span>Selected segment</span>
-                  <b>{selectedSegment ? selectedSegment.start.toFixed(1) + "s – " + selectedSegment.end.toFixed(1) + "s" : "Click a timeline segment"}</b>
+                  <b>{selectedDisplaySegment ? selectedDisplaySegment.visibleStart.toFixed(1) + "s – " + selectedDisplaySegment.visibleEnd.toFixed(1) + "s" : "Click a timeline segment"}</b>
+                  {selectedSegmentHasTrim && selectedSegment && <small>Source {selectedSegment.start.toFixed(1)}s – {selectedSegment.end.toFixed(1)}s · drag yellow handles to adjust</small>}
                 </div>
-                <button type="button" onClick={deleteSelectedSegment} disabled={!selectedSegment || selectedSegmentRemoved} title="Delete selected segment from video, audio and captions"><Trash2 size={14}/>{selectedSegmentRemoved ? "Removed" : "Delete"}</button>
+                <div className="pro-editor-segment-card-actions">
+                  {selectedSegmentHasTrim && <button type="button" className="reset-trim" onClick={resetSelectedSegmentTrim} title="Restore this segment to its split boundaries">Reset trim</button>}
+                  <button type="button" onClick={deleteSelectedSegment} disabled={!selectedSegment || selectedSegmentRemoved} title="Delete selected segment from video, audio and captions"><Trash2 size={14}/>{selectedSegmentRemoved ? "Removed" : "Delete"}</button>
+                </div>
               </div>
               <div className="pro-editor-field">
                 <label>Precise trim</label>
@@ -1113,7 +1117,7 @@ export default function Editor() {
         </aside>
       </div>
 
-      <section className={"pro-editor-timeline" + (timelineScrubbing ? " scrubbing" : "")}>
+      <section className={"pro-editor-timeline" + (timelineScrubbing ? " scrubbing" : "") + (trimmingSegment ? " trimming" : "")}>
         <div className="pro-editor-timeline-toolbar">
           <div className="pro-editor-timeline-play">
             <button type="button" onClick={togglePlayback}>{playing ? <Pause size={14} fill="currentColor"/> : <Play size={14} fill="currentColor"/>}</button>
@@ -1122,7 +1126,7 @@ export default function Editor() {
           <div className="pro-editor-timeline-actions">
             <button type="button" onClick={splitAtPlayhead} title="Split at playhead (S)"><Scissors size={13}/> Split</button>
             <button type="button" className="danger" onClick={deleteSelectedSegment} disabled={!selectedSegment || selectedSegmentRemoved} title="Delete selected segment (Delete)"><Trash2 size={13}/> Delete segment</button>
-            <span>Space Play · S Split · Delete Remove · Ctrl+Z Undo</span>
+            <span>Space Play · S Split · Delete Remove · Drag yellow edges Trim · Ctrl+Z Undo</span>
           </div>
           <div className="pro-editor-timeline-status"><span>{editedDuration.toFixed(1)} sec edited</span><span>{editPlan.removed_ranges.length} removals</span><span>{editPlan.split_points.length} split markers</span></div>
         </div>
@@ -1133,6 +1137,7 @@ export default function Editor() {
         <div className="pro-editor-track-row">
           <span className="pro-editor-track-label">Video</span>
           <div
+            ref={videoTrackRef}
             className="pro-editor-video-track interactive"
             onPointerDown={beginTimelineScrub}
             onPointerMove={moveTimelineScrub}
@@ -1140,12 +1145,38 @@ export default function Editor() {
             onPointerCancel={endTimelineScrub}
             title="Click or drag to seek. Click a segment to select it."
           >
-            {timelineSegments.map((segment,index) => <div
-              className={"pro-editor-video-segment" + (selectedSegmentIndex === index ? " selected" : "")}
+            {displayTimelineSegments.map((segment,index) => <div
+              className={"pro-editor-video-segment" + (selectedSegmentIndex === index ? " selected" : "") + (segment.visibleStart > segment.start + .01 || segment.visibleEnd < segment.end - .01 ? " trimmed" : "")}
               key={"segment-"+index}
-              style={{ left:String(segment.start/timelineSpan*100)+"%", width:String((segment.end-segment.start)/timelineSpan*100)+"%" }}
-            ><span>{index+1}</span></div>)}
-            {editPlan.removed_ranges.map((range,index) => <span className="timeline-removal" key={"video-removal-"+index} style={{ left:String(range.start/timelineSpan*100)+"%", width:String((range.end-range.start)/timelineSpan*100)+"%" }}/>)}
+              style={{ left:String(segment.visibleStart/timelineSpan*100)+"%", width:String((segment.visibleEnd-segment.visibleStart)/timelineSpan*100)+"%" }}
+            >
+              <span>{index+1}</span>
+              {selectedSegmentIndex === index && !segment.fullyRemoved && <>
+                <button
+                  type="button"
+                  className="segment-trim-handle left"
+                  aria-label={"Trim start of segment " + String(index+1)}
+                  title="Drag to trim segment start"
+                  onPointerDown={event => beginSegmentTrim(event,index,"left")}
+                  onPointerMove={moveSegmentTrim}
+                  onPointerUp={event => finishSegmentTrim(event)}
+                  onPointerCancel={event => finishSegmentTrim(event,true)}
+                  onClick={event => event.stopPropagation()}
+                ><i/></button>
+                <button
+                  type="button"
+                  className="segment-trim-handle right"
+                  aria-label={"Trim end of segment " + String(index+1)}
+                  title="Drag to trim segment end"
+                  onPointerDown={event => beginSegmentTrim(event,index,"right")}
+                  onPointerMove={moveSegmentTrim}
+                  onPointerUp={event => finishSegmentTrim(event)}
+                  onPointerCancel={event => finishSegmentTrim(event,true)}
+                  onClick={event => event.stopPropagation()}
+                ><i/></button>
+              </>}
+            </div>)}
+            {mergedRemovedRanges.map((range,index) => <span className="timeline-removal" key={"video-removal-"+index} style={{ left:String(range.start/timelineSpan*100)+"%", width:String((range.end-range.start)/timelineSpan*100)+"%" }}/>)}
             {editPlan.split_points.map((point,index) => <span className="timeline-split" key={"video-split-"+index} style={{ left:String(point/timelineSpan*100)+"%" }}/>)}
             <span className="pro-editor-playhead" style={{ left:String(playheadPercent)+"%" }}/>
           </div>
@@ -1161,7 +1192,7 @@ export default function Editor() {
             title="Click or drag to seek"
           >
             {Array.from({length:96}).map((_,i)=><i key={i} style={{height:String(10+Math.abs(Math.sin(i*.63))*28)+"px"}}/>)}
-            {editPlan.removed_ranges.map((range,index) => <span className="timeline-removal" key={"audio-removal-"+index} style={{ left:String(range.start/timelineSpan*100)+"%", width:String((range.end-range.start)/timelineSpan*100)+"%" }}/>)}
+            {mergedRemovedRanges.map((range,index) => <span className="timeline-removal" key={"audio-removal-"+index} style={{ left:String(range.start/timelineSpan*100)+"%", width:String((range.end-range.start)/timelineSpan*100)+"%" }}/>)}
             {editPlan.split_points.map((point,index) => <span className="timeline-split" key={"audio-split-"+index} style={{ left:String(point/timelineSpan*100)+"%" }}/>)}
             <span className="pro-editor-playhead" style={{ left:String(playheadPercent)+"%" }}/>
           </div>
