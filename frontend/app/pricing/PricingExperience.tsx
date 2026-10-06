@@ -51,6 +51,8 @@ type BillingStatus = {
   scheduled_plan?: string | null;
   scheduled_plan_effective_at?: string | null;
   scheduled_change_type?: "downgrade" | "cancel" | null;
+  mini_pass_exhausted?: boolean;
+  entitlement_state?: "active" | "exhausted" | "free";
 };
 
 type RazorpayResult = {
@@ -84,7 +86,7 @@ declare global {
 
 const copy: Record<string, { tagline: string; features: string[] }> = {
   free: { tagline: "Try ClipKaro before paying", features: ["2 AI Shorts / month", "15 total source-processing minutes / month", "Up to 2 exports / month", "Source media kept 24 hours", "720p with ClipKaro watermark", "Unlimited Post Karo · Instagram + YouTube"] },
-  mini_pass: { tagline: "5 AI Shorts. Up to 25 minutes of source for each one.", features: ["5 AI Shorts", "Up to 25 min source video per Short", "Unlimited exports & re-exports", "Up to 125 source-processing minutes across the pass", "Processed source kept until pass expiry · max 30 days", "1080p · no watermark", "Unlimited Post Karo · Instagram + YouTube"] },
+  mini_pass: { tagline: "5 AI Shorts. The pass ends when all 5 are used.", features: ["5 AI Shorts", "Up to 25 min source video per Short", "Pass expires after 5/5 AI Shorts are used or after 30 days", "Unlimited exports & re-exports for created Shorts", "Up to 125 source-processing minutes across the pass", "1080p · no watermark", "Unlimited Post Karo · Instagram + YouTube"] },
   creator: { tagline: "For new creators building consistency", features: ["15 AI Shorts / month", "60 total source-processing minutes / month", "Unlimited exports & re-exports", "Paid source media kept up to 30 days", "1080p · no watermark", "Full AI clip quality", "Unlimited Post Karo · Instagram + YouTube"] },
   growth: { tagline: "For serious creators publishing every week", features: ["50 AI Shorts / month", "180 total source-processing minutes / month", "Unlimited exports & re-exports", "Paid source media kept up to 30 days", "1080p · no watermark", "Brand kit + creator workflow", "Unlimited Post Karo · Instagram + YouTube"] },
   pro: { tagline: "For daily creators and growing channels", features: ["150 AI Shorts / month", "480 total source-processing minutes / month", "Unlimited exports & re-exports", "Paid source media kept up to 30 days", "1080p · no watermark", "Priority creator workflow", "Unlimited Post Karo · Instagram + YouTube"] },
@@ -198,7 +200,7 @@ function PublicPricing({ plans }: { plans: Plan[] }) {
             <ul>{details.features.map((item) => <li key={item}><Check size={13}/>{item}</li>)}</ul>
             <Link href={`/signup?plan=${encodeURIComponent(plan.id)}`} className={plan.popular ? "primary-btn" : "secondary-btn"}>{cta}</Link>
             {plan.billing === "subscription" && <p className="muted-copy">Renews monthly until cancelled or changed.</p>}
-            {plan.billing === "one_time" && <p className="muted-copy">Valid for 30 days and never auto-renews.</p>}
+            {plan.billing === "one_time" && <p className="muted-copy">Expires when all 5 AI Shorts are used or after 30 days, whichever comes first. Never auto-renews.</p>}
           </div>;
         })}
       </div>
@@ -398,6 +400,7 @@ export function PricingExperience({ publicFallback }: { publicFallback?: React.R
   }
 
   const currentPlan = (status?.plan || user?.plan || "free").toLowerCase();
+  const miniPassExhausted = currentPlan === "mini_pass" && Boolean(status?.mini_pass_exhausted);
   const currentIsRecurring = ["creator", "growth", "pro", "agency"].includes(currentPlan);
   const currentPrice = plans.find((plan) => plan.id === currentPlan)?.price || 0;
   const scheduledPlan = status?.scheduled_plan || null;
@@ -416,9 +419,12 @@ export function PricingExperience({ publicFallback }: { publicFallback?: React.R
     if (scheduled) {
       disabled = true;
       label = status?.scheduled_change_type === "cancel" ? "Scheduled to Free" : "Scheduled next cycle";
-    } else if (current) {
+    } else if (current && !(plan.id === "mini_pass" && miniPassExhausted)) {
       disabled = true;
       label = "Current plan";
+    } else if (plan.id === "mini_pass" && miniPassExhausted) {
+      disabled = !!busy;
+      label = "Buy another Mini Pass";
     } else if (status?.scheduled_change_type === "cancel") {
       disabled = true;
       label = "Available after subscription ends";
@@ -442,7 +448,7 @@ export function PricingExperience({ publicFallback }: { publicFallback?: React.R
   }
 
   return <AppShell title="Plans & billing" subtitle="Fair Access Pricing — same strong AI, pay only for the usage you need.">
-    <div className="billing-principle"><Sparkles size={18}/><div><b>Start small. Grow when you grow.</b><span>Every paid plan includes 1080p, no watermark and the same core AI clipping quality. Unlimited Post Karo publishing access is included on every plan, including Free; third-party platform rules can still apply.</span></div><ShieldCheck size={18}/></div>
+    <div className="billing-principle"><Sparkles size={18}/><div><b>Start small. Grow when you grow.</b><span>Every paid plan includes 1080p, no watermark and unlimited exports & re-exports of created Shorts. Mini Pass creation access ends at 5/5 AI Shorts or 30 days, whichever comes first.</span></div><ShieldCheck size={18}/></div>
     {legalStatus && legalStatus.razorpay_mode === "test" && <div className="info-banner" style={{background: "#e8f5e9", border: "1px solid #c8e6c9", color: "#1b5e20", padding: 12, borderRadius: 8, marginBottom: 16}}>🧪 <b>Razorpay Test Mode</b> — Payments are simulated. No real money will be charged. Use test card numbers from Razorpay documentation.</div>}
     {legalStatus && legalStatus.razorpay_mode === "live" && legalStatus.development_live_opt_in && <div className="error-banner"><span>⚠️ <b>Razorpay LIVE Mode</b> — this local checkout can charge real money. Use only an account/payment method you intentionally want to charge.</span></div>}
     {error && <div className="error-banner"><span>{error}</span></div>}
@@ -451,7 +457,7 @@ export function PricingExperience({ publicFallback }: { publicFallback?: React.R
     <div className="billing-manage">
       <div>
         <b>Before you pay</b>
-        <span>Mini Pass is ₹59 one-time for 30 days and never auto-renews. Creator, Growth, Pro and Agency renew monthly at the selected plan price until cancelled or changed. Cancellation has no ClipKaro fee and normally takes effect at the end of the paid cycle. Review the <Link href="/refund-policy" target="_blank" rel="noopener noreferrer">Refund Policy</Link> and <Link href="/legal-notice" target="_blank" rel="noopener noreferrer">consumer information</Link>.</span>
+        <span>Mini Pass is ₹59 one-time. Its creation entitlement expires as soon as all 5 AI Shorts are used, or after 30 days if unused capacity remains. Already-created Shorts keep unlimited export and re-export access while their retained source media remains available. Creator, Growth, Pro and Agency renew monthly at the selected plan price until cancelled or changed. Review the <Link href="/refund-policy" target="_blank" rel="noopener noreferrer">Refund Policy</Link> and <Link href="/legal-notice" target="_blank" rel="noopener noreferrer">consumer information</Link>.</span>
       </div>
     </div>
 
@@ -483,7 +489,7 @@ export function PricingExperience({ publicFallback }: { publicFallback?: React.R
 
     <div className="plans-full clipkaro-plans">
       {plans.map((plan) => {
-        const current = currentPlan === plan.id;
+        const current = currentPlan === plan.id && !(plan.id === "mini_pass" && miniPassExhausted);
         const details = copy[plan.id] || { tagline: "", features: [] };
         const suffix = plan.billing === "one_time" ? " one-time" : plan.billing === "subscription" ? "/month" : "";
         const button = buttonState(plan);
@@ -501,7 +507,7 @@ export function PricingExperience({ publicFallback }: { publicFallback?: React.R
             {busy === plan.id && <Loader2 className="spin" size={14}/>} {button.label}
           </button>
           {plan.billing === "subscription" && !current && <p className="muted-copy">Renews monthly until cancelled or changed.</p>}
-          {plan.billing === "one_time" && <p className="muted-copy">One-time purchase · expires in 30 days · no auto-renewal.</p>}
+          {plan.billing === "one_time" && <p className="muted-copy">{miniPassExhausted ? "Previous Mini Pass expired at 5/5 AI Shorts · buy another anytime." : "One-time purchase · expires at 5/5 AI Shorts or after 30 days · no auto-renewal."}</p>}
           {current && status?.scheduled_change_type === "downgrade" && <p className="muted-copy">Current until {formatDate(status.scheduled_plan_effective_at)}</p>}
         </div>;
       })}
