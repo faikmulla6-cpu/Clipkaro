@@ -408,15 +408,15 @@ async def export_clip(
 
         limits = await project_routes.get_usage_for(user)
         active_plan = limits.plan
-        if limits.exports_remaining <= 0:
+        if not limits.unlimited_exports and limits.exports_remaining <= 0:
             if await _active_export_for_user(str(user["id"])):
                 raise HTTPException(
                     409,
-                    "Another Short is currently rendering and has reserved your last export slot. Wait for it to finish, then try again.",
+                    "Another Short is currently rendering and has reserved your last Free export. Wait for it to finish, then try again.",
                 )
             raise HTTPException(
                 402,
-                f"You've used all {limits.exports_limit} Shorts included in your current plan. Buy more Shorts or choose a plan with a higher export limit.",
+                f"You've used all {limits.exports_limit} Short exports included in Free. Upgrade for unlimited exports and re-exports.",
             )
         if body.resolution == "1080p" and active_plan == "free":
             raise HTTPException(403, "1080p export is included with every paid ClipKaro plan.")
@@ -475,7 +475,7 @@ async def export_clip(
             # The export row must reach a terminal failed state so the database
             # reservation trigger refunds the Short atomically. Deleting a
             # queued row directly would orphan its reservation on PostgreSQL.
-            message = "ClipKaro could not create the render job. Your Short slot was not consumed."
+            message = "ClipKaro could not create the render job. Your export allowance was not consumed."
             try:
                 await execute("UPDATE exports SET status='failed',error=? WHERE id=?", (message, export_id))
             except Exception:
@@ -490,9 +490,9 @@ async def export_clip(
                 job_id, export_id, clip, video, effective_body, output, brand,
             )
         except Exception as exc:
-            # A launcher failure must immediately return the reserved slot and
+            # A launcher failure must immediately return the Free export allowance and
             # must not leave a queued job that the UI can mistake for progress.
-            message = "ClipKaro could not start the render worker. Your Short slot was not consumed."
+            message = "ClipKaro could not start the render worker. Your export allowance was not consumed."
             await execute("UPDATE exports SET status='failed',error=? WHERE id=?", (message, export_id))
             await update_job(job_id, 0, "failed", message, "failed", "PROVIDER_TEMPORARY_FAILURE")
             raise HTTPException(503, message) from exc
