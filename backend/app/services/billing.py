@@ -122,6 +122,26 @@ def usage_period_key(user: dict[str, Any]) -> str:
     return f"{plan}:{reference}:{started[:19]}"
 
 
+async def mini_pass_is_exhausted(user: dict[str, Any]) -> bool:
+    """A Mini Pass expires for new creation as soon as its 5th source is consumed.
+
+    Keep the underlying paid-pass marker until the retention deadline so Shorts
+    created by that purchase can still be edited, exported and re-exported.
+    A replacement Mini Pass receives a new billing reference/usage period.
+    """
+    if str(user.get("plan") or "") != "mini_pass":
+        return False
+    period = usage_period_key(user)
+    row = await fetch_one(
+        """SELECT COUNT(DISTINCT resource_id) count FROM usage_reservations
+           WHERE user_id=? AND period_key=? AND kind='minutes'
+             AND status IN ('reserved','finalized')""",
+        (str(user["id"]), period),
+    )
+    limit = int(PLAN_CATALOG["mini_pass"].get("shorts") or 5)
+    return int((row or {}).get("count") or 0) >= limit
+
+
 def verify_order_signature(order_id: str, payment_id: str, signature: str) -> bool:
     secret = get_settings().razorpay_key_secret
     if not secret:
