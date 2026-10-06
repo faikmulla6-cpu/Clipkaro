@@ -128,7 +128,54 @@ export type AccountSettings = {
   timezone: string;
   creator_category: "auto" | "education" | "podcast" | "business" | "motivation" | "spiritual" | "local-business";
 };
-export type Usage = { plan: string; exports_used: number; exports_limit: number; exports_remaining: number; shorts_used: number; shorts_limit: number; shorts_remaining: number; pass_exhausted: boolean; unlimited_exports: boolean; source_minutes: number; processing_minutes_limit: number; processing_minutes_remaining: number; source_minutes_per_short?: number | null; period_key: string };
+export type Usage = {
+  plan: string;
+  exports_used: number;
+  exports_limit: number;
+  exports_remaining: number;
+  // Optional during rolling deployment so a newer frontend remains compatible
+  // with the previous backend response shape instead of rendering NaN.
+  shorts_used?: number;
+  shorts_limit?: number;
+  shorts_remaining?: number;
+  pass_exhausted?: boolean;
+  unlimited_exports?: boolean;
+  source_minutes: number;
+  processing_minutes_limit: number;
+  processing_minutes_remaining: number;
+  source_minutes_per_short?: number | null;
+  period_key: string;
+};
+
+function finiteNonNegative(value: unknown, fallback = 0): number {
+  return typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : Math.max(0, fallback);
+}
+
+export function usageShortLimit(usage: Usage): number {
+  return finiteNonNegative(usage.shorts_limit, finiteNonNegative(usage.exports_limit));
+}
+
+export function usageShortRemaining(usage: Usage): number {
+  if (typeof usage.shorts_remaining === "number" && Number.isFinite(usage.shorts_remaining)) {
+    return Math.max(0, usage.shorts_remaining);
+  }
+  // Legacy backend fallback is display-only. It prevents NaN during rollout;
+  // Mini Pass exhaustion itself is never inferred from this old export counter.
+  return finiteNonNegative(usage.exports_remaining);
+}
+
+export function usageMiniPassExhausted(usage: Usage): boolean {
+  if (usage.plan !== "mini_pass") return false;
+  if (typeof usage.pass_exhausted === "boolean") return usage.pass_exhausted;
+  if (typeof usage.shorts_remaining === "number" && Number.isFinite(usage.shorts_remaining)) {
+    return usageShortLimit(usage) > 0 && usage.shorts_remaining <= 0;
+  }
+  return false;
+}
+
+export function usageHasUnlimitedExports(usage: Usage): boolean {
+  return typeof usage.unlimited_exports === "boolean" ? usage.unlimited_exports : usage.plan !== "free";
+}
 
 export function postJSON<T>(path: string, body: unknown): Promise<T> {
   return api<T>(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
