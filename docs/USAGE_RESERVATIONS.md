@@ -7,10 +7,11 @@ ClipKaro treats creation quota as a durable reservation, not as a read-then-incr
 1. FFprobe determines source duration.
 2. When a new source video transitions to `validated`, the database atomically reserves both its source-processing minutes and one AI Short creation credit for the active entitlement period.
 3. The creation credit is represented by the active/finalized `minutes` reservation for that source project, so concurrent sources cannot spend the same last Short credit.
-4. The complete source duration immediately counts against `source_minutes`.
-5. When the project becomes `ready`, the reservation becomes `finalized` without a second usage increment.
-6. If processing fails before success, only a still-`reserved` reservation is refunded and marked `released`.
-7. Reprocessing an already-finalized project does not consume another AI Short creation credit or process those source minutes a second time.
+4. For Mini Pass, the fifth active/finalized source reservation immediately exhausts the pass for new creation; the user can then buy another Mini Pass.
+5. The complete source duration immediately counts against `source_minutes`.
+6. When the project becomes `ready`, the reservation becomes `finalized` without a second usage increment.
+7. If processing fails before success, only a still-`reserved` reservation is refunded and marked `released`.
+8. Reprocessing an already-finalized project does not consume another AI Short creation credit or process those source minutes a second time.
 
 ## Exports and re-exports
 
