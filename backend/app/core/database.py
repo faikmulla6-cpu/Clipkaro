@@ -311,8 +311,9 @@ CREATE INDEX IF NOT EXISTS idx_post_karo_accounts_user ON post_karo_accounts(use
 CREATE INDEX IF NOT EXISTS idx_post_karo_publications_user ON post_karo_publications(user_id,created_at DESC);
 
 -- A video's duration is known at the validated transition. Reserve its Karo
--- Minutes in the same SQLite write transaction before transcription starts.
-CREATE TRIGGER IF NOT EXISTS trg_reserve_video_minutes
+-- Minutes and one AI Short creation in the same SQLite write transaction before transcription starts.
+DROP TRIGGER IF EXISTS trg_reserve_video_minutes;
+CREATE TRIGGER trg_reserve_video_minutes
 BEFORE UPDATE OF status ON videos
 WHEN NEW.status = 'validated'
  AND NEW.duration > 0
