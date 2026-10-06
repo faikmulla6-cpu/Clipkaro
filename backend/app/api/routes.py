@@ -43,7 +43,7 @@ from app.services.billing import PLAN_CATALOG, sync_subscription_if_needed, usag
 
 router = APIRouter()
 logger = logging.getLogger("clipkaro.pipeline")
-PLAN_LIMITS = {key: int(value["exports"]) for key, value in PLAN_CATALOG.items()}
+PLAN_SHORT_LIMITS = {key: int(value.get("shorts", value["exports"])) for key, value in PLAN_CATALOG.items()}
 PLAN_PROCESSING_MINUTES = {key: float(value["processing_minutes"]) for key, value in PLAN_CATALOG.items()}
 PLAN_MAX_SOURCE_MINUTES = {
     "free": 15, "mini_pass": 25, "creator": 60, "growth": 180, "pro": 240, "agency": 240,
@@ -136,6 +136,8 @@ async def plans() -> list[dict]:
             "name": value["name"],
             "price": value["price"],
             "exports": value["exports"],
+            "shorts": value.get("shorts", value["exports"]),
+            "unlimited_exports": bool(value.get("unlimited_exports")),
             "processing_minutes": value["processing_minutes"],
             "source_minutes_per_short": value.get("source_minutes_per_short"),
             "watermark": value["watermark"],
@@ -163,23 +165,43 @@ async def update_me(body: dict, user: dict = Depends(current_user)) -> UserOut:
 async def get_usage_for(user: dict) -> UsageOut:
     user = await sync_subscription_if_needed(user)
     plan = str(user.get("plan") or "free")
-    export_limit = PLAN_LIMITS.get(plan, PLAN_LIMITS["free"])
+    short_limit = PLAN_SHORT_LIMITS.get(plan, PLAN_SHORT_LIMITS["free"])
     minute_limit = PLAN_PROCESSING_MINUTES.get(plan, PLAN_PROCESSING_MINUTES["free"])
+    unlimited_exports = bool(PLAN_CATALOG.get(plan, PLAN_CATALOG["free"]).get("unlimited_exports"))
     period = usage_period_key(user)
     row = await fetch_one("SELECT * FROM usage WHERE user_id=? AND month=?", (user["id"], period))
     if not row:
         await execute(
             "INSERT INTO usage(id,user_id,month,source_minutes,exports_used,exports_limit) VALUES (?, ?, ?, 0, 0, ?)",
-            (str(uuid.uuid4()), user["id"], period, export_limit),
+            (str(uuid.uuid4()), user["id"], period, short_limit),
         )
-        used, minutes = 0, 0.0
+        stored_exports_used, minutes = 0, 0.0
     else:
-        used, minutes = int(row["exports_used"]), float(row["source_minutes"])
-        if int(row["exports_limit"]) != export_limit:
-            await execute("UPDATE usage SET exports_limit=? WHERE id=?", (export_limit, row["id"]))
+        stored_exports_used, minutes = int(row["exports_used"]), float(row["source_minutes"])
+        if int(row["exports_limit"]) != short_limit:
+            await execute("UPDATE usage SET exports_limit=? WHERE id=?", (short_limit, row["id"]))
+
+    short_row = await fetch_one(
+        """SELECT COUNT(DISTINCT resource_id) count FROM usage_reservations
+           WHERE user_id=? AND period_key=? AND kind='minutes' AND status IN ('reserved','finalized')""",
+        (user["id"], period),
+    )
+    shorts_used = int((short_row or {}).get("count") or 0)
+    shorts_remaining = max(short_limit - shorts_used, 0)
+
+    if unlimited_exports:
+        legacy_used, legacy_limit, legacy_remaining = shorts_used, short_limit, shorts_remaining
+    else:
+        legacy_used = stored_exports_used
+        legacy_limit = int(PLAN_CATALOG["free"]["exports"])
+        legacy_remaining = max(legacy_limit - legacy_used, 0)
+
     return UsageOut(
-        plan=plan, exports_used=used, exports_limit=export_limit,
-        exports_remaining=max(export_limit-used, 0), source_minutes=round(minutes, 1),
+        plan=plan,
+        exports_used=legacy_used, exports_limit=legacy_limit, exports_remaining=legacy_remaining,
+        shorts_used=shorts_used, shorts_limit=short_limit, shorts_remaining=shorts_remaining,
+        unlimited_exports=unlimited_exports,
+        source_minutes=round(minutes, 1),
         processing_minutes_limit=minute_limit,
         processing_minutes_remaining=round(max(minute_limit-minutes, 0), 1),
         source_minutes_per_short=PLAN_CATALOG.get(plan, PLAN_CATALOG["free"]).get("source_minutes_per_short"),
@@ -323,8 +345,11 @@ async def _process_project(
         active_plan = limits.plan
         max_minutes = PLAN_MAX_SOURCE_MINUTES.get(active_plan, PLAN_MAX_SOURCE_MINUTES["free"])
         source_minutes = float(metadata["duration"]) / 60
-        if active_plan == "mini_pass" and not force_transcribe and limits.exports_remaining <= 0:
-            raise ValueError("Your Mini Pass has no Short credits left. Buy another pass to process a new source video.")
+        if not force_transcribe and limits.shorts_remaining <= 0:
+            raise ValueError(
+                f"Your {PLAN_CATALOG[active_plan]['name']} plan has no AI Short creation credits left. "
+                "Existing Shorts can still be edited, exported and re-exported."
+            )
         if source_minutes > max_minutes:
             if active_plan == "mini_pass":
                 raise ValueError("Each Mini Pass Short includes up to 25 minutes of source-video processing.")
@@ -647,9 +672,8 @@ async def _render_export(job_id:str,export_id:str,clip:dict,video:dict,request:E
         await update_job(job_id,92,"optimizing","Optimizing MP4 for fast social upload")
         await execute("UPDATE exports SET status='ready',progress=100 WHERE id=?",(export_id,))
         await execute("UPDATE clips SET status='exported',updated_at=? WHERE id=?",(utcnow(),clip["id"]))
-        # Export quota was reserved atomically when the exports row was created;
-        # the ready transition finalizes that reservation. Never increment it a
-        # second time here.
+        # Paid renders are unlimited and never consume AI Short creation credits.
+        # Free still uses its small render allowance, reserved atomically at row creation.
         await update_job(job_id,100,"ready","Your Short is ready to download","completed")
         await audit(clip["user_id"],"export.completed","export",export_id)
     except Exception as exc:
