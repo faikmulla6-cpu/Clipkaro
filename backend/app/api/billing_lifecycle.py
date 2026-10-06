@@ -23,8 +23,10 @@ from app.services.billing import (
     downgrade_to_free,
     ensure_razorpay_plan,
     iso_from_epoch,
+    mini_pass_is_exhausted,
     parse_iso,
     razorpay_request,
+    sync_subscription_if_needed,
     usage_period_key,
     utc_now,
     verify_order_signature,
@@ -523,7 +525,9 @@ async def _change_subscription_plan(user: dict[str, Any], target_plan: str) -> d
 
 
 async def _billing_status_payload(user: dict[str, Any], *, force: bool = False) -> dict[str, Any]:
+    user = await sync_subscription_if_needed(user, force=force)
     user = await reconcile_subscription(user, force=force)
+    mini_pass_exhausted = await mini_pass_is_exhausted(user)
     pending = await _pending_change(str(user["id"]))
     scheduled_plan = str((pending or {}).get("to_plan") or ("free" if user.get("cancel_at_period_end") else "")) or None
     return {
@@ -531,6 +535,8 @@ async def _billing_status_payload(user: dict[str, Any], *, force: bool = False) 
         "billing_reference": user.get("billing_reference"),
         "plan_started_at": user.get("plan_started_at"),
         "plan_expires_at": user.get("plan_expires_at"),
+        "mini_pass_exhausted": mini_pass_exhausted,
+        "entitlement_state": "exhausted" if mini_pass_exhausted else ("free" if user["plan"] == "free" else "active"),
         "cancel_at_period_end": bool(user.get("cancel_at_period_end", 0)),
         "scheduled_plan": scheduled_plan,
         "scheduled_plan_effective_at": (pending or {}).get("effective_at") or (user.get("plan_expires_at") if scheduled_plan == "free" else None),
@@ -580,15 +586,17 @@ async def _recent_reusable_checkout(user_id: str, plan: str, kind: str) -> dict[
 @router.post("/billing/checkout")
 async def billing_checkout(body: dict, user: dict = Depends(current_user)) -> dict[str, Any]:
     plan = str(body.get("plan", "")).lower()
+    user = await sync_subscription_if_needed(user)
     current_plan = str(user.get("plan") or "free")
     active_reference = str(user.get("billing_reference") or "")
+    current_mini_pass_exhausted = await mini_pass_is_exhausted(user)
 
     if current_plan in SUBSCRIPTION_PLANS and active_reference.startswith("sub_"):
         return await _change_subscription_plan(user, plan)
 
     if plan not in PAID_PLANS:
         raise HTTPException(422, "Choose a valid paid plan.")
-    if current_plan == plan:
+    if current_plan == plan and not (plan == "mini_pass" and current_mini_pass_exhausted):
         raise HTTPException(409, "This plan is already active on your account.")
 
     # New paid commitments always require the current user acceptance. Public
@@ -606,11 +614,13 @@ async def billing_checkout(body: dict, user: dict = Depends(current_user)) -> di
     # before the first provider reference is durably stored.
     async with _checkout_locks[str(user["id"])], distributed_advisory_lock(f"checkout:{user['id']}"):
         fresh = await fetch_one("SELECT * FROM users WHERE id=?", (user["id"],)) or user
+        fresh = await sync_subscription_if_needed(fresh)
         fresh_plan = str(fresh.get("plan") or "free")
         fresh_reference = str(fresh.get("billing_reference") or "")
+        fresh_mini_pass_exhausted = await mini_pass_is_exhausted(fresh)
         if fresh_plan in SUBSCRIPTION_PLANS and fresh_reference.startswith("sub_"):
             return await _change_subscription_plan(fresh, plan)
-        if fresh_plan == plan:
+        if fresh_plan == plan and not (plan == "mini_pass" and fresh_mini_pass_exhausted):
             raise HTTPException(409, "This plan is already active on your account.")
 
         catalog = PLAN_CATALOG[plan]
