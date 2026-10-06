@@ -25,7 +25,7 @@ export function PublicPricingView({ plans }: { plans: PublicPlanView[] }) {
           <header className={styles.hero} data-public-reveal>
             <span><Sparkles size={14}/> Extremely affordable creator pricing</span>
             <h1>Start free. <em>Pay for creation capacity, not every post.</em></h1>
-            <p>ClipKaro starts at ₹0, offers a ₹59 one-time Mini Pass and Creator from ₹199/month. Paid plans charge for AI Short creation capacity—not repeated renders—so finished Shorts can be exported and re-exported without another paid credit.</p>
+            <p>ClipKaro starts at ₹0, offers a ₹59 one-time Mini Pass and Creator from ₹199/month. Paid plans charge for AI Short creation capacity—not repeated renders—so finished Shorts can be exported and re-exported without another paid credit. The Mini Pass expires for new creation at 5/5 AI Shorts or after 30 days, whichever comes first.</p>
             <div className={styles.heroTrust}><b>No card required to start</b><b>Unlimited exports & re-exports on paid plans</b><b>Unlimited Post Karo on every plan</b><b>Mini Pass never auto-renews</b></div>
           </header>
 
@@ -42,7 +42,7 @@ export function PublicPricingView({ plans }: { plans: PublicPlanView[] }) {
                     <ul>{plan.features.map((item)=><li key={item}><Check size={14}/>{item}</li>)}</ul>
                     <TransitionLink href={`/signup?plan=${encodeURIComponent(plan.id)}`} className={plan.popular ? styles.primary : styles.secondary}>{cta} <ArrowRight size={14}/></TransitionLink>
                     {plan.suffix === "/month" && <small className={styles.renewal}>Renews monthly until cancelled or changed.</small>}
-                    {plan.id === "mini_pass" && <small className={styles.renewal}>Valid for 30 days. One-time purchase.</small>}
+                    {plan.id === "mini_pass" && <small className={styles.renewal}>Expires at 5/5 AI Shorts or after 30 days. One-time purchase.</small>}
                   </article>
                 );
               })}
