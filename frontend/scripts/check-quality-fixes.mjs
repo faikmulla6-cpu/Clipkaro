@@ -21,7 +21,7 @@ const requirements = [
   [shell.includes("Content Packs"), "Authenticated sidebar must expose Content Packs"],
   [shell.includes("Karo Minutes left") && shell.includes("AI Shorts left") && shell.includes("unlimited exports & re-exports"), "Usage card must distinguish creation capacity from paid rendering"],
   [upload.includes("No AI Short creation credits left for a new source.") && upload.includes("Existing Shorts can still be edited, exported and re-exported") && upload.includes("Open projects"), "Upload screen must separate creation credits from existing-Short exports"],
-  [pricing.includes("5 AI Shorts") && pricing.includes("Up to 25 min source video per Short") && pricing.includes("Unlimited exports & re-exports") && pricing.includes("Up to 125 source-processing minutes across the pass") && pricing.includes("max 30 days"), "Mini Pass pricing must state 5 x 25-minute creation capacity plus unlimited exports"],
+  [pricing.includes("5 AI Shorts") && pricing.includes("Up to 25 min source video per Short") && pricing.includes("Unlimited exports & re-exports") && pricing.includes("expires") && pricing.includes("5/5 AI Shorts") && pricing.includes("30 days"), "Mini Pass pricing must state 5 x 25-minute creation capacity, quota expiry and unlimited created-Short exports"],
   [css.includes(".side-nav{flex:1;min-height:0;overflow-y:auto"), "Sidebar navigation must remain scrollable on short screens"],
 ];
 
