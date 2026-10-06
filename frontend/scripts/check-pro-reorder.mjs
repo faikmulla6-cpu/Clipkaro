@@ -47,6 +47,12 @@ const missing = [
   ...requiredBackend.filter(token => !backend.includes(token)).map(token => `backend:${token}`),
 ];
 
+const trackedAdvance = source.indexOf("if (!video.paused && trackedPiece && relative >= trackedPiece.sourceEnd - .015)");
+const sourceRecovery = source.indexOf("pieces.findIndex(piece => relative >= piece.sourceStart - .02 && relative <= piece.sourceEnd + .02)");
+if (trackedAdvance < 0 || sourceRecovery < 0 || trackedAdvance > sourceRecovery) {
+  missing.push("editor:edited-order playback must advance before source-time recovery");
+}
+
 if (missing.length) {
   console.error("Professional segment reorder contract failed:", missing.join(", "));
   process.exit(1);

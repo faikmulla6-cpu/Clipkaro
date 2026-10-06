@@ -957,6 +957,28 @@ export default function Editor() {
     if (!video || !pieces.length) return;
     const relative = video.currentTime - start;
     let pieceIndex = playbackPieceIndexRef.current;
+    const trackedIndex = pieceIndex;
+    const trackedPiece = trackedIndex === null ? null : pieces[trackedIndex];
+
+    // While preview playback is active, edited timeline order is authoritative.
+    // timeupdate can arrive after the browser has already crossed a source split;
+    // advance from the tracked piece before source-time recovery can select the
+    // naturally adjacent source segment and accidentally undo a reorder.
+    if (!video.paused && trackedPiece && relative >= trackedPiece.sourceEnd - .015) {
+      const next = pieces[trackedIndex + 1];
+      if (next) {
+        playbackPieceIndexRef.current = trackedIndex + 1;
+        video.currentTime = start + next.sourceStart + .002;
+        setPlayhead(video.currentTime);
+        return;
+      }
+      video.pause();
+      setPlaying(false);
+      video.currentTime = start + trackedPiece.sourceEnd;
+      setPlayhead(video.currentTime);
+      return;
+    }
+
     if (
       pieceIndex === null ||
       !pieces[pieceIndex] ||
