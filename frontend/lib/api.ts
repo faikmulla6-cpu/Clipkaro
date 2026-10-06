@@ -128,7 +128,7 @@ export type AccountSettings = {
   timezone: string;
   creator_category: "auto" | "education" | "podcast" | "business" | "motivation" | "spiritual" | "local-business";
 };
-export type Usage = { plan: string; exports_used: number; exports_limit: number; exports_remaining: number; source_minutes: number; processing_minutes_limit: number; processing_minutes_remaining: number; source_minutes_per_short?: number | null; period_key: string };
+export type Usage = { plan: string; exports_used: number; exports_limit: number; exports_remaining: number; shorts_used: number; shorts_limit: number; shorts_remaining: number; unlimited_exports: boolean; source_minutes: number; processing_minutes_limit: number; processing_minutes_remaining: number; source_minutes_per_short?: number | null; period_key: string };
 
 export function postJSON<T>(path: string, body: unknown): Promise<T> {
   return api<T>(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
