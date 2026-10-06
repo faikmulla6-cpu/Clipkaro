@@ -3,6 +3,7 @@ import asyncio
 import hashlib
 import hmac
 import json
+from datetime import datetime, timezone
 import pytest
 from fastapi.testclient import TestClient
 from app.core.config import get_settings
@@ -127,8 +128,11 @@ def test_signed_billing_webhook_is_idempotent(client: TestClient):
         "Content-Type": "application/json", "X-Razorpay-Signature": signature,
         "X-Razorpay-Event-Id": "evt_test_1",
     }
-    first = client.post("/api/v1/billing/razorpay/webhook", content=raw, headers=headers)
-    second = client.post("/api/v1/billing/razorpay/webhook", content=raw, headers=headers)
+    fixed_now = datetime(2026, 8, 31, 12, 0, 0, tzinfo=timezone.utc)
+    with patch("app.api.billing_lifecycle.utc_now", return_value=fixed_now), \
+         patch("app.services.billing.utc_now", return_value=fixed_now):
+        first = client.post("/api/v1/billing/razorpay/webhook", content=raw, headers=headers)
+        second = client.post("/api/v1/billing/razorpay/webhook", content=raw, headers=headers)
     assert first.status_code == second.status_code == 204
     login_demo(client)
     assert client.get("/api/v1/auth/me").json()["plan"] == "pro"

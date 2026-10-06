@@ -665,12 +665,12 @@ async def _configure(db: aiosqlite.Connection) -> None:
 
 
 async def _close_connection(db: aiosqlite.Connection) -> None:
-    """Close aiosqlite and wait until its worker thread has actually exited.
+    """Close SQLite and wait until aiosqlite's worker has fully stopped.
 
-    `Connection.close()` waits for SQLite's close operation, then enqueues the
-    worker stop sentinel. Very short-lived event loops (tests, CLI jobs, deploy
-    hooks) can otherwise close in the tiny window before that thread consumes
-    the sentinel, producing an `Event loop is closed` thread exception.
+    aiosqlite 0.22+ awaits its stop sentinel during `close()`, while older
+    releases exposed the Connection itself as the worker thread. Joining the
+    actual worker as a final barrier keeps short-lived event loops from closing
+    while a queued result is still trying to report back to them.
     """
     close_task = asyncio.create_task(db.close())
     try:
@@ -680,8 +680,12 @@ async def _close_connection(db: aiosqlite.Connection) -> None:
         # event loop disappears; then propagate the cancellation unchanged.
         await close_task
         raise
-    if db.is_alive():
-        await asyncio.to_thread(db.join)
+
+    worker = getattr(db, "_thread", db)
+    is_alive = getattr(worker, "is_alive", None)
+    join = getattr(worker, "join", None)
+    if callable(is_alive) and callable(join) and is_alive():
+        await asyncio.to_thread(join)
 
 
 async def _open_connection() -> aiosqlite.Connection:

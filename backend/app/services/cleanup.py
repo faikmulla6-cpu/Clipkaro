@@ -116,9 +116,21 @@ async def cleanup_expired() -> int:
 
 async def cleanup_loop() -> None:
     while True:
+        # Retention is background work, but a shutdown must not tear down the
+        # event loop while an aiosqlite worker is still returning a DB result.
+        # Shield the active sweep and, if shutdown arrives, let that sweep close
+        # its connections cleanly before propagating cancellation.
+        sweep = asyncio.create_task(cleanup_expired())
         try:
-            await cleanup_expired()
+            await asyncio.shield(sweep)
         except asyncio.CancelledError:
+            try:
+                await sweep
+            except Exception as exc:
+                logger.error(
+                    "Retention sweep failed during shutdown error_type=%s",
+                    type(exc).__name__,
+                )
             raise
         except Exception as exc:  # DB/runtime failures must not permanently kill retention.
             logger.error("Retention sweep failed and will retry error_type=%s", type(exc).__name__)

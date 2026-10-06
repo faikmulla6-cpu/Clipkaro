@@ -4,14 +4,17 @@ import asyncio
 import hashlib
 import hmac
 import json
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
+from app.api import billing_lifecycle as billing_lifecycle_module
 from app.core.config import get_settings
 from app.core.database import execute, fetch_all, fetch_one
 from app.main import _auth_requests, _requests, app
+from app.services import billing as billing_module
 from app.services.legal import LEGAL_VERSION, record_legal_acceptance
 
 START = "2026-08-01T00:00:00+00:00"
@@ -20,6 +23,14 @@ NEXT_END = "2026-10-01T00:00:00+00:00"
 START_EPOCH = 1785542400
 END_EPOCH = 1788220800
 NEXT_END_EPOCH = 1790812800
+FIXED_BILLING_NOW = datetime(2026, 8, 31, 12, 0, 0, tzinfo=timezone.utc)
+
+
+@pytest.fixture(autouse=True)
+def fixed_billing_clock(monkeypatch):
+    """Keep lifecycle fixtures deterministic without depending on host wall clock."""
+    monkeypatch.setattr(billing_lifecycle_module, "utc_now", lambda: FIXED_BILLING_NOW)
+    monkeypatch.setattr(billing_module, "utc_now", lambda: FIXED_BILLING_NOW)
 
 
 @pytest.fixture()
@@ -151,7 +162,9 @@ def test_immediate_upgrade_preserves_current_cycle_usage_and_reservations(client
     assert reservation and reservation["period_key"] == new_key
     usage = client.get("/api/v1/usage").json()
     assert usage["processing_minutes_remaining"] == 130.0
-    assert usage["exports_remaining"] == 40
+    assert usage["shorts_used"] == 1
+    assert usage["shorts_remaining"] == 49
+    assert usage["unlimited_exports"] is True
     assert any(call[0] == "PATCH" for call in calls)
 
 

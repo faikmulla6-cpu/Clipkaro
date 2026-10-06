@@ -23,7 +23,7 @@ def test_creator_caption_position_is_authoritative_in_preview_and_render() -> No
 
     assert "request.caption_position" in worker
     assert "effective_position" not in worker
-    assert 'const positionClass = captionY === null ? `position-${captionPosition}` : "caption-custom-position";' in editor
+    assert 'const positionClass = captionY === null ? "position-" + captionPosition : "caption-custom-position";' in editor
     assert "caption_position: captionPosition" in editor
     assert "caption_y: captionY" in editor
     assert "effectiveCaptionPosition" not in editor

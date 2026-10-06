@@ -235,8 +235,8 @@ def test_export_mobile_safety_contract_is_single_flight_and_server_authoritative
     # rather than accidentally falling through to the lower safe-area rule.
     assert "def _caption_y_center" in rendering
     assert 'if caption_position == "center":' in rendering
-    assert "return height // 2" in rendering
-    assert rendering.count("_caption_y_center(height, style, caption_position)") >= 2
+    assert "return height / 2" in rendering
+    assert rendering.count("_caption_y_center(height, style, caption_position") >= 2
 
     # Database reservation triggers own usage settlement. Legacy render/process
     # paths must not double-increment the already reserved counters.
