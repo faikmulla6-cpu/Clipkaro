@@ -4,7 +4,7 @@ import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/AuthProvider";
 import { Logo } from "@/components/Logo";
 import { MobileLandingMenu } from "@/components/MobileLandingMenu";
-import { api, postJSON } from "@/lib/api";
+import { api, postJSON, Usage, usageMiniPassExhausted } from "@/lib/api";
 import { LEGAL_LINKS, LEGAL_VERSION, LegalStatus, TRUST_PROFILE } from "@/lib/legal";
 import { ArrowRight, Check, Loader2, ShieldCheck, Sparkles } from "lucide-react";
 import Link from "next/link";
@@ -230,6 +230,7 @@ export function PricingExperience({ publicFallback }: { publicFallback?: React.R
   const { user, refresh } = useAuth();
   const [plans, setPlans] = useState<Plan[]>([]);
   const [status, setStatus] = useState<BillingStatus | null>(null);
+  const [usage, setUsage] = useState<Usage | null>(null);
   const [legalStatus, setLegalStatus] = useState<LegalStatus | null>(null);
   const [legalChecked, setLegalChecked] = useState(false);
   const [busy, setBusy] = useState("");
@@ -238,6 +239,10 @@ export function PricingExperience({ publicFallback }: { publicFallback?: React.R
 
   const refreshStatus = () => api<BillingStatus>("/billing/status").then((result) => {
     setStatus(result);
+    return result;
+  });
+  const refreshUsage = () => api<Usage>("/usage").then((result) => {
+    setUsage(result);
     return result;
   });
   const refreshLegalStatus = () => api<LegalStatus>("/legal/status").then((result) => {
@@ -252,6 +257,7 @@ export function PricingExperience({ publicFallback }: { publicFallback?: React.R
   useEffect(() => {
     if (!user) return;
     refreshStatus().catch(() => undefined);
+    refreshUsage().catch(() => undefined);
     refreshLegalStatus().catch(() => setError("Could not load ClipKaro's legal checkout status. Paid checkout is paused until it can be verified."));
   }, [user]);
 
@@ -303,6 +309,7 @@ export function PricingExperience({ publicFallback }: { publicFallback?: React.R
           setNotice("The scheduled downgrade was cancelled. Your current subscription will continue renewing normally.");
         }
         await refreshStatus();
+        await refreshUsage().catch(() => undefined);
         await refresh();
         setBusy("");
         return;
@@ -338,6 +345,7 @@ export function PricingExperience({ publicFallback }: { publicFallback?: React.R
             }
             setNotice(`${checkout.plan_name || plan.name} is active. Your ClipKaro limits have been updated.`);
             await refreshStatus();
+            await refreshUsage().catch(() => undefined);
             await refresh();
           } catch (e) {
             setError(e instanceof Error ? e.message : "Payment was received but could not be verified.");
@@ -400,7 +408,7 @@ export function PricingExperience({ publicFallback }: { publicFallback?: React.R
   }
 
   const currentPlan = (status?.plan || user?.plan || "free").toLowerCase();
-  const miniPassExhausted = currentPlan === "mini_pass" && Boolean(status?.mini_pass_exhausted);
+  const miniPassExhausted = currentPlan === "mini_pass" && Boolean(status?.mini_pass_exhausted || (usage && usageMiniPassExhausted(usage)));
   const currentIsRecurring = ["creator", "growth", "pro", "agency"].includes(currentPlan);
   const currentPrice = plans.find((plan) => plan.id === currentPlan)?.price || 0;
   const scheduledPlan = status?.scheduled_plan || null;
