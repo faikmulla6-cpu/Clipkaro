@@ -38,6 +38,12 @@ async def upload_project(
     API stops after durable enqueue; Whisper/FFmpeg execute in the worker service.
     """
     settings = get_settings()
+    limits = await project_routes.get_usage_for(user)
+    if limits.shorts_remaining <= 0:
+        raise HTTPException(
+            402,
+            "No AI Short creation credits remain in this plan. Existing Shorts can still be edited, exported and re-exported.",
+        )
     project_id, video_id = str(uuid.uuid4()), str(uuid.uuid4())
     ext = Path(file.filename or "video.mp4").suffix.lower()
     destination = settings.upload_dir / f"{video_id}{ext}"
