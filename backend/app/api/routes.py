@@ -39,7 +39,7 @@ from app.services.video import probe_metadata, save_upload
 from app.services.media_delivery import remove_preview_files
 from app.services.storage_paths import confined_export_path, confined_upload_path
 from app.services.public_errors import safe_export_failure, safe_project_failure
-from app.services.billing import PLAN_CATALOG, mini_pass_is_exhausted, sync_subscription_if_needed, usage_period_key
+from app.services.billing import PLAN_CATALOG, sync_subscription_if_needed, usage_period_key
 
 router = APIRouter()
 logger = logging.getLogger("clipkaro.pipeline")
