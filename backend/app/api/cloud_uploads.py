@@ -10,6 +10,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from app.api import routes as project_routes
 from app.core.config import get_settings
 from app.core.database import distributed_advisory_lock, execute, fetch_one, run_in_transaction
 from app.services.auth import current_user
@@ -78,6 +79,12 @@ async def init_cloud_uploads() -> None:
 @router.post("/uploads/init")
 async def initialize_upload(body: UploadInitRequest, user: dict = Depends(current_user)) -> dict[str, Any]:
     settings = get_settings()
+    limits = await project_routes.get_usage_for(user)
+    if limits.shorts_remaining <= 0:
+        raise HTTPException(
+            402,
+            "No AI Short creation credits remain in this plan. Existing Shorts can still be edited, exported and re-exported.",
+        )
     if not cloud_object_storage_enabled():
         raise HTTPException(409, "Direct cloud upload is not enabled for this environment.")
     filename = Path(body.filename).name
@@ -173,6 +180,12 @@ async def import_youtube(body: YouTubeImportRequest, user: dict = Depends(curren
         raise HTTPException(
             403,
             {"message": "Verify your email before starting AI processing.", "code": "EMAIL_VERIFICATION_REQUIRED"},
+        )
+    limits = await project_routes.get_usage_for(user)
+    if limits.shorts_remaining <= 0:
+        raise HTTPException(
+            402,
+            "No AI Short creation credits remain in this plan. Existing Shorts can still be edited, exported and re-exported.",
         )
     if not cloud_object_storage_enabled():
         raise HTTPException(409, "YouTube importing requires private cloud media storage.")
