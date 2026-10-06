@@ -39,7 +39,7 @@ from app.services.video import probe_metadata, save_upload
 from app.services.media_delivery import remove_preview_files
 from app.services.storage_paths import confined_export_path, confined_upload_path
 from app.services.public_errors import safe_export_failure, safe_project_failure
-from app.services.billing import PLAN_CATALOG, sync_subscription_if_needed, usage_period_key
+from app.services.billing import PLAN_CATALOG, mini_pass_is_exhausted, sync_subscription_if_needed, usage_period_key
 
 router = APIRouter()
 logger = logging.getLogger("clipkaro.pipeline")
@@ -188,6 +188,7 @@ async def get_usage_for(user: dict) -> UsageOut:
     )
     shorts_used = int((short_row or {}).get("count") or 0)
     shorts_remaining = max(short_limit - shorts_used, 0)
+    pass_exhausted = plan == "mini_pass" and shorts_remaining <= 0
 
     if unlimited_exports:
         legacy_used, legacy_limit, legacy_remaining = shorts_used, short_limit, shorts_remaining
@@ -200,6 +201,7 @@ async def get_usage_for(user: dict) -> UsageOut:
         plan=plan,
         exports_used=legacy_used, exports_limit=legacy_limit, exports_remaining=legacy_remaining,
         shorts_used=shorts_used, shorts_limit=short_limit, shorts_remaining=shorts_remaining,
+        pass_exhausted=pass_exhausted,
         unlimited_exports=unlimited_exports,
         source_minutes=round(minutes, 1),
         processing_minutes_limit=minute_limit,
