@@ -44,7 +44,7 @@ const features = [
   [Clapperboard, "Creator Studio", "Drag captions anywhere, resize them from 65% to 160%, align text, zoom and reframe video, toggle Hook Text, preserve source captions and export in 9:16, 4:5 or 1:1.", "studio"],
   [Zap, "Auto captions", "Prepare readable captions, then review the transcript before publishing.", "caption"],
   [WandSparkles, "Thumbnail & cover direction", "Turn clip context into cover text and thumbnail direction where available.", "thumbnail"],
-  [Download, "Export controls", "Choose the output you want and keep the publishing decision with the creator.", "export"],
+  [Download, "Export controls", "Paid plans include unlimited exports and re-exports of the Shorts you create.", "export"],
   [Youtube, "Post Karo", "Unlimited publishing access for finished Shorts to connected Instagram Reels and YouTube Shorts accounts on every ClipKaro plan.", "publish"],
 ] as const;
 
@@ -57,11 +57,11 @@ const audiences = [
 ] as const;
 
 const plans = [
-  { name: "Free", price: "₹0", suffix: "/month", note: "Try the full create-to-publish loop.", items: ["15 source-processing minutes", "Up to 2 Short exports", "Source media kept 24 hours", "720p with watermark", "Unlimited Post Karo"], href: "/signup", featured: false },
-  { name: "Mini Pass", price: "₹59", suffix: "one-time", note: "5 Shorts. Up to 25 min of source for each.", items: ["5 Short credits", "Up to 25 min source video per Short", "Up to 125 source-processing minutes total", "Source kept until pass expiry · max 30 days", "1080p · no watermark", "Unlimited Post Karo"], href: "/signup?plan=mini_pass", featured: false },
-  { name: "Growth", price: "₹399", suffix: "/month", note: "For serious weekly creators.", items: ["180 source-processing minutes", "Up to 50 Short exports", "Source media kept up to 30 days", "1080p · no watermark", "Unlimited Post Karo"], href: "/signup?plan=growth", featured: true },
-  { name: "Pro", price: "₹799", suffix: "/month", note: "For daily creator output.", items: ["480 source-processing minutes", "Up to 150 Short exports", "Source media kept up to 30 days", "1080p · no watermark", "Unlimited Post Karo"], href: "/signup?plan=pro", featured: false },
-  { name: "Agency", price: "₹1,999", suffix: "/month", note: "For higher-volume client work.", items: ["1,500 source-processing minutes", "Up to 500 Short exports", "Source media kept up to 30 days", "1080p · no watermark", "Unlimited Post Karo"], href: "/signup?plan=agency", featured: false },
+  { name: "Free", price: "₹0", suffix: "/month", note: "Try the full create-to-publish loop.", items: ["2 AI Shorts / month", "15 source-processing minutes", "Up to 2 exports", "Source media kept 24 hours", "720p with watermark", "Unlimited Post Karo"], href: "/signup", featured: false },
+  { name: "Mini Pass", price: "₹59", suffix: "one-time", note: "5 AI Shorts. Up to 25 min of source for each.", items: ["5 AI Shorts", "Up to 25 min source video per Short", "Unlimited exports & re-exports", "Up to 125 source-processing minutes total", "Source kept until pass expiry · max 30 days", "1080p · no watermark", "Unlimited Post Karo"], href: "/signup?plan=mini_pass", featured: false },
+  { name: "Growth", price: "₹399", suffix: "/month", note: "For serious weekly creators.", items: ["50 AI Shorts / month", "180 source-processing minutes", "Unlimited exports & re-exports", "Source media kept up to 30 days", "1080p · no watermark", "Unlimited Post Karo"], href: "/signup?plan=growth", featured: true },
+  { name: "Pro", price: "₹799", suffix: "/month", note: "For daily creator output.", items: ["150 AI Shorts / month", "480 source-processing minutes", "Unlimited exports & re-exports", "Source media kept up to 30 days", "1080p · no watermark", "Unlimited Post Karo"], href: "/signup?plan=pro", featured: false },
+  { name: "Agency", price: "₹1,999", suffix: "/month", note: "For higher-volume client work.", items: ["500 AI Shorts / month", "1,500 source-processing minutes", "Unlimited exports & re-exports", "Source media kept up to 30 days", "1080p · no watermark", "Unlimited Post Karo"], href: "/signup?plan=agency", featured: false },
 ] as const;
 
 const questions = [
