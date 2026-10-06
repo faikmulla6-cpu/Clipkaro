@@ -22,7 +22,7 @@ T = TypeVar("T")
 logger = logging.getLogger("clipkaro.database")
 _LOCK_MESSAGES = ("database is locked", "database table is locked", "database schema is locked")
 _LOCK_PRIMARY_CODES = {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}
-POSTGRES_SCHEMA_REVISION = "20261005_07"
+POSTGRES_SCHEMA_REVISION = "20261006_08"
 _postgres_pool: Any = None
 
 
@@ -351,6 +351,24 @@ BEGIN
     );
 
   SELECT CASE WHEN (
+    SELECT COUNT(DISTINCT r.resource_id) >=
+      CASE u.plan
+        WHEN 'mini_pass' THEN 5 WHEN 'creator' THEN 15 WHEN 'growth' THEN 50
+        WHEN 'pro' THEN 150 WHEN 'agency' THEN 500 ELSE 2 END
+    FROM projects p JOIN users u ON u.id=p.user_id
+    LEFT JOIN usage_reservations r ON r.user_id=u.id
+      AND r.period_key=(
+        CASE WHEN u.plan='free'
+          THEN 'free:' || strftime('%Y-%m','now')
+          ELSE u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local') || ':' ||
+               substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19)
+        END
+      )
+      AND r.kind='minutes' AND r.status IN ('reserved','finalized')
+    WHERE p.id=NEW.project_id
+  ) THEN RAISE(ABORT,'AI_SHORT_QUOTA_EXCEEDED') END;
+
+  SELECT CASE WHEN (
     SELECT COALESCE(us.source_minutes,0) + (NEW.duration / 60.0) >
       CASE u.plan
         WHEN 'mini_pass' THEN 125.0 WHEN 'creator' THEN 60.0 WHEN 'growth' THEN 180.0
@@ -436,10 +454,12 @@ BEGIN
   WHERE kind='minutes' AND resource_id=OLD.id AND status='reserved';
 END;
 
--- An export slot is reserved atomically with the export row itself. Competing
--- inserts are serialized by SQLite; the request that exceeds the plan aborts.
-CREATE TRIGGER IF NOT EXISTS trg_reserve_export
+-- Paid plans render and re-render without consuming AI Short creation credits.
+-- Free keeps a small render allowance to bound unpaid FFmpeg compute.
+DROP TRIGGER IF EXISTS trg_reserve_export;
+CREATE TRIGGER trg_reserve_export
 BEFORE INSERT ON exports
+WHEN (SELECT plan FROM users WHERE id=NEW.user_id)='free'
 BEGIN
   INSERT OR IGNORE INTO usage(id,user_id,month,source_minutes,exports_used,exports_limit)
   SELECT lower(hex(randomblob(16))), u.id,
@@ -568,6 +588,11 @@ def _prepare_query(query: str) -> str | None:
 
 def _translate_quota_error(exc: Exception) -> None:
     message = str(exc)
+    if "AI_SHORT_QUOTA_EXCEEDED" in message:
+        raise UsageQuotaExceeded(
+            "No AI Short creation credits remain after accounting for sources already queued or processing. "
+            "Existing Shorts can still be edited, exported and re-exported."
+        ) from exc
     if "KARO_MINUTES_QUOTA_EXCEEDED" in message:
         raise UsageQuotaExceeded(
             "Not enough Karo Minutes remain after accounting for videos already queued or processing. "
@@ -575,8 +600,8 @@ def _translate_quota_error(exc: Exception) -> None:
         ) from exc
     if "SHORT_EXPORT_QUOTA_EXCEEDED" in message:
         raise UsageQuotaExceeded(
-            "Your Short export quota is fully used or reserved by exports already queued or rendering. "
-            "Wait for failed renders to refund their slot, upgrade, or wait for your quota to refresh."
+            "Your Free export allowance is fully used or reserved by exports already queued or rendering. "
+            "Wait for a failed render to refund its slot, or upgrade for unlimited exports and re-exports."
         ) from exc
 
 
