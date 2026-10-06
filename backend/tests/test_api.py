@@ -792,6 +792,8 @@ def test_mini_pass_caps_new_ai_short_creations_even_with_minutes_left(client: Te
     })
     assert signup.status_code == 201
     client.headers["X-CSRF-Token"] = client.cookies.get("csrf_token")
+    accepted = client.post("/api/v1/legal/accept", json={"accepted": True, "version": LEGAL_VERSION})
+    assert accepted.status_code == 200
     user_id = signup.json()["user"]["id"]
     asyncio.run(execute(
         """UPDATE users SET plan='mini_pass',billing_reference=?,
@@ -819,9 +821,20 @@ def test_mini_pass_caps_new_ai_short_creations_even_with_minutes_left(client: Te
     usage = client.get("/api/v1/usage").json()
     assert usage["shorts_used"] == 5
     assert usage["shorts_remaining"] == 0
+    assert usage["pass_exhausted"] is True
     assert usage["unlimited_exports"] is True
     assert usage["source_minutes"] == pytest.approx(5.0)
     assert usage["processing_minutes_remaining"] == pytest.approx(120.0)
+
+    status = client.get("/api/v1/billing/status").json()
+    assert status["plan"] == "mini_pass"
+    assert status["mini_pass_exhausted"] is True
+    assert status["entitlement_state"] == "exhausted"
+
+    with patch("app.api.billing_lifecycle.razorpay_request", new=AsyncMock(return_value={"id": "order-mini-repurchase"})):
+        repurchase = client.post("/api/v1/billing/checkout", json={"plan": "mini_pass"})
+    assert repurchase.status_code == 200
+    assert repurchase.json()["order_id"] == "order-mini-repurchase"
 
     with pytest.raises(UsageQuotaExceeded, match="AI Short creation credits"):
         asyncio.run(execute(
@@ -865,7 +878,26 @@ def test_mini_pass_exports_and_reexports_do_not_consume_creation_credits(client:
     before = client.get("/api/v1/usage").json()
     assert before["shorts_used"] == 1
     assert before["shorts_remaining"] == 4
+    assert before["pass_exhausted"] is False
     assert before["unlimited_exports"] is True
+
+    # Exhaust the creation entitlement without touching the already-created clip.
+    for index in range(4):
+        asyncio.run(execute(
+            """INSERT INTO usage_reservations
+               (id,user_id,period_key,kind,amount,resource_id,status,created_at,updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (
+                f"extra-mini-source-{index}", user_id, before["period_key"], "minutes", 1.0,
+                f"extra-mini-project-{index}", "finalized",
+                "2026-10-06T01:00:00+00:00", "2026-10-06T01:00:00+00:00",
+            ),
+        ))
+    exhausted = client.get("/api/v1/usage").json()
+    assert exhausted["shorts_used"] == 5
+    assert exhausted["shorts_remaining"] == 0
+    assert exhausted["pass_exhausted"] is True
+    assert exhausted["unlimited_exports"] is True
 
     # Simulate the legacy counter already being at the old Mini Pass ceiling.
     usage_row = asyncio.run(fetch_one("SELECT id FROM usage WHERE user_id=?", (user_id,)))
@@ -889,8 +921,9 @@ def test_mini_pass_exports_and_reexports_do_not_consume_creation_credits(client:
     assert second.status_code == 202
 
     after = client.get("/api/v1/usage").json()
-    assert after["shorts_used"] == 1
-    assert after["shorts_remaining"] == 4
+    assert after["shorts_used"] == 5
+    assert after["shorts_remaining"] == 0
+    assert after["pass_exhausted"] is True
     assert after["unlimited_exports"] is True
     paid_export_reservations = asyncio.run(fetch_all(
         "SELECT * FROM usage_reservations WHERE kind='export' AND user_id=?",
