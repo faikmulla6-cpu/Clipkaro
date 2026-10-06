@@ -27,8 +27,8 @@ for (const file of [
   "frontend/app/legal-notice/page.tsx",
 ]) must(fs.existsSync(path.join(root, file)), `${file} is missing`);
 
-must(frontendLegal.includes('LEGAL_VERSION = "2026-10-05"'), "frontend legal version drifted");
-must(backendLegal.includes('LEGAL_VERSION = "2026-10-05"'), "backend legal version drifted");
+must(frontendLegal.includes('LEGAL_VERSION = "2026-10-06"'), "frontend legal version drifted");
+must(backendLegal.includes('LEGAL_VERSION = "2026-10-06"'), "backend legal version drifted");
 must(backendLegal.includes("trg_require_current_legal_before_paid_checkout"), "database paid-checkout legal trigger is missing");
 must(backendLegal.includes("legal_launch_state"), "paid-launch readiness state is missing");
 must(backendLegal.includes("privacy_requests"), "privacy request ledger is missing");
