@@ -25,8 +25,8 @@ export function PublicPricingView({ plans }: { plans: PublicPlanView[] }) {
           <header className={styles.hero} data-public-reveal>
             <span><Sparkles size={14}/> Extremely affordable creator pricing</span>
             <h1>Start free. <em>Pay for creation capacity, not every post.</em></h1>
-            <p>ClipKaro starts at ₹0, offers a ₹59 one-time Mini Pass and Creator from ₹199/month. Every plan includes unlimited Post Karo publishing access to connected Instagram Reels and YouTube Shorts accounts.</p>
-            <div className={styles.heroTrust}><b>No card required to start</b><b>Unlimited Post Karo on every plan</b><b>Mini Pass never auto-renews</b><b>Platform publishing rules may apply</b></div>
+            <p>ClipKaro starts at ₹0, offers a ₹59 one-time Mini Pass and Creator from ₹199/month. Paid plans charge for AI Short creation capacity—not repeated renders—so finished Shorts can be exported and re-exported without another paid credit.</p>
+            <div className={styles.heroTrust}><b>No card required to start</b><b>Unlimited exports & re-exports on paid plans</b><b>Unlimited Post Karo on every plan</b><b>Mini Pass never auto-renews</b></div>
           </header>
 
           <section className={styles.planSection} data-public-reveal>
