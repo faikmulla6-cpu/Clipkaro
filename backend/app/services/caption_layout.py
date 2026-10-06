@@ -45,12 +45,39 @@ def _wrap(words: list[str], max_chars: int) -> tuple[str, ...]:
     return (" ".join(words[:split]), " ".join(words[split:]))
 
 
+def _non_overlapping_caption_words(words: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return chronological display words whose visible intervals never cross.
+
+    ASR providers can emit a word tail that extends a few hundred milliseconds
+    into the following word. That timing is useful as an audio anchor, but two
+    caption cards must never be visible at the same time. Work on copies so the
+    persisted transcript/source timing stays untouched.
+    """
+    valid = [
+        dict(word) for word in words
+        if str(word.get("text", "")).strip()
+        and float(word.get("end", 0)) > float(word.get("start", 0))
+    ]
+    valid.sort(key=lambda word: (float(word["start"]), float(word["end"])))
+    for index in range(len(valid) - 1):
+        current = valid[index]
+        following = valid[index + 1]
+        start = float(current["start"])
+        end = float(current["end"])
+        next_start = float(following["start"])
+        if start < next_start < end:
+            current["end"] = round(next_start, 3)
+    return [
+        word for word in valid
+        if float(word["end"]) > float(word["start"])
+    ]
+
+
 def build_caption_cards(words: list[dict[str, Any]], max_chars: int = 28,
                         max_words: int = 7, max_duration: float = 3.2,
                         pause_break: float = CAPTION_PAUSE_BREAK_SECONDS) -> list[CaptionCard]:
     """Create readable phrase cards from aligned words; never emits >2 lines."""
-    valid = [w for w in words if str(w.get("text", "")).strip()
-             and float(w.get("end", 0)) > float(w.get("start", 0))]
+    valid = _non_overlapping_caption_words(words)
     cards: list[CaptionCard] = []
     current: list[dict[str, Any]] = []
     for word in valid:

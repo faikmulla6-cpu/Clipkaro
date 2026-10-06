@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 from app.services.rendering import (
     _base_video_filters, _build_ass, _scaled_caption_max_chars, align_edited_words,
     create_edited_srt, create_srt, format_srt_time, subtitle_ass_filter, timed_words,
@@ -266,3 +267,38 @@ def test_ass_caps_interword_hold_inside_one_card(tmp_path: Path):
     dialogue = [line for line in ass.read_text(encoding="utf-8-sig").splitlines() if line.startswith("Dialogue:")]
     assert any(",0:00:00.00,0:00:00.32," in line for line in dialogue)
     assert all(",0:00:00.00,0:00:00.50," not in line for line in dialogue)
+
+
+def test_kinetic_ass_caps_overlapping_previous_card_at_next_card_start(tmp_path: Path):
+    srt, ass = tmp_path / "overlap.srt", tmp_path / "overlap.ass"
+    srt.write_text(
+        "1\n00:00:00,000 --> 00:00:01,200\nFULLY.\n\n"
+        "2\n00:00:00,950 --> 00:00:01,300\nSOMETHING\n\n"
+        "3\n00:00:01,310 --> 00:00:01,600\nWHICH\n",
+        encoding="utf-8",
+    )
+    _build_ass(srt, ass, 720, 1280, "kinetic", "bottom")
+    fully = [line for line in ass.read_text(encoding="utf-8-sig").splitlines()
+             if line.startswith("Dialogue:") and "FULLY." in line]
+    assert fully
+    assert all(",0:00:00.95," in line for line in fully)
+
+
+def test_kinetic_ass_reflows_pixel_wide_phrase_to_two_lines(tmp_path: Path):
+    srt, ass = tmp_path / "wide.srt", tmp_path / "wide.ass"
+    srt.write_text(
+        "1\n00:00:00,000 --> 00:00:00,300\nAN\n\n"
+        "2\n00:00:00,310 --> 00:00:00,650\nINCOMPLETE\n\n"
+        "3\n00:00:00,660 --> 00:00:01,000\nSTATEMENT.\n",
+        encoding="utf-8",
+    )
+    _build_ass(srt, ass, 720, 1280, "kinetic", "bottom")
+    dialogue = [line for line in ass.read_text(encoding="utf-8-sig").splitlines()
+                if line.startswith("Dialogue:")]
+    y_positions = {
+        int(match.group(1))
+        for line in dialogue
+        for match in [re.search(r"\\pos\(\d+,(\d+)\)", line)]
+        if match
+    }
+    assert len(y_positions) >= 2

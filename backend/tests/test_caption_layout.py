@@ -66,3 +66,16 @@ def test_speech_region_boundary_splits_even_when_timestamp_gap_is_short():
     assert len(cards) == 2
     assert cards[0].end == .30
     assert cards[1].start == .36
+
+
+def test_overlapping_caption_words_do_not_create_overlapping_cards():
+    stream = [
+        {"start": 0.00, "end": 1.20, "text": "FULLY.", "confidence": .9},
+        {"start": 0.95, "end": 1.30, "text": "SOMETHING", "confidence": .9},
+        {"start": 1.31, "end": 1.60, "text": "WHICH", "confidence": .9},
+    ]
+    cards = build_caption_cards(stream)
+    assert len(cards) == 2
+    assert cards[0].end == .95
+    assert cards[1].start == .95
+    assert cards[0].end <= cards[1].start

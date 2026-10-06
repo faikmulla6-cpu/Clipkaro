@@ -21,12 +21,13 @@ CAPTION_INTERWORD_HOLD_SECONDS = .02
 
 
 def _caption_state_end(item: dict[str, Any], next_item: dict[str, Any] | None, card_end: float) -> float:
-    """Keep connected words visually stable without painting through silence."""
+    """Keep connected words visually stable without painting through a card boundary."""
     word_end = float(item["end"])
+    limit = float(card_end)
     if next_item is None:
-        return min(float(card_end), word_end)
+        return min(limit, word_end)
     next_start = float(next_item["start"])
-    return max(word_end, min(next_start, word_end + CAPTION_INTERWORD_HOLD_SECONDS))
+    return min(limit, max(word_end, min(next_start, word_end + CAPTION_INTERWORD_HOLD_SECONDS)))
 
 
 def subtitle_ass_filter(ass_path: str | Path, fonts_path: str | Path) -> str:
@@ -256,10 +257,17 @@ def _normalized_caption_scale(value: float) -> float:
 
 
 def _scaled_caption_max_chars(style: dict[str, Any], caption_scale: float) -> int:
-    """Keep larger text readable by reducing the amount of text per visual line."""
+    """Keep text inside the rendered safe area, not only inside a character budget."""
     base = max(8, int(style["max_line_width"]))
     scale = _normalized_caption_scale(caption_scale)
-    return max(8, min(64, round(base / scale)))
+    font_ratio = max(.01, float(style.get("font_size_width_ratio", .06)))
+    inset_ratio = max(0.0, min(float(style.get("horizontal_inset_ratio", .08)), .45))
+    safe_width_ratio = max(.10, 1.0 - inset_ratio * 2)
+    # The positioned ASS renderers average roughly .66 em per Latin glyph.
+    # This geometry cap prevents a phrase from passing text validation and then
+    # physically running off the 9:16 canvas once the real font is drawn.
+    geometry_limit = int(safe_width_ratio / max(font_ratio * scale * .66, .001))
+    return max(8, min(64, round(base / scale), geometry_limit))
 
 
 def _caption_x_center(width: int, caption_x: float) -> float:
@@ -287,6 +295,38 @@ def _clamp_caption_center(center: float, content_size: float, canvas_size: int,
     low = min(canvas_size / 2, safe_inset + half)
     high = max(canvas_size / 2, canvas_size - safe_inset - half)
     return min(max(center, low), high)
+
+
+def _caption_line_ranges(widths: list[float], gap: float, max_width: float,
+                         preferred_first_count: int | None = None) -> list[tuple[int, int]]:
+    """Choose at most two pixel-safe lines for positioned ASS word rendering."""
+    count = len(widths)
+    if not count:
+        return []
+    if count == 1:
+        return [(0, 1)]
+
+    def line_width(first: int, last: int) -> float:
+        return sum(widths[first:last]) + gap * max(0, last - first - 1)
+
+    preferred = preferred_first_count if preferred_first_count and 0 < preferred_first_count < count else None
+    if preferred is not None:
+        candidate = [(0, preferred), (preferred, count)]
+        if max(line_width(first, last) for first, last in candidate) <= max_width:
+            return candidate
+    if line_width(0, count) <= max_width:
+        return [(0, count)]
+
+    candidates: list[tuple[tuple[float, float, float, float], int]] = []
+    target = preferred if preferred is not None else count / 2
+    for split in range(1, count):
+        left = line_width(0, split)
+        right = line_width(split, count)
+        overflow = max(0.0, left - max_width) + max(0.0, right - max_width)
+        score = (overflow, max(left, right), abs(left - right), abs(split - target))
+        candidates.append((score, split))
+    split = min(candidates, key=lambda item: item[0])[1]
+    return [(0, split), (split, count)]
 
 
 def _build_india_pop_ass(words: list[dict[str, Any]], ass: Path, width: int, height: int,
@@ -341,15 +381,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     for card in cards:
         display_words = [str(item["text"]).upper() for item in card.words]
         widths = [_india_pop_word_width(value, size) for value in display_words]
-        total_width = sum(widths) + gap * max(0, len(widths) - 1)
-        # The India Pop card policy is deliberately 1--3 words.  The only
-        # fallback is a two-line safety split for an unusually long token.
-        split_at = len(display_words)
-        if total_width > width - inset * 2 and len(display_words) > 1:
-            split_at = 1 if len(display_words) == 2 else 2
-        lines = [(0, split_at)]
-        if split_at < len(display_words):
-            lines.append((split_at, len(display_words)))
+        preferred_first_count = len(card.lines[0].split()) if len(card.lines) == 2 else None
+        safe_line_width = max(float(size), float(width - inset * 2 - padding_x * 2))
+        lines = _caption_line_ranges(widths, gap, safe_line_width, preferred_first_count)
         line_widths = [
             sum(widths[first:last]) + gap * max(0, last - first - 1)
             for first, last in lines
@@ -453,10 +487,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         display_words = [str(item["text"]).upper() if transform == "uppercase" else str(item["text"])
                          for item in card.words]
         widths = [_india_pop_word_width(value, size) for value in display_words]
-        first_count = len(card.lines[0].split()) if len(card.lines) == 2 else len(display_words)
-        lines = [(0, first_count)]
-        if first_count < len(display_words):
-            lines.append((first_count, len(display_words)))
+        preferred_first_count = len(card.lines[0].split()) if len(card.lines) == 2 else None
+        safe_line_width = max(float(size), float(width - inset * 2 - pad_x * 2))
+        lines = _caption_line_ranges(widths, gap, safe_line_width, preferred_first_count)
         line_widths = [
             sum(widths[first:last]) + gap * max(0, last - first - 1)
             for first, last in lines
