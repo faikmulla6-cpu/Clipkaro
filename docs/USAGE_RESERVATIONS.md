@@ -24,7 +24,7 @@ ClipKaro treats quota as a durable reservation, not as a read-then-increment cou
 - `busy_timeout=10000` lets short writer contention wait instead of failing immediately with `database is locked`.
 - Reservations survive process/VPS restarts because they live in SQLite.
 - Interrupted processing jobs resume and reuse their reservation.
-- Interrupted exports are marked failed and therefore refund a still-reserved slot.
+- Interrupted paid exports are marked failed without affecting creation credits. Interrupted Free exports refund any still-reserved Free export slot.
 - If an export was already committed as `ready` before a restart, recovery marks its job completed rather than hiding a finalized paid export.
 
 ## Invariants
