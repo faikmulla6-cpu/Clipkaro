@@ -178,6 +178,7 @@ class UsageOut(BaseModel):
     shorts_used: int = 0
     shorts_limit: int = 0
     shorts_remaining: int = 0
+    pass_exhausted: bool = False
     unlimited_exports: bool = False
     source_minutes: float
     processing_minutes_limit: float = 0
