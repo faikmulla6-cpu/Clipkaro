@@ -964,7 +964,7 @@ export default function Editor() {
     // timeupdate can arrive after the browser has already crossed a source split;
     // advance from the tracked piece before source-time recovery can select the
     // naturally adjacent source segment and accidentally undo a reorder.
-    if (!video.paused && trackedPiece && relative >= trackedPiece.sourceEnd - .015) {
+    if (!video.paused && trackedIndex !== null && trackedPiece && relative >= trackedPiece.sourceEnd - .015) {
       const next = pieces[trackedIndex + 1];
       if (next) {
         playbackPieceIndexRef.current = trackedIndex + 1;
