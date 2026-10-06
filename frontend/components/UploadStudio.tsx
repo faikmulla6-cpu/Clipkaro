@@ -7,7 +7,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AccountSettings, API_URL, Usage, api } from "@/lib/api";
+import { AccountSettings, API_URL, Usage, api, usageMiniPassExhausted, usageShortRemaining } from "@/lib/api";
 import { DirectUploadFallback } from "@/components/DirectUploadFallback";
 
 type Job = {
@@ -161,8 +161,9 @@ export function UploadStudio() {
 
   const miniPass = usage?.plan === "mini_pass";
   const minutesLeft = usage ? usage.processing_minutes_remaining.toLocaleString(undefined, { maximumFractionDigits: 1 }) : null;
-  const noShortCredits = Boolean(usage && usage.shorts_remaining <= 0);
-  const miniPassExpired = Boolean(usage?.plan === "mini_pass" && usage?.pass_exhausted);
+  const resolvedShortsRemaining = usage ? usageShortRemaining(usage) : 0;
+  const noShortCredits = Boolean(usage && resolvedShortsRemaining <= 0 && typeof usage.shorts_remaining === "number");
+  const miniPassExpired = Boolean(usage && usageMiniPassExhausted(usage));
   const noKaroMinutes = Boolean(usage && usage.processing_minutes_remaining < 0.1);
   const creationBlocked = noShortCredits || noKaroMinutes;
   const miniPassSourceCap = usage?.source_minutes_per_short || 25;
@@ -178,7 +179,7 @@ export function UploadStudio() {
           <div className="dual-upload-card source-card source-card--upload rounded-[28px] p-4 text-[#10271d] sm:p-5">
             <div className="source-card-header mb-4 flex items-start justify-between gap-3">
               <div className="flex items-center gap-3"><span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#ecff9f] text-[#165f43]"><CloudUpload size={22}/></span><div><div className="flex flex-wrap items-center gap-2"><b className="text-sm">Upload video</b><span className="rounded-full bg-[#165f43] px-2.5 py-1 text-[9px] font-black tracking-[.08em] text-white">RECOMMENDED</span></div><span className="mt-1 block text-xs text-[#607067]">The most reliable way to start</span></div></div>
-              {usage && <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#165f43]/10 bg-[#f5f8f3] px-2.5 py-1 text-[10px] font-bold text-[#52685f]"><Clock3 size={12}/>{miniPass ? `${usage.shorts_remaining} AI Shorts · ${miniPassSourceCap} min each` : `${usage.shorts_remaining} AI Shorts · ${minutesLeft} min`}</span>}
+              {usage && <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#165f43]/10 bg-[#f5f8f3] px-2.5 py-1 text-[10px] font-bold text-[#52685f]"><Clock3 size={12}/>{miniPass ? `${resolvedShortsRemaining} AI Shorts · ${miniPassSourceCap} min each` : `${resolvedShortsRemaining} AI Shorts · ${minutesLeft} min`}</span>}
             </div>
             <div className="source-card-notice source-card-notice--success mb-4 flex items-start gap-2.5 rounded-2xl p-3 text-xs leading-5 text-[#365443]"><Check className="mt-0.5 shrink-0 text-[#165f43]" size={15}/><span><b>Best compatibility.</b> Uploading a supported video file does not depend on YouTube link access or video permissions.</span></div>
             <DirectUploadFallback embedded disabled={busy || creationBlocked} onActivityChange={setFileUploadActive} />
