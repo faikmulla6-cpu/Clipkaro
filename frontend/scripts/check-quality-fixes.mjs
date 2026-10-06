@@ -19,9 +19,9 @@ const requirements = [
   [project.includes("No Content Pack yet"), "Missing Content Pack must render a normal empty state"],
   [project.includes("YouTube Shorts titles and descriptions"), "Content Pack empty state must explain full output value"],
   [shell.includes("Content Packs"), "Authenticated sidebar must expose Content Packs"],
-  [shell.includes("Karo Minutes left") && shell.includes("Shorts left") && shell.includes("min processed"), "Usage card must distinguish remaining minutes from processed minutes"],
-  [upload.includes("No Karo Minutes left for a new source.") && upload.includes("Open projects"), "Upload screen must explain that remaining Short exports can still be used"],
-  [pricing.includes("5 Short credits") && pricing.includes("Each Short can process a source video up to 25 min") && pricing.includes("Up to 125 source-processing minutes across the pass") && pricing.includes("max 30 days"), "Mini Pass pricing must state the 5 Shorts x 25-minute source entitlement clearly"],
+  [shell.includes("Karo Minutes left") && shell.includes("AI Shorts left") && shell.includes("unlimited exports & re-exports"), "Usage card must distinguish creation capacity from paid rendering"],
+  [upload.includes("No AI Short creation credits left for a new source.") && upload.includes("Existing Shorts can still be edited, exported and re-exported") && upload.includes("Open projects"), "Upload screen must separate creation credits from existing-Short exports"],
+  [pricing.includes("5 AI Shorts") && pricing.includes("Up to 25 min source video per Short") && pricing.includes("Unlimited exports & re-exports") && pricing.includes("Up to 125 source-processing minutes across the pass") && pricing.includes("max 30 days"), "Mini Pass pricing must state 5 x 25-minute creation capacity plus unlimited exports"],
   [css.includes(".side-nav{flex:1;min-height:0;overflow-y:auto"), "Sidebar navigation must remain scrollable on short screens"],
 ];
 
