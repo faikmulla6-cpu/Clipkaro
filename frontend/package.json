@@ -13,25 +13,41 @@
     "check:legal-privacy": "node scripts/check-legal-privacy.mjs",
     "check:behavioral-learning": "node scripts/check-behavioral-learning.mjs",
     "check:landscape-reframe": "node scripts/check-landscape-reframe.mjs",
+    "check:content-pack": "node scripts/check-content-pack.mjs",
+    "check:transcript-review": "node scripts/check-transcript-review.mjs",
+    "check:quality-fixes": "node scripts/check-quality-fixes.mjs",
     "check:release-identity": "node scripts/check-release-identity.mjs",
-    "build": "next build",
+    "check:search-discovery": "node scripts/check-search-discovery.mjs",
+    "check:caption-composition": "node scripts/check-caption-composition.mjs",
+    "check:smart-edit": "node scripts/check-smart-edit.mjs",
+    "check:pro-timeline": "node scripts/check-pro-timeline.mjs",
+    "check:pro-trim": "node scripts/check-pro-trim.mjs",
+    "check:pro-reorder": "node scripts/check-pro-reorder.mjs",
+    "check:public-mobile": "node scripts/check-public-mobile.mjs",
+    "build": "next build --webpack",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "check:release": "npm run check:settings-trust && npm run check:analytics-truth && npm run check:billing-lifecycle && npm run check:email-verification && npm run check:security-foundation && npm run check:legal-privacy && npm run check:behavioral-learning && npm run check:landscape-reframe && npm run check:release-identity"
+    "check:release": "npm run check:settings-trust && npm run check:analytics-truth && npm run check:billing-lifecycle && npm run check:email-verification && npm run check:security-foundation && npm run check:legal-privacy && npm run check:behavioral-learning && npm run check:landscape-reframe && npm run check:content-pack && npm run check:transcript-review && npm run check:quality-fixes && npm run check:caption-composition && npm run check:search-discovery && npm run check:public-mobile && npm run check:release-identity"
   },
   "dependencies": {
     "@radix-ui/react-progress": "^1.1.7",
+    "framer-motion": "12.27.1",
     "lucide-react": "^0.468.0",
-    "next": "16.2.11",
+    "next": "16.3.8",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "4.2.2",
     "@types/node": "^22.10.5",
     "@types/react": "^19.0.3",
+    "tailwindcss": "4.2.2",
     "typescript": "^5.7.2"
   },
   "overrides": {
-    "postcss": "^8.5.10"
+    "motion-dom": "12.27.1",
+    "motion-utils": "12.24.10",
+    "postcss": "^8.5.10",
+    "source-map-js": "1.2.2"
   }
 }

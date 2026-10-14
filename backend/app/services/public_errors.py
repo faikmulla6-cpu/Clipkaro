@@ -17,11 +17,19 @@ def safe_project_failure(exc: BaseException) -> str:
     raw = _normalized(exc)
     if "no complete 20" in raw and "moment" in raw:
         return "We found speech, but no complete 20–90 second moments. Try a longer source video."
+    if "transcript quality verification" in raw or "insufficient reliable speech" in raw:
+        return (
+            "Not enough clear speech was detected. ClipKaro needs at least 20 seconds of reliable spoken dialogue "
+            "to find a 20–90 second Short. Try a video with more audible speech."
+        )
     if "source video" in raw and ("expired" in raw or "unavailable" in raw or "storage" in raw):
         return "The source video is no longer available. Upload it again and retry."
     if "quota" in raw or "processing minute" in raw or "karo minute" in raw:
         return "This video exceeds the processing allowance available on your current plan."
-    if "duration" in raw and ("limit" in raw or "too long" in raw or "maximum" in raw):
+    if (
+        ("duration" in raw and ("limit" in raw or "too long" in raw or "maximum" in raw))
+        or "supports a single source video up to" in raw
+    ):
         return "This source video is longer than the maximum duration supported by your current plan."
     if "security scan" in raw or "clamav" in raw or "malware" in raw:
         return "ClipKaro could not safely accept this video. Try a different source file."

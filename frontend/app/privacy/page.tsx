@@ -1,5 +1,6 @@
 import { LegalList, LegalPage, LegalSection } from "@/components/LegalPage";
 import { LegalOperatorCard } from "@/components/LegalOperatorCard";
+import { TRUST_PROFILE } from "@/lib/legal";
 
 export default function PrivacyPage() {
   return <LegalPage title="Privacy Notice" summary="How ClipKaro collects, uses, shares, protects and retains personal data when you create an account, upload your own videos, generate Shorts or pay for a plan.">
@@ -43,13 +44,15 @@ export default function PrivacyPage() {
     </LegalSection>
 
     <LegalSection title="6. Retention and deletion">
+      <p>{TRUST_PROFILE.mediaRetention}</p>
       <LegalList items={[
-        <>Source media files and rendered export files expire automatically after ClipKaro&apos;s configured media-retention window (currently 24 hours by default) and are swept from storage. Processing or operational recovery can delay deletion briefly.</>,
+        <>Free-plan source media and rendered export files use ClipKaro&apos;s short retention window, currently 24 hours. Paid-plan source media is retained for up to 30 days so creators can return to processed projects to edit, export and re-export their created Shorts. Mini Pass creation access ends at 5/5 AI Shorts or after 30 days; using all 5 creation credits does not immediately remove source media that is still inside its original retention window. Rendered export files still use the short retention window and should be downloaded if you want to keep them. Processing or operational recovery can delay deletion briefly.</>,
         <>Project records, derived transcript text, clip suggestions, recommendation-interaction records, account settings, usage and billing records can remain after the source file expires so the account/project history and product-quality analysis continue to function.</>,
         <>Deleting a project removes its associated behavioural-learning generations/events through the application database relationship. Account deletion removes the user-linked learning ledger, subject only to records ClipKaro must lawfully retain for billing, fraud, security or disputes.</>,
         <>We retain billing, fraud, security, tax/accounting and legal records for the period reasonably required by law, dispute handling and legitimate operational needs.</>,
         <>You may request deletion of personal data that is no longer required, subject to records we must keep for legal, billing, security or dispute purposes.</>,
       ]}/>
+      <p>{TRUST_PROFILE.deletionSummary}</p>
     </LegalSection>
 
     <LegalSection title="7. Security">
@@ -66,7 +69,7 @@ export default function PrivacyPage() {
     </LegalSection>
 
     <LegalSection title="10. Changes and contact">
-      <p>If we materially change how personal data is used, we will update this notice/version and may require renewed acceptance before future paid checkout. Contact the Privacy Contact or Grievance Officer shown above for questions.</p>
+      <p>If we materially change how personal data is used, we will update this notice/version and may require renewed acceptance before future paid checkout. Contact the Privacy Contact or Grievance Officer shown above for questions. {TRUST_PROFILE.supportExpectation}</p>
     </LegalSection>
   </LegalPage>;
 }

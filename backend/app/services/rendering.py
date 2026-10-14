@@ -9,12 +9,25 @@ from typing import Any
 from app.core.config import get_settings
 from .video import ffmpeg_available, find_media_tool
 from .caption_layout import build_caption_cards, validate_cards
+from .caption_timing import reconcile_caption_words, speech_regions_from_segments
 from .caption_styles import get_caption_style
 from .crop_tracking import ffmpeg_focus_expression
 
 FONT_DIR = Path(__file__).resolve().parents[2] / "assets" / "fonts"
 BUNDLED_DEVANAGARI_FONT = FONT_DIR / "NotoSansDevanagari.ttf"
 logger = logging.getLogger("clipkaro.rendering")
+
+CAPTION_INTERWORD_HOLD_SECONDS = .02
+
+
+def _caption_state_end(item: dict[str, Any], next_item: dict[str, Any] | None, card_end: float) -> float:
+    """Keep connected words visually stable without painting through a card boundary."""
+    word_end = float(item["end"])
+    limit = float(card_end)
+    if next_item is None:
+        return min(limit, word_end)
+    next_start = float(next_item["start"])
+    return min(limit, max(word_end, min(next_start, word_end + CAPTION_INTERWORD_HOLD_SECONDS)))
 
 
 def subtitle_ass_filter(ass_path: str | Path, fonts_path: str | Path) -> str:
@@ -62,7 +75,11 @@ def timed_words(segments: list[dict[str, Any]], clip_start: float, clip_end: flo
         result.extend({"start": start + index * span, "end": min(end, start + (index + 1) * span),
                        "text": token, "confidence": 0.5}
                       for index, token in enumerate(tokens))
-    return sorted(result, key=lambda item: (item["start"], item["end"]))
+    ordered = sorted(result, key=lambda item: (item["start"], item["end"]))
+    speech_regions = speech_regions_from_segments(segments)
+    if speech_regions and ordered:
+        return reconcile_caption_words(ordered, speech_regions, clip_start, clip_end)
+    return ordered
 
 
 def _write_word_srt(words: list[dict[str, Any]], path: Path, offset: float = 0) -> None:
@@ -76,40 +93,65 @@ def create_srt(segments: list[dict[str, Any]], clip_start: float, clip_end: floa
     _write_word_srt(timed_words(segments, clip_start, clip_end), path, clip_start)
 
 
-def create_edited_srt(text: str, duration: float, path: Path,
-                      reference_words: list[dict[str, Any]] | None = None,
-                      clip_start: float = 0) -> None:
-    """Keep correction text attached to the closest original audio word timestamps."""
+def create_word_srt(words: list[dict[str, Any]], path: Path) -> None:
+    """Write already clip-local words, including Smart Edit retimed words."""
+    _write_word_srt(words, path)
+
+
+def align_edited_words(text: str, duration: float,
+                       reference_words: list[dict[str, Any]] | None = None,
+                       clip_start: float = 0) -> list[dict[str, Any]]:
+    """Map corrected display text onto the original spoken-word anchors.
+
+    Keeping this as a shared primitive makes Creator Studio preview and final
+    export use the same timing model. When native reference words exist, real
+    speech gaps are preserved instead of stretching corrected text across silence.
+    """
     edited = re.sub(r"\s+", " ", text).strip().split()
     if not edited or duration <= 0:
-        path.write_text("", encoding="utf-8")
-        return
+        return []
     reference = reference_words or []
     if not reference:
         span = duration / len(edited)
-        aligned = [{"start": index * span, "end": min(duration, (index + 1) * span), "text": word}
-                   for index, word in enumerate(edited)]
-        _write_word_srt(aligned, path)
-        return
+        return [{"start": index * span, "end": min(duration, (index + 1) * span), "text": word}
+                for index, word in enumerate(edited)]
     original_tokens = [re.sub(r"\W+", "", str(word["text"]), flags=re.UNICODE).casefold() for word in reference]
     edited_tokens = [re.sub(r"\W+", "", word, flags=re.UNICODE).casefold() for word in edited]
     exact: dict[int, int] = {}
     for block in SequenceMatcher(None, original_tokens, edited_tokens, autojunk=False).get_matching_blocks():
-        for delta in range(block.size): exact[block.b + delta] = block.a + delta
-    aligned = []
+        for delta in range(block.size):
+            exact[block.b + delta] = block.a + delta
+    aligned: list[dict[str, Any]] = []
     for index, word in enumerate(edited):
         mapped = exact.get(index)
         if mapped is None:
             mapped = round(index * (len(reference) - 1) / max(1, len(edited) - 1))
         source = reference[max(0, min(mapped, len(reference) - 1))]
-        aligned.append({"start": float(source["start"]) - clip_start,
-                        "end": float(source["end"]) - clip_start, "text": word})
-    # Corrections may add words; guarantee monotonic non-zero events without moving matched audio anchors.
+        aligned_word = {"start": float(source["start"]) - clip_start,
+                        "end": float(source["end"]) - clip_start, "text": word,
+                        "confidence": float(source.get("confidence", 1))}
+        if source.get("speech_region_id") is not None:
+            aligned_word["speech_region_id"] = source["speech_region_id"]
+            aligned_word["speech_aligned"] = bool(source.get("speech_aligned", True))
+        aligned.append(aligned_word)
+    # Corrections may add words; guarantee monotonic non-zero events without
+    # moving matched audio anchors or filling the silence between anchors.
     for index in range(1, len(aligned)):
         if aligned[index]["start"] < aligned[index - 1]["start"]:
             aligned[index]["start"] = aligned[index - 1]["start"]
         if aligned[index]["end"] <= aligned[index]["start"]:
             aligned[index]["end"] = min(duration, aligned[index]["start"] + .12)
+    return aligned
+
+
+def create_edited_srt(text: str, duration: float, path: Path,
+                      reference_words: list[dict[str, Any]] | None = None,
+                      clip_start: float = 0) -> None:
+    """Keep correction text attached to the closest original audio word timestamps."""
+    aligned = align_edited_words(text, duration, reference_words, clip_start)
+    if not aligned:
+        path.write_text("", encoding="utf-8")
+        return
     _write_word_srt(aligned, path)
 
 
@@ -209,9 +251,89 @@ def _india_pop_round_rect(width: int, height: int, radius: int) -> str:
     )
 
 
+def _normalized_caption_scale(value: float) -> float:
+    """Clamp public caption scale before it reaches any layout arithmetic."""
+    return max(0.65, min(float(value), 1.60))
+
+
+def _scaled_caption_max_chars(style: dict[str, Any], caption_scale: float) -> int:
+    """Keep text inside the rendered safe area, not only inside a character budget."""
+    base = max(8, int(style["max_line_width"]))
+    scale = _normalized_caption_scale(caption_scale)
+    font_ratio = max(.01, float(style.get("font_size_width_ratio", .06)))
+    inset_ratio = max(0.0, min(float(style.get("horizontal_inset_ratio", .08)), .45))
+    safe_width_ratio = max(.10, 1.0 - inset_ratio * 2)
+    # The positioned ASS renderers average roughly .66 em per Latin glyph.
+    # This geometry cap prevents a phrase from passing text validation and then
+    # physically running off the 9:16 canvas once the real font is drawn.
+    geometry_limit = int(safe_width_ratio / max(font_ratio * scale * .66, .001))
+    return max(8, min(64, round(base / scale), geometry_limit))
+
+
+def _caption_x_center(width: int, caption_x: float) -> float:
+    normalized = max(0.0, min(float(caption_x), 100.0)) / 100.0
+    return width * normalized
+
+
+def _caption_y_center(height: int, style: dict[str, Any], caption_position: str,
+                      caption_y: float | None = None) -> float:
+    """Resolve preset or creator-dragged vertical placement in output pixels."""
+    if caption_y is not None:
+        normalized = max(0.0, min(float(caption_y), 100.0)) / 100.0
+        return height * normalized
+    if caption_position == "center":
+        return height / 2
+    if caption_position == "above":
+        return height * float(style["above_safe_ratio"])
+    return height * (1 - float(style["bottom_safe_ratio"]))
+
+
+def _clamp_caption_center(center: float, content_size: float, canvas_size: int,
+                          safe_inset: float) -> float:
+    """Keep the rendered caption fully inside the creator safe area."""
+    half = max(0.0, content_size / 2)
+    low = min(canvas_size / 2, safe_inset + half)
+    high = max(canvas_size / 2, canvas_size - safe_inset - half)
+    return min(max(center, low), high)
+
+
+def _caption_line_ranges(widths: list[float], gap: float, max_width: float,
+                         preferred_first_count: int | None = None) -> list[tuple[int, int]]:
+    """Choose at most two pixel-safe lines for positioned ASS word rendering."""
+    count = len(widths)
+    if not count:
+        return []
+    if count == 1:
+        return [(0, 1)]
+
+    def line_width(first: int, last: int) -> float:
+        return sum(widths[first:last]) + gap * max(0, last - first - 1)
+
+    preferred = preferred_first_count if preferred_first_count and 0 < preferred_first_count < count else None
+    if preferred is not None:
+        candidate = [(0, preferred), (preferred, count)]
+        if max(line_width(first, last) for first, last in candidate) <= max_width:
+            return candidate
+    if line_width(0, count) <= max_width:
+        return [(0, count)]
+
+    candidates: list[tuple[tuple[float, float, float, float], int]] = []
+    target = preferred if preferred is not None else count / 2
+    for split in range(1, count):
+        left = line_width(0, split)
+        right = line_width(split, count)
+        overflow = max(0.0, left - max_width) + max(0.0, right - max_width)
+        score = (overflow, max(left, right), abs(left - right), abs(split - target))
+        candidates.append((score, split))
+    split = min(candidates, key=lambda item: item[0])[1]
+    return [(0, split), (split, count)]
+
+
 def _build_india_pop_ass(words: list[dict[str, Any]], ass: Path, width: int, height: int,
                          style: dict[str, Any], caption_position: str,
-                         font_name: str | None) -> None:
+                         font_name: str | None, caption_x: float = 50.0,
+                         caption_y: float | None = None, caption_scale: float = 1.0,
+                         caption_alignment: str = "center") -> None:
     """Render India Pop as word-positioned text plus a real active-word pill.
 
     Generic karaoke ASS tags can recolour a word but cannot create a tight,
@@ -219,16 +341,18 @@ def _build_india_pop_ass(words: list[dict[str, Any]], ass: Path, width: int, hei
     background events and separate word events, preserving the original SRT
     word timing while matching the Creator Studio's visual primitives.
     """
-    size = max(18, round(width * float(style["font_size_width_ratio"])))
+    scale = _normalized_caption_scale(caption_scale)
+    size = max(18, round(width * float(style["font_size_width_ratio"]) * scale))
     normal = _ass_color(str(style["text_color"]))
     outline = _ass_color(str(style["outline_color"]))
     active = _ass_color(str(style["highlight_color"]))
     pill = _ass_color(str(style["highlight_background"]))
-    border = max(1, round(width * float(style["outline_width_width_ratio"])))
+    border = max(1, round(width * float(style["outline_width_width_ratio"]) * scale))
     inset = round(width * float(style["horizontal_inset_ratio"]))
     resolved_font = font_name or str(style["font_family"])
-    y_center = round(height * (float(style["above_safe_ratio"]) if caption_position == "above"
-                               else 1 - float(style["bottom_safe_ratio"])))
+    requested_x = _caption_x_center(width, caption_x)
+    requested_y = _caption_y_center(height, style, caption_position, caption_y)
+    max_chars = _scaled_caption_max_chars(style, scale)
     header = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {width}
@@ -242,10 +366,10 @@ Style: IndiaPop,{resolved_font},{size},{normal},{normal},{outline},&H00000000,-1
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
-    cards = build_caption_cards(words, max_chars=int(style["max_line_width"]),
+    cards = build_caption_cards(words, max_chars=max_chars,
                                 max_words=int(style["words_per_chunk"]),
                                 max_duration=float(style["max_duration"]))
-    errors = validate_cards(cards, max_chars=int(style["max_line_width"]))
+    errors = validate_cards(cards, max_chars=max_chars)
     if any("overflow" in error or "invalid_time" in error for error in errors):
         raise RuntimeError("Caption layout failed safe-area validation; review the transcript before export.")
     events: list[str] = []
@@ -257,27 +381,36 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     for card in cards:
         display_words = [str(item["text"]).upper() for item in card.words]
         widths = [_india_pop_word_width(value, size) for value in display_words]
-        total_width = sum(widths) + gap * max(0, len(widths) - 1)
-        # The India Pop card policy is deliberately 1--3 words.  The only
-        # fallback is a two-line safety split for an unusually long token.
-        split_at = len(display_words)
-        if total_width > width - inset * 2 and len(display_words) > 1:
-            split_at = 1 if len(display_words) == 2 else 2
-        lines = [(0, split_at)]
-        if split_at < len(display_words):
-            lines.append((split_at, len(display_words)))
+        preferred_first_count = len(card.lines[0].split()) if len(card.lines) == 2 else None
+        safe_line_width = max(float(size), float(width - inset * 2 - padding_x * 2))
+        lines = _caption_line_ranges(widths, gap, safe_line_width, preferred_first_count)
+        line_widths = [
+            sum(widths[first:last]) + gap * max(0, last - first - 1)
+            for first, last in lines
+        ]
+        line_step = round(size * float(style["line_height"]))
+        content_width = max(line_widths, default=0.0)
+        card_width = content_width + padding_x * 2
+        card_height = pill_height + max(0, len(lines) - 1) * line_step
+        x_center = _clamp_caption_center(requested_x, card_width, width, inset)
+        y_center = _clamp_caption_center(requested_y, card_height, height, round(height * .06))
         positions: dict[int, tuple[float, float]] = {}
         for line_number, (first, last) in enumerate(lines):
-            line_width = sum(widths[first:last]) + gap * max(0, last - first - 1)
-            cursor = (width - line_width) / 2
-            line_y = y_center + (line_number - (len(lines) - 1) / 2) * round(size * float(style["line_height"]))
+            line_width = line_widths[line_number]
+            if caption_alignment == "left":
+                cursor = x_center - content_width / 2
+            elif caption_alignment == "right":
+                cursor = x_center + content_width / 2 - line_width
+            else:
+                cursor = x_center - line_width / 2
+            line_y = y_center + (line_number - (len(lines) - 1) / 2) * line_step
             for item_index in range(first, last):
                 positions[item_index] = (cursor + widths[item_index] / 2, line_y)
                 cursor += widths[item_index] + gap
         for active_index, item in enumerate(card.words):
             start = float(item["start"])
-            end = float(card.words[active_index + 1]["start"]) if active_index + 1 < len(card.words) else card.end
-            end = max(float(item["end"]), end)
+            next_item = card.words[active_index + 1] if active_index + 1 < len(card.words) else None
+            end = _caption_state_end(item, next_item, card.end)
             if end <= start:
                 continue
             center_x, center_y = positions[active_index]
@@ -301,7 +434,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 def _build_studio_personality_ass(words: list[dict[str, Any]], ass: Path, width: int, height: int,
                                   style_id: str, style: dict[str, Any], caption_position: str,
-                                  font_name: str | None) -> None:
+                                  font_name: str | None, caption_x: float = 50.0,
+                                  caption_y: float | None = None, caption_scale: float = 1.0,
+                                  caption_alignment: str = "center") -> None:
     """Render the non-India-Pop Studio personalities with their own primitives.
 
     This intentionally does not use the legacy colour-only karaoke renderer:
@@ -309,18 +444,20 @@ def _build_studio_personality_ass(words: list[dict[str, Any]], ass: Path, width:
     Minimal has a restrained card plus underline, and Kinetic remains bare
     heavyweight type with a lime active word.
     """
-    size = max(18, round(width * float(style["font_size_width_ratio"])))
+    scale = _normalized_caption_scale(caption_scale)
+    size = max(18, round(width * float(style["font_size_width_ratio"]) * scale))
     normal = _ass_color(str(style["text_color"]))
     outline = _ass_color(str(style["outline_color"]))
     active = _ass_color(str(style["highlight_color"]))
     highlight_background = _ass_color(str(style["highlight_background"]))
-    border = max(1, round(width * float(style["outline_width_width_ratio"])))
+    border = max(1, round(width * float(style["outline_width_width_ratio"]) * scale))
     inset = round(width * float(style["horizontal_inset_ratio"]))
     font = font_name or str(style["font_family"])
     shadow = 3 if style_id == "kinetic" else 4 if style_id == "bold" else 0
     back = outline if style_id in {"kinetic", "bold"} else "&H00000000"
-    y_center = round(height * (float(style["above_safe_ratio"]) if caption_position == "above"
-                               else 1 - float(style["bottom_safe_ratio"])))
+    requested_x = _caption_x_center(width, caption_x)
+    requested_y = _caption_y_center(height, style, caption_position, caption_y)
+    max_chars = _scaled_caption_max_chars(style, scale)
     header = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {width}
@@ -334,10 +471,10 @@ Style: Studio,{font},{size},{normal},{normal},{outline},{back},-1,0,0,0,100,100,
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
-    cards = build_caption_cards(words, max_chars=int(style["max_line_width"]),
+    cards = build_caption_cards(words, max_chars=max_chars,
                                 max_words=int(style["words_per_chunk"]),
                                 max_duration=float(style["max_duration"]))
-    errors = validate_cards(cards, max_chars=int(style["max_line_width"]))
+    errors = validate_cards(cards, max_chars=max_chars)
     if any("overflow" in error or "invalid_time" in error for error in errors):
         raise RuntimeError("Caption layout failed safe-area validation; review the transcript before export.")
     events: list[str] = []
@@ -350,28 +487,37 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         display_words = [str(item["text"]).upper() if transform == "uppercase" else str(item["text"])
                          for item in card.words]
         widths = [_india_pop_word_width(value, size) for value in display_words]
-        first_count = len(card.lines[0].split()) if len(card.lines) == 2 else len(display_words)
-        lines = [(0, first_count)]
-        if first_count < len(display_words):
-            lines.append((first_count, len(display_words)))
+        preferred_first_count = len(card.lines[0].split()) if len(card.lines) == 2 else None
+        safe_line_width = max(float(size), float(width - inset * 2 - pad_x * 2))
+        lines = _caption_line_ranges(widths, gap, safe_line_width, preferred_first_count)
+        line_widths = [
+            sum(widths[first:last]) + gap * max(0, last - first - 1)
+            for first, last in lines
+        ]
+        card_width = max(line_widths, default=0.0)
+        card_height = round(size * (1 + (len(lines) - 1) * float(style["line_height"]))) + pad_y * 2
+        x_center = _clamp_caption_center(requested_x, card_width + pad_x * 2, width, inset)
+        y_center = _clamp_caption_center(requested_y, card_height, height, round(height * .06))
         positions: dict[int, tuple[float, float]] = {}
-        card_width = 0.0
         for line_number, (first, last) in enumerate(lines):
-            line_width = sum(widths[first:last]) + gap * max(0, last - first - 1)
-            card_width = max(card_width, line_width)
-            cursor = (width - line_width) / 2
+            line_width = line_widths[line_number]
+            if caption_alignment == "left":
+                cursor = x_center - card_width / 2
+            elif caption_alignment == "right":
+                cursor = x_center + card_width / 2 - line_width
+            else:
+                cursor = x_center - line_width / 2
             line_y = y_center + (line_number - (len(lines) - 1) / 2) * round(size * float(style["line_height"]))
             for word_index in range(first, last):
                 positions[word_index] = (cursor + widths[word_index] / 2, line_y)
                 cursor += widths[word_index] + gap
-        card_height = round(size * (1 + (len(lines) - 1) * float(style["line_height"]))) + pad_y * 2
-        card_left = round((width - card_width) / 2 - pad_x)
+        card_left = round(x_center - card_width / 2 - pad_x)
         card_top = round(y_center - card_height / 2)
         card_shape = _india_pop_round_rect(round(card_width + pad_x * 2), card_height, radius)
         for active_index, item in enumerate(card.words):
             start = float(item["start"])
-            end = float(card.words[active_index + 1]["start"]) if active_index + 1 < len(card.words) else card.end
-            end = max(float(item["end"]), end)
+            next_item = card.words[active_index + 1] if active_index + 1 < len(card.words) else None
+            end = _caption_state_end(item, next_item, card.end)
             if end <= start:
                 continue
             if style_id == "clean":
@@ -417,24 +563,36 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 
 def _build_ass(srt: Path, ass: Path, width: int, height: int, caption_style: str,
-               caption_position: str, font_name: str | None = None) -> None:
+               caption_position: str, font_name: str | None = None,
+               caption_x: float = 50.0, caption_y: float | None = None,
+               caption_scale: float = 1.0, caption_alignment: str = "center") -> None:
     words = [{"start": s, "end": e, "text": t} for s, e, t in _read_srt_cards(srt)]
     style = get_caption_style(caption_style)
     if caption_style == "hindi-pop":
-        _build_india_pop_ass(words, ass, width, height, style, caption_position, font_name)
+        _build_india_pop_ass(
+            words, ass, width, height, style, caption_position, font_name,
+            caption_x=caption_x, caption_y=caption_y, caption_scale=caption_scale,
+            caption_alignment=caption_alignment,
+        )
         return
     if caption_style in {"kinetic", "clean", "bold", "minimal"}:
-        _build_studio_personality_ass(words, ass, width, height, caption_style, style, caption_position, font_name)
+        _build_studio_personality_ass(
+            words, ass, width, height, caption_style, style, caption_position, font_name,
+            caption_x=caption_x, caption_y=caption_y, caption_scale=caption_scale,
+            caption_alignment=caption_alignment,
+        )
         return
-    size = max(18, round(width * float(style["font_size_width_ratio"])))
+    scale = _normalized_caption_scale(caption_scale)
+    size = max(18, round(width * float(style["font_size_width_ratio"]) * scale))
     normal = _ass_color(str(style["text_color"]))
     outline = _ass_color(str(style["outline_color"]))
     active = _ass_color(str(style["highlight_color"]))
-    border = max(1, round(width * float(style["outline_width_width_ratio"])))
+    border = max(1, round(width * float(style["outline_width_width_ratio"]) * scale))
     background = str(style.get("background") or "")
     border_style = 3 if background != "transparent" else 1
     back = "&H60000000" if "0,0,0" in background else "&H20FFFFFF" if "255,255,255" in background else "&H00000000"
-    alignment = 5 if caption_position == "center" else 2
+    horizontal_alignment = {"left": 1, "center": 2, "right": 3}.get(caption_alignment, 2)
+    alignment = horizontal_alignment + (3 if caption_position == "center" else 0)
     margin_v = 0 if caption_position == "center" else round(height * float(style["above_safe_ratio"] if caption_position == "above" else style["bottom_safe_ratio"]))
     inset = round(width * float(style["horizontal_inset_ratio"]))
     transform = str(style.get("text_transform") or "none")
@@ -453,17 +611,23 @@ Style: Caption,{resolved_font},{size},{normal},{normal},{outline},{back},-1,0,0,
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     events = []
-    cards = build_caption_cards(words, max_chars=int(style["max_line_width"]), max_words=int(style["words_per_chunk"]), max_duration=float(style["max_duration"]))
-    errors = validate_cards(cards, max_chars=int(style["max_line_width"]))
+    max_chars = _scaled_caption_max_chars(style, scale)
+    cards = build_caption_cards(words, max_chars=max_chars, max_words=int(style["words_per_chunk"]), max_duration=float(style["max_duration"]))
+    errors = validate_cards(cards, max_chars=max_chars)
+    custom_position = caption_y is not None or abs(float(caption_x) - 50.0) > 0.001
+    position_x = round(_clamp_caption_center(_caption_x_center(width, caption_x), size, width, inset))
+    position_y = round(_clamp_caption_center(_caption_y_center(height, style, caption_position, caption_y), size * 2, height, round(height * .06)))
+    middle_alignment = {"left": 4, "center": 5, "right": 6}.get(caption_alignment, 5)
+    position_override = f"{{\\an{middle_alignment}\\pos({position_x},{position_y})}}" if custom_position else ""
     if any("overflow" in error or "invalid_time" in error for error in errors):
         raise RuntimeError("Caption layout failed safe-area validation; review the transcript before export.")
     for card in cards:
         card_end = card.end
         card_texts = [str(item["text"]).upper() if transform == "uppercase" else str(item["text"]) for item in card.words]
         for index, item in enumerate(card.words):
-            word_start, word_end = float(item["start"]), float(item["end"])
-            state_end = float(card.words[index + 1]["start"]) if index + 1 < len(card.words) else card_end
-            state_end = max(word_end, state_end)
+            word_start = float(item["start"])
+            next_item = card.words[index + 1] if index + 1 < len(card.words) else None
+            state_end = _caption_state_end(item, next_item, card_end)
             styled_words = [
                 f"{{\\c{active}}}{_ass_safe(value)}{{\\c{normal}}}" if item_index == index else _ass_safe(value)
                 for item_index, value in enumerate(card_texts)
@@ -471,7 +635,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             first_count = len(card.lines[0].split()) if len(card.lines) == 2 else len(styled_words)
             styled = " ".join(styled_words[:first_count])
             if len(card.lines) == 2: styled += r"\N" + " ".join(styled_words[first_count:])
-            events.append(f"Dialogue: 0,{_ass_time(word_start)},{_ass_time(state_end)},Caption,,0,0,0,,{styled}")
+            events.append(f"Dialogue: 0,{_ass_time(word_start)},{_ass_time(state_end)},Caption,,0,0,0,,{position_override}{styled}")
     ass.write_text(header + "\n".join(events) + "\n", encoding="utf-8-sig")
 
 
@@ -514,13 +678,49 @@ def _font_option(text: str = "") -> str:
     return f":fontfile='{escaped}'"
 
 
+def _base_video_filters(width: int, height: int, focus_expression: str,
+                        source_caption_band: float | None = None) -> list[str]:
+    filters = [
+        # ASS/SRT events are clip-local.  Output seeking alone leaves source
+        # timestamps intact on some FFmpeg builds, which makes captions at
+        # 00:00--00:30 disappear for a clip cut from later in the source.
+        "setpts=PTS-STARTPTS",
+    ]
+    if source_caption_band is not None:
+        return filters + [
+            f"scale={width}:{height}:force_original_aspect_ratio=decrease",
+            f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2",
+        ]
+    return filters + [
+        f"scale={width}:{height}:force_original_aspect_ratio=increase",
+        f"crop={width}:{height}:(iw-{width})*{focus_expression}:(ih-{height})/2",
+    ]
+
+
+def smart_edit_filter_complex(filters: list[str], ranges: list[dict[str, float]]) -> str:
+    """Concatenate kept A/V ranges, then apply the normal visual stack once."""
+    pieces: list[str] = []
+    concat_inputs: list[str] = []
+    for index, item in enumerate(ranges):
+        start, end = float(item["start"]), float(item["end"])
+        pieces.append(f"[0:v]trim=start={start:.3f}:end={end:.3f},setpts=PTS-STARTPTS[v{index}]")
+        pieces.append(f"[0:a]atrim=start={start:.3f}:end={end:.3f},asetpts=PTS-STARTPTS[a{index}]")
+        concat_inputs.extend((f"[v{index}]", f"[a{index}]"))
+    pieces.append("".join(concat_inputs) + f"concat=n={len(ranges)}:v=1:a=1[vcat][acat]")
+    pieces.append(f"[vcat]{','.join(filters)}[vout]")
+    return ";".join(pieces)
+
+
 async def render_short(source: Path, output: Path, start: float, end: float, srt: Path | None,
                        hook: str, watermark: bool, resolution: str = "720p", aspect_ratio: str = "9:16",
                        caption_style: str = "kinetic", brand_text: str = "",
                        primary_color: str = "#DFFF57", focus_x: float = 50,
                        caption_position: str = "bottom",
                        crop_keyframes: list[dict[str, float]] | None = None,
-                       source_caption_band: float | None = None) -> None:
+                       source_caption_band: float | None = None,
+                       caption_x: float = 50.0, caption_y: float | None = None,
+                       caption_scale: float = 1.0, caption_alignment: str = "center",
+                       edit_ranges: list[dict[str, float]] | None = None) -> None:
     if not ffmpeg_available():
         raise RuntimeError("FFmpeg and FFprobe are required to export video.")
     ffmpeg, ffprobe = find_media_tool("ffmpeg"), find_media_tool("ffprobe")
@@ -537,14 +737,7 @@ async def render_short(source: Path, output: Path, start: float, end: float, srt
     width, height = sizes[(resolution, aspect_ratio)]
     focus = max(0.0, min(float(focus_x), 100.0)) / 100.0
     focus_expression = ffmpeg_focus_expression(crop_keyframes, end-start) if crop_keyframes else f"{focus:.3f}"
-    filters = [
-        # ASS/SRT events are clip-local.  Output seeking alone leaves source
-        # timestamps intact on some FFmpeg builds, which makes captions at
-        # 00:00--00:30 disappear for a clip cut from later in the source.
-        "setpts=PTS-STARTPTS",
-        f"scale={width}:{height}:force_original_aspect_ratio=increase",
-        f"crop={width}:{height}:(iw-{width})*{focus_expression}:(ih-{height})/2",
-    ]
+    filters = _base_video_filters(width, height, focus_expression, source_caption_band)
     hook_words = hook.split()[:8]
     safe_hook = _drawtext_safe(" ".join(hook_words), 72)
     hook_size = max(26, min(max(30, width // 18), int(width * .84 / max(1, len(safe_hook) * .54))))
@@ -559,7 +752,11 @@ async def render_short(source: Path, output: Path, start: float, end: float, srt
         source_text = " ".join(card[2] for card in _read_srt_cards(srt))
         resolved_font, font_dir, fallback_used = _caption_font(source_text, str(style["font_family"]))
         logger.info("caption_style_render style=%s requested_font=%s resolved_font=%s font_fallback_used=%s", caption_style, style["font_family"], resolved_font, fallback_used)
-        _build_ass(srt, ass, width, height, caption_style, caption_position, resolved_font)
+        _build_ass(
+            srt, ass, width, height, caption_style, caption_position, resolved_font,
+            caption_x=caption_x, caption_y=caption_y, caption_scale=caption_scale,
+            caption_alignment=caption_alignment,
+        )
         # Pass an explicitly escaped absolute path.  On Windows, FFmpeg's ASS
         # filter can resolve a basename against the source instead of its cwd,
         # silently producing a valid-looking export with no caption overlay.
@@ -582,15 +779,26 @@ async def render_short(source: Path, output: Path, start: float, end: float, srt
             "boxcolor=black@0.34:boxborderw=8:x=24:y=24"
         )
     try:
+        has_smart_cuts = bool(edit_ranges) and not (
+            len(edit_ranges or []) == 1
+            and abs(float(edit_ranges[0]["start"])) < .001
+            and abs(float(edit_ranges[0]["end"]) - (end - start)) < .001
+        )
+        input_args = [ffmpeg, "-nostdin", "-threads", str(ffmpeg_threads), "-y", "-ss", str(start), "-i", str(source.resolve())]
+        if has_smart_cuts:
+            render_args = input_args + ["-filter_complex", smart_edit_filter_complex(filters, edit_ranges or []),
+                "-map", "[vout]", "-map", "[acat]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(output.resolve())]
+        else:
+            render_args = input_args + ["-t", str(end-start), "-vf", ",".join(filters), "-c:v", "libx264",
+                "-preset", "veryfast", "-crf", "23", "-c:a", "aac", "-b:a", "128k",
+                "-movflags", "+faststart", str(output.resolve())]
         proc = await asyncio.to_thread(
             subprocess.run,
             # Input seeking gives the filter graph a clip-local timeline.  With
             # output seeking, ASS subtitle events could be evaluated against
             # the original source timestamp and vanish on later clips.
-            [ffmpeg, "-nostdin", "-threads", str(ffmpeg_threads), "-y", "-ss", str(start), "-i", str(source.resolve()),
-             "-t", str(end-start), "-vf", ",".join(filters), "-c:v", "libx264",
-             "-preset", "veryfast", "-crf", "23", "-c:a", "aac", "-b:a", "128k",
-             "-movflags", "+faststart", str(output.resolve())],
+            render_args,
             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=False,
             cwd=str(output.parent.resolve()), timeout=process_timeout,
         )
@@ -627,6 +835,8 @@ async def render_short(source: Path, output: Path, start: float, end: float, srt
     except (ValueError, TypeError, json.JSONDecodeError):
         rendered_duration, rendered_size, has_video = 0.0, 0, False
     expected = end - start
+    if edit_ranges:
+        expected = sum(float(item["end"]) - float(item["start"]) for item in edit_ranges)
     if probe.returncode != 0 or not has_video or rendered_size < 10_000 or rendered_duration < max(1.0, expected * .9):
         output.unlink(missing_ok=True)
         raise RuntimeError("Video render failed validation because the source ended early or is incomplete. Upload the complete original MP4 and retry.")

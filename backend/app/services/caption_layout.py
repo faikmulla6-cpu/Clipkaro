@@ -6,6 +6,7 @@ END = re.compile(r"[.!?।…]+$")
 SOFT_END = re.compile(r"[,;:]$")
 CONJUNCTIONS = {"and", "but", "because", "so", "then", "or", "aur", "lekin", "par",
                 "kyunki", "toh", "phir", "magar", "ya", "isliye"}
+CAPTION_PAUSE_BREAK_SECONDS = .35
 
 
 @dataclass(frozen=True)
@@ -44,21 +45,58 @@ def _wrap(words: list[str], max_chars: int) -> tuple[str, ...]:
     return (" ".join(words[:split]), " ".join(words[split:]))
 
 
+def _non_overlapping_caption_words(words: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return chronological display words whose visible intervals never cross.
+
+    ASR providers can emit a word tail that extends a few hundred milliseconds
+    into the following word. That timing is useful as an audio anchor, but two
+    caption cards must never be visible at the same time. Work on copies so the
+    persisted transcript/source timing stays untouched.
+    """
+    valid = [
+        dict(word) for word in words
+        if str(word.get("text", "")).strip()
+        and float(word.get("end", 0)) > float(word.get("start", 0))
+    ]
+    valid.sort(key=lambda word: (float(word["start"]), float(word["end"])))
+    for index in range(len(valid) - 1):
+        current = valid[index]
+        following = valid[index + 1]
+        start = float(current["start"])
+        end = float(current["end"])
+        next_start = float(following["start"])
+        if start < next_start < end:
+            current["end"] = round(next_start, 3)
+    return [
+        word for word in valid
+        if float(word["end"]) > float(word["start"])
+    ]
+
+
 def build_caption_cards(words: list[dict[str, Any]], max_chars: int = 28,
                         max_words: int = 7, max_duration: float = 3.2,
-                        pause_break: float = .42) -> list[CaptionCard]:
+                        pause_break: float = CAPTION_PAUSE_BREAK_SECONDS) -> list[CaptionCard]:
     """Create readable phrase cards from aligned words; never emits >2 lines."""
-    valid = [w for w in words if str(w.get("text", "")).strip()
-             and float(w.get("end", 0)) > float(w.get("start", 0))]
+    valid = _non_overlapping_caption_words(words)
     cards: list[CaptionCard] = []
     current: list[dict[str, Any]] = []
     for word in valid:
         if current:
             pause = float(word["start"]) - float(current[-1]["end"])
+            current_region = current[-1].get("speech_region_id")
+            next_region = word.get("speech_region_id")
+            speech_boundary = (
+                current_region is not None and next_region is not None and current_region != next_region
+            )
             projected = [str(w["text"]).strip() for w in current + [word]]
+            projected_lines = _wrap(projected, max_chars)
             too_long = len(projected) > max_words or sum(map(len, projected)) + len(projected) - 1 > max_chars * 2
+            # Raw character count can say a phrase fits across two lines even
+            # when the renderer's visual-width metric cannot split it safely.
+            # Break before the new word instead of failing the whole export.
+            too_wide = any(_visual_width(line) > max_chars for line in projected_lines)
             too_slow = float(word["end"]) - float(current[0]["start"]) > max_duration
-            if pause >= pause_break or too_long or too_slow or END.search(str(current[-1]["text"])):
+            if speech_boundary or pause >= pause_break or too_long or too_wide or too_slow or END.search(str(current[-1]["text"])):
                 texts = [str(w["text"]).strip() for w in current]
                 cards.append(CaptionCard(float(current[0]["start"]), float(current[-1]["end"]),
                                          tuple(current), _wrap(texts, max_chars)))

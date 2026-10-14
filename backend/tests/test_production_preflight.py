@@ -188,24 +188,33 @@ def test_api_asr_reports_provider_readiness_independently_of_worker_liveness(mon
 
 def test_worker_heartbeat_round_trip_is_durable_and_secret_free(tmp_path: Path) -> None:
     settings = get_settings()
-    old_db, old_storage = settings.database_path, settings.storage_root
+    old_backend, old_db, old_storage = settings.database_backend, settings.database_path, settings.storage_root
+    # This contract intentionally exercises the local durable SQLite heartbeat
+    # store. CI validates PostgreSQL separately; inheriting DATABASE_BACKEND=postgres
+    # here would reuse an asyncpg pool across independent event loops and turn a
+    # backend-isolation test into a false connection-concurrency failure.
+    settings.database_backend = "sqlite"
     settings.database_path = tmp_path / "preflight-heartbeat.db"
     settings.storage_root = tmp_path / "storage"
-    try:
-        asyncio.run(init_db())
-        asyncio.run(init_job_queue())
+
+    async def scenario() -> dict | None:
+        await init_db()
+        await init_job_queue()
         started = datetime.now(timezone.utc).isoformat()
-        asyncio.run(record_worker_heartbeat(
+        await record_worker_heartbeat(
             "internal-worker-id", status="ready", started_at=started,
             capabilities={
                 "whisper": {"runtime_ready": True, "model_configured": True, "model_cache_writable": True},
                 "alignment": {"ready": True, "backend": "whisperx"},
                 "groq": {"code": "ready"},
             },
-        ))
-        snapshot = asyncio.run(worker_runtime_snapshot())
+        )
+        return await worker_runtime_snapshot()
+
+    try:
+        snapshot = asyncio.run(scenario())
     finally:
-        settings.database_path, settings.storage_root = old_db, old_storage
+        settings.database_backend, settings.database_path, settings.storage_root = old_backend, old_db, old_storage
     assert snapshot and snapshot["status"] == "ready"
     assert snapshot["capabilities"]["whisper"]["runtime_ready"] is True
     assert "password" not in repr(snapshot).lower()

@@ -132,7 +132,7 @@ check("production Caddy image supports request_body", "image: caddy:2.10" in com
 # --- Production fail-closed defaults --------------------------------------
 prod = text(".env.production.example")
 check("production domain is a placeholder", "DOMAIN=REPLACE_WITH_DOMAIN" in prod)
-check("production frontend URL derives from placeholder", "FRONTEND_URL=https://REPLACE_WITH_DOMAIN" in prod)
+check("production frontend URL is locked to ClipKaro", "FRONTEND_URL=https://clipkaro.pro" in prod)
 check("production boot validates HTTPS frontend callback URL", "FRONTEND_URL_NOT_HTTPS" in text("backend/app/services/production_configuration.py"))
 check("local LIVE Razorpay bypass disabled in production example", "ALLOW_LIVE_RAZORPAY_IN_DEVELOPMENT=false" in prod)
 check("generic production Hinglish provider is legacy", "HINGLISH_ASR_PROVIDER=legacy" in prod)
@@ -140,7 +140,7 @@ check("generic Stage-1 rollout disabled", "HINGLISH_STAGE1_ENABLED=false" in pro
 check("generic Stage-1 allowlist empty", re.search(r"^HINGLISH_STAGE1_USER_IDS=\s*$", prod, re.M) is not None)
 check("generic production API ASR enabled", "ASR_MODE=api" in prod)
 check("generic production native timing policy", "ALIGNMENT_BACKEND=native" in prod and "REQUIRE_FORCED_ALIGNMENT=false" in prod)
-check("no fake clipkaro.pro launch domain in production example", "clipkaro.pro" not in prod.lower())
+check("public ClipKaro origin is explicit", "APP_PUBLIC_URL=https://clipkaro.pro" in prod and "CORS_ORIGINS=https://clipkaro.pro" in prod)
 
 # --- Email one-time-token safety ------------------------------------------
 transactional = text("backend/app/services/transactional_email.py")
@@ -277,7 +277,7 @@ check("React locked version >= 19.2.7", version_tuple(react_locked) >= (19, 2, 7
 check("demo user seeding defaults off in production compose", 'SEED_DEMO_USER: "false"' in compose)
 check("production local LIVE Razorpay opt-in forced off", 'ALLOW_LIVE_RAZORPAY_IN_DEVELOPMENT: "false"' in compose)
 check("worker consumes API ASR by default", "ASR_MODE: ${ASR_MODE:-api}" in compose)
-check("worker image target matches explicit ASR runtime choice", "target: ${WORKER_IMAGE_TARGET:-api}" in compose and "WORKER_IMAGE_TARGET=api" in prod)
+check("Cloud Run media image target matches production architecture", "FROM worker AS media" in dockerfile and "WORKER_IMAGE_TARGET=media" in prod)
 check("local WhisperX worker target is documented fail-explicit", "WORKER_IMAGE_TARGET=worker" in prod and "ASR_MODE=local" in prod)
 prod_env_check = text("scripts/check-production-env.py")
 check("offline production env check enforces live Razorpay mode and disables local opt-in", "RAZORPAY_MODE_NOT_LIVE" in prod_env_check and "LIVE_RAZORPAY_DEVELOPMENT_OPT_IN_ENABLED" in prod_env_check)

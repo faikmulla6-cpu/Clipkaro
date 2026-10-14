@@ -1,18 +1,179 @@
-import { ArrowRight, Check, Clapperboard, Languages, Play, Scissors, ShieldCheck, Sparkles, Subtitles, Upload, WandSparkles, Zap } from "lucide-react";
-import Link from "next/link";
-import { Logo } from "@/components/Logo";
-import { LEGAL_LINKS } from "@/lib/legal";
+import type { Metadata } from "next";
+import { HomeExperience } from "@/components/HomeExperience";
+import { LEGAL_LINKS, TRUST_PROFILE } from "@/lib/legal";
+
+export const metadata: Metadata = {
+  title: { absolute: "ClipKaro AI — Long Video to Shorts + Unlimited Post Karo" },
+  description: "Turn long videos into Shorts with AI-ranked moments, Creator Studio editing and unlimited Post Karo publishing access to Instagram Reels + YouTube Shorts. Start free.",
+  keywords: [
+    "AI video clipper",
+    "YouTube URL to Shorts",
+    "paste YouTube link to Shorts",
+    "YouTube link video clipper",
+    "upload video to Shorts",
+    "YouTube Shorts maker",
+    "YouTube channel analyzer",
+    "YouTube channel analysis",
+    "AI YouTube analytics",
+    "YouTube analytics for creators",
+    "YouTube video idea generator",
+    "long video to Shorts",
+    "Hinglish video clipper",
+    "Hindi video to Reels",
+    "ClipKaro Creator Pulse",
+    "AI video clipper India",
+    "post Shorts to Instagram",
+    "post Shorts to YouTube",
+    "unlimited social publishing for creators",
+    "affordable AI video clipper India",
+    "affordable clipping website with unlimited posting",
+    "AI video clipper unlimited posting",
+    "AI Shorts editor captions",
+    "long video to Reels",
+  ],
+  alternates: { canonical: "/" },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
+  openGraph: {
+    type: "website",
+    url: "/",
+    siteName: "ClipKaro AI",
+    title: "ClipKaro AI — Long Video to Shorts + Unlimited Post Karo",
+    description: "Turn long videos into Shorts, refine them in Creator Studio and publish with unlimited Post Karo access on every plan.",
+    images: [{ url: "/assets/clipkaro-icon.png", width: 1024, height: 1024, alt: "ClipKaro AI creator workflow platform" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "ClipKaro AI — Long Video to Shorts + Unlimited Post Karo",
+    description: "AI clipping, creator-controlled editing, ₹1 Creator Pulse intelligence and unlimited Post Karo publishing access for Instagram Reels + YouTube Shorts.",
+    images: ["/assets/clipkaro-icon.png"],
+  },
+};
+
+const organizationStructuredData = {
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "@id": "https://clipkaro.pro/#organization",
+  name: "ClipKaro AI",
+  alternateName: ["ClipKaro", "ClipKaroAI"],
+  url: "https://clipkaro.pro/",
+  logo: "https://clipkaro.pro/assets/clipkaro-icon.png",
+  founder: {
+    "@type": "Person",
+    name: TRUST_PROFILE.founderName,
+    jobTitle: TRUST_PROFILE.founderTitle,
+  },
+  contactPoint: {
+    "@type": "ContactPoint",
+    contactType: "customer support",
+    email: TRUST_PROFILE.supportEmail,
+    url: "https://clipkaro.pro/contact",
+  },
+  description: "ClipKaro AI is an India-first AI video clipping and creator workflow platform that turns long-form video into creator-reviewed Shorts, provides Creator Studio editing and supports unlimited Post Karo publishing access to Instagram Reels and YouTube Shorts on every plan.",
+  knowsAbout: ["AI video clipping", "short-form video repurposing", "YouTube Shorts", "Instagram Reels", "Hindi and Hinglish creator workflows", "creator publishing workflows"],
+};
+
+const websiteStructuredData = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  "@id": "https://clipkaro.pro/#website",
+  name: "ClipKaro AI",
+  alternateName: ["ClipKaro", "ClipKaroAI"],
+  url: "https://clipkaro.pro/",
+  publisher: { "@id": "https://clipkaro.pro/#organization" },
+  inLanguage: "en-IN",
+  hasPart: LEGAL_LINKS.map(([name, href]) => ({
+    "@type": "WebPage",
+    name,
+    url: `https://clipkaro.pro${href}`,
+  })),
+};
+
+const homePageStructuredData = {
+  "@context": "https://schema.org",
+  "@type": "WebPage",
+  "@id": "https://clipkaro.pro/#home",
+  url: "https://clipkaro.pro/",
+  name: "ClipKaro AI — Long Video to Shorts + Unlimited Post Karo",
+  description: "Turn long videos into Shorts with AI-ranked moments, Creator Studio editing, ₹1 Creator Pulse intelligence and unlimited Post Karo publishing access.",
+  isPartOf: { "@id": "https://clipkaro.pro/#website" },
+  about: { "@id": "https://clipkaro.pro/#software" },
+  publisher: { "@id": "https://clipkaro.pro/#organization" },
+  inLanguage: "en-IN",
+  dateModified: "2026-09-24",
+};
+
+const softwareStructuredData = {
+  "@context": "https://schema.org",
+  "@type": ["SoftwareApplication", "WebApplication"],
+  "@id": "https://clipkaro.pro/#software",
+  name: "ClipKaro AI",
+  url: "https://clipkaro.pro/",
+  applicationCategory: "MultimediaApplication",
+  operatingSystem: "Web",
+  publisher: { "@id": "https://clipkaro.pro/#organization" },
+  mainEntityOfPage: { "@id": "https://clipkaro.pro/#website" },
+  description: "India-first AI video clipping and creator workflow software: turn long videos into ranked Shorts, refine them in Creator Studio, use ₹1 Creator Pulse for next-video intelligence, and publish with unlimited Post Karo access to Instagram Reels and YouTube Shorts.",
+  isAccessibleForFree: true,
+  browserRequirements: "Modern web browser with internet access",
+  offers: {
+    "@type": "Offer",
+    priceCurrency: "INR",
+    price: "0",
+    url: "https://clipkaro.pro/pricing",
+    description: "Start free. A ₹59 one-time Mini Pass and monthly creator plans are also available; unlimited Post Karo publishing access is included on every plan.",
+  },
+  audience: {
+    "@type": "Audience",
+    audienceType: "YouTubers, podcasters, educators, coaches, founders, businesses and creator teams",
+  },
+  inLanguage: ["en", "hi", "hi-Latn"],
+  featureList: [
+    "YouTube URL import for supported videos, Shorts and live replays",
+    "Original-file upload fallback when direct URL acquisition is unavailable",
+    "AI clip detection and ranking",
+    "Smart Transcript Review with inline corrections",
+    "India Quality Mode for Hindi, Hinglish and Indian-English creator workflows",
+    "Roman Hinglish caption support",
+    "Caption-safe vertical video rendering",
+    "Creator Studio zoom and manual horizontal reframe controls",
+    "9:16, 4:5 and 1:1 export controls",
+    "Drag-and-place captions with 65% to 160% size control and automatic text reflow",
+    "Left, centre and right caption alignment",
+    "Hook Text on/off control",
+    "Caption presets, source-caption preservation and Brand Kit controls",
+    "One video to complete Content Pack",
+    "Unlimited Post Karo publishing access to connected Instagram Reels and YouTube Shorts accounts on every plan",
+    "Publishing copy for additional social workflows",
+    "₹1 Creator Pulse YouTube channel analysis",
+    "Verified recent-upload momentum comparison",
+    "Evidence-led next-video recommendation with title, angle and opening hook",
+    "One downloadable Creator Pulse thumbnail when generation is available",
+    "Saved Creator Pulse history and previous-scan comparison",
+    "Private source and export media handling",
+    "Free plan with 15 Karo Minutes and 2 Shorts per month",
+    "₹59 one-time Mini Pass and Creator plan from ₹199 per month",
+  ],
+};
+
 
 export default function Home() {
-  return <div className="landing">
-    <nav className="landing-nav"><Logo /><div className="nav-links"><a href="#how">How it works</a><a href="#features">Features</a><a href="#pricing">Pricing</a></div><div className="nav-ctas"><Link href="/login" className="text-btn">Log in</Link><Link href="/signup" className="primary-btn">Start free <ArrowRight size={15}/></Link></div></nav>
-    <section className="hero"><span className="eyebrow"><Sparkles size={13}/> Built for Indian creators</span><h1>Turn long videos into <span className="lime-underline">scroll-stopping Shorts</span></h1><p>Upload once. ClipKaro AI finds your strongest moments, explains why they work, adds creator-grade captions, and produces platform-ready clips.</p><div className="hero-actions"><Link className="primary-btn" href="/signup"><Upload size={17}/> Create your first Short</Link><a className="secondary-btn" href="#how"><Play size={15}/> See how it works</a></div><div className="hero-note">No card required · Own videos only · First preview free</div>
-      <div className="hero-product"><div className="mock-window"><div className="mock-side"><div className="mini-logo">✦ ClipKaro</div><div className="mock-nav"><span>Overview</span><span>Upload video</span><span>My projects</span><span>Analytics</span></div></div><div className="mock-body"><div className="mock-title"><div><h3>Your best moments are ready</h3><small>5 clips found in “How I grew my channel”</small></div><span className="mock-export-label" aria-hidden="true">Export selected</span></div><div className="mock-stats"><div className="mock-stat"><span>Moments found</span><b>05</b></div><div className="mock-stat"><span>Best moment score</span><b>94</b></div><div className="mock-stat"><span>Minutes saved</span><b>47</b></div></div>{["The mistake almost every creator makes", "My simple 3-step growth system"].map((t,i)=><div className="clip-row" key={t}><div className="clip-thumb"><Play size={18}/></div><div className="clip-copy"><b>{t}</b><span>{i?'06:18 – 06:57':'02:10 – 02:46'} · Educational insight</span></div><div className="score">{i?'89':'94'}</div></div>)}</div></div></div>
-    </section>
-    <div className="trust-strip">Designed for <b>YouTubers · Coaches · Teachers · Podcasters · Local businesses · Agencies</b></div>
-    <section className="section" id="how"><div className="section-heading"><span>One simple workflow</span><h2>From long video to polished Short</h2><p>No complicated timeline editor. The AI does the heavy lifting while you keep creative control.</p></div><div className="feature-grid">{[[Upload,"Upload your own video","Drag in an MP4, MOV, WebM or MKV. Your files stay private and expire automatically."],[WandSparkles,"AI finds the moments","Transcript scoring discovers strong hooks, lessons, stories, questions and surprising moments."],[Clapperboard,"Choose and export","Preview the top suggestions, pick a caption style, and export a 9:16 MP4."]].map(([I,t,d]:any)=><div className="feature-card" key={t}><div className="feature-icon"><I size={21}/></div><h3>{t}</h3><p>{d}</p></div>)}</div></section>
-    <section className="section" id="features"><div className="section-heading"><span>Made to save hours</span><h2>Everything needed for your next Short</h2></div><div className="feature-grid">{[[Scissors,"Smart clip finder","Ranks moments by hook, clarity, emotion, value, and clean endings."],[Subtitles,"Burned-in subtitles","Readable two-line captions designed for mobile feeds."],[Languages,"India-first language support","English, Hindi and Marathi are supported. Hinglish is in a controlled rollout while quality is monitored."],[Zap,"Cost-smart rendering","Videos render only after you choose a moment, keeping plans affordable."],[ShieldCheck,"Rights-safe by design","Upload-first workflow for content you own or have permission to use."],[Sparkles,"Hooks and titles","Each suggestion includes a title, hook, reason, score and best platform."]].map(([I,t,d]:any)=><div className="feature-card" key={t}><div className="feature-icon"><I size={21}/></div><h3>{t}</h3><p>{d}</p></div>)}</div></section>
-    <section className="section pricing-preview" id="pricing"><div className="section-heading"><span>Fair Access Pricing</span><h2>Start small. Grow when you grow.</h2><p>Professional AI clipping from ₹59 without forcing you into a subscription.</p></div><div className="price-grid">{[{n:'Mini Pass',p:'₹59',s:'one-time',d:'For students & small creators',f:['25 Karo Minutes','5 Shorts','1080p · no watermark']},{n:'Growth',p:'₹399',s:'/month',d:'Most popular for serious creators',f:['180 Karo Minutes','50 Shorts','1080p · no watermark'],hot:true},{n:'Pro',p:'₹799',s:'/month',d:'For daily publishing',f:['480 Karo Minutes','150 Shorts','Same strong ClipKaro AI']}].map(x=><div className={`price-card ${x.hot?'featured':''}`} key={x.n}><h3>{x.n}</h3><p>{x.d}</p><div className="price">{x.p}<small>{x.s}</small></div><ul>{x.f.map(y=><li key={y}><Check size={14}/>{y}</li>)}</ul><Link href="/pricing" className="primary-btn">View {x.n}</Link></div>)}</div><p style={{textAlign:"center",marginTop:20,color:"#657169",fontSize:13}}>Mini Pass never auto-renews. Monthly plans renew until cancelled or changed. <Link href="/refund-policy">Refund & cancellation policy</Link>.</p></section>
-    <footer className="landing-footer"><div className="footer-inner" style={{alignItems:"flex-start",gap:20,flexWrap:"wrap"}}><div><Logo light/><p>© 2026 ClipKaro AI. Create responsibly. Built for India.</p></div><div style={{display:"flex",gap:12,flexWrap:"wrap",fontSize:12}}>{LEGAL_LINKS.map(([label,href])=><Link key={href} href={href}>{label}</Link>)}</div></div></footer>
-  </div>
+  return (
+    <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationStructuredData) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteStructuredData) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareStructuredData) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(homePageStructuredData) }} />
+      <HomeExperience />
+    </>
+  );
 }

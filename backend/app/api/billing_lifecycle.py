@@ -13,7 +13,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from app.core.config import get_settings
-from app.core.database import execute, fetch_one, run_in_transaction
+from app.core.database import distributed_advisory_lock, execute, fetch_one, run_in_transaction
 from app.services.auth import current_user
 from app.services.billing import (
     PAID_PLANS,
@@ -23,14 +23,17 @@ from app.services.billing import (
     downgrade_to_free,
     ensure_razorpay_plan,
     iso_from_epoch,
+    mini_pass_is_exhausted,
     parse_iso,
     razorpay_request,
+    sync_subscription_if_needed,
     usage_period_key,
     utc_now,
     verify_order_signature,
     verify_subscription_signature,
 )
 from app.services.legal import checkout_allowed, has_current_legal_acceptance
+from app.api.creator_pulse import reconcile_creator_pulse_webhook
 
 router = APIRouter()
 logger = logging.getLogger("clipkaro.billing")
@@ -58,6 +61,8 @@ async def _require_new_paid_commitment_ready(user_id: str) -> None:
 
 async def init_subscription_lifecycle() -> None:
     """Create durable pending-plan state without requiring a destructive migration."""
+    if get_settings().normalized_database_backend == "postgres":
+        return
     await execute(
         """CREATE TABLE IF NOT EXISTS subscription_plan_changes (
              user_id TEXT PRIMARY KEY,
@@ -520,7 +525,9 @@ async def _change_subscription_plan(user: dict[str, Any], target_plan: str) -> d
 
 
 async def _billing_status_payload(user: dict[str, Any], *, force: bool = False) -> dict[str, Any]:
+    user = await sync_subscription_if_needed(user, force=force)
     user = await reconcile_subscription(user, force=force)
+    mini_pass_exhausted = await mini_pass_is_exhausted(user)
     pending = await _pending_change(str(user["id"]))
     scheduled_plan = str((pending or {}).get("to_plan") or ("free" if user.get("cancel_at_period_end") else "")) or None
     return {
@@ -528,6 +535,8 @@ async def _billing_status_payload(user: dict[str, Any], *, force: bool = False) 
         "billing_reference": user.get("billing_reference"),
         "plan_started_at": user.get("plan_started_at"),
         "plan_expires_at": user.get("plan_expires_at"),
+        "mini_pass_exhausted": mini_pass_exhausted,
+        "entitlement_state": "exhausted" if mini_pass_exhausted else ("free" if user["plan"] == "free" else "active"),
         "cancel_at_period_end": bool(user.get("cancel_at_period_end", 0)),
         "scheduled_plan": scheduled_plan,
         "scheduled_plan_effective_at": (pending or {}).get("effective_at") or (user.get("plan_expires_at") if scheduled_plan == "free" else None),
@@ -577,15 +586,17 @@ async def _recent_reusable_checkout(user_id: str, plan: str, kind: str) -> dict[
 @router.post("/billing/checkout")
 async def billing_checkout(body: dict, user: dict = Depends(current_user)) -> dict[str, Any]:
     plan = str(body.get("plan", "")).lower()
+    user = await sync_subscription_if_needed(user)
     current_plan = str(user.get("plan") or "free")
     active_reference = str(user.get("billing_reference") or "")
+    current_mini_pass_exhausted = await mini_pass_is_exhausted(user)
 
     if current_plan in SUBSCRIPTION_PLANS and active_reference.startswith("sub_"):
         return await _change_subscription_plan(user, plan)
 
     if plan not in PAID_PLANS:
         raise HTTPException(422, "Choose a valid paid plan.")
-    if current_plan == plan:
+    if current_plan == plan and not (plan == "mini_pass" and current_mini_pass_exhausted):
         raise HTTPException(409, "This plan is already active on your account.")
 
     # New paid commitments always require the current user acceptance. Public
@@ -601,17 +612,24 @@ async def billing_checkout(body: dict, user: dict = Depends(current_user)) -> di
     # Serialize checkout creation per user. This prevents a double-click, HTTP
     # retry or two browser tabs from creating multiple recurring subscriptions
     # before the first provider reference is durably stored.
-    async with _checkout_locks[str(user["id"])]:
+    async with _checkout_locks[str(user["id"])], distributed_advisory_lock(f"checkout:{user['id']}"):
         fresh = await fetch_one("SELECT * FROM users WHERE id=?", (user["id"],)) or user
+        fresh = await sync_subscription_if_needed(fresh)
         fresh_plan = str(fresh.get("plan") or "free")
         fresh_reference = str(fresh.get("billing_reference") or "")
+        fresh_mini_pass_exhausted = await mini_pass_is_exhausted(fresh)
         if fresh_plan in SUBSCRIPTION_PLANS and fresh_reference.startswith("sub_"):
             return await _change_subscription_plan(fresh, plan)
-        if fresh_plan == plan:
+        if fresh_plan == plan and not (plan == "mini_pass" and fresh_mini_pass_exhausted):
             raise HTTPException(409, "This plan is already active on your account.")
 
         catalog = PLAN_CATALOG[plan]
         kind = "one_time" if catalog["billing"] == "one_time" else "subscription"
+        await execute(
+            """UPDATE billing_checkouts SET status='expired'
+               WHERE user_id=? AND plan=? AND kind=? AND status IN ('created','authorized') AND created_at<?""",
+            (fresh["id"], plan, kind, (utc_now() - timedelta(minutes=15)).isoformat()),
+        )
         reusable = await _recent_reusable_checkout(str(fresh["id"]), plan, kind)
         if reusable:
             await _audit(
@@ -1122,6 +1140,23 @@ async def razorpay_webhook(request: Request) -> Response:
         subscription = provider_payload.get("subscription", {}).get("entity", {}) or {}
         payment = provider_payload.get("payment", {}).get("entity", {}) or {}
         order = provider_payload.get("order", {}).get("entity", {}) or {}
+
+        # Creator Pulse top-ups share the signed Razorpay webhook but never share
+        # subscription/plan entitlement state. If this server-created Order belongs
+        # to Pulse, reconcile it idempotently and stop before normal plan billing.
+        pulse_result = await reconcile_creator_pulse_webhook(event_type, payment, order)
+        if pulse_result is not None:
+            await _complete_webhook_event(
+                event_id,
+                user_id=str(pulse_result.get("user_id") or "") or None,
+                event_type=event_type,
+                plan=None,
+                amount=int(pulse_result.get("amount") or 0),
+                status=str(pulse_result.get("status") or "pulse_event_received"),
+                payload_json=sanitized_payload_json,
+            )
+            return Response(status_code=204)
+
         subscription_id = str(subscription.get("id") or "")
         provider_event_created_at = _event_created_at(payload)
         subscription_checkout = await _subscription_checkout(subscription) if subscription else None

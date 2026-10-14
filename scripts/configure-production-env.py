@@ -46,6 +46,7 @@ def ask(label: str, *, secret: bool = False, default: str = "", required: bool =
 
 def build_env(imported: dict[str, object], *, draft: bool) -> dict[str, str]:
     generated_secret = secrets.token_urlsafe(64)
+    generated_post_karo_secret = secrets.token_urlsafe(64)
     generated_webhook = secrets.token_urlsafe(48)
 
     if draft:
@@ -54,6 +55,7 @@ def build_env(imported: dict[str, object], *, draft: bool) -> dict[str, str]:
             "DOMAIN": PLACEHOLDER,
             "ACME_EMAIL": "",
             "SECRET_KEY": generated_secret,
+            "POST_KARO_ENCRYPTION_KEY": generated_post_karo_secret,
             "PRODUCTION_CREDENTIALS_ROTATED": "false",
             "ALLOW_MANUAL_ANALYSIS_IN_DEVELOPMENT": "false",
             "RAZORPAY_MODE": "live",
@@ -134,6 +136,7 @@ def build_env(imported: dict[str, object], *, draft: bool) -> dict[str, str]:
         "DOMAIN": domain,
         "ACME_EMAIL": acme,
         "SECRET_KEY": generated_secret,
+        "POST_KARO_ENCRYPTION_KEY": generated_post_karo_secret,
         "PRODUCTION_CREDENTIALS_ROTATED": ask(
             "Have Razorpay/Groq credentials been rotated after any plaintext exposure? (true/false)",
             default="false",

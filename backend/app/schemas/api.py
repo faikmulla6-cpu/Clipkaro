@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 
 class SignupRequest(BaseModel):
@@ -97,11 +97,20 @@ class ClipPatch(BaseModel):
     hook: str | None = Field(default=None, max_length=120)
     title: str | None = Field(default=None, max_length=120)
     transcript_text: str | None = Field(default=None, max_length=10000)
+    edit_plan: dict | None = None
+
+
+class TranscriptCorrectionRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=10000)
 
 
 class CropKeyframe(BaseModel):
     time: float = Field(ge=0, le=180)
     focus_x: float = Field(ge=0, le=100)
+    # Internal render-control fields share the already-durable keyframe payload
+    # and are removed by render_gate before crop tracking sees real keyframes.
+    zoom: float | None = Field(default=None, ge=1.0, le=2.0)
+    preserve_source_captions: bool | None = None
 
 
 class ExportRequest(BaseModel):
@@ -109,11 +118,47 @@ class ExportRequest(BaseModel):
     aspect_ratio: str = Field(default="9:16", pattern="^(9:16|1:1|4:5)$")
     caption_style: str = Field(default="kinetic", pattern="^(kinetic|clean|bold|minimal|hindi-pop)$")
     hook_text: str | None = Field(default=None, max_length=120)
+    hook_enabled: bool = True
     watermark: bool = True
     brand_kit_id: str | None = None
     focus_x: float = Field(default=50, ge=0, le=100)
+    zoom: float = Field(default=1.0, ge=1.0, le=2.0)
     crop_keyframes: list[CropKeyframe] = Field(default_factory=list, max_length=120)
     caption_position: str = Field(default="bottom", pattern="^(bottom|above|center)$")
+    # Caption composition is normalized to percentages so Creator Studio preview
+    # coordinates remain resolution-independent at render time. caption_y stays
+    # optional so existing preset-based exports retain their exact layout.
+    caption_x: float = Field(default=50.0, ge=0, le=100)
+    caption_y: float | None = Field(default=None, ge=0, le=100)
+    caption_scale: float = Field(default=1.0, ge=0.65, le=1.60)
+    caption_alignment: str = Field(default="center", pattern="^(left|center|right)$")
+    preserve_source_captions: bool = False
+    india_quality_mode: bool = False
+    caption_language_style: str = Field(default="auto", pattern="^(auto|roman_hinglish|original)$")
+
+    def resolved_hook_text(self, fallback: str | None) -> str:
+        """Return the creator-authoritative opening hook for the renderer."""
+        if not self.hook_enabled:
+            return ""
+        return str(self.hook_text or fallback or "")
+
+    @model_validator(mode="after")
+    def carry_render_controls(self):
+        # Existing API and durable-worker paths already persist crop_keyframes.
+        # One internal marker keeps zoom and the explicit preserve toggle intact
+        # across both execution paths without changing public crop semantics.
+        has_control = any(
+            item.zoom is not None or item.preserve_source_captions is not None
+            for item in self.crop_keyframes
+        )
+        if not has_control:
+            self.crop_keyframes.append(CropKeyframe(
+                time=180,
+                focus_x=self.focus_x,
+                zoom=self.zoom,
+                preserve_source_captions=self.preserve_source_captions,
+            ))
+        return self
 
 
 class ExportOut(BaseModel):
@@ -130,9 +175,15 @@ class UsageOut(BaseModel):
     exports_used: int
     exports_limit: int
     exports_remaining: int
+    shorts_used: int = 0
+    shorts_limit: int = 0
+    shorts_remaining: int = 0
+    pass_exhausted: bool = False
+    unlimited_exports: bool = False
     source_minutes: float
     processing_minutes_limit: float = 0
     processing_minutes_remaining: float = 0
+    source_minutes_per_short: float | None = None
     period_key: str = ""
 
 

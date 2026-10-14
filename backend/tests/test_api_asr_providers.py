@@ -98,7 +98,8 @@ def test_durable_job_id_is_used_as_provider_correlation_id() -> None:
     routes = _source("app/api/routes.py")
     transcription = _source("app/services/transcription.py")
     assert "request_id=job_id" in routes
-    assert "duration=chunk_duration, request_id=request_id" in transcription
+    assert "duration=chunk_duration" in transcription
+    assert "request_id=request_id" in transcription
 
 
 def test_api_production_startup_skips_legacy_whisperx_policy() -> None:
@@ -130,7 +131,7 @@ def test_invalid_asr_provider_selection_fails_closed() -> None:
 def test_worker_retry_reuses_current_verified_transcript_before_provider_call() -> None:
     routes = _source("app/api/routes.py")
     reuse = routes.index("Reused existing verified transcript")
-    provider_call = routes.index("await transcribe(source_path,")
+    provider_call = routes.index("await transcribe(Path(video[\"file_path\"])")
     assert reuse < provider_call
     assert 'SELECT COUNT(*) count FROM clips WHERE video_id=?' in routes
 

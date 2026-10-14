@@ -14,27 +14,104 @@ function readableError(detail: unknown): string {
   return "Something went wrong";
 }
 
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function timeoutMsFor(method: string): number {
+  if (method === "GET" || method === "HEAD") return 12_000;
+  return 30_000;
+}
+
+function requestWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const upstream = init.signal;
+  const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs);
+
+  if (upstream) {
+    if (upstream.aborted) controller.abort();
+    else upstream.addEventListener("abort", () => controller.abort(), { once: true });
+  }
+
+  return fetch(input, { ...init, signal: controller.signal }).finally(() => globalThis.clearTimeout(timeout));
+}
+
+async function parseSuccessfulResponse<T>(response: Response, allowEmpty: boolean): Promise<T> {
+  if (response.status === 204) return undefined as T;
+
+  const text = await response.text();
+  if (!text.trim()) {
+    if (allowEmpty) return undefined as T;
+    throw new Error("ClipKaro received an empty response from the server.");
+  }
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error("ClipKaro received an invalid response from the server.");
+  }
+}
+
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
-  if (typeof document !== "undefined" && init?.method && !["GET","HEAD"].includes(init.method.toUpperCase())) {
+  const method = (init?.method || "GET").toUpperCase();
+  const isRead = method === "GET" || method === "HEAD";
+
+  if (typeof document !== "undefined" && !isRead) {
     const csrf = document.cookie.split("; ").find(x => x.startsWith("csrf_token="))?.split("=")[1];
     if (csrf) headers.set("X-CSRF-Token", decodeURIComponent(csrf));
   }
-  let response: Response;
-  try {
-    response = await fetch(`${API_URL}${path}`, { credentials: "include", ...init, headers });
-  } catch (cause) {
-    throw new Error(
-      "ClipKaro could not reach the processing server. Start the backend on port 8000, then refresh this page.",
-      { cause },
-    );
+
+  const attempts = isRead ? 2 : 1;
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    let response: Response;
+    try {
+      response = await requestWithTimeout(
+        `${API_URL}${path}`,
+        { credentials: "include", ...init, headers },
+        timeoutMsFor(method),
+      );
+    } catch (cause) {
+      lastError = new Error(
+        cause instanceof DOMException && cause.name === "AbortError"
+          ? "ClipKaro is taking longer than expected to respond. Please try again in a moment."
+          : "ClipKaro could not reach the processing server. Please try again in a moment.",
+        { cause },
+      );
+      if (attempt + 1 < attempts) {
+        await wait(250);
+        continue;
+      }
+      throw lastError;
+    }
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      let body: { detail?: unknown } = { detail: "Something went wrong" };
+      if (text.trim()) {
+        try { body = JSON.parse(text) as { detail?: unknown }; }
+        catch { body = { detail: text }; }
+      }
+      throw new Error(readableError(body.detail));
+    }
+
+    if (response.status === 204) return undefined as T;
+
+    try {
+      return await parseSuccessfulResponse<T>(response, !isRead);
+    } catch (cause) {
+      lastError = cause instanceof Error ? cause : new Error("ClipKaro received an invalid response from the server.");
+      if (attempt + 1 < attempts) {
+        await wait(250);
+        continue;
+      }
+      throw lastError;
+    }
   }
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({ detail: "Something went wrong" }));
-    throw new Error(readableError(body.detail));
-  }
-  if (response.status === 204) return undefined as T;
-  return response.json() as Promise<T>;
+
+  throw lastError || new Error("Something went wrong");
 }
 
 export type User = { id: string; name: string; email: string; plan: string; role: string; onboarding_complete: boolean };
@@ -51,7 +128,54 @@ export type AccountSettings = {
   timezone: string;
   creator_category: "auto" | "education" | "podcast" | "business" | "motivation" | "spiritual" | "local-business";
 };
-export type Usage = { plan: string; exports_used: number; exports_limit: number; exports_remaining: number; source_minutes: number; processing_minutes_limit: number; processing_minutes_remaining: number; period_key: string };
+export type Usage = {
+  plan: string;
+  exports_used: number;
+  exports_limit: number;
+  exports_remaining: number;
+  // Optional during rolling deployment so a newer frontend remains compatible
+  // with the previous backend response shape instead of rendering NaN.
+  shorts_used?: number;
+  shorts_limit?: number;
+  shorts_remaining?: number;
+  pass_exhausted?: boolean;
+  unlimited_exports?: boolean;
+  source_minutes: number;
+  processing_minutes_limit: number;
+  processing_minutes_remaining: number;
+  source_minutes_per_short?: number | null;
+  period_key: string;
+};
+
+function finiteNonNegative(value: unknown, fallback = 0): number {
+  return typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : Math.max(0, fallback);
+}
+
+export function usageShortLimit(usage: Usage): number {
+  return finiteNonNegative(usage.shorts_limit, finiteNonNegative(usage.exports_limit));
+}
+
+export function usageShortRemaining(usage: Usage): number {
+  if (typeof usage.shorts_remaining === "number" && Number.isFinite(usage.shorts_remaining)) {
+    return Math.max(0, usage.shorts_remaining);
+  }
+  // Legacy backend fallback is display-only. It prevents NaN during rollout;
+  // Mini Pass exhaustion itself is never inferred from this old export counter.
+  return finiteNonNegative(usage.exports_remaining);
+}
+
+export function usageMiniPassExhausted(usage: Usage): boolean {
+  if (usage.plan !== "mini_pass") return false;
+  if (typeof usage.pass_exhausted === "boolean") return usage.pass_exhausted;
+  if (typeof usage.shorts_remaining === "number" && Number.isFinite(usage.shorts_remaining)) {
+    return usageShortLimit(usage) > 0 && usage.shorts_remaining <= 0;
+  }
+  return false;
+}
+
+export function usageHasUnlimitedExports(usage: Usage): boolean {
+  return typeof usage.unlimited_exports === "boolean" ? usage.unlimited_exports : usage.plan !== "free";
+}
 
 export function postJSON<T>(path: string, body: unknown): Promise<T> {
   return api<T>(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });

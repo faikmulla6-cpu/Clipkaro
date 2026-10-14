@@ -11,6 +11,7 @@ from .asr_quality import assess_transcript
 from .transcript_verification import attach_provenance, transcript_agreement, verify_segments
 from .roman_hindi import add_roman_display_text
 from .timestamp_stabilization import stabilize_word_timestamps
+from .speech_activity import SPEECH_ACTIVITY_VERSION, detect_speech_regions
 from .asr_providers import ASRProviderError, transcribe_api, merge_chunk_results
 from .hinglish_roman_pipeline import apply_roman_v3_display_v1
 
@@ -45,7 +46,17 @@ async def _transcribe_impl(video_path: Path, model_name: str = "small", language
         path = settings.transcription_fixture_path
         if not path.exists(): raise RuntimeError(f"E2E transcript fixture was not found: {path}")
         payload = json.loads(path.read_text(encoding="utf-8"))
-        return payload.get("language", "en"), payload.get("segments", [])
+        segments = payload.get("segments", [])
+        if segments and not any(segment.get("speech_regions") for segment in segments):
+            fixture_regions = [
+                {"start": round(float(segment.get("start", 0)), 3), "end": round(float(segment.get("end", 0)), 3)}
+                for segment in segments
+                if float(segment.get("end", 0)) > float(segment.get("start", 0))
+            ]
+            if fixture_regions:
+                segments[0]["speech_activity_version"] = SPEECH_ACTIVITY_VERSION
+                segments[0]["speech_regions"] = fixture_regions
+        return payload.get("language", "en"), segments
     if settings.normalized_asr_mode == "api":
         return await _transcribe_api_impl(video_path, language_hint, request_id, asr_route)
     try:
@@ -56,6 +67,7 @@ async def _transcribe_impl(video_path: Path, model_name: str = "small", language
         ) from exc
     audio_path = video_path.with_suffix(".wav")
     await extract_audio(video_path, audio_path)
+    speech_regions = await asyncio.to_thread(detect_speech_regions, audio_path)
 
     def run() -> tuple[str, list[dict[str, Any]]]:
         settings.model_cache_dir.mkdir(parents=True, exist_ok=True)
@@ -183,6 +195,10 @@ async def _transcribe_impl(video_path: Path, model_name: str = "small", language
         language, rows = await asyncio.to_thread(run)
         if not rows:
             raise RuntimeError("No clear speech was detected. Use a video with audible dialogue and less background music.")
+        if not speech_regions:
+            raise RuntimeError("Speech activity analysis could not verify spoken regions. Try clearer dialogue with less background noise.")
+        rows[0]["speech_activity_version"] = SPEECH_ACTIVITY_VERSION
+        rows[0]["speech_regions"] = speech_regions
         return language, rows
     except RuntimeError:
         raise
@@ -210,6 +226,7 @@ async def _transcribe_api_impl(video_path: Path, language_hint: str, request_id:
         duration = await probe_audio_duration(audio_path)
         if duration > settings.asr_api_max_audio_minutes * 60:
             raise RuntimeError(f"Audio is {duration / 60:.1f} minutes; API ASR limit is {settings.asr_api_max_audio_minutes} minutes. Split the source and retry.")
+        speech_regions = await asyncio.to_thread(detect_speech_regions, audio_path)
         # A ten-minute FLAC is safe for the legacy API providers but can exceed
         # the practical batch response window for Scribe v2.  Keep the general
         # API limit unchanged and make only the already-selected Stage-1 route
@@ -218,9 +235,25 @@ async def _transcribe_api_impl(video_path: Path, language_hint: str, request_id:
         if asr_route == "elevenlabs_roman":
             chunk_seconds = min(chunk_seconds, max(30, settings.elevenlabs_asr_chunk_seconds))
         chunks = await chunk_api_audio(audio_path, duration=duration, output_dir=chunk_dir, chunk_seconds=chunk_seconds, overlap_seconds=settings.asr_chunk_overlap_seconds, max_chunks=settings.asr_api_max_chunks, max_bytes=settings.asr_api_max_chunk_mb * 1024 * 1024)
+
+        async def transcribe_chunks(hint: str):
+            results = [
+                (
+                    await transcribe_api(
+                        chunk,
+                        language_hint=hint,
+                        duration=chunk_duration,
+                        request_id=request_id,
+                        asr_route=asr_route,
+                    ),
+                    offset,
+                )
+                for chunk, offset, chunk_duration in chunks
+            ]
+            return merge_chunk_results(results)
+
         try:
-            results = [(await transcribe_api(chunk, language_hint=language_hint, duration=chunk_duration, request_id=request_id, asr_route=asr_route), offset) for chunk, offset, chunk_duration in chunks]
-            result = merge_chunk_results(results)
+            result = await transcribe_chunks(language_hint)
         except ASRProviderError as exc:
             # Authentication and configuration errors are deliberately
             # fail-closed in the provider layer.  Do not present those as a
@@ -238,6 +271,29 @@ async def _transcribe_api_impl(video_path: Path, language_hint: str, request_id:
         if not verified:
             raise RuntimeError("API transcription did not include segment timestamps; no clips were created.")
         assessment = assess_transcript(verified, final_language)
+        normalized_hint = language_hint.strip().lower().replace("-", "_")
+        if (
+            not assessment["accepted"]
+            and "foreign_script" in assessment["flags"]
+            and normalized_hint in {"", "auto", "hinglish", "roman_hinglish"}
+            and asr_route == "legacy"
+        ):
+            # Hindi and Urdu are acoustically close. Auto-detection can return
+            # Urdu-script text for clearly Hindi speech; relabelling that result
+            # as Hindi is not enough because the transcript itself remains in
+            # the wrong script. Retry once with an explicit Hindi hint, then
+            # keep whichever result passes more of ClipKaro's quality gate.
+            try:
+                hindi_result = await transcribe_chunks("hi")
+                hindi_language = "hi" if hindi_result.language in {"hi", "ur"} else hindi_result.language
+                hindi_assessment = assess_transcript(hindi_result.segments, hindi_language)
+                if hindi_assessment["accepted"] or hindi_assessment["clean_duration"] > assessment["clean_duration"]:
+                    result = hindi_result
+                    final_language = hindi_language
+                    verified = hindi_result.segments
+                    assessment = hindi_assessment
+            except ASRProviderError:
+                pass
         if not assessment["accepted"]:
             flags = ", ".join(assessment["flags"]) or "insufficient reliable speech"
             raise RuntimeError(f"Transcript quality verification failed ({flags}). No clips were created. Try clearer audio or choose the correct language.")
@@ -267,6 +323,10 @@ async def _transcribe_api_impl(video_path: Path, language_hint: str, request_id:
             # Store attempts trace as JSON string to avoid bloating segment objects
             if result.attempts_trace:
                 verified[0]["provider_attempts_trace"] = json.dumps(result.attempts_trace, separators=(",", ":"))
+        if not speech_regions:
+            raise RuntimeError("Speech activity analysis could not verify spoken regions. Try clearer dialogue with less background noise.")
+        verified[0]["speech_activity_version"] = SPEECH_ACTIVITY_VERSION
+        verified[0]["speech_regions"] = speech_regions
         # The Roman V3 -> Display V1 chain is a Hinglish-only, operator-enabled
         # candidate.  It is never applied to legacy fallback output or Hindi /
         # Marathi jobs, and it leaves native word start/end values unchanged.

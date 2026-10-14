@@ -7,6 +7,7 @@ import uuid
 from collections import Counter
 from typing import Any
 
+from app.core.config import get_settings
 from app.core.database import execute, fetch_all, fetch_one
 from app.services.jobs import utcnow
 
@@ -27,6 +28,8 @@ async def init_behavioral_learning() -> None:
     distinguishable until the creator deletes the project/account. Project/user FKs
     still enforce privacy deletion semantics.
     """
+    if get_settings().normalized_database_backend == "postgres":
+        return
     statements = [
         """
         CREATE TABLE IF NOT EXISTS recommendation_generations (

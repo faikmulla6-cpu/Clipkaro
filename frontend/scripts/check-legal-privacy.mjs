@@ -12,7 +12,7 @@ const signupApi = read("backend/app/api/email_verification.py");
 const billing = read("backend/app/services/billing.py");
 const authProvider = read("frontend/components/AuthProvider.tsx");
 const authForm = read("frontend/components/AuthForm.tsx");
-const pricing = read("frontend/app/pricing/page.tsx");
+const pricing = read("frontend/app/pricing/page.tsx") + read("frontend/app/pricing/PricingExperience.tsx");
 const landing = read("frontend/app/page.tsx");
 const account = read("frontend/app/account/page.tsx");
 const envProd = read(".env.production.example");
@@ -27,8 +27,8 @@ for (const file of [
   "frontend/app/legal-notice/page.tsx",
 ]) must(fs.existsSync(path.join(root, file)), `${file} is missing`);
 
-must(frontendLegal.includes('LEGAL_VERSION = "2026-08-09"'), "frontend legal version drifted");
-must(backendLegal.includes('LEGAL_VERSION = "2026-08-09"'), "backend legal version drifted");
+must(frontendLegal.includes('LEGAL_VERSION = "2026-10-06-r2"'), "frontend legal version drifted");
+must(backendLegal.includes('LEGAL_VERSION = "2026-10-06-r2"'), "backend legal version drifted");
 must(backendLegal.includes("trg_require_current_legal_before_paid_checkout"), "database paid-checkout legal trigger is missing");
 must(backendLegal.includes("legal_launch_state"), "paid-launch readiness state is missing");
 must(backendLegal.includes("privacy_requests"), "privacy request ledger is missing");
@@ -72,7 +72,7 @@ const privacy = read("frontend/app/privacy/page.tsx");
 must(privacy.includes("sends extracted audio (not the complete source-video file) to the configured speech-to-text provider"), "privacy notice must disclose speech-provider audio flow");
 must(privacy.includes("Groq is the normal primary route") && privacy.includes("Cloudflare is the normal fallback") && privacy.includes("ElevenLabs"), "privacy notice must identify the configured ASR provider roles");
 must(privacy.includes("compact candidate transcript excerpts") && privacy.includes("The ranking flow does not send the raw uploaded video"), "privacy notice must match semantic-ranking data flow");
-must(privacy.includes("24 hours by default"), "privacy notice must disclose default media retention");
+must(privacy.includes("Free-plan source media") && privacy.includes("Paid-plan source media") && privacy.includes("up to 30 days"), "privacy notice must disclose plan-aware source-media retention");
 must(privacy.includes("do not sell personal data"), "current no-sale disclosure is missing");
 must(privacy.includes("privacy-minimized recommendation signals"), "behavioral ranking-learning purpose is not disclosed");
 must(privacy.includes("Suggestions that were never shown are not treated as negative feedback"), "unexposed-suggestion learning rule is not disclosed");

@@ -29,9 +29,11 @@ export default function TermsPage() {
     <LegalSection title="5. Plans, usage and renewal">
       <LegalList items={[
         <>Free: no payment; usage limits reset according to the plan rules shown in the product.</>,
-        <>Mini Pass: ₹59 one-time, 25 Karo Minutes and 5 Shorts, valid for 30 days. It does not auto-renew.</>,
-        <>Creator, Growth, Pro and Agency are monthly subscriptions. Unless cancelled or changed, the selected plan renews each month at the price shown at checkout.</>,
-        <>Karo Minutes measure uploaded source-video minutes. Exports and processing limits are plan-specific and shown before purchase.</>,
+        <>Mini Pass: ₹59 one-time, 5 AI Short creation credits, each allowing one source video of up to 25 minutes (up to 125 source-processing minutes across the pass). Its creation entitlement expires immediately when all 5 credits are consumed, or after 30 days if unused capacity remains. It does not auto-renew.</>,
+        <>Creator, Growth, Pro and Agency are monthly subscriptions. Their displayed Short counts are AI Short creation allowances for the billing period. Unless cancelled or changed, the selected plan renews each month at the price shown at checkout.</>,
+        <>Every paid ClipKaro plan includes unlimited exports and re-exports of already-created Shorts while the required source media remains available. For Mini Pass, exhausting all 5 creation credits ends the pass for new creation and allows another Mini Pass purchase, but does not consume or cancel export/re-export access for Shorts already created under that pass. Free retains the export allowance shown in the product.</>,
+        <>Karo Minutes and AI Short creation credits are separate creation limits. For Mini Pass, each AI Short can use up to 25 minutes of source video, with a maximum of 125 source minutes across the pass. Reprocessing an already-finalized project for supported correction/recovery does not create a second paid creation charge.</>,
+        <>Free source media uses the short retention window. Paid source media is kept for up to 30 days so creators can return to processed projects to edit, export and re-export; Mini Pass source media never extends beyond the pass expiry.</>,
         <>Upgrades may apply immediately and Razorpay may prorate the active cycle. Downgrades and cancellation apply at the end of the current paid cycle unless the product clearly says otherwise.</>,
         <>You can schedule cancellation from Plans & billing. There is no ClipKaro cancellation fee, and paid access continues until the end of the already-paid cycle.</>,
       ]}/>

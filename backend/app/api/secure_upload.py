@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import timedelta
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
@@ -14,6 +13,7 @@ from app.schemas.api import ProjectOut
 from app.services.auth import current_user
 from app.services.jobs import create_job, dispatch_job, utcnow
 from app.services.hinglish_stage1_routing import resolve_stage1_route
+from app.services.media_retention import source_media_expiry
 from app.services.upload_scanner import UploadMalwareDetected, UploadScannerUnavailable, scan_upload
 from app.services.video import save_upload
 
@@ -38,6 +38,12 @@ async def upload_project(
     API stops after durable enqueue; Whisper/FFmpeg execute in the worker service.
     """
     settings = get_settings()
+    limits = await project_routes.get_usage_for(user)
+    if limits.shorts_remaining <= 0:
+        raise HTTPException(
+            402,
+            "No AI Short creation credits remain in this plan. Existing Shorts can still be edited, exported and re-exported.",
+        )
     project_id, video_id = str(uuid.uuid4()), str(uuid.uuid4())
     ext = Path(file.filename or "video.mp4").suffix.lower()
     destination = settings.upload_dir / f"{video_id}{ext}"
@@ -59,7 +65,7 @@ async def upload_project(
         raise HTTPException(503, "Video security scanning is temporarily unavailable. Please retry shortly.") from exc
 
     timestamp = utcnow()
-    expires = (project_routes.now() + timedelta(hours=settings.file_expiry_hours)).isoformat()
+    expires = source_media_expiry(user, at=project_routes.now()).isoformat()
     route = resolve_stage1_route(language, str(user["id"]))
     try:
         await execute(
@@ -86,7 +92,7 @@ async def upload_project(
 
     # Development/tests retain BackgroundTasks. Production worker mode makes
     # this a no-op because the durable queue is consumed by `python -m app.worker`.
-    dispatch_job(tasks, project_routes._process_project, job_id, project_id, video_id, user, route["asr_route"])
+    await dispatch_job(tasks, project_routes._process_project, job_id, project_id, video_id, user, route["asr_route"])
     await project_routes.audit(
         user["id"], "project.uploaded", "project", project_id,
         {"bytes": size, "security_scan": scan.get("status"), "scan_engine": scan.get("engine")},

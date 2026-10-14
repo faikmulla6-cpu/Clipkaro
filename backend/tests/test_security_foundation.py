@@ -9,7 +9,12 @@ from app.core.config import get_settings
 from app.core.database import execute, fetch_all, fetch_one
 from app.main import _auth_requests, _requests, app
 from app.services.auth import create_token
-from app.services.upload_scanner import UploadMalwareDetected, UploadScannerUnavailable, scan_upload
+from app.services.upload_scanner import (
+    UploadMalwareDetected,
+    UploadScannerUnavailable,
+    _local_scan_timeout_seconds,
+    scan_upload,
+)
 
 
 @pytest.fixture()
@@ -191,6 +196,24 @@ def test_legacy_stateless_jwt_is_rejected_outside_tests(client: TestClient):
         settings.app_env = previous
     assert response.status_code == 401
     assert "retired" in response.json()["detail"].lower()
+
+
+def test_local_clamscan_timeout_scales_with_bounded_upload_size(tmp_path):
+    settings = get_settings()
+    original_timeout = settings.clamav_timeout_seconds
+    path = tmp_path / "large.mp4"
+    with path.open("wb") as handle:
+        handle.truncate(54 * 1024 * 1024)
+    try:
+        settings.clamav_timeout_seconds = 30
+        assert _local_scan_timeout_seconds(path) >= 138
+        with path.open("wb") as handle:
+            handle.truncate(500 * 1024 * 1024)
+        assert _local_scan_timeout_seconds(path) == 600
+        settings.clamav_timeout_seconds = 900
+        assert _local_scan_timeout_seconds(path) == 900
+    finally:
+        settings.clamav_timeout_seconds = original_timeout
 
 
 def test_required_scanner_fails_closed_when_unconfigured(tmp_path):

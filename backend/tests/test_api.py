@@ -3,11 +3,12 @@ import asyncio
 import hashlib
 import hmac
 import json
+from datetime import datetime, timezone
 import pytest
 from fastapi.testclient import TestClient
 from app.core.config import get_settings
 from app.core.database import UsageQuotaExceeded, execute, fetch_all, fetch_one
-from app.main import _auth_requests, _requests, app
+from app.main import app
 from app.services.legal import LEGAL_VERSION
 
 
@@ -36,14 +37,10 @@ def client(tmp_path):
     settings.razorpay_key_secret = "test-secret-for-signatures"
     settings.razorpay_webhook_secret = "webhook-test-secret"
     settings.allow_live_razorpay_in_development = False
-    _requests.clear()
-    _auth_requests.clear()
     try:
         with TestClient(app) as test_client:
             yield test_client
     finally:
-        _requests.clear()
-        _auth_requests.clear()
         for key, value in original.items():
             setattr(settings, key, value)
 
@@ -119,7 +116,7 @@ def test_signed_billing_webhook_is_idempotent(client: TestClient):
     payload = {"event_id": "evt_test_1", "event": "subscription.activated", "payload": {
         "subscription": {"entity": {
             "id": "sub_webhook_test", "plan_id": "plan_pro", "status": "active", "paid_count": 1,
-            "current_start": 1893456000, "current_end": 1896134400,
+            "current_start": 1786838400, "current_end": 1789516800,
             # Notes are deliberately wrong; server-created checkout + provider plan id are authority.
             "notes": {"user_id": "attacker-controlled-note", "plan": "creator"},
         }},
@@ -131,8 +128,11 @@ def test_signed_billing_webhook_is_idempotent(client: TestClient):
         "Content-Type": "application/json", "X-Razorpay-Signature": signature,
         "X-Razorpay-Event-Id": "evt_test_1",
     }
-    first = client.post("/api/v1/billing/razorpay/webhook", content=raw, headers=headers)
-    second = client.post("/api/v1/billing/razorpay/webhook", content=raw, headers=headers)
+    fixed_now = datetime(2026, 8, 31, 12, 0, 0, tzinfo=timezone.utc)
+    with patch("app.api.billing_lifecycle.utc_now", return_value=fixed_now), \
+         patch("app.services.billing.utc_now", return_value=fixed_now):
+        first = client.post("/api/v1/billing/razorpay/webhook", content=raw, headers=headers)
+        second = client.post("/api/v1/billing/razorpay/webhook", content=raw, headers=headers)
     assert first.status_code == second.status_code == 204
     login_demo(client)
     assert client.get("/api/v1/auth/me").json()["plan"] == "pro"
@@ -436,12 +436,16 @@ def test_one_time_webhook_never_activates_amount_mismatch(client: TestClient):
 def test_locked_fair_access_plans(client: TestClient):
     rows = client.get("/api/v1/plans").json()
     by_id = {row["id"]: row for row in rows}
-    assert by_id["free"]["price"] == 0 and by_id["free"]["processing_minutes"] == 15 and by_id["free"]["exports"] == 2
-    assert by_id["mini_pass"]["price"] == 59 and by_id["mini_pass"]["processing_minutes"] == 25 and by_id["mini_pass"]["exports"] == 5
-    assert by_id["creator"]["price"] == 199 and by_id["creator"]["processing_minutes"] == 60 and by_id["creator"]["exports"] == 15
-    assert by_id["growth"]["price"] == 399 and by_id["growth"]["processing_minutes"] == 180 and by_id["growth"]["exports"] == 50
-    assert by_id["pro"]["price"] == 799 and by_id["pro"]["processing_minutes"] == 480 and by_id["pro"]["exports"] == 150
-    assert by_id["agency"]["price"] == 1999 and by_id["agency"]["processing_minutes"] == 1500 and by_id["agency"]["exports"] == 500
+    assert by_id["free"]["price"] == 0 and by_id["free"]["processing_minutes"] == 15 and by_id["free"]["shorts"] == 2
+    assert by_id["free"]["unlimited_exports"] is False
+    assert by_id["mini_pass"]["price"] == 59 and by_id["mini_pass"]["processing_minutes"] == 125 and by_id["mini_pass"]["shorts"] == 5
+    assert by_id["mini_pass"]["source_minutes_per_short"] == 25
+    assert by_id["mini_pass"]["unlimited_exports"] is True
+    assert by_id["creator"]["price"] == 199 and by_id["creator"]["processing_minutes"] == 60 and by_id["creator"]["shorts"] == 15
+    assert by_id["growth"]["price"] == 399 and by_id["growth"]["processing_minutes"] == 180 and by_id["growth"]["shorts"] == 50
+    assert by_id["pro"]["price"] == 799 and by_id["pro"]["processing_minutes"] == 480 and by_id["pro"]["shorts"] == 150
+    assert by_id["agency"]["price"] == 1999 and by_id["agency"]["processing_minutes"] == 1500 and by_id["agency"]["shorts"] == 500
+    assert all(by_id[key]["unlimited_exports"] is True for key in ("mini_pass", "creator", "growth", "pro", "agency"))
 
 
 
@@ -528,8 +532,11 @@ def test_mini_pass_order_is_verified_before_entitlement(client: TestClient):
     assert verified.status_code == 200 and verified.json()["activated"] is True
     assert client.get("/api/v1/auth/me").json()["plan"] == "mini_pass"
     usage = client.get("/api/v1/usage").json()
-    assert usage["exports_limit"] == 5
-    assert usage["processing_minutes_limit"] == 25
+    assert usage["shorts_limit"] == 5
+    assert usage["shorts_remaining"] == 5
+    assert usage["unlimited_exports"] is True
+    assert usage["processing_minutes_limit"] == 125
+    assert usage["source_minutes_per_short"] == 25
 
 
 def test_mini_pass_authorized_but_uncaptured_payment_does_not_activate(client: TestClient):
@@ -773,3 +780,157 @@ def test_export_slots_are_atomically_reserved_and_refunded(client: TestClient):
         "SELECT resource_id,status FROM usage_reservations WHERE kind='export' ORDER BY created_at"
     ))
     assert [row["status"] for row in statuses] == ["released", "finalized"]
+
+    blocked = client.post(
+        f"/api/v1/clips/{clip_id}/export",
+        json={"resolution": "720p", "watermark": True},
+    )
+    assert blocked.status_code == 402
+    assert "used all 2 Short exports" in blocked.json()["detail"]
+    assert "reserved by another render" not in blocked.json()["detail"]
+
+
+def test_mini_pass_caps_new_ai_short_creations_even_with_minutes_left(client: TestClient):
+    signup = client.post("/api/v1/auth/signup", json={
+        "name": "Mini Creator", "email": "mini-create-cap@example.com", "password": "Secure123"
+    })
+    assert signup.status_code == 201
+    client.headers["X-CSRF-Token"] = client.cookies.get("csrf_token")
+    accepted = client.post("/api/v1/legal/accept", json={"accepted": True, "version": LEGAL_VERSION})
+    assert accepted.status_code == 200
+    user_id = signup.json()["user"]["id"]
+    asyncio.run(execute(
+        """UPDATE users SET plan='mini_pass',billing_reference=?,
+           plan_started_at=?,plan_expires_at=? WHERE id=?""",
+        ("order-mini-create-cap", "2026-10-06T00:00:00+00:00", "2026-11-05T00:00:00+00:00", user_id),
+    ))
+
+    uploads = []
+    with patch("app.api.routes._process_project", new=AsyncMock()):
+        for index in range(6):
+            response = client.post(
+                "/api/v1/projects/upload",
+                data={"title": f"Mini source {index + 1}"},
+                files={"file": (f"mini-{index + 1}.mp4", b"video", "video/mp4")},
+            )
+            assert response.status_code == 201
+            uploads.append(response.json())
+
+    for item in uploads[:5]:
+        asyncio.run(execute(
+            "UPDATE videos SET duration=60,width=1920,height=1080,status='validated' WHERE id=?",
+            (item["video_id"],),
+        ))
+
+    usage = client.get("/api/v1/usage").json()
+    assert usage["shorts_used"] == 5
+    assert usage["shorts_remaining"] == 0
+    assert usage["pass_exhausted"] is True
+    assert usage["unlimited_exports"] is True
+    assert usage["source_minutes"] == pytest.approx(5.0)
+    assert usage["processing_minutes_remaining"] == pytest.approx(120.0)
+
+    status = client.get("/api/v1/billing/status").json()
+    assert status["plan"] == "mini_pass"
+    assert status["mini_pass_exhausted"] is True
+    assert status["entitlement_state"] == "exhausted"
+
+    with patch("app.api.billing_lifecycle.razorpay_request", new=AsyncMock(return_value={"id": "order-mini-repurchase"})):
+        repurchase = client.post("/api/v1/billing/checkout", json={"plan": "mini_pass"})
+    assert repurchase.status_code == 200
+    assert repurchase.json()["order_id"] == "order-mini-repurchase"
+
+    with pytest.raises(UsageQuotaExceeded, match="AI Short creation credits"):
+        asyncio.run(execute(
+            "UPDATE videos SET duration=60,width=1920,height=1080,status='validated' WHERE id=?",
+            (uploads[5]["video_id"],),
+        ))
+
+
+def test_mini_pass_exports_and_reexports_do_not_consume_creation_credits(client: TestClient):
+    signup = client.post("/api/v1/auth/signup", json={
+        "name": "Mini Renderer", "email": "mini-render@example.com", "password": "Secure123"
+    })
+    assert signup.status_code == 201
+    client.headers["X-CSRF-Token"] = client.cookies.get("csrf_token")
+    user_id = signup.json()["user"]["id"]
+    asyncio.run(execute(
+        """UPDATE users SET plan='mini_pass',billing_reference=?,
+           plan_started_at=?,plan_expires_at=? WHERE id=?""",
+        ("order-mini-render", "2026-10-06T00:00:00+00:00", "2026-11-05T00:00:00+00:00", user_id),
+    ))
+
+    with patch("app.api.routes._process_project", new=AsyncMock()):
+        upload = client.post(
+            "/api/v1/projects/upload",
+            data={"title": "Reusable paid Short"},
+            files={"file": ("reusable.mp4", b"video", "video/mp4")},
+        ).json()
+
+    asyncio.run(execute(
+        "UPDATE videos SET duration=60,width=1920,height=1080,status='validated' WHERE id=?",
+        (upload["video_id"],),
+    ))
+    analysis = client.post(f"/api/v1/projects/{upload['id']}/analyse", json={"language": "en", "segments": [
+        {"start": 0, "end": 12, "text": "A creator should be able to render the same finished Short more than once."},
+        {"start": 12, "end": 28, "text": "Changing captions or framing is editing, not buying another AI Short creation."},
+        {"start": 28, "end": 44, "text": "Paid exports and re-exports stay unlimited after the source has been processed."},
+    ]})
+    assert analysis.status_code == 200 and analysis.json()
+    clip_id = analysis.json()[0]["id"]
+
+    before = client.get("/api/v1/usage").json()
+    assert before["shorts_used"] == 1
+    assert before["shorts_remaining"] == 4
+    assert before["pass_exhausted"] is False
+    assert before["unlimited_exports"] is True
+
+    # Exhaust the creation entitlement without touching the already-created clip.
+    for index in range(4):
+        asyncio.run(execute(
+            """INSERT INTO usage_reservations
+               (id,user_id,period_key,kind,amount,resource_id,status,created_at,updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (
+                f"extra-mini-source-{index}", user_id, before["period_key"], "minutes", 1.0,
+                f"extra-mini-project-{index}", "finalized",
+                "2026-10-06T01:00:00+00:00", "2026-10-06T01:00:00+00:00",
+            ),
+        ))
+    exhausted = client.get("/api/v1/usage").json()
+    assert exhausted["shorts_used"] == 5
+    assert exhausted["shorts_remaining"] == 0
+    assert exhausted["pass_exhausted"] is True
+    assert exhausted["unlimited_exports"] is True
+
+    # Simulate the legacy counter already being at the old Mini Pass ceiling.
+    usage_row = asyncio.run(fetch_one("SELECT id FROM usage WHERE user_id=?", (user_id,)))
+    assert usage_row
+    asyncio.run(execute("UPDATE usage SET exports_used=5 WHERE id=?", (usage_row["id"],)))
+
+    with patch("app.api.routes._render_export", new=AsyncMock()):
+        first = client.post(
+            f"/api/v1/clips/{clip_id}/export",
+            json={"resolution": "1080p", "watermark": False},
+        )
+    assert first.status_code == 202
+    first_id = first.json()["id"]
+    asyncio.run(execute("UPDATE exports SET status='ready' WHERE id=?", (first_id,)))
+
+    with patch("app.api.routes._render_export", new=AsyncMock()):
+        second = client.post(
+            f"/api/v1/clips/{clip_id}/export",
+            json={"resolution": "1080p", "watermark": False, "caption_style": "clean"},
+        )
+    assert second.status_code == 202
+
+    after = client.get("/api/v1/usage").json()
+    assert after["shorts_used"] == 5
+    assert after["shorts_remaining"] == 0
+    assert after["pass_exhausted"] is True
+    assert after["unlimited_exports"] is True
+    paid_export_reservations = asyncio.run(fetch_all(
+        "SELECT * FROM usage_reservations WHERE kind='export' AND user_id=?",
+        (user_id,),
+    ))
+    assert paid_export_reservations == []

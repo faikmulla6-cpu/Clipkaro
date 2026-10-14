@@ -10,6 +10,17 @@ def test_project_error_does_not_expose_provider_or_machine_path():
     assert message == "Transcription is temporarily unavailable for this video. Please retry shortly."
 
 
+def test_transcript_quality_failure_has_clear_actionable_message():
+    raw = RuntimeError(
+        "Transcript quality verification failed (insufficient reliable speech). "
+        "No clips were created. Try clearer audio or choose the correct language."
+    )
+    assert safe_project_failure(raw) == (
+        "Not enough clear speech was detected. ClipKaro needs at least 20 seconds of reliable spoken dialogue "
+        "to find a 20–90 second Short. Try a video with more audible speech."
+    )
+
+
 def test_export_error_does_not_expose_ffmpeg_stderr_or_machine_path():
     raw = RuntimeError(r"ffmpeg C:\\Users\\dev\\video.mp4 failed: internal stderr")
     message = safe_export_failure(raw)
@@ -21,3 +32,10 @@ def test_export_error_does_not_expose_ffmpeg_stderr_or_machine_path():
 def test_known_user_actionable_messages_remain_specific():
     assert "20–90 second moments" in safe_project_failure(ValueError("We found speech, but no complete 20–90 second moments."))
     assert "source video" in safe_export_failure(RuntimeError("The source video is unavailable in ClipKaro private storage.")).lower()
+
+
+def test_plan_source_duration_message_is_not_hidden_by_generic_failure():
+    raw = ValueError("Your Free plan supports a single source video up to 15 minutes.")
+    assert safe_project_failure(raw) == (
+        "This source video is longer than the maximum duration supported by your current plan."
+    )

@@ -4,13 +4,13 @@ ClipKaro uses Razorpay Standard Checkout and keeps the Key Secret on the backend
 
 ## Locked products
 
-- Mini Pass — ₹59 one-time — 25 Karo Minutes — 5 Shorts — 30-day validity.
-- Creator — ₹199/month — 60 Karo Minutes — 15 Shorts.
-- Growth — ₹399/month — 180 Karo Minutes — 50 Shorts.
-- Pro — ₹799/month — 480 Karo Minutes — 150 Shorts.
-- Agency — ₹1,999/month — 1,500 Karo Minutes — 500 Shorts.
+- Mini Pass — ₹59 one-time — 5 AI Short creations — each creation can process a source video up to 25 minutes (up to 125 source-processing minutes across the pass) — creation entitlement expires immediately at 5/5 AI Shorts or after 30 days, whichever comes first — another Mini Pass can then be purchased — created Shorts keep unlimited exports and re-exports while their retained source media remains available.
+- Creator — ₹199/month — 60 Karo Minutes — 15 AI Short creations — unlimited exports and re-exports.
+- Growth — ₹399/month — 180 Karo Minutes — 50 AI Short creations — unlimited exports and re-exports.
+- Pro — ₹799/month — 480 Karo Minutes — 150 AI Short creations — unlimited exports and re-exports.
+- Agency — ₹1,999/month — 1,500 Karo Minutes — 500 AI Short creations — unlimited exports and re-exports.
 
-All paid products include 1080p and watermark-free exports. Free includes 15 Karo Minutes, 2 Shorts, 720p and a watermark.
+All paid products include unlimited exports and re-exports, 1080p and watermark-free rendering. Free includes 15 Karo Minutes, 2 AI Short creations, up to 2 exports, 720p and a watermark.
 
 ## What is automatic
 

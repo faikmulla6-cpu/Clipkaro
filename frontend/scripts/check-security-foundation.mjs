@@ -13,12 +13,17 @@ const authForm = read("frontend/components/AuthForm.tsx");
 const forgotPage = read("frontend/app/forgot-password/page.tsx");
 const resetPage = read("frontend/app/reset-password/page.tsx");
 const caddy = read("Caddyfile");
+const nextConfig = read("frontend/next.config.js");
+const rootLayout = read("frontend/app/layout.tsx");
 const compose = read("docker-compose.hostinger.yml");
 const backendDocker = read("backend/Dockerfile");
 const frontendDocker = read("frontend/Dockerfile");
 const worker = read("backend/app/worker.py");
 const jobs = read("backend/app/services/jobs.py");
 const main = read("backend/app/main.py");
+const mediaJob = read("backend/app/media_job.py");
+const cloudUploads = read("backend/app/api/cloud_uploads.py");
+const migration = read("backend/migrations/versions/20260817_01_no_vps_schema.py");
 
 requireText(authProvider, '"/forgot-password"', "forgot-password route must stay public");
 requireText(authProvider, '"/reset-password"', "reset-password route must stay public");
@@ -33,6 +38,30 @@ requireText(caddy, "Content-Security-Policy", "edge CSP must be present");
 requireText(caddy, "frame-ancestors 'none'", "CSP must block framing");
 requireText(caddy, "object-src 'none'", "CSP must block plugin/object content");
 requireText(caddy, "https://*.razorpay.com", "CSP must explicitly scope payment origins");
+requireText(caddy, "https://*.backblazeb2.com", "edge CSP must allow private B2 browser upload and media delivery");
+requireText(caddy, "https://*.r2.cloudflarestorage.com", "edge CSP must allow private R2 browser upload and media delivery");
+
+// The current Hostinger + Modal production path does not traverse Caddy, so
+// equivalent browser policy must also be emitted by Next.js itself.
+requireText(nextConfig, 'key: "Strict-Transport-Security"', "Hostinger frontend must emit HSTS");
+requireText(nextConfig, 'key: "X-Content-Type-Options"', "Hostinger frontend must disable MIME sniffing");
+requireText(nextConfig, 'key: "X-Frame-Options"', "Hostinger frontend must block framing");
+requireText(nextConfig, 'key: "Content-Security-Policy"', "Hostinger frontend must emit CSP");
+requireText(nextConfig, "frame-ancestors 'none'", "Hostinger CSP must block framing");
+requireText(nextConfig, "object-src 'none'", "Hostinger CSP must block plugin/object content");
+requireText(nextConfig, "https://*.razorpay.com", "Hostinger CSP must scope payment origins");
+requireText(nextConfig, "https://storage.googleapis.com", "Hostinger CSP must preserve GCS rollback upload and media delivery");
+requireText(nextConfig, "https://*.backblazeb2.com", "Hostinger CSP must allow direct B2 upload and signed media delivery");
+requireText(nextConfig, "https://*.r2.cloudflarestorage.com", "Hostinger CSP must allow direct R2 upload and signed media delivery");
+requireText(nextConfig, "https://fonts.googleapis.com", "Hostinger CSP must allow the declared Google Fonts stylesheet");
+requireText(nextConfig, "https://fonts.gstatic.com", "Hostinger CSP must allow the declared Google Fonts files");
+requireText(nextConfig, "same-origin-allow-popups", "Hostinger frontend must keep Razorpay popups compatible while isolating openers");
+requireText(rootLayout, 'httpEquiv="Content-Security-Policy"', "Hostinger frontend must keep an in-document CSP fallback when the edge replaces the upstream CSP header");
+requireText(rootLayout, "https://storage.googleapis.com", "CSP fallback must preserve GCS rollback upload and media delivery");
+requireText(rootLayout, "https://*.backblazeb2.com", "CSP fallback must allow direct B2 upload and signed media delivery");
+requireText(rootLayout, "https://*.r2.cloudflarestorage.com", "CSP fallback must allow direct R2 upload and signed media delivery");
+requireText(rootLayout, "https://checkout.razorpay.com", "CSP fallback must preserve Razorpay checkout");
+requireText(rootLayout, "https://fonts.googleapis.com", "CSP fallback must preserve the declared Google Fonts stylesheet");
 
 requireText(compose, "UPLOAD_SCAN_REQUIRED: ${UPLOAD_SCAN_REQUIRED:-true}", "production upload scanning must fail closed");
 requireText(compose, "CLAMAV_HOST: clamav", "API must use private ClamAV service");
@@ -61,7 +90,11 @@ requireText(worker, "claim_next_job", "worker must atomically claim durable jobs
 requireText(worker, "run_claimed_job", "worker must reconstruct jobs from persisted state");
 requireText(jobs, "job_payloads", "heavy job inputs must survive API/worker restarts");
 requireText(jobs, "job_claims", "worker ownership must be persisted");
-requireText(main, "Production requires JOB_EXECUTION_MODE=worker", "production API must fail closed if worker isolation is disabled");
+requireText(main, "production_serverless_mode", "production API must fail closed unless PostgreSQL, GCS, and Cloud Run Jobs are selected");
+requireText(mediaJob, "claim_job(job_id", "Cloud Run execution must claim only its supplied durable job");
+requireText(mediaJob, "TemporaryDirectory", "Cloud Run media must use bounded disposable scratch storage");
+requireText(cloudUploads, '"/uploads/{session_id}/complete"', "direct upload completion must be server verified");
+requireText(migration, "uq_active_checkout_per_user", "PostgreSQL must prevent cross-instance duplicate checkout state");
 
 // Count YAML environment keys, not `${VAR:-default}` interpolations on the same line.
 if (yamlKeyCount(compose, "GROQ_API_KEYS") !== 1) {

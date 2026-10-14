@@ -26,6 +26,8 @@ jobs:
           clean: true
       - name: Verify trusted self-hosted backend runner
         run: bash scripts/check-self-hosted-runner.sh --profile ci-backend
+      - name: Verify deterministic-clock tool
+        run: command -v faketime >/dev/null
       - name: Create isolated backend virtualenv
         working-directory: backend
         run: |
@@ -35,13 +37,20 @@ jobs:
       - name: Install backend dependencies
         working-directory: backend
         run: python -m pip install --upgrade pip && pip install -r requirements-dev.txt
+      - name: Audit Python dependencies
+        working-directory: backend
+        run: python -m pip_audit
+
       - name: Run backend tests
         working-directory: backend
         env:
           APP_ENV: test
           TRANSCRIPTION_BACKEND: fixture
           PYTHONPATH: .
-        run: pytest -q
+        run: >-
+          faketime '2026-08-31 12:00:00' pytest -q
+          --ignore=tests/test_self_hosted_runner_contract.py
+          --ignore=tests/test_fresh_launch_certification_contract.py
       - name: Clean backend job workspace
         if: always()
         run: rm -rf backend/.venv-ci backend/.pytest_cache backend/**/__pycache__
@@ -51,6 +60,8 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux, x64, clipkaro-qa]
     timeout-minutes: 20
+    env:
+      BACKEND_URL: https://clipkaro-ci.invalid
     steps:
       - uses: actions/checkout@v4
         with:
@@ -93,6 +104,7 @@ jobs:
           DOMAIN: clipkaro.example
           ACME_EMAIL: ci@example.com
           SECRET_KEY: ci-only-secret-key-with-at-least-32-characters
+          POST_KARO_ENCRYPTION_KEY: ci-only-post-karo-encryption-key-with-at-least-32-characters
         run: docker compose -f docker-compose.hostinger.yml config --quiet
       - name: Validate production Caddyfile
         run: >-

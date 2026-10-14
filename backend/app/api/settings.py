@@ -2,13 +2,13 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.api.behavioral_learning import router as behavioral_router
 from app.api.legal import router as legal_router
 from app.core.config import get_settings
+from app.core.database import fetch_one, run_in_transaction
 from app.services.auth import current_user
 from app.services.behavioral_learning import init_behavioral_learning
 from app.services.behavioral_triggers import init_behavioral_triggers
@@ -84,16 +84,12 @@ class AccountSettingsPatch(BaseModel):
         return value
 
 
-async def _configure(db: aiosqlite.Connection) -> None:
-    await db.execute("PRAGMA foreign_keys = ON")
-    await db.execute("PRAGMA busy_timeout = 10000")
-
-
 async def init_user_preferences() -> None:
     """Create creator preferences and bounded product-compliance side stores."""
     settings = get_settings()
-    async with aiosqlite.connect(settings.database_path, timeout=10) as db:
-        await _configure(db)
+    if settings.normalized_database_backend == "postgres":
+        return
+    async def create(db) -> None:
         await db.execute(
             """
             CREATE TABLE IF NOT EXISTS user_preferences (
@@ -107,23 +103,17 @@ async def init_user_preferences() -> None:
             )
             """
         )
-        await db.commit()
+    await run_in_transaction(create, operation_name="user preferences schema")
     await init_legal_compliance()
     await init_behavioral_learning()
     await init_behavioral_triggers()
 
 
 async def _read_settings(user: dict) -> AccountSettingsOut:
-    settings = get_settings()
-    async with aiosqlite.connect(settings.database_path, timeout=10) as db:
-        await _configure(db)
-        db.row_factory = aiosqlite.Row
-        cursor = await db.execute(
-            "SELECT default_language,timezone,creator_category FROM user_preferences WHERE user_id=?",
-            (user["id"],),
-        )
-        row = await cursor.fetchone()
-        await cursor.close()
+    row = await fetch_one(
+        "SELECT default_language,timezone,creator_category FROM user_preferences WHERE user_id=?",
+        (user["id"],),
+    )
     return AccountSettingsOut(
         name=user["name"],
         email=user["email"],
@@ -145,18 +135,12 @@ async def update_account_settings(
 ) -> AccountSettingsOut:
     timestamp = datetime.now(timezone.utc).isoformat()
     changed = sorted(body.model_fields_set)
-    settings = get_settings()
-
-    async with aiosqlite.connect(settings.database_path, timeout=10) as db:
-        await _configure(db)
-        db.row_factory = aiosqlite.Row
-        try:
+    result: dict[str, str] = {}
+    async def save(db) -> None:
             # Serialize the read/merge/write sequence. This prevents two tabs
             # saving different partial fields from overwriting one another.
-            await db.execute("BEGIN IMMEDIATE")
             user_cursor = await db.execute("SELECT name,email FROM users WHERE id=?", (user["id"],))
             fresh_user = await user_cursor.fetchone()
-            await user_cursor.close()
             if not fresh_user:
                 raise HTTPException(401, "Account not found.")
 
@@ -165,7 +149,6 @@ async def update_account_settings(
                 (user["id"],),
             )
             pref = await pref_cursor.fetchone()
-            await pref_cursor.close()
 
             current_language = pref["default_language"] if pref else DEFAULT_LANGUAGE
             current_timezone = pref["timezone"] if pref else DEFAULT_TIMEZONE
@@ -200,17 +183,16 @@ async def update_account_settings(
                     json.dumps({"fields": changed}), timestamp,
                 ),
             )
-            await db.commit()
-        except Exception:
-            await db.rollback()
-            raise
+            result.update(name=name, email=fresh_user["email"], language=language, timezone=timezone_name, category=category)
+
+    await run_in_transaction(save, operation_name="update account settings")
 
     return AccountSettingsOut(
-        name=name,
-        email=fresh_user["email"],
-        default_language=language,
-        timezone=timezone_name,
-        creator_category=category,
+        name=result["name"],
+        email=result["email"],
+        default_language=result["language"],
+        timezone=result["timezone"],
+        creator_category=result["category"],
     )
 
 

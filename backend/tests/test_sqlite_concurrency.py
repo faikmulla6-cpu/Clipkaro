@@ -36,9 +36,13 @@ def hardened_sqlite(tmp_path):
 async def _close_raw_test_connection(db: aiosqlite.Connection) -> None:
     """Test-owned connections must not leak their worker threads either."""
     await db.close()
-    if db.is_alive():
-        await asyncio.to_thread(db.join, 1.0)
-    assert not db.is_alive()
+    worker = getattr(db, "_thread", db)
+    is_alive = getattr(worker, "is_alive", None)
+    join = getattr(worker, "join", None)
+    if callable(is_alive) and callable(join) and is_alive():
+        await asyncio.to_thread(join, 1.0)
+    if callable(is_alive):
+        assert not is_alive()
 
 
 def test_every_connection_uses_busy_timeout_and_wal(hardened_sqlite):

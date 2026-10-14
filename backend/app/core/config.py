@@ -11,7 +11,17 @@ class Settings(BaseSettings):
     allow_manual_analysis_in_development: bool = False
     api_prefix: str = "/api/v1"
     secret_key: str = "development-only-change-me"
+    # Dedicated application-layer key for Post Karo provider credentials. Keep
+    # this separate from JWT/session signing so either secret can rotate without
+    # silently expanding the blast radius of the other.
+    post_karo_encryption_key: str = ""
     access_token_minutes: int = 10080
+    database_backend: str = "sqlite"
+    database_url: str = ""
+    postgres_pool_min_size: int = 0
+    postgres_pool_max_size: int = 4
+    postgres_statement_cache_size: int = 0
+    postgres_command_timeout_seconds: float = 30.0
     database_path: Path = Path("./storage/clipkaro.db")
     # SQLite waits briefly for a writer before returning SQLITE_BUSY, then the
     # database layer retries the whole operation/transaction with backoff.
@@ -19,6 +29,11 @@ class Settings(BaseSettings):
     sqlite_lock_max_attempts: int = 4
     sqlite_lock_retry_base_ms: int = 50
     storage_root: Path = Path("./storage")
+    storage_backend: str = "local"
+    gcs_bucket: str = ""
+    gcs_upload_url_ttl_seconds: int = 900
+    gcs_download_url_ttl_seconds: int = 300
+    gcs_signing_service_account: str = ""
     max_upload_mb: int = 500
     max_video_minutes: int = 15
     file_expiry_hours: int = 24
@@ -91,6 +106,12 @@ class Settings(BaseSettings):
     # validates/enqueues work. Development/tests keep BackgroundTasks for a fast,
     # deterministic local loop. Supported values: background, worker.
     job_execution_mode: str = "background"
+    job_backend: str = "local"
+    gcp_project_id: str = ""
+    gcp_region: str = ""
+    cloud_run_media_job_name: str = ""
+    cloud_run_job_timeout_seconds: float = 15.0
+    job_claim_stale_seconds: int = 1800
     worker_poll_seconds: float = 0.75
     # Worker liveness is persisted in SQLite so the API can distinguish an idle
     # healthy worker from a dead container without sharing process memory.
@@ -100,6 +121,25 @@ class Settings(BaseSettings):
     # External production-preflight probes are bounded and never return provider
     # response bodies or credential material to clients.
     preflight_network_timeout_seconds: float = 8.0
+    # Creator Pulse uses the official YouTube Data API server-side only.
+    youtube_data_api_key: str = ""
+    youtube_data_api_timeout_seconds: float = 7.0
+
+    # YouTube media ingestion. ``native`` runs yt-dlp inside the media worker;
+    # ``worker`` delegates acquisition to a dedicated clean-egress service;
+    # legacy ``auto``/``socialkit`` remain disabled unless explicitly configured.
+    youtube_ingestion_provider: str = "native"
+    youtube_ingestion_worker_url: str = ""
+    youtube_ingestion_worker_secret: str = ""
+    youtube_ingestion_worker_timeout_seconds: float = 900.0
+    youtube_ingestion_worker_upload_ttl_seconds: int = 1200
+    socialkit_access_key: str = ""
+    socialkit_api_base_url: str = "https://api.socialkit.dev"
+    socialkit_poll_interval_seconds: float = 3.0
+    socialkit_timeout_seconds: float = 600.0
+    socialkit_download_timeout_seconds: float = 120.0
+    socialkit_quality: str = "480p"
+    socialkit_download_host_suffixes: str = "socialkit.dev,amazonaws.com,cloudfront.net"
     # Number of source videos allowed inside the memory-heavy ASR pipeline at
     # once. This is intentionally separate from ASR_WORKERS, which controls
     # faster-whisper's internal workers for a single model instance.
@@ -202,11 +242,48 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @property
+    def normalized_youtube_ingestion_provider(self) -> str:
+        provider = self.youtube_ingestion_provider.strip().lower()
+        if provider not in {"native", "worker", "auto", "socialkit"}:
+            raise RuntimeError("YOUTUBE_INGESTION_PROVIDER must be native, worker, auto, or socialkit.")
+        return provider
+
+    @property
     def normalized_razorpay_mode(self) -> str:
         mode = self.razorpay_mode.strip().lower()
         if mode not in {"test", "live"}:
             raise RuntimeError("RAZORPAY_MODE must be 'test' or 'live'.")
         return mode
+
+    @property
+    def normalized_database_backend(self) -> str:
+        backend = self.database_backend.strip().lower()
+        if backend not in {"sqlite", "postgres"}:
+            raise RuntimeError("DATABASE_BACKEND must be 'sqlite' or 'postgres'.")
+        return backend
+
+    @property
+    def normalized_storage_backend(self) -> str:
+        backend = self.storage_backend.strip().lower()
+        if backend not in {"local", "gcs"}:
+            raise RuntimeError("STORAGE_BACKEND must be 'local' or 'gcs'.")
+        return backend
+
+    @property
+    def normalized_job_backend(self) -> str:
+        backend = self.job_backend.strip().lower()
+        if backend not in {"local", "cloud_run_job"}:
+            raise RuntimeError("JOB_BACKEND must be 'local' or 'cloud_run_job'.")
+        return backend
+
+    @property
+    def production_serverless_mode(self) -> bool:
+        return (
+            self.app_env.strip().lower() == "production"
+            and self.normalized_database_backend == "postgres"
+            and self.normalized_storage_backend == "gcs"
+            and self.normalized_job_backend == "cloud_run_job"
+        )
 
     @property
     def razorpay_key_is_test(self) -> bool:

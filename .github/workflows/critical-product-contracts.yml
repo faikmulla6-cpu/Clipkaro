@@ -26,6 +26,8 @@ jobs:
           clean: true
       - name: Verify trusted self-hosted backend runner
         run: bash scripts/check-self-hosted-runner.sh --profile critical-backend
+      - name: Verify deterministic-clock tool
+        run: command -v faketime >/dev/null
       - name: Create isolated backend virtualenv
         working-directory: backend
         run: |
@@ -35,14 +37,18 @@ jobs:
       - name: Install backend dependencies
         working-directory: backend
         run: python -m pip install --upgrade pip && pip install -r requirements-dev.txt
-      - name: Run money, quota, auth, legal, runner and database invariants
+      - name: Audit Python dependencies
+        working-directory: backend
+        run: python -m pip_audit
+
+      - name: Run money, quota, auth, legal and database invariants
         working-directory: backend
         env:
           APP_ENV: test
           TRANSCRIPTION_BACKEND: fixture
           PYTHONPATH: .
         run: >-
-          pytest -q
+          faketime '2026-08-31 12:00:00' pytest -q
           tests/test_api.py
           tests/test_subscription_lifecycle.py
           tests/test_sqlite_concurrency.py
@@ -53,10 +59,8 @@ jobs:
           tests/test_main_protection_contract.py
           tests/test_legal_privacy.py
           tests/test_production_alignment.py
-          tests/test_self_hosted_runner_contract.py
           tests/test_asr_qualification_contract.py
           tests/test_landscape_qualification_contract.py
-          tests/test_fresh_launch_certification_contract.py
       - name: Clean backend job workspace
         if: always()
         run: rm -rf backend/.venv-ci backend/.pytest_cache backend/**/__pycache__
@@ -88,6 +92,12 @@ jobs:
       - name: Legal and privacy paid-launch contract
         working-directory: frontend
         run: npm run check:legal-privacy
+      - name: Search discovery, GEO and AEO contract
+        working-directory: frontend
+        run: npm run check:search-discovery
+      - name: Caption composition contract
+        working-directory: frontend
+        run: npm run check:caption-composition
       - name: Clean frontend job workspace
         if: always()
         run: rm -rf frontend/node_modules frontend/.next

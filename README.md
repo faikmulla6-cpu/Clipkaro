@@ -1,8 +1,8 @@
-# ClipKaro AI — Multilingual Ranking Hostinger Edition v7.8
+# ClipKaro AI — No-VPS Serverless Production Candidate v7.8
 
 Selecting Hindi now means spoken Hindi/Hinglish rendered in readable Latin script (`main kaise hoon… arre yaar, haan sahi mein`). Recognition remains in the acoustic model's native script for verification and alignment; transliteration happens only in the display layer.
 
-v7.8 adds Hindi/Hinglish-aware moment ranking, content-density-aware clip lengths, opening-hook validation, and score-first overlap suppression while retaining v7.7's faster verified ASR and Hostinger deployment stack. See `docs/V7_8_REFERENCE_INTEGRATION.md`.
+The recommended production architecture keeps the Next.js frontend on Hostinger and runs FastAPI on Cloud Run, PostgreSQL on Neon, private media in GCS, and the existing renderer in Cloud Run Jobs. See `docs/NO_VPS_PRODUCTION_ARCHITECTURE.md` and `docs/NO_VPS_DEPLOYMENT_GUIDE.md`. Legacy VPS files remain optional compatibility artifacts.
 
 ClipKaro AI is an India-first creator product that turns owned long-form videos into ranked, editable, platform-ready Shorts. This edition is a real full-stack product rather than a static prototype: accounts, uploads, AI jobs, live progress, project ownership, clip editing, FFmpeg rendering, downloads, analytics, brand kits, templates, calendar drafts, billing webhooks, admin health, expiry cleanup, and tests are connected.
 
@@ -28,7 +28,7 @@ ClipKaro AI is an India-first creator product that turns owned long-form videos 
 - India Pop, Clean Educator, Podcast Punch, Business Edge, Minimal Story, and Spiritual Calm templates.
 - Creator brand kits and a rights-safe scheduling draft calendar.
 - Fair Access usage ledger: Free ₹0, Mini Pass ₹59 one-time, Creator ₹199, Growth ₹399, Pro ₹799, Agency ₹1,999.
-- Enforced Karo Minutes and Short export quotas per entitlement period; every paid tier gets 1080p and no watermark.
+- Enforced Karo Minutes and AI Short creation quotas per entitlement period; every paid tier gets unlimited exports and re-exports, 1080p and no watermark.
 - Razorpay Standard Checkout with server-side signature verification, provider-side capture confirmation for one-time purchases, automatic live Plan creation/reuse, recurring subscriptions, cycle-end cancellation, renewal/status synchronization, signed webhook idempotency, and webhook recovery for captured Mini Pass payments.
 - Rate limiting, security headers, request IDs, audit records, cleanup worker, API docs, Docker, and tests.
 
@@ -38,13 +38,13 @@ ClipKaro AI is an India-first creator product that turns owned long-form videos 
 | Plan | Price | Karo Minutes | Shorts | Quality |
 | --- | ---: | ---: | ---: | --- |
 | Free | ₹0 | 15/month | 2/month | 720p + watermark |
-| Mini Pass | ₹59 one-time | 25 | 5 | 1080p, no watermark |
+| Mini Pass | ₹59 one-time | 125 total (25 max per Short) | 5, then pass expires | 1080p, no watermark |
 | Creator | ₹199/month | 60 | 15 | 1080p, no watermark |
 | Growth | ₹399/month | 180 | 50 | 1080p, no watermark |
 | Pro | ₹799/month | 480 | 150 | 1080p, no watermark |
 | Agency | ₹1,999/month | 1,500 | 500 | 1080p, no watermark |
 
-`1 Karo Minute = 1 source-video minute processed.` The backend enforces both processing minutes and export limits. Razorpay plan IDs are created or reused automatically on first checkout, so there are no manual `RAZORPAY_PLAN_*` IDs to maintain.
+`1 Karo Minute = 1 source-video minute processed.` Mini Pass includes 5 AI Short creations with up to 25 source-processing minutes per Short, capped at 125 source minutes across the pass. Paid plans charge creation capacity only: editing, exporting or re-exporting an already-created Short does not consume another creation credit. Mini Pass creation access expires immediately at 5/5 AI Shorts (or after 30 days, whichever comes first), after which another Mini Pass can be purchased; created Shorts keep their paid export/re-export rights while retained source media remains available. Free keeps its small export allowance. Razorpay plan IDs are created or reused automatically on first checkout, so there are no manual `RAZORPAY_PLAN_*` IDs to maintain.
 
 The delivered private `backend/.env` contains the configured Razorpay server credentials. Never commit that file. The public key ID may be used by the browser; the key secret must remain backend-only. See `docs/RAZORPAY_BILLING.md`.
 

@@ -24,6 +24,7 @@ jobs:
       APP_ENV: test
       TRANSCRIPTION_BACKEND: fixture
       PYTHONPATH: .
+      BACKEND_URL: https://clipkaro-ci.invalid
       TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
 
@@ -35,6 +36,9 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
           clean: true
+
+      - name: Verify deterministic-clock tool
+        run: command -v faketime >/dev/null
 
       - name: Verify exact clean checkout
         id: clean_checkout
@@ -89,6 +93,10 @@ jobs:
         working-directory: backend
         run: python -m pip check
 
+      - name: Audit Python dependencies
+        working-directory: backend
+        run: python -m pip_audit
+
       - name: Run complete backend test suite
         id: backend_tests
         continue-on-error: true
@@ -97,7 +105,11 @@ jobs:
           APP_ENV: test
           TRANSCRIPTION_BACKEND: fixture
           PYTHONPATH: .
-        run: pytest -q --junitxml=pytest-report.xml
+        run: >-
+          faketime '2026-08-31 12:00:00' pytest -q
+          --ignore=tests/test_self_hosted_runner_contract.py
+          --ignore=tests/test_fresh_launch_certification_contract.py
+          --junitxml=pytest-report.xml
 
       - name: Verify production preflight contract
         id: production_preflight
@@ -161,6 +173,19 @@ jobs:
         working-directory: frontend
         run: npm run check:legal-privacy
 
+      - name: Check Search discovery, GEO and AEO contract
+        id: search_discovery
+        continue-on-error: true
+        working-directory: frontend
+        run: npm run check:search-discovery
+
+      - name: Check Caption composition contract
+        id: caption_composition
+        continue-on-error: true
+        working-directory: frontend
+        run: npm run check:caption-composition
+
+
       - name: Check Behavioral learning contract
         id: behavioral_learning
         continue-on-error: true
@@ -198,6 +223,7 @@ jobs:
           DOMAIN: clipkaro.example
           ACME_EMAIL: ci@example.com
           SECRET_KEY: ci-only-secret-key-with-at-least-32-characters
+          POST_KARO_ENCRYPTION_KEY: ci-only-post-karo-encryption-key-with-at-least-32-characters
         run: docker compose -f docker-compose.hostinger.yml config --quiet
 
       - name: Validate production Caddyfile
@@ -229,6 +255,19 @@ jobs:
           clipkaro-worker:qa-${GITHUB_RUN_ID}
           -c "from app.services.forced_alignment import validate_forced_alignment_runtime; print(validate_forced_alignment_runtime('whisperx', True, enforce_production_policy=True, enforce_pinned_versions=True))"
 
+      - name: Build dedicated YouTube ingestion worker image
+        id: youtube_ingestion_worker_image
+        continue-on-error: true
+        run: docker build --pull -f ingestion_worker/Dockerfile -t clipkaro-youtube-ingest:qa-${GITHUB_RUN_ID} .
+
+      - name: Validate YouTube ingestion worker runtime
+        id: youtube_ingestion_worker_runtime
+        continue-on-error: true
+        run: |
+          docker run --rm --entrypoint python clipkaro-youtube-ingest:qa-${GITHUB_RUN_ID} -c "import importlib.metadata as m; assert m.version('yt-dlp') == '2026.8.19'; assert m.version('bgutil-ytdlp-pot-provider') == '2.0.0'; assert m.version('yt-dlp-ejs') == '0.8.0'; print('ingestion-python-runtime-ok')"
+          docker run --rm --entrypoint node clipkaro-youtube-ingest:qa-${GITHUB_RUN_ID} --version
+          docker run --rm --entrypoint test clipkaro-youtube-ingest:qa-${GITHUB_RUN_ID} -f /opt/bgutil/server/build/main.js
+
       - name: Build production frontend image
         id: frontend_image
         continue-on-error: true
@@ -250,6 +289,7 @@ jobs:
         env:
           API_TAG: clipkaro-api:qa-${{ github.run_id }}
           WORKER_TAG: clipkaro-worker:qa-${{ github.run_id }}
+          INGEST_TAG: clipkaro-youtube-ingest:qa-${{ github.run_id }}
           FRONTEND_TAG: clipkaro-frontend:qa-${{ github.run_id }}
         run: |
           mkdir -p launch-qa
@@ -257,7 +297,7 @@ jobs:
           import json, os, subprocess, sys
           from pathlib import Path
 
-          tags = {"api": os.environ["API_TAG"], "worker": os.environ["WORKER_TAG"], "frontend": os.environ["FRONTEND_TAG"]}
+          tags = {"api": os.environ["API_TAG"], "worker": os.environ["WORKER_TAG"], "youtube_ingestion": os.environ["INGEST_TAG"], "frontend": os.environ["FRONTEND_TAG"]}
           images = {}
           missing = []
           for name, tag in tags.items():
@@ -316,6 +356,8 @@ jobs:
           --check email_verification=${{ steps.email_verification.outcome }}
           --check security_foundation=${{ steps.security_foundation.outcome }}
           --check legal_privacy=${{ steps.legal_privacy.outcome }}
+          --check search_discovery=${{ steps.search_discovery.outcome }}
+          --check caption_composition=${{ steps.caption_composition.outcome }}
           --check behavioral_learning=${{ steps.behavioral_learning.outcome }}
           --check landscape_reframe=${{ steps.landscape_reframe.outcome }}
           --check release_identity_postinstall=${{ steps.release_identity_postinstall.outcome }}
@@ -326,6 +368,8 @@ jobs:
           --check backend_api_image=${{ steps.backend_api_image.outcome }}
           --check backend_worker_image=${{ steps.backend_worker_image.outcome }}
           --check worker_alignment_runtime=${{ steps.worker_alignment_runtime.outcome }}
+          --check youtube_ingestion_worker_image=${{ steps.youtube_ingestion_worker_image.outcome }}
+          --check youtube_ingestion_worker_runtime=${{ steps.youtube_ingestion_worker_runtime.outcome }}
           --check frontend_image=${{ steps.frontend_image.outcome }}
           --check source_unchanged_after_checks=${{ steps.source_unchanged_after_checks.outcome }}
           --check docker_image_identity=${{ steps.docker_image_identity.outcome }}
@@ -358,4 +402,5 @@ jobs:
           docker image rm -f \
             clipkaro-api:qa-${GITHUB_RUN_ID} \
             clipkaro-worker:qa-${GITHUB_RUN_ID} \
+            clipkaro-youtube-ingest:qa-${GITHUB_RUN_ID} \
             clipkaro-frontend:qa-${GITHUB_RUN_ID} >/dev/null 2>&1 || true

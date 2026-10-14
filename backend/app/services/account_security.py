@@ -64,6 +64,8 @@ def _client_fingerprint(value: str) -> str:
 
 
 async def init_account_security() -> None:
+    if get_settings().normalized_database_backend == "postgres":
+        return
     """Install session and password-reset state without invalidating user rows."""
 
     async def _migrate(db) -> None:

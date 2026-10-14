@@ -1,14 +1,14 @@
 "use client";
 
-import { AppShell } from "@/components/AppShell";
 import { ErrorState } from "@/components/ErrorState";
+import { useAuth } from "@/components/AuthProvider";
 import { API_URL, api, patchJSON, postJSON } from "@/lib/api";
-import { newBehaviorSession, recordDownload, trackClipBehavior } from "@/lib/behavior";
+import { downloadExport, newBehaviorSession, trackClipBehavior } from "@/lib/behavior";
 import {
-  AlignCenter, Captions, Check, Download, Film, Loader2, MoveHorizontal,
-  Palette, Pause, Play, Save, Smartphone, Sparkles, Square, Type,
+  AlertTriangle, AlignCenter, AlignLeft, AlignRight, ArrowLeft, ArrowRight, Captions, Check, Download, Film, GripVertical, Loader2, LockKeyhole, MoveHorizontal,
+  Palette, Pause, Play, Redo2, Save, Scissors, Send, Smartphone, Sparkles, Square, Trash2, Type, Undo2, WandSparkles, X, ZoomIn, ZoomOut,
 } from "lucide-react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type Clip = {
@@ -17,13 +17,26 @@ type Clip = {
 };
 type Project = { id: string; title: string; duration: number; clips: Clip[] };
 type ExportResponse = { id: string; job_id: string; status: string; expires_at: string };
-type Job = { status: string; progress: number; message: string; error?: string; export_id?: string };
-type TimedWord = { start: number; end: number; text: string; confidence?: number };
+type ExportStatus = { id: string; status: string; progress: number; download_url?: string | null; expires_at: string };
+type Job = { id?: string; status: string; progress: number; message: string; error?: string; export_id?: string };
+type TimedWord = { start: number; end: number; text: string; confidence?: number; source_start?: number; source_end?: number };
+type RemovedRange = { start: number; end: number; reason: string };
+type EditPlan = { version: number; removed_ranges: RemovedRange[]; split_points: number[]; segment_order?: number[] };
+type SpeechRegion = { id: number; start: number; end: number };
 type CaptionCard = { start: number; end: number; lines: string[]; words: TimedWord[] };
-type CaptionTrack = { language: string; clip_start: number; clip_end: number; words: TimedWord[]; cards: CaptionCard[]; source_has_burned_captions?: boolean; source_caption_band?: number | null };
+type CaptionTrack = {
+  language: string; clip_start: number; clip_end: number; words: TimedWord[]; cards: CaptionCard[]; speech_regions?: SpeechRegion[];
+  source_words?: TimedWord[]; edit_plan?: EditPlan; clean_speech_ranges?: RemovedRange[];
+  source_has_burned_captions?: boolean; source_caption_band?: number | null;
+  review_suggested?: boolean; review_reasons?: string[];
+  india_quality?: { india_quality_suitable?: boolean; likely_language_style?: string; code_switch_score?: number };
+};
 type CaptionStyle = { id: string; name: string; font_family: string; font_weight: number; font_size_width_ratio: number; text_transform: string; text_color: string; highlight_color: string; highlight_background: string; shadow: string; line_height: number; horizontal_inset_ratio: number; bottom_safe_ratio: number; above_safe_ratio: number; active_word_scale: number; corner_radius_px: number; background: string };
 type BrandKit = { id: string; name: string; primary_color: string; logo_text?: string | null; caption_preset: string; is_default: boolean };
-type Tab = "style" | "transcript" | "export";
+type WorkspaceTool = "edit" | "captions" | "frame" | "brand" | "export";
+type CaptionLanguageStyle = "auto" | "roman_hinglish" | "original";
+type CaptionAlignment = "left" | "center" | "right";
+type PostKaroStatus = { plan_eligible: boolean; ready: boolean };
 
 const styles = [
   ["kinetic", "Kinetic", "Punchy highlighted words"],
@@ -34,18 +47,119 @@ const styles = [
 ] as const;
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+const emptyEditPlan = (): EditPlan => ({ version: 2, removed_ranges: [], split_points: [], segment_order: [0] });
+const rangeContains = (range: RemovedRange, time: number) => time >= range.start && time < range.end;
+const MIN_SEGMENT_KEEP = .25;
+
+function mergeRemovedRanges(ranges: RemovedRange[]): RemovedRange[] {
+  const sorted = ranges.map(range => ({ ...range })).sort((a, b) => a.start - b.start || a.end - b.end);
+  const merged: RemovedRange[] = [];
+  sorted.forEach(range => {
+    const previous = merged.at(-1);
+    if (previous && range.start <= previous.end + .001) {
+      previous.end = Math.max(previous.end, range.end);
+      if (previous.reason !== range.reason) previous.reason = "mixed";
+    } else {
+      merged.push(range);
+    }
+  });
+  return merged;
+}
+
+function segmentTrimReason(edge: "left" | "right", segment: { start: number; end: number }) {
+  return `trim-${edge === "left" ? "l" : "r"}-${(edge === "left" ? segment.start : segment.end).toFixed(3)}`;
+}
+
+function findSegmentTrimRange(segment: { start: number; end: number }, edge: "left" | "right", ranges: RemovedRange[]) {
+  const exactReason = segmentTrimReason(edge, segment);
+  const exact = ranges.find(range => range.reason === exactReason);
+  if (exact) return exact;
+  return ranges.find(range => {
+    if (!(range.reason === "mixed" || range.reason.startsWith("trim-"))) return false;
+    if (edge === "left") {
+      return Math.abs(range.start - segment.start) < .02 && range.end < segment.end - MIN_SEGMENT_KEEP;
+    }
+    return Math.abs(range.end - segment.end) < .02 && range.start > segment.start + MIN_SEGMENT_KEEP;
+  });
+}
+
+function segmentTrimBounds(segment: { start: number; end: number }, ranges: RemovedRange[]) {
+  const left = findSegmentTrimRange(segment, "left", ranges);
+  const right = findSegmentTrimRange(segment, "right", ranges);
+  const visibleStart = clamp(left?.end ?? segment.start, segment.start, segment.end - MIN_SEGMENT_KEEP);
+  const visibleEnd = clamp(right?.start ?? segment.end, segment.start + MIN_SEGMENT_KEEP, segment.end);
+  return {
+    visibleStart,
+    visibleEnd: Math.max(visibleEnd, visibleStart + MIN_SEGMENT_KEEP),
+    left,
+    right,
+  };
+}
+
+function keptPiecesForSegment(segment: { start: number; end: number }, ranges: RemovedRange[]) {
+  let cursor = segment.start;
+  const pieces: Array<{ start: number; end: number }> = [];
+  for (const range of ranges) {
+    const cutStart = Math.max(segment.start, range.start);
+    const cutEnd = Math.min(segment.end, range.end);
+    if (cutEnd <= segment.start || cutStart >= segment.end) continue;
+    if (cutStart > cursor + .001) pieces.push({ start: cursor, end: cutStart });
+    cursor = Math.max(cursor, cutEnd);
+    if (cursor >= segment.end) break;
+  }
+  if (segment.end > cursor + .001) pieces.push({ start: cursor, end: segment.end });
+  return pieces;
+}
+
+function validSegmentOrder(plan: EditPlan, count: number) {
+  const natural = Array.from({ length: count }, (_, index) => index);
+  const order = plan.segment_order || [];
+  if (order.length !== count) return natural;
+  const sorted = [...order].sort((a, b) => a - b);
+  return sorted.every((value, index) => value === natural[index]) ? [...order] : natural;
+}
 
 export default function Editor() {
   const { clipId } = useParams<{ clipId: string }>();
   const projectId = useSearchParams().get("project");
+  const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
   const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const captionRef = useRef<HTMLDivElement>(null);
+  const captionContentRef = useRef<HTMLSpanElement>(null);
+  const captionDragRef = useRef<{ pointerId: number; offsetX: number; offsetY: number } | null>(null);
+  const timelineScrubRef = useRef<{ pointerId: number; element: HTMLDivElement } | null>(null);
+  const videoTrackRef = useRef<HTMLDivElement>(null);
+  const playbackPieceIndexRef = useRef<number | null>(null);
+  const trimDragRef = useRef<{
+    pointerId: number;
+    segmentIndex: number;
+    edge: "left" | "right";
+    element: HTMLButtonElement;
+    track: HTMLDivElement;
+    segment: { start: number; end: number };
+    basePlan: EditPlan;
+    draftPlan: EditPlan;
+    visualStart: number;
+    visualEnd: number;
+    visualSourceStart: number;
+    visualSourceEnd: number;
+    visualTimelineDuration: number;
+  } | null>(null);
   const behaviorSessionRef = useRef("");
   const previewLogged = useRef(false);
+  const renderStartRef = useRef(false);
+  const activeJobRef = useRef("");
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const pollTimerRef = useRef<number | null>(null);
+  const lastPlanRef = useRef<string | null>(null);
   if (!behaviorSessionRef.current) behaviorSessionRef.current = newBehaviorSession();
   const [project, setProject] = useState<Project | null>(null);
   const [clip, setClip] = useState<Clip | null>(null);
   const [loadError, setLoadError] = useState("");
   const [hook, setHook] = useState("");
+  const [hookEnabled, setHookEnabled] = useState(true);
   const [title, setTitle] = useState("");
   const [transcript, setTranscript] = useState("");
   const [start, setStart] = useState(0);
@@ -54,22 +168,62 @@ export default function Editor() {
   const [playing, setPlaying] = useState(false);
   const [captionStyle, setCaptionStyle] = useState("kinetic");
   const [captionPosition, setCaptionPosition] = useState<"bottom" | "above" | "center">("bottom");
+  const [captionX, setCaptionX] = useState(50);
+  const [captionY, setCaptionY] = useState<number | null>(null);
+  const [captionScale, setCaptionScale] = useState(1);
+  const [captionAlignment, setCaptionAlignment] = useState<CaptionAlignment>("center");
+  const [captionDragging, setCaptionDragging] = useState(false);
   const [ratio, setRatio] = useState("9:16");
   const [focusX, setFocusX] = useState(50);
+  const [zoom, setZoom] = useState(1);
   const [resolution, setResolution] = useState("720p");
   const [watermark, setWatermark] = useState(true);
-  const [activeTab, setActiveTab] = useState<Tab>("style");
+  const [activeTool, setActiveTool] = useState<WorkspaceTool>("edit");
   const [saving, setSaving] = useState(false);
+  const [startingRender, setStartingRender] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [job, setJob] = useState<Job | null>(null);
   const [exportId, setExportId] = useState("");
   const [error, setError] = useState("");
+  const [drawerDismissed, setDrawerDismissed] = useState(false);
   const [timedCaptionWords, setTimedCaptionWords] = useState<TimedWord[]>([]);
+  const [sourceWords, setSourceWords] = useState<TimedWord[]>([]);
+  const [editPlan, setEditPlan] = useState<EditPlan>(emptyEditPlan);
+  const [cleanSpeechRanges, setCleanSpeechRanges] = useState<RemovedRange[]>([]);
+  const [undoPlans, setUndoPlans] = useState<EditPlan[]>([]);
+  const [redoPlans, setRedoPlans] = useState<EditPlan[]>([]);
   const [captionCards, setCaptionCards] = useState<CaptionCard[]>([]);
+  const [speechRegions, setSpeechRegions] = useState<SpeechRegion[]>([]);
   const [sourceHasCaptions, setSourceHasCaptions] = useState(false);
   const [sourceCaptionBand, setSourceCaptionBand] = useState<number | null>(null);
+  const [preserveSourceCaptions, setPreserveSourceCaptions] = useState(false);
+  const [indiaQualityMode, setIndiaQualityMode] = useState(false);
+  const [captionLanguageStyle, setCaptionLanguageStyle] = useState<CaptionLanguageStyle>("auto");
+  const [indiaQualityHint, setIndiaQualityHint] = useState("");
+  const [reviewSuggested, setReviewSuggested] = useState(false);
+  const [reviewReasons, setReviewReasons] = useState<string[]>([]);
   const [captionStyles, setCaptionStyles] = useState<CaptionStyle[]>([]);
   const [brandKits, setBrandKits] = useState<BrandKit[]>([]);
   const [brandKitId, setBrandKitId] = useState("");
+  const [postKaro, setPostKaro] = useState<PostKaroStatus | null>(null);
+  const [showPostKaroPrompt, setShowPostKaroPrompt] = useState(false);
+  const [selectedSegmentIndex, setSelectedSegmentIndex] = useState<number | null>(null);
+  const [timelineScrubbing, setTimelineScrubbing] = useState(false);
+  const [trimmingSegment, setTrimmingSegment] = useState(false);
+  const [draggedSegmentIndex, setDraggedSegmentIndex] = useState<number | null>(null);
+  const [dragOverSegmentIndex, setDragOverSegmentIndex] = useState<number | null>(null);
+
+  const freePlan = user?.plan === "free";
+  const renderBusy = startingRender || (!!job && !["completed", "failed"].includes(job.status));
+
+  const stopJobWatch = useCallback(() => {
+    eventSourceRef.current?.close();
+    eventSourceRef.current = null;
+    if (pollTimerRef.current !== null) {
+      window.clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  }, []);
 
   const load = useCallback(async () => {
     if (!projectId) { setLoadError("The project reference is missing from this editor link."); return; }
@@ -81,7 +235,16 @@ export default function Editor() {
       setProject(data); setClip(selected); setHook(selected.hook); setTitle(selected.title);
       setTranscript(selected.transcript_text || selected.hook);
       setStart(selected.start_time); setEnd(selected.end_time); setPlayhead(selected.start_time);
-      api<CaptionTrack>(`/clips/${clipId}/captions`).then(track => { setTimedCaptionWords(track.words); setCaptionCards(track.cards || []); setSourceHasCaptions(!!track.source_has_burned_captions); setSourceCaptionBand(track.source_caption_band ?? null); }).catch(() => { setTimedCaptionWords([]); setCaptionCards([]); setSourceHasCaptions(false); setSourceCaptionBand(null); });
+      api<CaptionTrack>(`/clips/${clipId}/captions`).then(track => {
+        const hasSourceCaptions = !!track.source_has_burned_captions;
+        const source = track.source_words || track.words;
+        setSourceWords(source); setTimedCaptionWords(source); setCaptionCards(track.source_words ? [] : (track.cards || [])); setSpeechRegions(track.speech_regions || []);
+        setEditPlan(track.edit_plan || emptyEditPlan()); setCleanSpeechRanges(track.clean_speech_ranges || []); setUndoPlans([]); setRedoPlans([]);
+        setSourceHasCaptions(hasSourceCaptions); setSourceCaptionBand(track.source_caption_band ?? null);
+        setReviewSuggested(!!track.review_suggested); setReviewReasons(track.review_reasons || []);
+        setIndiaQualityHint(track.india_quality?.india_quality_suitable ? `${track.india_quality.likely_language_style || "Indian speech"} detected` : "");
+        if (hasSourceCaptions) setPreserveSourceCaptions(true);
+      }).catch(() => { setTimedCaptionWords([]); setSourceWords([]); setEditPlan(emptyEditPlan()); setCleanSpeechRanges([]); setCaptionCards([]); setSpeechRegions([]); setSourceHasCaptions(false); setSourceCaptionBand(null); setPreserveSourceCaptions(false); setReviewSuggested(false); setReviewReasons([]); setIndiaQualityHint(""); });
     } catch (cause) {
       setLoadError(cause instanceof Error ? cause.message : "The project could not be loaded.");
     }
@@ -97,6 +260,21 @@ export default function Editor() {
     }).catch(() => setBrandKits([]));
   }, []);
   useEffect(() => {
+    if (!user || lastPlanRef.current === user.plan) return;
+    setWatermark(user.plan === "free");
+    lastPlanRef.current = user.plan;
+  }, [user]);
+  useEffect(() => {
+    if (!user) return;
+    api<PostKaroStatus>("/post-karo/status").then(setPostKaro).catch(() => setPostKaro(null));
+  }, [user?.plan]);
+  useEffect(() => {
+    if (indiaQualityMode && preserveSourceCaptions && captionY === null && captionPosition === "bottom") {
+      setCaptionPosition("above");
+    }
+    if (preserveSourceCaptions && zoom !== 1) setZoom(1);
+  }, [indiaQualityMode, preserveSourceCaptions, captionPosition, captionY, zoom]);
+  useEffect(() => {
     if (!clip) return;
     trackClipBehavior(clip.id, "selected", {
       sessionId: behaviorSessionRef.current,
@@ -104,66 +282,748 @@ export default function Editor() {
       surface: "editor",
     });
   }, [clip?.id]);
+  useEffect(() => () => stopJobWatch(), [stopJobWatch]);
 
   const captionWords = useMemo(() => transcript.trim().split(/\s+/).filter(Boolean), [transcript]);
+  const wordRemoved = useCallback((word: TimedWord, plan = editPlan) => plan.removed_ranges.some(range => word.start < range.end && word.end > range.start), [editPlan]);
+  const timelineSpan = Math.max(end - start, 1);
+  const mergedRemovedRanges = useMemo(() => mergeRemovedRanges(editPlan.removed_ranges), [editPlan.removed_ranges]);
+  const pauseBlocks = useMemo(() => sourceWords.slice(1).map((word, index) => ({ start: sourceWords[index].end, end: word.start, reason: "silence" })).filter(item => item.end - item.start >= .25), [sourceWords]);
+  const timelineSegments = useMemo(() => {
+    const duration = Math.max(end - start, .1);
+    const points = editPlan.split_points.filter(point => point > .05 && point < duration - .05).sort((a, b) => a - b);
+    const boundaries = [0, ...points, duration];
+    return boundaries.slice(0, -1).map((segmentStart, index) => ({
+      start: segmentStart,
+      end: boundaries[index + 1],
+    }));
+  }, [editPlan.split_points, start, end]);
+  const segmentOrder = useMemo(() => validSegmentOrder(editPlan, timelineSegments.length), [editPlan.segment_order, timelineSegments.length]);
+  const displayTimelineSegments = useMemo(() => timelineSegments.map(segment => {
+    const bounds = segmentTrimBounds(segment, editPlan.removed_ranges);
+    const fullyRemoved = mergedRemovedRanges.some(range => range.start <= segment.start + .01 && range.end >= segment.end - .01);
+    return { ...segment, ...bounds, fullyRemoved };
+  }), [timelineSegments, editPlan.removed_ranges, mergedRemovedRanges]);
+  const timelineLayout = useMemo(() => {
+    let outputCursor = 0;
+    const pieces: Array<{ sourceStart: number; sourceEnd: number; outputStart: number; outputEnd: number; segmentIndex: number }> = [];
+    const segments = segmentOrder.map(sourceIndex => {
+      const sourceSegment = displayTimelineSegments[sourceIndex];
+      const kept = sourceSegment ? keptPiecesForSegment(sourceSegment, mergedRemovedRanges) : [];
+      const outputStart = outputCursor;
+      kept.forEach(piece => {
+        const length = piece.end - piece.start;
+        pieces.push({
+          sourceStart: piece.start,
+          sourceEnd: piece.end,
+          outputStart: outputCursor,
+          outputEnd: outputCursor + length,
+          segmentIndex: sourceIndex,
+        });
+        outputCursor += length;
+      });
+      return sourceSegment ? {
+        ...sourceSegment,
+        sourceIndex,
+        outputStart,
+        outputEnd: outputCursor,
+        outputDuration: outputCursor - outputStart,
+      } : null;
+    }).filter((segment): segment is NonNullable<typeof segment> => !!segment);
+    return { pieces, segments, duration: outputCursor };
+  }, [segmentOrder, displayTimelineSegments, mergedRemovedRanges]);
+  const visualTimelineLayout = useMemo(() => {
+    let visualCursor = 0;
+    const segments = segmentOrder.map(sourceIndex => {
+      const sourceSegment = displayTimelineSegments[sourceIndex];
+      if (!sourceSegment) return null;
+      const visualStart = visualCursor;
+      const sourceDuration = sourceSegment.end - sourceSegment.start;
+      visualCursor += sourceDuration;
+      return {
+        ...sourceSegment,
+        sourceIndex,
+        visualStart,
+        visualEnd: visualCursor,
+        visualDuration: sourceDuration,
+      };
+    }).filter((segment): segment is NonNullable<typeof segment> => !!segment);
+    return { segments, duration: Math.max(visualCursor, .1) };
+  }, [segmentOrder, displayTimelineSegments]);
+  const visualRemovedRanges = useMemo(() => visualTimelineLayout.segments.flatMap(segment =>
+    mergedRemovedRanges.flatMap(range => {
+      const startInSegment = Math.max(segment.start, range.start);
+      const endInSegment = Math.min(segment.end, range.end);
+      if (endInSegment <= startInSegment + .001) return [];
+      return [{
+        start: segment.visualStart + (startInSegment - segment.start),
+        end: segment.visualStart + (endInSegment - segment.start),
+      }];
+    }),
+  ), [visualTimelineLayout.segments, mergedRemovedRanges]);
+  const editedDuration = Math.max(MIN_SEGMENT_KEEP, timelineLayout.duration);
+  const selectedSegment = selectedSegmentIndex === null ? null : timelineSegments[selectedSegmentIndex] || null;
+  const selectedDisplaySegment = selectedSegmentIndex === null ? null : displayTimelineSegments[selectedSegmentIndex] || null;
+  const selectedOrderPosition = selectedSegmentIndex === null ? -1 : segmentOrder.indexOf(selectedSegmentIndex);
+  const selectedSegmentRemoved = !!selectedDisplaySegment?.fullyRemoved;
+  const selectedSegmentHasTrim = !!selectedDisplaySegment && (
+    selectedDisplaySegment.visibleStart > selectedDisplaySegment.start + .01 ||
+    selectedDisplaySegment.visibleEnd < selectedDisplaySegment.end - .01
+  );
+  const orderedAllSourceWords = useMemo(() => segmentOrder.flatMap(segmentIndex => {
+    const segment = timelineSegments[segmentIndex];
+    if (!segment) return [];
+    return sourceWords.filter(word =>
+      word.start >= segment.start - .001 &&
+      word.start < segment.end - .001
+    );
+  }), [segmentOrder, timelineSegments, sourceWords]);
+  const orderedSourceWords = useMemo(
+    () => orderedAllSourceWords.filter(word => !wordRemoved(word)),
+    [orderedAllSourceWords, editPlan, wordRemoved],
+  );
+  useEffect(() => {
+    if (!sourceWords.length) return;
+    setTranscript(orderedSourceWords.map(word => word.text).join(" "));
+  }, [sourceWords, editPlan, orderedSourceWords]);
+
+  const sourceRelativeToOutput = useCallback((relative: number) => {
+    for (let index = 0; index < timelineLayout.pieces.length; index += 1) {
+      const piece = timelineLayout.pieces[index];
+      if (relative >= piece.sourceStart - .001 && relative <= piece.sourceEnd + .001) {
+        return piece.outputStart + clamp(relative - piece.sourceStart, 0, piece.sourceEnd - piece.sourceStart);
+      }
+    }
+    return null;
+  }, [timelineLayout.pieces]);
+
+  const outputToSourceRelative = useCallback((outputTime: number) => {
+    const safe = clamp(outputTime, 0, editedDuration);
+    const pieces = timelineLayout.pieces;
+    for (let index = 0; index < pieces.length; index += 1) {
+      const piece = pieces[index];
+      const isLast = index === pieces.length - 1;
+      if (safe < piece.outputEnd - .001 || (isLast && safe <= piece.outputEnd + .001)) {
+        return {
+          source: piece.sourceStart + clamp(safe - piece.outputStart, 0, piece.sourceEnd - piece.sourceStart),
+          pieceIndex: index,
+          segmentIndex: piece.segmentIndex,
+        };
+      }
+    }
+    const last = pieces.at(-1);
+    return last ? { source: last.sourceEnd, pieceIndex: pieces.length - 1, segmentIndex: last.segmentIndex } : null;
+  }, [timelineLayout.pieces, editedDuration]);
+
+  const sourceRelativeToVisual = useCallback((relative: number) => {
+    const sourceIndex = timelineSegments.findIndex((segment, index) =>
+      relative >= segment.start - .001 &&
+      (relative < segment.end - .001 || (index === timelineSegments.length - 1 && relative <= segment.end + .001)),
+    );
+    if (sourceIndex < 0) return null;
+    const visual = visualTimelineLayout.segments.find(segment => segment.sourceIndex === sourceIndex);
+    const source = timelineSegments[sourceIndex];
+    if (!visual || !source) return null;
+    return visual.visualStart + clamp(relative - source.start, 0, source.end - source.start);
+  }, [timelineSegments, visualTimelineLayout.segments]);
+
+  const visualToSourceRelative = useCallback((visualTime: number) => {
+    const safe = clamp(visualTime, 0, visualTimelineLayout.duration);
+    const segments = visualTimelineLayout.segments;
+    for (let index = 0; index < segments.length; index += 1) {
+      const segment = segments[index];
+      const isLast = index === segments.length - 1;
+      if (safe < segment.visualEnd - .001 || (isLast && safe <= segment.visualEnd + .001)) {
+        return {
+          source: segment.start + clamp(safe - segment.visualStart, 0, segment.end - segment.start),
+          segmentIndex: segment.sourceIndex,
+        };
+      }
+    }
+    const last = segments.at(-1);
+    return last ? { source: last.end, segmentIndex: last.sourceIndex } : null;
+  }, [visualTimelineLayout]);
+
+  const timelineCaptionBlocks = useMemo(() => {
+    const blocks: Array<{ start: number; end: number; text: string }> = [];
+    segmentOrder.forEach(segmentIndex => {
+      const segment = timelineSegments[segmentIndex];
+      if (!segment) return;
+      const mapped = orderedSourceWords
+        .filter(word => word.start >= segment.start - .001 && word.start < segment.end - .001)
+        .map(word => ({
+          word,
+          start: sourceRelativeToVisual(word.start),
+          end: sourceRelativeToVisual(word.end),
+        }))
+        .filter(item => item.start !== null && item.end !== null && (item.end as number) > (item.start as number));
+      for (let index = 0; index < mapped.length; index += 4) {
+        const chunk = mapped.slice(index, index + 4);
+        if (!chunk.length) continue;
+        blocks.push({
+          start: chunk[0].start as number,
+          end: chunk[chunk.length - 1].end as number,
+          text: chunk.map(item => item.word.text).join(" "),
+        });
+      }
+    });
+    return blocks;
+  }, [orderedSourceWords, segmentOrder, timelineSegments, sourceRelativeToVisual]);
+
   const captionState = useMemo(() => {
-    if (!captionWords.length) return { words: ["Add", "your", "caption", "text"], active: 0, uncertain: [] as boolean[], breakAfter: -1 };
-    const duration = Math.max(end - start, 1);
-    const relative = playhead - start;
-    const liveCard = captionCards.find(card => relative >= card.start && relative <= card.end);
+    if (!captionWords.length) return { words: ["Add", "your", "caption", "text"], active: 0, uncertain: [] as boolean[], breakAfter: -1, visible: true };
+    const sourceRelative = playhead - start;
+    const outputRelative = sourceRelativeToOutput(sourceRelative) ?? 0;
+    const reordered = segmentOrder.some((value, index) => value !== index);
+    // Once real timing exists, silence must be visually silent too — even after segment reorder.
+    const speechActive = !speechRegions.length || speechRegions.some(region => sourceRelative >= region.start && sourceRelative < region.end);
+    if (!speechActive) {
+      return { words: [] as string[], active: -1, uncertain: [] as boolean[], breakAfter: -1, visible: false };
+    }
+    if (sourceWords.length && (editPlan.removed_ranges.length > 0 || reordered)) {
+      const visible = orderedSourceWords;
+      const active = visible.findIndex(word => sourceRelative >= word.start && sourceRelative < word.end);
+      if (active < 0) return { words: [] as string[], active: -1, uncertain: [] as boolean[], breakAfter: -1, visible: false };
+      const chunkStart = Math.floor(active / 4) * 4;
+      const chunk = visible.slice(chunkStart, chunkStart + 4);
+      return { words: chunk.map(word => word.text), active: active - chunkStart,
+        uncertain: chunk.map(word => (word.confidence ?? 1) < .6), breakAfter: -1, visible: true };
+    }
+    const liveCard = captionCards.find(card => outputRelative >= card.start && outputRelative < card.end);
     if (liveCard) {
       const flat = liveCard.lines.join(" ").split(/\s+/).filter(Boolean);
-      let active = liveCard.words.findIndex(word => relative >= word.start && relative < word.end);
-      if (active < 0) liveCard.words.forEach((word, index) => { if (word.start <= relative) active = index; });
+      let active = liveCard.words.findIndex(word => outputRelative >= word.start && outputRelative < word.end);
+      if (active < 0) liveCard.words.forEach((word, index) => { if (word.start <= outputRelative) active = index; });
       return { words: flat, active: clamp(active, 0, Math.max(flat.length - 1, 0)),
                uncertain: liveCard.words.map(word => (word.confidence ?? 1) < .6),
-               breakAfter: liveCard.lines.length === 2 ? liveCard.lines[0].split(/\s+/).length : -1 };
+               breakAfter: liveCard.lines.length === 2 ? liveCard.lines[0].split(/\s+/).length : -1,
+               visible: true };
+    }
+    if (sourceWords.length) {
+      const visible = sourceWords.filter(word => !wordRemoved(word));
+      const active = visible.findIndex(word => sourceRelative >= word.start && sourceRelative < word.end);
+      if (active < 0) return { words: [] as string[], active: -1, uncertain: [] as boolean[], breakAfter: -1, visible: false };
+      const chunkStart = Math.floor(active / 4) * 4;
+      const chunk = visible.slice(chunkStart, chunkStart + 4);
+      return { words: chunk.map(word => word.text), active: active - chunkStart,
+        uncertain: chunk.map(word => (word.confidence ?? 1) < .6), breakAfter: -1, visible: true };
+    }
+    if (timedCaptionWords.length || captionCards.length) {
+      return { words: [] as string[], active: -1, uncertain: [] as boolean[], breakAfter: -1, visible: false };
     }
     const chunkSize = 4;
-    let wordIndex: number;
-    if (timedCaptionWords.length) {
-      const sourceIndex = timedCaptionWords.findIndex(word => relative >= word.start && relative < word.end);
-      let settledIndex = sourceIndex;
-      if (settledIndex < 0) {
-        settledIndex = 0;
-        timedCaptionWords.forEach((word, index) => { if (word.start <= relative) settledIndex = index; });
-      }
-      wordIndex = Math.round(Math.max(0, settledIndex) * Math.max(0, captionWords.length - 1) /
-                             Math.max(1, timedCaptionWords.length - 1));
-    } else {
-      wordIndex = Math.floor(clamp((playhead - start) / duration, 0, .999) * captionWords.length);
-    }
-    wordIndex = clamp(wordIndex, 0, captionWords.length - 1);
+    const wordIndex = clamp(
+      Math.floor(clamp(outputRelative / editedDuration, 0, .999) * captionWords.length),
+      0,
+      captionWords.length - 1,
+    );
     const chunkStart = Math.floor(wordIndex / chunkSize) * chunkSize;
     const chunk = captionWords.slice(chunkStart, chunkStart + chunkSize);
-    const uncertain = chunk.map((_, offset) => {
-      if (!timedCaptionWords.length) return false;
-      const sourceIndex = Math.round((chunkStart + offset) * Math.max(0, timedCaptionWords.length - 1) /
-                                     Math.max(1, captionWords.length - 1));
-      return (timedCaptionWords[sourceIndex]?.confidence ?? 1) < .6;
-    });
-    return { words: chunk, active: wordIndex - chunkStart, uncertain, breakAfter: -1 };
-  }, [captionWords, timedCaptionWords, captionCards, playhead, start, end]);
+    return { words: chunk, active: wordIndex - chunkStart, uncertain: chunk.map(() => false), breakAfter: -1, visible: true };
+  }, [captionWords, timedCaptionWords, captionCards, sourceWords, orderedSourceWords, wordRemoved, speechRegions, playhead, start, sourceRelativeToOutput, segmentOrder, editPlan.removed_ranges, editedDuration]);
+
+  function commitEditPlan(next: EditPlan) {
+    setUndoPlans(history => [...history.slice(-49), editPlan]);
+    setRedoPlans([]);
+    setEditPlan(next);
+  }
+
+  function removeRange(range: RemovedRange) {
+    if (editPlan.removed_ranges.some(item => Math.abs(item.start - range.start) < .01 && Math.abs(item.end - range.end) < .01)) return;
+    commitEditPlan({ ...editPlan, removed_ranges: [...editPlan.removed_ranges, range].sort((a, b) => a.start - b.start) });
+  }
+
+  function restoreRange(range: RemovedRange) {
+    commitEditPlan({ ...editPlan, removed_ranges: editPlan.removed_ranges.filter(item => item !== range) });
+  }
+
+  function undoEdit() {
+    const previous = undoPlans.at(-1); if (!previous) return;
+    setUndoPlans(history => history.slice(0, -1)); setRedoPlans(history => [...history, editPlan]); setEditPlan(previous);
+  }
+
+  function redoEdit() {
+    const next = redoPlans.at(-1); if (!next) return;
+    setRedoPlans(history => history.slice(0, -1)); setUndoPlans(history => [...history, editPlan]); setEditPlan(next);
+  }
+
+  function splitAtPlayhead() {
+    const point = Number(clamp(playhead - start, .05, end - start - .05).toFixed(3));
+    if (editPlan.removed_ranges.some(range => rangeContains(range, point))) { setError("Move the playhead onto a kept section before splitting."); return; }
+    if (editPlan.split_points.some(item => Math.abs(item - point) < .05)) return;
+    const sourceSegmentIndex = timelineSegments.findIndex((segment, index) =>
+      point >= segment.start && (point < segment.end || (index === timelineSegments.length - 1 && point <= segment.end)),
+    );
+    const splitPoints = [...editPlan.split_points, point].sort((a, b) => a - b);
+    const currentOrder = segmentOrder;
+    const nextOrder = sourceSegmentIndex < 0 ? Array.from({ length: splitPoints.length + 1 }, (_, index) => index) :
+      currentOrder.flatMap(index => {
+        if (index === sourceSegmentIndex) return [index, index + 1];
+        return [index > sourceSegmentIndex ? index + 1 : index];
+      });
+    commitEditPlan({ ...editPlan, version: 2, split_points: splitPoints, segment_order: nextOrder });
+    setSelectedSegmentIndex(sourceSegmentIndex < 0 ? splitPoints.filter(item => item <= point + .001).length : sourceSegmentIndex + 1);
+  }
+
+  function selectSegmentForRelative(relative: number) {
+    const safe = clamp(relative, 0, timelineSpan);
+    const index = timelineSegments.findIndex((segment, segmentIndex) =>
+      safe >= segment.start && (safe < segment.end || (segmentIndex === timelineSegments.length - 1 && safe <= segment.end)),
+    );
+    if (index >= 0) setSelectedSegmentIndex(index);
+  }
+
+  function seekTimelineRelative(visualTime: number, select = true) {
+    const mapped = visualToSourceRelative(visualTime);
+    if (!mapped) return;
+    if (select) setSelectedSegmentIndex(mapped.segmentIndex);
+    let source = mapped.source;
+    let pieceIndex = timelineLayout.pieces.findIndex(piece =>
+      piece.segmentIndex === mapped.segmentIndex &&
+      source >= piece.sourceStart - .001 &&
+      source <= piece.sourceEnd + .001,
+    );
+    if (pieceIndex < 0) {
+      const candidates = timelineLayout.pieces
+        .map((piece, index) => ({ piece, index }))
+        .filter(item => item.piece.segmentIndex === mapped.segmentIndex);
+      if (!candidates.length) return;
+      let closest = { ...candidates[0], distance: Number.POSITIVE_INFINITY };
+      candidates.forEach(item => {
+        const distance = source < item.piece.sourceStart
+          ? item.piece.sourceStart - source
+          : source > item.piece.sourceEnd ? source - item.piece.sourceEnd : 0;
+        if (distance < closest.distance) closest = { ...item, distance };
+      });
+      pieceIndex = closest.index;
+      source = clamp(source, closest.piece.sourceStart, closest.piece.sourceEnd);
+    }
+    const sourceTime = start + source;
+    playbackPieceIndexRef.current = pieceIndex;
+    setPlayhead(sourceTime);
+    if (videoRef.current) videoRef.current.currentTime = sourceTime;
+  }
+
+  function timelineRelativeFromPointer(clientX: number, element: HTMLDivElement) {
+    const rect = element.getBoundingClientRect();
+    if (!rect.width) return 0;
+    return clamp((clientX - rect.left) / rect.width * visualTimelineLayout.duration, 0, visualTimelineLayout.duration);
+  }
+
+  function beginTimelineScrub(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    timelineScrubRef.current = { pointerId: event.pointerId, element: event.currentTarget };
+    setTimelineScrubbing(true);
+    seekTimelineRelative(timelineRelativeFromPointer(event.clientX, event.currentTarget));
+  }
+
+  function moveTimelineScrub(event: React.PointerEvent<HTMLDivElement>) {
+    const scrub = timelineScrubRef.current;
+    if (!scrub || scrub.pointerId !== event.pointerId) return;
+    seekTimelineRelative(timelineRelativeFromPointer(event.clientX, scrub.element));
+  }
+
+  function endTimelineScrub(event: React.PointerEvent<HTMLDivElement>) {
+    const scrub = timelineScrubRef.current;
+    if (!scrub || scrub.pointerId !== event.pointerId) return;
+    seekTimelineRelative(timelineRelativeFromPointer(event.clientX, scrub.element));
+    timelineScrubRef.current = null;
+    setTimelineScrubbing(false);
+    try { event.currentTarget.releasePointerCapture(event.pointerId); } catch {}
+  }
+
+  function deleteSelectedSegment() {
+    if (!selectedSegment || selectedSegmentRemoved) return;
+    const candidate = mergeRemovedRanges([...editPlan.removed_ranges, { ...selectedSegment, reason: "segment" as const }]);
+    const removedDuration = candidate.reduce((total, range) => total + range.end - range.start, 0);
+    if (timelineSpan - removedDuration < MIN_SEGMENT_KEEP) {
+      setError("Keep at least 0.25 seconds of the clip.");
+      return;
+    }
+    removeRange({ ...selectedSegment, reason: "segment" });
+  }
+
+  function reorderSegment(sourceIndex: number, targetSourceIndex: number) {
+    if (sourceIndex === targetSourceIndex) return;
+    const nextOrder = [...segmentOrder];
+    const from = nextOrder.indexOf(sourceIndex);
+    const to = nextOrder.indexOf(targetSourceIndex);
+    if (from < 0 || to < 0) return;
+    const [moved] = nextOrder.splice(from, 1);
+    nextOrder.splice(to, 0, moved);
+    commitEditPlan({ ...editPlan, version: 2, segment_order: nextOrder });
+    setSelectedSegmentIndex(sourceIndex);
+    setDraggedSegmentIndex(null);
+    setDragOverSegmentIndex(null);
+    playbackPieceIndexRef.current = null;
+  }
+
+  function moveSelectedSegment(direction: -1 | 1) {
+    if (selectedSegmentIndex === null || selectedSegmentRemoved) return;
+    const position = segmentOrder.indexOf(selectedSegmentIndex);
+    const targetPosition = position + direction;
+    if (position < 0 || targetPosition < 0 || targetPosition >= segmentOrder.length) return;
+    reorderSegment(selectedSegmentIndex, segmentOrder[targetPosition]);
+  }
+
+  function beginSegmentReorder(event: React.DragEvent<HTMLElement>, sourceIndex: number) {
+    const display = displayTimelineSegments[sourceIndex];
+    if (!display || display.fullyRemoved || trimmingSegment) {
+      event.preventDefault();
+      return;
+    }
+    videoRef.current?.pause();
+    setPlaying(false);
+    setSelectedSegmentIndex(sourceIndex);
+    setDraggedSegmentIndex(sourceIndex);
+    setDragOverSegmentIndex(sourceIndex);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", String(sourceIndex));
+  }
+
+  function overSegmentReorder(event: React.DragEvent<HTMLDivElement>, targetSourceIndex: number) {
+    if (draggedSegmentIndex === null) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setDragOverSegmentIndex(targetSourceIndex);
+  }
+
+  function finishSegmentReorder(event: React.DragEvent<HTMLDivElement>, targetSourceIndex: number) {
+    event.preventDefault();
+    const sourceIndex = draggedSegmentIndex ?? Number(event.dataTransfer.getData("text/plain"));
+    if (Number.isInteger(sourceIndex)) reorderSegment(sourceIndex, targetSourceIndex);
+    else {
+      setDraggedSegmentIndex(null);
+      setDragOverSegmentIndex(null);
+    }
+  }
+
+  function cancelSegmentReorder() {
+    setDraggedSegmentIndex(null);
+    setDragOverSegmentIndex(null);
+  }
+
+  function planWithSegmentTrim(basePlan: EditPlan, segment: { start: number; end: number }, edge: "left" | "right", relative: number) {
+    const currentTrim = findSegmentTrimRange(segment, edge, basePlan.removed_ranges);
+    const ranges = basePlan.removed_ranges.filter(range => range !== currentTrim);
+    const reason = segmentTrimReason(edge, segment);
+    if (edge === "left" && relative - segment.start >= .04) {
+      ranges.push({ start: segment.start, end: relative, reason });
+    }
+    if (edge === "right" && segment.end - relative >= .04) {
+      ranges.push({ start: relative, end: segment.end, reason });
+    }
+    return { ...basePlan, removed_ranges: ranges.sort((a, b) => a.start - b.start) };
+  }
+
+  function updateSegmentTrimFromPointer(clientX: number) {
+    const drag = trimDragRef.current;
+    if (!drag) return;
+    const rect = drag.track.getBoundingClientRect();
+    if (!rect.width) return;
+    const pointerVisual = clamp(
+      (clientX - rect.left) / rect.width * drag.visualTimelineDuration,
+      drag.visualStart,
+      drag.visualEnd,
+    );
+    const rawRelative = drag.visualSourceStart + clamp(
+      pointerVisual - drag.visualStart,
+      0,
+      drag.visualEnd - drag.visualStart,
+    );
+    const baseBounds = segmentTrimBounds(drag.segment, drag.basePlan.removed_ranges);
+    const relative = drag.edge === "left"
+      ? clamp(rawRelative, drag.segment.start, baseBounds.visibleEnd - MIN_SEGMENT_KEEP)
+      : clamp(rawRelative, baseBounds.visibleStart + MIN_SEGMENT_KEEP, drag.segment.end);
+    const next = planWithSegmentTrim(drag.basePlan, drag.segment, drag.edge, Number(relative.toFixed(3)));
+    const removedDuration = mergeRemovedRanges(next.removed_ranges).reduce((total, range) => total + range.end - range.start, 0);
+    if (timelineSpan - removedDuration < MIN_SEGMENT_KEEP) return;
+    drag.draftPlan = next;
+    setEditPlan(next);
+    playbackPieceIndexRef.current = null;
+    const sourceTime = start + relative + (drag.edge === "left" ? .002 : -.002);
+    setPlayhead(sourceTime);
+    if (videoRef.current) videoRef.current.currentTime = sourceTime;
+  }
+
+  function beginSegmentTrim(event: React.PointerEvent<HTMLButtonElement>, segmentIndex: number, edge: "left" | "right") {
+    if (event.button !== 0) return;
+    const segment = timelineSegments[segmentIndex];
+    const layout = visualTimelineLayout.segments.find(item => item.sourceIndex === segmentIndex);
+    const track = videoTrackRef.current;
+    if (!segment || !layout || !track) return;
+    const fullyRemoved = mergedRemovedRanges.some(range => range.start <= segment.start + .01 && range.end >= segment.end - .01);
+    if (fullyRemoved) return;
+    event.preventDefault();
+    event.stopPropagation();
+    videoRef.current?.pause();
+    setPlaying(false);
+    setSelectedSegmentIndex(segmentIndex);
+    setError("");
+    event.currentTarget.setPointerCapture(event.pointerId);
+    trimDragRef.current = {
+      pointerId: event.pointerId,
+      segmentIndex,
+      edge,
+      element: event.currentTarget,
+      track,
+      segment,
+      basePlan: editPlan,
+      draftPlan: editPlan,
+      visualStart: layout.visualStart,
+      visualEnd: layout.visualEnd,
+      visualSourceStart: segment.start,
+      visualSourceEnd: segment.end,
+      visualTimelineDuration: visualTimelineLayout.duration,
+    };
+    setTrimmingSegment(true);
+    updateSegmentTrimFromPointer(event.clientX);
+  }
+
+  function moveSegmentTrim(event: React.PointerEvent<HTMLButtonElement>) {
+    const drag = trimDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    updateSegmentTrimFromPointer(event.clientX);
+  }
+
+  function finishSegmentTrim(event: React.PointerEvent<HTMLButtonElement>, cancel = false) {
+    const drag = trimDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!cancel) updateSegmentTrimFromPointer(event.clientX);
+    const finalPlan = cancel ? drag.basePlan : drag.draftPlan;
+    if (cancel) {
+      setEditPlan(drag.basePlan);
+    } else if (JSON.stringify(finalPlan) !== JSON.stringify(drag.basePlan)) {
+      setUndoPlans(history => [...history.slice(-49), drag.basePlan]);
+      setRedoPlans([]);
+    }
+    try { drag.element.releasePointerCapture(event.pointerId); } catch {}
+    trimDragRef.current = null;
+    setTrimmingSegment(false);
+  }
+
+  function resetSelectedSegmentTrim() {
+    if (!selectedSegment) return;
+    const left = findSegmentTrimRange(selectedSegment, "left", editPlan.removed_ranges);
+    const right = findSegmentTrimRange(selectedSegment, "right", editPlan.removed_ranges);
+    if (!left && !right) return;
+    const trimRanges = new Set<RemovedRange>([left, right].filter((range): range is RemovedRange => !!range));
+    commitEditPlan({ ...editPlan, removed_ranges: editPlan.removed_ranges.filter(range => !trimRanges.has(range)) });
+  }
+
+  useEffect(() => {
+    if (selectedSegmentIndex !== null && selectedSegmentIndex >= timelineSegments.length) {
+      setSelectedSegmentIndex(timelineSegments.length ? timelineSegments.length - 1 : null);
+    }
+  }, [selectedSegmentIndex, timelineSegments.length]);
+
+  useEffect(() => {
+    function onEditorKeyDown(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select" || target?.isContentEditable) return;
+      if (trimDragRef.current) return;
+      const key = event.key.toLowerCase();
+      if ((event.ctrlKey || event.metaKey) && key === "z") {
+        event.preventDefault();
+        if (event.shiftKey) redoEdit(); else undoEdit();
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && key === "y") {
+        event.preventDefault();
+        redoEdit();
+        return;
+      }
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      if (event.code === "Space") {
+        event.preventDefault();
+        togglePlayback();
+      } else if (key === "s") {
+        event.preventDefault();
+        splitAtPlayhead();
+      } else if ((event.key === "Delete" || event.key === "Backspace") && selectedSegment) {
+        event.preventDefault();
+        deleteSelectedSegment();
+      }
+    }
+    window.addEventListener("keydown", onEditorKeyDown);
+    return () => window.removeEventListener("keydown", onEditorKeyDown);
+  }, [selectedSegmentIndex, selectedSegment, selectedSegmentRemoved, editPlan, undoPlans, redoPlans, playhead, start, end, timelineSegments]);
+
+  function cleanSpeech() {
+    const additions = cleanSpeechRanges.filter(range => !editPlan.removed_ranges.some(item => range.start < item.end && range.end > item.start));
+    if (additions.length) commitEditPlan({ ...editPlan, removed_ranges: [...editPlan.removed_ranges, ...additions].sort((a, b) => a.start - b.start) });
+  }
+
+  function captionPreset(position: "bottom" | "above" | "center") {
+    setCaptionPosition(position);
+    setCaptionX(50);
+    setCaptionY(null);
+  }
+
+  function resetCaptionLayout() {
+    setCaptionPosition("bottom");
+    setCaptionX(50);
+    setCaptionY(null);
+    setCaptionScale(1);
+    setCaptionAlignment("center");
+  }
+
+  function updateCaptionPlacement(clientX: number, clientY: number) {
+    const canvas = canvasRef.current;
+    const caption = captionRef.current;
+    const captionContent = captionContentRef.current;
+    const drag = captionDragRef.current;
+    if (!canvas || !caption || !drag) return;
+    const canvasRect = canvas.getBoundingClientRect();
+    const captionRect = (captionContent || caption).getBoundingClientRect();
+    if (!canvasRect.width || !canvasRect.height) return;
+
+    const centerX = clientX - drag.offsetX;
+    const centerY = clientY - drag.offsetY;
+    const halfWidthPercent = Math.min(44, captionRect.width / canvasRect.width * 50);
+    const halfHeightPercent = Math.min(44, captionRect.height / canvasRect.height * 50);
+    const styleInset = captionStyles.find(style => style.id === captionStyle)?.horizontal_inset_ratio ?? .06;
+    const horizontalSafe = clamp(styleInset * 100, 4, 20);
+    const minX = Math.min(50, horizontalSafe + halfWidthPercent);
+    const maxX = Math.max(50, 100 - horizontalSafe - halfWidthPercent);
+    const minY = Math.min(50, 6 + halfHeightPercent);
+    const maxY = Math.max(50, 94 - halfHeightPercent);
+    const x = clamp((centerX - canvasRect.left) / canvasRect.width * 100, minX, maxX);
+    const y = clamp((centerY - canvasRect.top) / canvasRect.height * 100, minY, maxY);
+    setCaptionX(Number(x.toFixed(1)));
+    setCaptionY(Number(y.toFixed(1)));
+  }
+
+  function beginCaptionDrag(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0 || !canvasRef.current || !captionRef.current) return;
+    const captionRect = captionRef.current.getBoundingClientRect();
+    captionDragRef.current = {
+      pointerId: event.pointerId,
+      offsetX: event.clientX - (captionRect.left + captionRect.width / 2),
+      offsetY: event.clientY - (captionRect.top + captionRect.height / 2),
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setCaptionDragging(true);
+    event.preventDefault();
+  }
+
+  function moveCaptionDrag(event: React.PointerEvent<HTMLDivElement>) {
+    if (!captionDragRef.current || captionDragRef.current.pointerId !== event.pointerId) return;
+    updateCaptionPlacement(event.clientX, event.clientY);
+    event.preventDefault();
+  }
+
+  function endCaptionDrag(event: React.PointerEvent<HTMLDivElement>) {
+    if (!captionDragRef.current || captionDragRef.current.pointerId !== event.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    captionDragRef.current = null;
+    setCaptionDragging(false);
+  }
+
+  function nudgeCaption(event: React.KeyboardEvent<HTMLDivElement>) {
+    const direction = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key];
+    if (!direction) return;
+    event.preventDefault();
+    const step = event.shiftKey ? 5 : 1;
+    const style = captionStyles.find(item => item.id === captionStyle);
+    const inset = clamp((style?.horizontal_inset_ratio ?? .06) * 100, 4, 20);
+    const baseY = captionY ?? (captionPosition === "center" ? 50 : captionPosition === "above"
+      ? (style?.above_safe_ratio ?? .34) * 100
+      : (1 - (style?.bottom_safe_ratio ?? .18)) * 100);
+    setCaptionX(value => Number(clamp(value + direction[0] * step, inset, 100 - inset).toFixed(1)));
+    setCaptionY(Number(clamp(baseY + direction[1] * step, 6, 94).toFixed(1)));
+  }
 
   function seekToClipStart() {
-    if (!videoRef.current) return;
-    videoRef.current.currentTime = start;
-    setPlayhead(start);
+    const video = videoRef.current;
+    const first = timelineLayout.pieces[0];
+    if (!video || !first) return;
+    playbackPieceIndexRef.current = 0;
+    video.currentTime = start + first.sourceStart;
+    setPlayhead(video.currentTime);
   }
 
   function onLoaded() { seekToClipStart(); }
   function onTimeUpdate() {
-    const video = videoRef.current; if (!video) return;
-    if (video.currentTime < start - .2 || video.currentTime >= end) {
-      video.currentTime = start;
-      if (!video.paused) void video.play();
+    const video = videoRef.current;
+    const pieces = timelineLayout.pieces;
+    if (!video || !pieces.length) return;
+    const relative = video.currentTime - start;
+    let pieceIndex = playbackPieceIndexRef.current;
+    const trackedIndex = pieceIndex;
+    const trackedPiece = trackedIndex === null ? null : pieces[trackedIndex];
+
+    // While preview playback is active, edited timeline order is authoritative.
+    // timeupdate can arrive after the browser has already crossed a source split;
+    // advance from the tracked piece before source-time recovery can select the
+    // naturally adjacent source segment and accidentally undo a reorder.
+    if (!video.paused && trackedIndex !== null && trackedPiece && relative >= trackedPiece.sourceEnd - .015) {
+      const next = pieces[trackedIndex + 1];
+      if (next) {
+        playbackPieceIndexRef.current = trackedIndex + 1;
+        video.currentTime = start + next.sourceStart + .002;
+        setPlayhead(video.currentTime);
+        return;
+      }
+      video.pause();
+      setPlaying(false);
+      video.currentTime = start + trackedPiece.sourceEnd;
+      setPlayhead(video.currentTime);
+      return;
+    }
+
+    if (
+      pieceIndex === null ||
+      !pieces[pieceIndex] ||
+      relative < pieces[pieceIndex].sourceStart - .03 ||
+      relative > pieces[pieceIndex].sourceEnd + .03
+    ) {
+      pieceIndex = pieces.findIndex(piece => relative >= piece.sourceStart - .02 && relative <= piece.sourceEnd + .02);
+      if (pieceIndex < 0) {
+        const first = pieces[0];
+        playbackPieceIndexRef.current = 0;
+        video.currentTime = start + first.sourceStart;
+        setPlayhead(video.currentTime);
+        return;
+      }
+      playbackPieceIndexRef.current = pieceIndex;
+    }
+    const piece = pieces[pieceIndex];
+    if (!video.paused && relative >= piece.sourceEnd - .015) {
+      const next = pieces[pieceIndex + 1];
+      if (next) {
+        playbackPieceIndexRef.current = pieceIndex + 1;
+        video.currentTime = start + next.sourceStart + .002;
+        setPlayhead(video.currentTime);
+        return;
+      }
+      video.pause();
+      setPlaying(false);
+      video.currentTime = start + piece.sourceEnd;
+      setPlayhead(video.currentTime);
+      return;
     }
     setPlayhead(video.currentTime);
   }
   async function togglePlayback() {
-    const video = videoRef.current; if (!video) return;
+    const video = videoRef.current;
+    const pieces = timelineLayout.pieces;
+    if (!video || !pieces.length) return;
     if (video.paused) {
-      if (video.currentTime < start || video.currentTime >= end) video.currentTime = start;
+      const relative = video.currentTime - start;
+      let pieceIndex = pieces.findIndex(piece => relative >= piece.sourceStart - .02 && relative < piece.sourceEnd - .015);
+      if (pieceIndex < 0) {
+        pieceIndex = 0;
+        video.currentTime = start + pieces[0].sourceStart;
+      }
+      playbackPieceIndexRef.current = pieceIndex;
       await video.play();
       if (clip && !previewLogged.current) {
         previewLogged.current = true;
@@ -189,7 +1049,7 @@ export default function Editor() {
     setSaving(true); setError("");
     try {
       const updated = await patchJSON<Clip>(`/clips/${clip.id}`, {
-        hook, title, transcript_text: transcript, start_time: start, end_time: end,
+        hook, title, transcript_text: transcript, start_time: start, end_time: end, edit_plan: editPlan,
       });
       setClip(updated);
       if (changedFields.length) {
@@ -208,140 +1068,566 @@ export default function Editor() {
 
   function pollJob(jobId: string) {
     const timer = window.setInterval(async () => {
+      if (activeJobRef.current !== jobId) {
+        window.clearInterval(timer);
+        return;
+      }
       try {
-        const state = await api<Job>(`/jobs/${jobId}`); setJob(state);
-        if (["completed", "failed"].includes(state.status)) window.clearInterval(timer);
-      } catch { /* SSE retry or next poll handles transient restarts. */ }
+        const state = await api<Job>(`/jobs/${jobId}`);
+        if (activeJobRef.current !== jobId) return;
+        setJob(state);
+        if (["completed", "failed"].includes(state.status)) {
+          window.clearInterval(timer);
+          if (pollTimerRef.current === timer) pollTimerRef.current = null;
+        }
+      } catch { /* The next poll handles transient API/container restarts. */ }
     }, 1000);
+    pollTimerRef.current = timer;
     return timer;
   }
 
   function watchJob(jobId: string) {
+    stopJobWatch();
+    activeJobRef.current = jobId;
     const source = new EventSource(`${API_URL}/jobs/${jobId}/events`, { withCredentials: true });
-    let fallback: number | undefined;
-    source.addEventListener("progress", event => setJob(JSON.parse((event as MessageEvent).data)));
-    source.addEventListener("done", event => { setJob(JSON.parse((event as MessageEvent).data)); source.close(); if (fallback) clearInterval(fallback); });
-    source.onerror = () => { source.close(); fallback = pollJob(jobId); };
+    eventSourceRef.current = source;
+    source.addEventListener("progress", event => {
+      if (activeJobRef.current !== jobId) return;
+      setJob(JSON.parse((event as MessageEvent).data));
+    });
+    source.addEventListener("done", event => {
+      if (activeJobRef.current !== jobId) return;
+      setJob(JSON.parse((event as MessageEvent).data));
+      source.close();
+      if (eventSourceRef.current === source) eventSourceRef.current = null;
+      if (pollTimerRef.current !== null) {
+        window.clearInterval(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
+    });
+    source.onerror = () => {
+      source.close();
+      if (eventSourceRef.current === source) eventSourceRef.current = null;
+      if (activeJobRef.current === jobId && pollTimerRef.current === null) pollJob(jobId);
+    };
   }
 
   async function render() {
-    if (!clip) return;
+    if (!clip || renderStartRef.current || renderBusy) return;
+    renderStartRef.current = true;
+    setStartingRender(true);
+    setDrawerDismissed(false);
     setError("");
     try {
       await save(false);
       const output = await postJSON<ExportResponse>(`/clips/${clip.id}/export`, {
         resolution, aspect_ratio: ratio, caption_style: captionStyle,
-        caption_position: captionPosition, focus_x: focusX,
-        hook_text: hook, watermark, brand_kit_id: brandKitId || null,
+        caption_position: captionPosition, caption_x: captionX, caption_y: captionY, caption_scale: captionScale,
+        caption_alignment: captionAlignment,
+        focus_x: focusX, zoom, hook_text: hook, hook_enabled: hookEnabled, watermark, brand_kit_id: brandKitId || null,
+        preserve_source_captions: preserveSourceCaptions,
+        india_quality_mode: indiaQualityMode,
+        caption_language_style: captionLanguageStyle,
       });
       setExportId(output.id);
-      setJob({ status: "queued", progress: 0, message: "Waiting for the render worker" });
+      setJob({ id: output.job_id, status: "queued", progress: 0, message: "Waiting for the render worker", export_id: output.id });
       watchJob(output.job_id);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The export could not start.");
+    } finally {
+      renderStartRef.current = false;
+      setStartingRender(false);
     }
   }
 
-  if (loadError) return <AppShell title="Creator studio"><ErrorState message={loadError} retry={load} /></AppShell>;
-  if (!clip || !project) return <AppShell title="Creator studio"><div className="screen-loader inline"><div className="loader-mark">✦</div><p>Loading the real video preview…</p></div></AppShell>;
+  async function downloadReadyExport() {
+    if (!exportId || downloading) return;
+    setDownloading(true);
+    setError("");
+    try {
+      const state = await api<ExportStatus>(`/exports/${exportId}`);
+      if (state.status !== "ready" || !state.download_url) {
+        setError("Your Short is still finishing securely. Try Download again in a moment.");
+        return;
+      }
+      downloadExport(exportId);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The download could not be prepared yet.");
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  function openPostKaro() {
+    if (!exportId) return;
+    if (postKaro?.ready) {
+      router.push("/post-karo?export=" + encodeURIComponent(exportId));
+      return;
+    }
+    setShowPostKaroPrompt(true);
+  }
+
+  if (authLoading || !user) return (
+    <div className="pro-editor-state">
+      <div className="screen-loader inline"><div className="loader-mark">✦</div><p>Opening your editor…</p></div>
+    </div>
+  );
+  if (loadError) return <div className="pro-editor-state"><ErrorState message={loadError} retry={load} /></div>;
+  if (!clip || !project) return (
+    <div className="pro-editor-state">
+      <div className="screen-loader inline"><div className="loader-mark">✦</div><p>Loading the real video preview…</p></div>
+    </div>
+  );
 
   const selectedBrandKit = brandKits.find(kit => kit.id === brandKitId);
-  const effectiveCaptionPosition = sourceHasCaptions && captionPosition === "bottom" ? "above" : captionPosition;
-  const positionClass = `position-${effectiveCaptionPosition}`;
+  const positionClass = captionY === null ? "position-" + captionPosition : "caption-custom-position";
   const selectedCaptionStyle = captionStyles.find(style => style.id === captionStyle);
-  const previewStyle = selectedCaptionStyle ? {
-    "--caption-font-family": `${selectedCaptionStyle.font_family}, sans-serif`,
-    "--caption-font-weight": selectedCaptionStyle.font_weight,
-    "--caption-font-size-ratio": selectedCaptionStyle.font_size_width_ratio,
-    "--caption-line-height": selectedCaptionStyle.line_height,
-    "--caption-text-transform": selectedCaptionStyle.text_transform,
-    "--caption-text-color": selectedCaptionStyle.text_color,
-    "--caption-highlight-color": selectedCaptionStyle.highlight_color,
-    "--caption-highlight-background": selectedCaptionStyle.highlight_background,
-    "--caption-shadow": selectedCaptionStyle.shadow,
-    "--caption-horizontal-inset": `${selectedCaptionStyle.horizontal_inset_ratio * 100}%`,
-    "--caption-bottom": `${selectedCaptionStyle.bottom_safe_ratio * 100}%`,
-    "--caption-above": `${selectedCaptionStyle.above_safe_ratio * 100}%`,
-    "--caption-active-scale": selectedCaptionStyle.active_word_scale,
-    "--caption-corner-radius": `${selectedCaptionStyle.corner_radius_px}px`,
-    "--caption-background": selectedCaptionStyle.background,
-  } as CSSProperties : undefined;
+  const baseCaptionRatio = selectedCaptionStyle?.font_size_width_ratio ?? .065;
+  const captionInsetRatio = selectedCaptionStyle?.horizontal_inset_ratio ?? .06;
+  const previewStyle = {
+    ...(selectedCaptionStyle ? {
+      "--caption-font-family": selectedCaptionStyle.font_family + ", sans-serif",
+      "--caption-font-weight": selectedCaptionStyle.font_weight,
+      "--caption-line-height": selectedCaptionStyle.line_height,
+      "--caption-text-transform": selectedCaptionStyle.text_transform,
+      "--caption-text-color": selectedCaptionStyle.text_color,
+      "--caption-highlight-color": selectedCaptionStyle.highlight_color,
+      "--caption-highlight-background": selectedCaptionStyle.highlight_background,
+      "--caption-shadow": selectedCaptionStyle.shadow,
+      "--caption-horizontal-inset": String(selectedCaptionStyle.horizontal_inset_ratio * 100) + "%",
+      "--caption-bottom": String(selectedCaptionStyle.bottom_safe_ratio * 100) + "%",
+      "--caption-above": String(selectedCaptionStyle.above_safe_ratio * 100) + "%",
+      "--caption-active-scale": selectedCaptionStyle.active_word_scale,
+      "--caption-corner-radius": String(selectedCaptionStyle.corner_radius_px) + "px",
+      "--caption-background": selectedCaptionStyle.background,
+    } : {}),
+    "--caption-font-size-ratio-effective": baseCaptionRatio * captionScale,
+    "--caption-safe-width": String(Math.max(60, (1 - captionInsetRatio * 2) * 100)) + "%",
+    "--caption-x": String(captionX) + "%",
+    "--caption-y": String(captionY ?? 50) + "%",
+    textAlign: captionAlignment,
+  } as CSSProperties;
   const visibleHook = hook.trim().split(/\s+/).slice(0, 8).join(" ");
-  const showHook = playhead - start < 4.5;
-  return (
-    <AppShell title="Creator studio" subtitle={project.title} action={<>
-      <button className="secondary-btn small" onClick={() => save()} disabled={saving}>{saving ? <Loader2 className="spin" size={14} /> : <Save size={14} />}Save</button>
-      <button className="primary-btn small" onClick={render} disabled={!!job && !["completed", "failed"].includes(job.status)}><Sparkles size={14} />Export Short</button>
-    </>}>
-      <div className="editor-shell">
-        <aside className="editor-tools">
-          <button className={activeTab === "style" ? "active" : ""} onClick={() => setActiveTab("style")}><Captions /><span>Style</span></button>
-          <button className={activeTab === "transcript" ? "active" : ""} onClick={() => setActiveTab("transcript")}><Type /><span>Words</span></button>
-          <button className={activeTab === "export" ? "active" : ""} onClick={() => setActiveTab("export")}><Film /><span>Export</span></button>
-        </aside>
+  const outputPlayhead = sourceRelativeToOutput(playhead - start) ?? 0;
+  const visualPlayhead = sourceRelativeToVisual(playhead - start) ?? 0;
+  const showHook = outputPlayhead < 4.5;
+  const playheadOffset = clamp(outputPlayhead, 0, editedDuration);
+  const playheadPercent = visualTimelineLayout.duration > 0 ? clamp(visualPlayhead / visualTimelineLayout.duration * 100, 0, 100) : 0;
+  const timelineTicks = Array.from({ length: 7 }, (_, index) => visualTimelineLayout.duration * index / 6);
 
-        <section className="canvas-area">
-          <div className={`video-canvas ratio-${ratio.replace(":", "-")}`}>
+  return (
+    <div className="pro-editor-root">
+      <header className="pro-editor-topbar">
+        <div className="pro-editor-topbar-start">
+          <button type="button" className="pro-editor-back" onClick={() => router.back()} aria-label="Back to project"><ArrowLeft size={18}/></button>
+          <div className="pro-editor-title">
+            <span>CLIPKARO SMART EDITOR</span>
+            <strong>{title || project.title}</strong>
+          </div>
+        </div>
+        <div className="pro-editor-topbar-actions">
+          <button type="button" className="pro-editor-icon-button" title="Undo" aria-label="Undo Smart Edit" disabled={!undoPlans.length} onClick={undoEdit}><Undo2 size={16}/></button>
+          <button type="button" className="pro-editor-icon-button" title="Redo" aria-label="Redo Smart Edit" disabled={!redoPlans.length} onClick={redoEdit}><Redo2 size={16}/></button>
+          <span className="pro-editor-topbar-divider"/>
+          <button className="secondary-btn small" onClick={() => save()} disabled={saving || renderBusy}>{saving ? <Loader2 className="spin" size={14}/> : <Save size={14}/>} Save</button>
+          <button className="primary-btn small" onClick={render} disabled={renderBusy}>{renderBusy ? <Loader2 className="spin" size={14}/> : <Sparkles size={14}/>} {startingRender ? "Starting…" : renderBusy ? "Rendering…" : "Export Short"}</button>
+        </div>
+      </header>
+      <div className="pro-editor-body">
+        <nav className="pro-editor-toolrail" aria-label="Editor tools">
+          <button type="button" className={activeTool === "edit" ? "active" : ""} onClick={() => setActiveTool("edit")}><Type size={19}/><span>Edit</span></button>
+          <button type="button" className={activeTool === "captions" ? "active" : ""} onClick={() => setActiveTool("captions")}><Captions size={19}/><span>Captions</span></button>
+          <button type="button" className={activeTool === "frame" ? "active" : ""} onClick={() => setActiveTool("frame")}><MoveHorizontal size={19}/><span>Frame</span></button>
+          <button type="button" className={activeTool === "brand" ? "active" : ""} onClick={() => setActiveTool("brand")}><Palette size={19}/><span>Brand</span></button>
+          <button type="button" className={activeTool === "export" ? "active" : ""} onClick={() => setActiveTool("export")}><Film size={19}/><span>Export</span></button>
+        </nav>
+
+        <aside className="pro-editor-context">
+          {activeTool === "edit" && <>
+            <div className="pro-editor-panel-head">
+              <span>Smart Edit V1</span>
+              <h2>Edit video like text</h2>
+              <p>Click words or pauses to remove them from video, audio and captions.</p>
+            </div>
+            <div className="pro-editor-context-scroll">
+              <div className="pro-editor-field"><label>Clip title</label><input value={title} onChange={event => setTitle(event.target.value)} /></div>
+              <div className="smart-edit-actions pro-editor-smart-actions">
+                <button type="button" onClick={cleanSpeech} disabled={!cleanSpeechRanges.length}><WandSparkles size={13}/> Clean Speech</button>
+                <button type="button" onClick={splitAtPlayhead}><Scissors size={13}/> Split at {Math.max(0, playhead-start).toFixed(1)}s</button>
+              </div>
+              <div className="smart-transcript pro-editor-transcript" aria-label="Text based video editor">
+                {orderedAllSourceWords.map((word, index) => {
+                  const removed = editPlan.removed_ranges.find(range => word.start < range.end && word.end > range.start);
+                  const nextWord = orderedAllSourceWords[index + 1];
+                  const sameLogicalSegment = !!nextWord && timelineSegments.some(segment =>
+                    word.start >= segment.start - .001 &&
+                    word.start < segment.end - .001 &&
+                    nextWord.start >= segment.start - .001 &&
+                    nextWord.start < segment.end - .001,
+                  );
+                  const pause = sameLogicalSegment ? pauseBlocks.find(item => Math.abs(item.start - word.end) < .01) : undefined;
+                  return <span className="smart-token-group" key={word.start + "-" + index}>
+                    <button type="button" className={"smart-word" + (removed ? " removed" : "")} title={removed ? "Restore word" : "Remove word from media"} onClick={() => removed ? restoreRange(removed) : removeRange({ start: word.start, end: word.end, reason: "word" })}>{word.text}</button>
+                    {pause && <button type="button" className={"pause-block" + (editPlan.removed_ranges.some(range => rangeContains(range, (pause.start+pause.end)/2)) ? " removed" : "")} title={(pause.end-pause.start).toFixed(1) + "s pause — click to remove"} onClick={() => removeRange(pause)}><Pause size={9}/>{(pause.end-pause.start).toFixed(1)}s</button>}
+                  </span>;
+                })}
+              </div>
+              {!!editPlan.removed_ranges.length && <div className="removed-edit-list pro-editor-removals"><b>{editPlan.removed_ranges.length} removals</b>{editPlan.removed_ranges.map((range, index) => <button type="button" key={range.start + "-" + index} onClick={() => restoreRange(range)}><X size={10}/>{range.reason} {range.start.toFixed(1)}–{range.end.toFixed(1)}s</button>)}</div>}
+              <p className="field-note pro-editor-note">Edits are non-destructive. Preview and export use the same edit plan.</p>
+            </div>
+          </>}
+
+          {activeTool === "captions" && <>
+            <div className="pro-editor-panel-head"><span>CAPTIONS</span><h2>Hook & caption style</h2><p>Keep the current caption engine, just organized for faster editing.</p></div>
+            <div className="pro-editor-context-scroll">
+              {sourceHasCaptions && <div className="pro-editor-alert"><b>Existing subtitles detected</b><p>Preserve source captions keeps the full source frame safe.</p></div>}
+              {reviewSuggested && <div className="pro-editor-alert warning"><AlertTriangle size={14}/><div><b>Review suggested</b><p>{reviewReasons.slice(0, 2).join(", ") || "Some words look uncertain."}</p></div></div>}
+              <div className="toggle-row pro-editor-toggle"><div><b>Hook text</b><span>{hookEnabled ? "Shown for the first 4.5 seconds" : "Opening hook is off"}</span></div><button type="button" className={hookEnabled ? "on" : ""} aria-pressed={hookEnabled} onClick={() => setHookEnabled(value => !value)}><i/></button></div>
+              <div className="pro-editor-field"><label>Hook text</label><textarea value={hook} onChange={event => setHook(event.target.value)} maxLength={120} disabled={!hookEnabled}/><small>{hook.length}/120</small></div>
+              <div className="pro-editor-field"><label>Caption personality</label>
+                <div className="style-options pro-editor-style-list">{styles.map(style => <button type="button" className={captionStyle === style[0] ? "active" : ""} onClick={() => setCaptionStyle(style[0])} key={style[0]}><span className={"style-swatch " + style[0]}>Aa</span><div><b>{style[1]}</b><small>{style[2]}</small></div>{captionStyle === style[0] && <Check size={14}/>}</button>)}</div>
+              </div>
+            </div>
+          </>}
+
+          {activeTool === "frame" && <>
+            <div className="pro-editor-panel-head"><span>FRAME</span><h2>Compose the Short</h2><p>Use the exact framing controls already supported by ClipKaro export.</p></div>
+            <div className="pro-editor-context-scroll">
+              <div className="pro-editor-field"><label>Canvas ratio</label><div className="ratio-options">{[["9:16", Smartphone, "Shorts"], ["4:5", AlignCenter, "Feed"], ["1:1", Square, "Square"]].map(([value, Icon, name]) => <button type="button" key={value as string} className={ratio === value ? "active" : ""} onClick={() => setRatio(value as string)}><Icon size={17}/><b>{value as string}</b><small>{name as string}</small></button>)}</div></div>
+              <div className="pro-editor-stat-grid"><span><small>Ratio</small><b>{ratio}</b></span><span><small>Focus</small><b>{Math.round(focusX)}%</b></span><span><small>Zoom</small><b>{Math.round(zoom*100)}%</b></span></div>
+              <p className="pro-editor-note">Framing changes are reflected in the exported MP4, not only in preview.</p>
+            </div>
+          </>}
+
+          {activeTool === "brand" && <>
+            <div className="pro-editor-panel-head"><span>BRAND</span><h2>Brand kit</h2><p>Apply your saved wordmark, color and preferred caption preset.</p></div>
+            <div className="pro-editor-context-scroll">
+              <div className="pro-editor-field"><label>Brand kit</label><select value={brandKitId} onChange={event => { const id = event.target.value; setBrandKitId(id); const kit = brandKits.find(item => item.id === id); if (kit && styles.some(style => style[0] === kit.caption_preset)) setCaptionStyle(kit.caption_preset); }}><option value="">No brand kit</option>{brandKits.map(kit => <option key={kit.id} value={kit.id}>{kit.name}{kit.is_default ? " · Default" : ""}</option>)}</select></div>
+              {selectedBrandKit ? <div className="pro-editor-brand-card"><span style={{ background: selectedBrandKit.primary_color }}/><div><b>{selectedBrandKit.name}</b><small>{selectedBrandKit.logo_text || "No wordmark"} · {selectedBrandKit.caption_preset}</small></div></div> : <div className="pro-editor-empty-card">Choose a saved Brand Kit or keep this Short unbranded.</div>}
+            </div>
+          </>}
+
+          {activeTool === "export" && <>
+            <div className="pro-editor-panel-head"><span>EXPORT</span><h2>Ready to publish</h2><p>Everything below reflects the settings that will be sent to the renderer.</p></div>
+            <div className="pro-editor-context-scroll">
+              <div className="export-summary pro-editor-export-summary"><span>Format <b>{ratio}</b></span><span>Duration <b>{editedDuration.toFixed(1)}s</b></span><span>Captions <b>{styles.find(style => style[0] === captionStyle)?.[1]}</b></span><span>Caption size <b>{Math.round(captionScale*100)}%</b></span><span>Placement <b>{captionY === null ? (captionPosition === "bottom" ? "Lower" : captionPosition === "above" ? "Upper" : "Centre") : "Custom"}</b></span><span>Align <b>{captionAlignment}</b></span><span>Frame <b>{preserveSourceCaptions ? "Full" : Math.round(focusX) + "%"}</b></span><span>Zoom <b>{preserveSourceCaptions ? "100% safe" : Math.round(zoom*100) + "%"}</b></span><span>India <b>{indiaQualityMode ? captionLanguageStyle.replace("_", " ") : "Off"}</b></span><span>Brand <b>{selectedBrandKit?.name || "None"}</b></span></div>
+            </div>
+          </>}
+        </aside>
+        <section className="pro-editor-stage">
+          <div className="pro-editor-stage-meta">
+            <span>{ratio} canvas</span>
+            <span>{editedDuration.toFixed(1)}s edited</span>
+          </div>
+          <div ref={canvasRef} className={"video-canvas pro-video-canvas ratio-" + ratio.replace(":", "-")}>
             <video
               ref={videoRef}
-              src={`${API_URL}/projects/${project.id}/media`}
+              src={API_URL + "/projects/" + project.id + "/media"}
               preload="metadata"
               playsInline
               onLoadedMetadata={onLoaded}
               onTimeUpdate={onTimeUpdate}
               onPlay={() => setPlaying(true)}
               onPause={() => setPlaying(false)}
-              style={{ objectPosition: `${focusX}% 50%` }}
+              style={{
+                objectFit: preserveSourceCaptions ? "contain" : "cover",
+                objectPosition: String(focusX) + "% 50%",
+                transform: preserveSourceCaptions ? "scale(1)" : "scale(" + String(zoom) + ")",
+              }}
             />
-            <button className="canvas-play" onClick={togglePlayback}>{playing ? <Pause fill="currentColor" /> : <Play fill="currentColor" />}</button>
-            {showHook && visibleHook && <div className="canvas-hook">{visibleHook}</div>}
-            <div className={`caption-preview style-${captionStyle} ${positionClass}`} style={previewStyle}>
-              {captionState.words.map((word, index) => <span className={`${index === captionState.active ? "active-word" : ""} ${captionState.uncertain[index] ? "low-confidence" : ""}`} key={`${word}-${index}`}>{word} {captionState.breakAfter === index + 1 && <br/>}</span>)}
-            </div>
+            <button className="canvas-play pro-canvas-play" onClick={togglePlayback}>{playing ? <Pause fill="currentColor"/> : <Play fill="currentColor"/>}</button>
+            {hookEnabled && showHook && visibleHook && <div className="canvas-hook">{visibleHook}</div>}
+            {captionState.visible && <div
+              ref={captionRef}
+              className={"caption-preview caption-draggable style-" + captionStyle + " " + positionClass + (captionDragging ? " caption-dragging" : "")}
+              style={previewStyle}
+              title="Drag caption to place it"
+              tabIndex={0}
+              aria-label="Caption preview. Drag to place it, or use arrow keys for precise movement."
+              onKeyDown={nudgeCaption}
+              onPointerDown={beginCaptionDrag}
+              onPointerMove={moveCaptionDrag}
+              onPointerUp={endCaptionDrag}
+              onPointerCancel={endCaptionDrag}
+            >
+              <span ref={captionContentRef} className="caption-content">
+                {captionState.words.map((word, index) => <span className={(index === captionState.active ? "active-word " : "") + (captionState.uncertain[index] ? "low-confidence" : "")} key={word + "-" + index}>{word} </span>)}
+              </span>
+            </div>}
             {selectedBrandKit?.logo_text && <div className="canvas-brandmark" style={{ color: selectedBrandKit.primary_color }}>{selectedBrandKit.logo_text}</div>}
             {watermark && <div className="canvas-watermark">✦ ClipKaro AI</div>}
-            <div className="safe-zone" />
+            <div className="safe-zone"/>
           </div>
-
-          <div className="timeline">
-            <div className="timeline-head"><button onClick={togglePlayback}>{playing ? <Pause size={13} /> : <Play size={13} />} {playing ? "Pause clip" : "Play selected clip"}</button><b>{Math.round(end - start)} sec</b></div>
-            <div className="waveform">{Array.from({ length: 64 }).map((_, i) => <i key={i} style={{ height: `${18 + Math.abs(Math.sin(i * .7)) * 35}px` }} />)}<div className="trim-region" style={{ "--playhead": `${clamp((playhead - start) / Math.max(end - start, 1), 0, 1) * 100}%` } as React.CSSProperties} /></div>
-            <div className="time-ruler"><span>{start.toFixed(1)}s</span><span>{playhead.toFixed(1)}s live</span><span>{end.toFixed(1)}s</span></div>
+          <div className="pro-editor-player-controls">
+            <button type="button" onClick={togglePlayback} aria-label={playing ? "Pause" : "Play"}>{playing ? <Pause size={16} fill="currentColor"/> : <Play size={16} fill="currentColor"/>}</button>
+            <b>{playheadOffset.toFixed(1)}s</b>
+            <span>/ {editedDuration.toFixed(1)}s</span>
+            <div className="pro-editor-player-spacer"/>
+            <span>{editPlan.removed_ranges.length} removals</span>
+            <span>{editPlan.split_points.length} markers</span>
           </div>
         </section>
+        <aside className="pro-editor-inspector">
+          {activeTool === "edit" && <>
+            <div className="pro-editor-inspector-head"><span>EDIT</span><h3>Clip controls</h3></div>
+            <div className="pro-editor-inspector-scroll">
+              <div className="pro-editor-quick-actions">
+                <button type="button" disabled={!undoPlans.length} onClick={undoEdit}><Undo2 size={14}/> Undo</button>
+                <button type="button" disabled={!redoPlans.length} onClick={redoEdit}><Redo2 size={14}/> Redo</button>
+              </div>
+              <div className={"pro-editor-segment-card" + (selectedSegment ? " active" : "")}>
+                <div className="pro-editor-segment-card-copy">
+                  <span>Selected segment</span>
+                  <b>{selectedDisplaySegment ? selectedDisplaySegment.visibleStart.toFixed(1) + "s – " + selectedDisplaySegment.visibleEnd.toFixed(1) + "s" : "Click a timeline segment"}</b>
+                  {selectedSegment && <small>Order {selectedOrderPosition + 1} of {segmentOrder.length}{selectedSegmentHasTrim ? " · source " + selectedSegment.start.toFixed(1) + "s – " + selectedSegment.end.toFixed(1) + "s" : ""}</small>}
+                </div>
+                <div className="pro-editor-segment-card-actions">
+                  <button type="button" className="reorder-step" onClick={() => moveSelectedSegment(-1)} disabled={!selectedSegment || selectedSegmentRemoved || selectedOrderPosition <= 0} title="Move segment earlier"><ArrowLeft size={13}/> Earlier</button>
+                  <button type="button" className="reorder-step" onClick={() => moveSelectedSegment(1)} disabled={!selectedSegment || selectedSegmentRemoved || selectedOrderPosition < 0 || selectedOrderPosition >= segmentOrder.length - 1} title="Move segment later">Later <ArrowRight size={13}/></button>
+                  {selectedSegmentHasTrim && <button type="button" className="reset-trim" onClick={resetSelectedSegmentTrim} title="Restore this segment to its split boundaries">Reset trim</button>}
+                  <button type="button" onClick={deleteSelectedSegment} disabled={!selectedSegment || selectedSegmentRemoved} title="Delete selected segment from video, audio and captions"><Trash2 size={14}/>{selectedSegmentRemoved ? "Removed" : "Delete"}</button>
+                </div>
+              </div>
+              <div className="pro-editor-field">
+                <label>Precise trim</label>
+                <div className="trim-inputs">
+                  <div><span>Start</span><input type="number" step=".1" min="0" max={end-1} value={start} onChange={event => { const value=Number(event.target.value); setStart(value); if(videoRef.current) videoRef.current.currentTime=value; }}/></div>
+                  <div><span>End</span><input type="number" step=".1" min={start+1} max={project.duration} value={end} onChange={event => setEnd(Number(event.target.value))}/></div>
+                </div>
+              </div>
+              <div className="pro-editor-stat-grid"><span><small>Source</small><b>{Math.max(0,end-start).toFixed(1)}s</b></span><span><small>Edited</small><b>{editedDuration.toFixed(1)}s</b></span><span><small>Words</small><b>{sourceWords.length}</b></span></div>
+              <div className="pro-editor-help-card"><Scissors size={15}/><div><b>Non-destructive edit plan</b><p>Word and pause removals stay reversible and are reused by export.</p></div></div>
+            </div>
+          </>}
+          {activeTool === "captions" && <>
+            <div className="pro-editor-inspector-head"><span>CAPTIONS</span><h3>Layout & language</h3></div>
+            <div className="pro-editor-inspector-scroll">
+              <div className="toggle-row pro-editor-toggle">
+                <div><b>India Quality Mode</b><span>{indiaQualityHint || "Hindi, Hinglish and Indian English defaults"}</span></div>
+                <button className={indiaQualityMode ? "on" : ""} aria-pressed={indiaQualityMode} onClick={() => setIndiaQualityMode(value => !value)}><i/></button>
+              </div>
+              {indiaQualityMode && <div className="pro-editor-field">
+                <label>Caption language style</label>
+                <select value={captionLanguageStyle} onChange={event => setCaptionLanguageStyle(event.target.value as CaptionLanguageStyle)}>
+                  <option value="auto">Auto</option><option value="roman_hinglish">Roman Hinglish</option><option value="original">Original transcript</option>
+                </select>
+              </div>}
+              <div className="pro-editor-field">
+                <div className="caption-control-head"><label><MoveHorizontal size={13}/> Caption placement</label><button type="button" onClick={resetCaptionLayout} disabled={captionY===null && captionPosition==="bottom" && captionX===50 && captionScale===1 && captionAlignment==="center"}>Reset</button></div>
+                <div className="segmented three caption-presets"><button type="button" className={captionY===null && captionPosition==="bottom" ? "active" : ""} onClick={() => captionPreset("bottom")}>Lower</button><button type="button" className={captionY===null && captionPosition==="center" ? "active" : ""} onClick={() => captionPreset("center")}>Centre</button><button type="button" className={captionY===null && captionPosition==="above" ? "active" : ""} onClick={() => captionPreset("above")}>Upper</button></div>
+                <div className="caption-placement-status"><span>{captionY===null ? "Preset placement" : "Custom · X " + Math.round(captionX) + "% · Y " + Math.round(captionY) + "%"}</span><b>Drag caption on preview</b></div>
+                <p className="field-note">Drag caption on preview. ClipKaro keeps it inside the safe zone and applies the placement to every caption in this Short.</p>
+              </div>
+              <div className="pro-editor-field">
+                <div className="caption-size-heading"><label>Caption size</label><b>{Math.round(captionScale*100)}%</b></div>
+                <div className="zoom-control caption-size-control">
+                  <button type="button" aria-label="Make caption smaller" disabled={captionScale<=.65} onClick={() => setCaptionScale(value => clamp(Number((value-.05).toFixed(2)),.65,1.6))}><ZoomOut size={15}/></button>
+                  <input aria-label="Caption size" type="range" min=".65" max="1.6" step=".05" value={captionScale} onChange={event => setCaptionScale(Number(event.target.value))}/>
+                  <button type="button" aria-label="Make caption larger" disabled={captionScale>=1.6} onClick={() => setCaptionScale(value => clamp(Number((value+.05).toFixed(2)),.65,1.6))}><ZoomIn size={15}/></button>
+                </div>
+                <div className="caption-size-scale"><span>65%</span><span>100%</span><span>160%</span></div>
+              </div>
 
-        <aside className="editor-panel">
-          <div className="editor-tabs">
-            {(["style", "transcript", "export"] as Tab[]).map(tab => <button key={tab} className={activeTab === tab ? "active" : ""} onClick={() => setActiveTab(tab)}>{tab}</button>)}
-          </div>
 
-          {activeTab === "style" && <>
-            {sourceHasCaptions && <div className="editor-section"><p className="field-note"><b>Existing subtitles detected.</b> Source pixels stay unchanged; ClipKaro captions are placed above them.</p></div>}
-            <div className="editor-section"><label>Hook text</label><textarea value={hook} onChange={event => setHook(event.target.value)} maxLength={120} /><div className="input-count">{hook.length}/120</div></div>
-            {brandKits.length > 0 && <div className="editor-section"><label><Palette size={13}/> Brand kit</label><select value={brandKitId} onChange={event => { const id = event.target.value; setBrandKitId(id); const kit = brandKits.find(item => item.id === id); if (kit && styles.some(style => style[0] === kit.caption_preset)) setCaptionStyle(kit.caption_preset); }}><option value="">No brand kit</option>{brandKits.map(kit => <option key={kit.id} value={kit.id}>{kit.name}{kit.is_default ? " · Default" : ""}</option>)}</select><p className="field-note">Applies your saved wordmark, brand color and preferred caption personality to this export.</p></div>}
-            <div className="editor-section"><label>Caption personality — preview changes instantly</label><div className="style-options">{styles.map(style => <button type="button" className={captionStyle === style[0] ? "active" : ""} onClick={() => setCaptionStyle(style[0])} key={style[0]}><span className={`style-swatch ${style[0]}`}>Aa</span><div><b>{style[1]}</b><small>{style[2]}</small></div>{captionStyle === style[0] && <Check size={14} />}</button>)}</div></div>
-            <div className="editor-section"><label>Canvas ratio</label><div className="ratio-options">{[["9:16", Smartphone, "Shorts"], ["4:5", AlignCenter, "Feed"], ["1:1", Square, "Square"]].map(([value, Icon, name]) => <button type="button" key={value as string} className={ratio === value ? "active" : ""} onClick={() => setRatio(value as string)}><Icon size={17} /><b>{value as string}</b><small>{name as string}</small></button>)}</div></div>
-            <div className="editor-section"><label><MoveHorizontal size={13} /> Manual reframe: {focusX}%</label><input className="focus-slider" type="range" min="0" max="100" value={focusX} onChange={event => setFocusX(Number(event.target.value))} /><div className="focus-labels"><span>Left</span><span>Centre</span><span>Right</span></div></div>
-            <div className="editor-section"><label>Caption position</label><div className="segmented three"><button className={captionPosition === "bottom" ? "active" : ""} onClick={() => setCaptionPosition("bottom")}>Lower</button><button className={captionPosition === "above" ? "active" : ""} onClick={() => setCaptionPosition("above")}>Above</button><button className={captionPosition === "center" ? "active" : ""} onClick={() => setCaptionPosition("center")}>Centre</button></div></div>
+              <div className="pro-editor-field">
+                <div className="caption-size-heading caption-align-heading"><label>Text alignment</label><b>{captionAlignment}</b></div>
+                <div className="segmented three caption-align-controls" role="group" aria-label="Caption text alignment">
+                  <button type="button" className={captionAlignment==="left" ? "active" : ""} onClick={() => setCaptionAlignment("left")}><AlignLeft size={14}/> Left</button>
+                  <button type="button" className={captionAlignment==="center" ? "active" : ""} onClick={() => setCaptionAlignment("center")}><AlignCenter size={14}/> Centre</button>
+                  <button type="button" className={captionAlignment==="right" ? "active" : ""} onClick={() => setCaptionAlignment("right")}><AlignRight size={14}/> Right</button>
+                </div>
+                <p className="field-note caption-reflow-note"><Check size={12}/> Text wraps and reflows automatically as caption size changes.</p>
+              </div>
+              <div className="toggle-row pro-editor-toggle">
+                <div><b>Preserve source captions</b><span>{sourceHasCaptions ? "Detected near " + Math.round((sourceCaptionBand ?? .82)*100) + "% height" : "Use when source already contains subtitles"}</span></div>
+                <button className={preserveSourceCaptions ? "on" : ""} aria-pressed={preserveSourceCaptions} onClick={() => setPreserveSourceCaptions(value => !value)}><i/></button>
+              </div>
+            </div>
           </>}
 
-          {activeTab === "transcript" && <>
-            <div className="editor-section"><label>Editable transcript</label><textarea className="transcript-editor" value={transcript} onChange={event => setTranscript(event.target.value)} /><p className="field-note">Changes appear in the live caption preview and are saved with this clip.</p></div>
-            <div className="editor-section"><label>Clip title</label><input value={title} onChange={event => setTitle(event.target.value)} /></div>
-            <div className="editor-section"><label>Precise trim</label><div className="trim-inputs"><div><span>Start</span><input type="number" step=".1" min="0" max={end - 1} value={start} onChange={event => { const value = Number(event.target.value); setStart(value); if (videoRef.current) videoRef.current.currentTime = value; }} /></div><div><span>End</span><input type="number" step=".1" min={start + 1} max={project.duration} value={end} onChange={event => setEnd(Number(event.target.value))} /></div></div></div>
+          {activeTool === "frame" && <>
+            <div className="pro-editor-inspector-head"><span>FRAME</span><h3>Reframe & zoom</h3></div>
+            <div className="pro-editor-inspector-scroll">
+              <div className="pro-editor-field">
+                <label><MoveHorizontal size={13}/> Manual reframe: {focusX}%</label>
+                <input className="focus-slider" type="range" min="0" max="100" value={focusX} onChange={event => setFocusX(Number(event.target.value))}/>
+                <div className="focus-labels"><span>Left</span><span>Centre</span><span>Right</span></div>
+              </div>
+              <div className={"pro-editor-field zoom-section" + (preserveSourceCaptions ? " disabled" : "")}>
+                <div className="zoom-heading"><label><ZoomIn size={13}/> Video zoom: {Math.round(zoom*100)}%</label><button className="zoom-reset" type="button" disabled={preserveSourceCaptions || zoom===1} onClick={() => setZoom(1)}>Reset</button></div>
+                <div className="zoom-control">
+                  <button type="button" aria-label="Zoom out" disabled={preserveSourceCaptions || zoom<=1} onClick={() => setZoom(value => clamp(Number((value-.05).toFixed(2)),1,2))}><ZoomOut size={15}/></button>
+                  <input aria-label="Video zoom" type="range" min="1" max="2" step=".05" value={zoom} disabled={preserveSourceCaptions} onChange={event => setZoom(Number(event.target.value))}/>
+                  <button type="button" aria-label="Zoom in" disabled={preserveSourceCaptions || zoom>=2} onClick={() => setZoom(value => clamp(Number((value+.05).toFixed(2)),1,2))}><ZoomIn size={15}/></button>
+                </div>
+                <div className="zoom-scale"><span>100%</span><span>150%</span><span>200%</span></div>
+                {preserveSourceCaptions && <p className="zoom-safe-note"><AlertTriangle size={12}/><span>Zoom stays at 100% while original captions are preserved.</span></p>}
+              </div>
+              <div className="pro-editor-help-card"><MoveHorizontal size={15}/><div><b>Export-safe framing</b><p>Ratio, horizontal focus and zoom use the current renderer contract.</p></div></div>
+            </div>
+          </
+>}
+
+          {activeTool === "brand" && <>
+            <div className="pro-editor-inspector-head"><span>BRAND</span><h3>Current brand</h3></div>
+            <div className="pro-editor-inspector-scroll">
+              {selectedBrandKit ? <>
+                <div className="pro-editor-brand-preview" style={{ borderColor: selectedBrandKit.primary_color }}><span style={{ background: selectedBrandKit.primary_color }}/><b>{selectedBrandKit.logo_text || selectedBrandKit.name}</b></div>
+                <div className="pro-editor-stat-grid"><span><small>Preset</small><b>{selectedBrandKit.caption_preset}</b></span><span><small>Default</small><b>{selectedBrandKit.is_default ? "Yes" : "No"}</b></span></div>
+              </> : <div className="pro-editor-empty-card">No Brand Kit is applied. Export stays clean and uses the current caption style.</div>}
+            </div>
           </>}
 
-          {activeTab === "export" && <>
-            <div className="editor-section"><label>Export quality</label><select value={resolution} onChange={event => setResolution(event.target.value)}><option value="720p">720p · Fast and efficient</option><option value="1080p">1080p · Any paid plan</option></select></div>
-            <div className="export-summary"><span>Format <b>{ratio}</b></span><span>Duration <b>{Math.round(end - start)}s</b></span><span>Captions <b>{styles.find(style => style[0] === captionStyle)?.[1]}</b></span><span>Focus <b>{focusX}%</b></span><span>Brand <b>{selectedBrandKit?.name || "None"}</b></span></div>
-            <div className="toggle-row"><div><b>ClipKaro watermark</b><span>Required only on Free</span></div><button className={watermark ? "on" : ""} onClick={() => setWatermark(!watermark)}><i /></button></div>
-            <button className="primary-btn render-panel-button" onClick={render}><Sparkles size={15} /> Render verified Short</button>
+          {activeTool === "export" && <>
+            <div className="pro-editor-inspector-head"><span>EXPORT</span><h3>Render settings</h3></div>
+            <div className="pro-editor-inspector-scroll">
+              <div className="pro-editor-field"><label>Export quality</label><select value={resolution} onChange={event => setResolution(event.target.value)}><option value="720p">720p · Fast and efficient</option><option value="1080p">1080p · Any paid plan</option></select></div>
+              <div className="toggle-row pro-editor-toggle"><div><b>ClipKaro watermark</b><span>{freePlan ? "Required on Free" : "Optional on your paid plan"}</span></div><button className={watermark ? "on" : ""} aria-pressed={watermark} disabled={freePlan} onClick={() => { if(!freePlan) setWatermark(value => !value); }}><i/></button></div>
+              <button className="primary-btn pro-editor-render-button" onClick={render} disabled={renderBusy}>{renderBusy ? <Loader2 className="spin" size={15}/> : <Sparkles size={15}/>} {startingRender ? "Starting securely…" : renderBusy ? "Rendering Short…" : "Render verified Short"}</button>
+              <p className="pro-editor-note">Your export keeps the same crop, captions, edit plan, brand and quality settings shown in this workspace.</p>
+            </div>
           </>}
         </aside>
       </div>
 
+      <section className={"pro-editor-timeline" + (timelineScrubbing ? " scrubbing" : "") + (trimmingSegment ? " trimming" : "") + (draggedSegmentIndex !== null ? " reordering" : "")}>
+        <div className="pro-editor-timeline-toolbar">
+          <div className="pro-editor-timeline-play">
+            <button type="button" onClick={togglePlayback}>{playing ? <Pause size={14} fill="currentColor"/> : <Play size={14} fill="currentColor"/>}</button>
+            <b>{playheadOffset.toFixed(1)}s</b><span>/ {editedDuration.toFixed(1)}s</span>
+          </div>
+          <div className="pro-editor-timeline-actions">
+            <button type="button" onClick={splitAtPlayhead} title="Split at playhead (S)"><Scissors size={13}/> Split</button>
+            <button type="button" className="danger" onClick={deleteSelectedSegment} disabled={!selectedSegment || selectedSegmentRemoved} title="Delete selected segment (Delete)"><Trash2 size={13}/> Delete segment</button>
+            <span>Space Play · S Split · Delete Remove · Drag yellow edges Trim · Grip & drag Reorder · Ctrl+Z Undo</span>
+          </div>
+          <div className="pro-editor-timeline-status"><span>{editedDuration.toFixed(1)} sec edited</span><span className="timeline-removal-summary">{editPlan.removed_ranges.length} removals</span><span>{editPlan.split_points.length} split markers</span></div>
+        </div>
+        <div className="pro-editor-ruler">
+          <span className="pro-editor-track-label"/>
+          <div>{timelineTicks.map((tick, index) => <span key={index} style={{ left: String(index/6*100) + "%" }}>{tick.toFixed(1)}s</span>)}</div>
+        </div>
+        <div className="pro-editor-track-row">
+          <span className="pro-editor-track-label">Video</span>
+          <div
+            ref={videoTrackRef}
+            className="pro-editor-video-track interactive"
+            onPointerDown={beginTimelineScrub}
+            onPointerMove={moveTimelineScrub}
+            onPointerUp={endTimelineScrub}
+            onPointerCancel={endTimelineScrub}
+            title="Click or drag to seek. Use the grip on a segment to reorder it."
+          >
+            {visualTimelineLayout.segments.map(segment => {
+              const index = segment.sourceIndex;
+              const blockStart = segment.visualStart + (segment.visibleStart - segment.start);
+              const blockEnd = segment.visualStart + (segment.visibleEnd - segment.start);
+              return <div
+                className={"pro-editor-video-segment" +
+                  (selectedSegmentIndex === index ? " selected" : "") +
+                  (segment.visibleStart > segment.start + .01 || segment.visibleEnd < segment.end - .01 ? " trimmed" : "") +
+                  (segment.fullyRemoved ? " removed" : "") +
+                  (draggedSegmentIndex === index ? " dragging" : "") +
+                  (dragOverSegmentIndex === index && draggedSegmentIndex !== index ? " drop-target" : "")}
+                key={"segment-"+index}
+                style={{
+                  left:String(blockStart/visualTimelineLayout.duration*100)+"%",
+                  width:String(Math.max((blockEnd-blockStart)/visualTimelineLayout.duration*100,.6))+"%",
+                }}
+                onDragOver={event => overSegmentReorder(event,index)}
+                onDragEnter={event => overSegmentReorder(event,index)}
+                onDrop={event => finishSegmentReorder(event,index)}
+              >
+                <span>{index+1}</span>
+                {!segment.fullyRemoved && <button
+                  type="button"
+                  className="segment-reorder-grip"
+                  draggable
+                  aria-label={"Drag segment " + String(index+1) + " to reorder"}
+                  title="Drag to reorder segment"
+                  onPointerDown={event => event.stopPropagation()}
+                  onDragStart={event => beginSegmentReorder(event,index)}
+                  onDragEnd={cancelSegmentReorder}
+                ><GripVertical size={12}/></button>}
+                {selectedSegmentIndex === index && !segment.fullyRemoved && <>
+                  <button
+                    type="button"
+                    draggable={false}
+                    className="segment-trim-handle left"
+                    aria-label={"Trim start of segment " + String(index+1)}
+                    title="Drag to trim segment start"
+                    onPointerDown={event => beginSegmentTrim(event,index,"left")}
+                    onPointerMove={moveSegmentTrim}
+                    onPointerUp={event => finishSegmentTrim(event)}
+                    onPointerCancel={event => finishSegmentTrim(event,true)}
+                    onClick={event => event.stopPropagation()}
+                  ><i/></button>
+                  <button
+                    type="button"
+                    draggable={false}
+                    className="segment-trim-handle right"
+                    aria-label={"Trim end of segment " + String(index+1)}
+                    title="Drag to trim segment end"
+                    onPointerDown={event => beginSegmentTrim(event,index,"right")}
+                    onPointerMove={moveSegmentTrim}
+                    onPointerUp={event => finishSegmentTrim(event)}
+                    onPointerCancel={event => finishSegmentTrim(event,true)}
+                    onClick={event => event.stopPropagation()}
+                  ><i/></button>
+                </>}
+              </div>;
+            })}
+            {visualRemovedRanges.map((range,index) => <span className="timeline-removal" key={"video-removal-"+index} style={{ left:String(range.start/visualTimelineLayout.duration*100)+"%", width:String((range.end-range.start)/visualTimelineLayout.duration*100)+"%" }}/>)}
+            {visualTimelineLayout.segments.slice(0,-1).map((segment,index) => <span className="timeline-split" key={"video-output-split-"+index} style={{ left:String(segment.visualEnd/visualTimelineLayout.duration*100)+"%" }}/>)}
+            <span className="pro-editor-playhead" style={{ left:String(playheadPercent)+"%" }}/>
+          </div>
+        </div>
+        <div className="pro-editor-track-row">
+          <span className="pro-editor-track-label">Audio</span>
+          <div
+            className="waveform smart-waveform pro-editor-audio-track interactive"
+            onPointerDown={beginTimelineScrub}
+            onPointerMove={moveTimelineScrub}
+            onPointerUp={endTimelineScrub}
+            onPointerCancel={endTimelineScrub}
+            title="Click or drag to seek"
+          >
+            {Array.from({length:96}).map((_,i)=><i key={i} style={{height:String(10+Math.abs(Math.sin(i*.63))*28)+"px"}}/>)}
+            {visualRemovedRanges.map((range,index) => <span className="timeline-removal" key={"audio-removal-"+index} style={{ left:String(range.start/visualTimelineLayout.duration*100)+"%", width:String((range.end-range.start)/visualTimelineLayout.duration*100)+"%" }}/>)}
+            {visualTimelineLayout.segments.slice(0,-1).map((segment,index) => <span className="timeline-split" key={"audio-output-split-"+index} style={{ left:String(segment.visualEnd/visualTimelineLayout.duration*100)+"%" }}/>)}
+            <span className="pro-editor-playhead" style={{ left:String(playheadPercent)+"%" }}/>
+          </div>
+        </div>
+        <div className="pro-editor-track-row">
+          <span className="pro-editor-track-label">Captions</span>
+          <div
+            className="pro-editor-caption-track interactive"
+            onPointerDown={beginTimelineScrub}
+            onPointerMove={moveTimelineScrub}
+            onPointerUp={endTimelineScrub}
+            onPointerCancel={endTimelineScrub}
+            title="Click or drag to seek"
+          >
+            {timelineCaptionBlocks.map((block,index) => <span key={"caption-"+index} style={{ left:String(block.start/visualTimelineLayout.duration*100)+"%", width:String(Math.max((block.end-block.start)/visualTimelineLayout.duration*100,.4))+"%" }} title={block.text} />)}
+            <span className="pro-editor-playhead" style={{ left:String(playheadPercent)+"%" }}/>
+          </div>
+        </div>
+      </section>
+
       {error && <div className={`floating-error ${error === "Saved" ? "success" : ""}`}>{error}</div>}
-      {job && <div className="export-drawer"><div className="export-icon">{job.status === "completed" ? <Check /> : job.status === "failed" ? <span>!</span> : <Loader2 className="spin" />}</div><div><b>{job.status === "completed" ? "Your Short is ready" : job.status === "failed" ? job.error || job.message : job.message}</b><span>{job.status === "completed" ? "The downloaded MP4 matches this crop and caption style" : `${job.progress}% complete`}</span><div className="progress"><i style={{ width: `${job.progress}%` }} /></div></div>{job.status === "completed" && <a className="primary-btn" href={`${API_URL}/exports/${exportId}/download`} onClick={() => recordDownload(exportId)}><Download size={15} />Download MP4</a>}</div>}
-    </AppShell>
+      {job && !drawerDismissed && <div className="export-drawer"><div className="export-icon">{job.status === "completed" ? <Check /> : job.status === "failed" ? <span>!</span> : <Loader2 className="spin" />}</div><div><b>{job.status === "completed" ? "Your Short is ready" : job.status === "failed" ? job.error || job.message : job.message}</b><span>{job.status === "completed" ? "The downloaded MP4 matches this crop, zoom and caption style" : `${job.progress}% complete`}</span><div className="progress"><i style={{ width: `${job.progress}%` }} /></div></div>{job.status === "completed" && <div className="post-karo-drawer-actions">
+        <button className="secondary-btn" type="button" onClick={downloadReadyExport} disabled={downloading}>{downloading ? <Loader2 className="spin" size={15}/> : <Download size={15}/>} {downloading ? "Preparing…" : "Download MP4"}</button>
+        <button className={postKaro?.ready ? "primary-btn" : "post-karo-locked-btn"} type="button" onClick={openPostKaro}>{postKaro?.ready ? <Send size={15}/> : <LockKeyhole size={14}/>} Post Now</button>
+        {showPostKaroPrompt && <div className="post-karo-gate-backdrop" onMouseDown={() => setShowPostKaroPrompt(false)}>
+          <div className="post-karo-gate-card" onMouseDown={event => event.stopPropagation()}>
+            <div className="post-karo-gate-icon"><Send/></div>
+            <span>POST KARO</span>
+            <h3>Set up Post Karo first</h3>
+            <p>Post Karo is free on every ClipKaro plan. Connect Instagram or YouTube once, then publish finished Shorts directly from ClipKaro.</p>
+            <div><button className="secondary-btn" type="button" onClick={() => setShowPostKaroPrompt(false)}>Not now</button><button className="primary-btn" type="button" onClick={() => router.push("/post-karo?export=" + encodeURIComponent(exportId))}>Set up Post Karo <ArrowRight size={14}/></button></div>
+          </div>
+        </div>}
+      </div>}<button className="export-drawer-close" type="button" aria-label="Dismiss export status" onClick={() => setDrawerDismissed(true)}><X size={15}/></button></div>}
+    </div>
   );
 }
