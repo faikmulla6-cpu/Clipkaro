@@ -173,6 +173,7 @@ async def _render_export_durable(
                 caption_scale=request.caption_scale,
                 caption_alignment=request.caption_alignment,
                 edit_ranges=kept_ranges(plan,clip["end_time"]-clip["start_time"]),
+                layout_mode=request.layout_mode,
             )
         except Exception as exc:
             # Keep the creator-facing failure generic, but preserve the actual

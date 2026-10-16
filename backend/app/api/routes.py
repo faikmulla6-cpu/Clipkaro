@@ -670,6 +670,7 @@ async def _render_export(job_id:str,export_id:str,clip:dict,video:dict,request:E
             caption_scale=request.caption_scale,
             caption_alignment=request.caption_alignment,
             edit_ranges=kept_ranges(plan,clip["end_time"]-clip["start_time"]),
+            layout_mode=request.layout_mode,
         )
         await update_job(job_id,92,"optimizing","Optimizing MP4 for fast social upload")
         await execute("UPDATE exports SET status='ready',progress=100 WHERE id=?",(export_id,))

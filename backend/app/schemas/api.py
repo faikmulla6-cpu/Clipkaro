@@ -117,6 +117,7 @@ class ExportRequest(BaseModel):
     resolution: str = Field(default="720p", pattern="^(720p|1080p)$")
     aspect_ratio: str = Field(default="9:16", pattern="^(9:16|1:1|4:5)$")
     caption_style: str = Field(default="kinetic", pattern="^(kinetic|clean|bold|minimal|hindi-pop)$")
+    layout_mode: str = Field(default="classic", pattern="^(classic|auto|dual_stack|speaker_focus)$")
     hook_text: str | None = Field(default=None, max_length=120)
     hook_enabled: bool = True
     watermark: bool = True

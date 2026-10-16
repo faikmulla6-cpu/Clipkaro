@@ -82,6 +82,7 @@ media_image = (
     # remains fail-closed if ClamAV cannot inspect an uploaded media object.
     .run_commands("freshclam --stdout")
     .pip_install_from_requirements("requirements.txt")
+    .pip_install("numpy==2.1.3", "opencv-python-headless==4.11.0.86")
     # copy=True is required because workdir/env are additional image steps.
     .add_local_dir(".", "/root/clipkaro", ignore=SOURCE_IGNORE, copy=True)
     .workdir("/root/clipkaro")
