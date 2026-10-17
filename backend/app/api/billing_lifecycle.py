@@ -346,8 +346,25 @@ async def _apply_provider_entity(
         return user
 
     if resolved_plan and resolved_plan != user.get("plan"):
+        old_plan = str(user.get("plan") or "free")
+        same_subscription = (
+            old_plan in SUBSCRIPTION_PLANS
+            and str(user.get("billing_reference") or "") == reference
+            and reference.startswith("sub_")
+        )
+        # Starting a NEW subscription (Free/Mini Pass -> paid, or a new
+        # subscription reference) MUST create a fresh billing period. Carrying
+        # Free or Mini Pass reservations into it can immediately exhaust the
+        # newly purchased plan. A paid plan-change within the same subscription
+        # and billing cycle DOES carry its usage forward.
+        old_cycle = parse_iso(user.get("plan_started_at"))
+        new_cycle = parse_iso(current_start)
+        same_cycle = bool(
+            old_cycle and new_cycle
+            and abs((old_cycle - new_cycle).total_seconds()) < 2
+        )
         if pending and str(pending.get("to_plan")) == resolved_plan:
-            # A scheduled downgrade has become live at the new billing cycle.
+            # Scheduled downgrades take effect in the NEW cycle.
             await activate_entitlement(
                 str(user["id"]), resolved_plan, reference,
                 period_start=current_start, period_end=current_end,
@@ -355,10 +372,20 @@ async def _apply_provider_entity(
             )
             await _clear_pending_change(str(user["id"]))
             user = await fetch_one("SELECT * FROM users WHERE id=?", (user["id"],)) or user
-        else:
-            # Provider/local drift (for example a successful immediate upgrade whose
-            # response was lost) is reconciled without resetting current usage.
+        elif same_subscription and same_cycle:
+            # Razorpay can confirm an immediate, same-cycle upgrade before the
+            # checkout response reaches our server. Preserve this cycle's
+            # reservations rather than gifting another allowance.
             user = await _migrate_usage_and_activate(user, resolved_plan, entity)
+        else:
+            # First purchase, replacement subscription, or new paid cycle.
+            # Preserve prior ledgers under their original period keys.
+            await activate_entitlement(
+                str(user["id"]), resolved_plan, reference,
+                period_start=current_start, period_end=current_end,
+                cancel_at_period_end=False,
+            )
+            user = await fetch_one("SELECT * FROM users WHERE id=?", (user["id"],)) or user
     else:
         # Keep billing dates fresh, but do not map generic provider
         # has_scheduled_changes to ClipKaro's cancellation flag.
