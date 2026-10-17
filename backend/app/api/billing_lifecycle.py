@@ -13,7 +13,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from app.core.config import get_settings
-from app.core.database import distributed_advisory_lock, execute, fetch_one, run_in_transaction
+from app.core.database import distributed_advisory_lock, execute, fetch_all, fetch_one, run_in_transaction
 from app.services.auth import current_user
 from app.services.billing import (
     PAID_PLANS,
@@ -283,6 +283,83 @@ async def _migrate_usage_and_activate(
     return await fetch_one("SELECT * FROM users WHERE id=?", (user["id"],)) or new_user
 
 
+async def _has_paid_current_cycle(user: dict[str, Any], entity: dict[str, Any]) -> bool:
+    """Recognize a captured, non-refunded cycle even after AutoPay is revoked.
+
+    Provider subscription status controls *future recurring charges*, whereas
+    a verified subscription.charged event proves the current cycle was paid.
+    Never rely on paid_count by itself (it also counts historical cycles).
+    """
+    reference = str(entity.get("id") or "")
+    started = parse_iso(_epoch_to_iso(entity.get("current_start")))
+    ends = parse_iso(_epoch_to_iso(entity.get("current_end")))
+    if not reference.startswith("sub_") or not started or not ends:
+        return False
+    if started > utc_now() or ends <= utc_now() or ends <= started:
+        return False
+    checkout = await fetch_one(
+        """SELECT plan,verified_at FROM billing_checkouts
+           WHERE user_id=? AND kind='subscription' AND provider_reference=?""",
+        (str(user["id"]), reference),
+    )
+    if not checkout or str(checkout.get("plan") or "") not in SUBSCRIPTION_PLANS:
+        return False
+    rows = await fetch_all(
+        """SELECT payload_json FROM payment_events
+           WHERE user_id=? AND event_type='subscription.charged' AND status='verified'
+           ORDER BY created_at DESC LIMIT 60""",
+        (str(user["id"]),),
+    )
+    for row in rows:
+        try:
+            event = json.loads(str(row.get("payload_json") or "{}"))
+            block = event.get("payload") or {}
+            paid_subscription = (block.get("subscription") or {}).get("entity") or {}
+            payment = (block.get("payment") or {}).get("entity") or {}
+            event_start = parse_iso(_epoch_to_iso(paid_subscription.get("current_start")))
+            event_end = parse_iso(_epoch_to_iso(paid_subscription.get("current_end")))
+            amount = int(payment.get("amount") or 0)
+            refunded = int(payment.get("amount_refunded") or 0)
+            if (str(paid_subscription.get("id") or "") != reference
+                or event_start != started or event_end != ends
+                or str(payment.get("status") or "") != "captured"
+                or not bool(payment.get("captured", True))
+                or str(payment.get("currency") or "").upper() != "INR"
+                or amount <= 0 or refunded >= amount):
+                continue
+            pay_id = str(payment.get("id") or "")
+            if not pay_id:
+                continue
+            # Refund webhooks are independently signed and stored in our
+            # payment ledger. A full processed refund ends this paid grant.
+            refund_rows = await fetch_all(
+                """SELECT payload_json FROM payment_events
+                   WHERE event_type IN ('refund.processed','payment.refunded')
+                   ORDER BY created_at DESC LIMIT 300""",
+            )
+            processed: dict[str, int] = {}
+            fully_refunded = False
+            for refund_row in refund_rows:
+                try:
+                    refund_event = json.loads(str(refund_row.get("payload_json") or "{}"))
+                    refund_payload = refund_event.get("payload") or {}
+                    refund_payment = (refund_payload.get("payment") or {}).get("entity") or {}
+                    refund = (refund_payload.get("refund") or {}).get("entity") or {}
+                    if str(refund_payment.get("id") or refund.get("payment_id") or "") != pay_id:
+                        continue
+                    if int(refund_payment.get("amount_refunded") or 0) >= amount:
+                        fully_refunded = True
+                    if str(refund.get("status") or "") == "processed" and refund.get("id"):
+                        processed[str(refund["id"])] = int(refund.get("amount") or 0)
+                except (ValueError, TypeError, AttributeError):
+                    continue
+            if not fully_refunded and sum(processed.values()) < amount:
+                return True
+        except (ValueError, TypeError, AttributeError, OverflowError):
+            continue
+    return False
+
+
 async def _apply_provider_entity(
     user: dict[str, Any], entity: dict[str, Any], *, allow_provider_followup: bool = True
 ) -> dict[str, Any]:
@@ -303,6 +380,23 @@ async def _apply_provider_entity(
     current_end = _epoch_to_iso(entity.get("current_end")) or user.get("plan_expires_at")
 
     if status in {"cancelled", "completed", "expired"}:
+        # Mandate cancellation can be immediate at Razorpay while the customer
+        # has already paid through current_end. A cancelled subscription must
+        # never create future charges, but captured non-refunded service remains
+        # available until that cycle's paid boundary.
+        active_reference = str(user.get("billing_reference") or "")
+        if active_reference != reference or str(user.get("plan") or "") not in SUBSCRIPTION_PLANS:
+            # A late terminal webhook for an OLD subscription must not revoke a
+            # newer active plan (or a separate Mini Pass).
+            return user
+        if await _has_paid_current_cycle(user, entity):
+            await execute(
+                """UPDATE users SET plan_expires_at=?, cancel_at_period_end=1,
+                   updated_at=? WHERE id=? AND billing_reference=?""",
+                (current_end, utc_now().isoformat(), str(user["id"]), reference),
+            )
+            await _clear_pending_change(str(user["id"]))
+            return await fetch_one("SELECT * FROM users WHERE id=?", (user["id"],)) or user
         await downgrade_to_free(str(user["id"]))
         await _clear_pending_change(str(user["id"]))
         return await fetch_one("SELECT * FROM users WHERE id=?", (user["id"],)) or user
@@ -981,6 +1075,68 @@ def _one_time_payment_state_is_valid(
     return True, expected_status
 
 
+async def _revoke_fully_refunded_subscription_payment(
+    payment: dict[str, Any], refund: dict[str, Any]
+) -> dict[str, Any] | None:
+    """A signed, processed FULL refund revokes only its exact paid cycle.
+
+    Refund events may not carry a user/subscription id. Bind the payment id
+    back to a previously VERIFIED subscription.charged webhook, then ensure
+    the customer is still in that same subscription's billing cycle.
+    """
+    try:
+        payment_id = str(payment.get("id") or "")
+        amount = int(payment.get("amount") or 0)
+        refunded = int(payment.get("amount_refunded") or 0)
+        if (not payment_id or not str(refund.get("id") or "")
+            or str(refund.get("payment_id") or "") != payment_id
+            or str(refund.get("status") or "") != "processed"
+            or str(payment.get("currency") or "").upper() != "INR"
+            or amount <= 0 or refunded < amount):
+            return None
+    except (ValueError, TypeError):
+        return None
+    charged = await fetch_all(
+        """SELECT user_id,payload_json FROM payment_events
+           WHERE event_type='subscription.charged' AND status='verified'
+           ORDER BY created_at DESC LIMIT 600""",
+    )
+    for prior in charged:
+        try:
+            payload = json.loads(str(prior.get("payload_json") or "{}")).get("payload") or {}
+            charged_payment = (payload.get("payment") or {}).get("entity") or {}
+            sub = (payload.get("subscription") or {}).get("entity") or {}
+            ref = str(sub.get("id") or "")
+            if (str(charged_payment.get("id") or "") != payment_id
+                or ref == "" or int(charged_payment.get("amount") or 0) != amount):
+                continue
+            uid = str(prior.get("user_id") or "")
+            user = await fetch_one("SELECT * FROM users WHERE id=?", (uid,))
+            if not user or str(user.get("plan") or "") not in SUBSCRIPTION_PLANS:
+                return None
+            if str(user.get("billing_reference") or "") != ref:
+                return None
+            charged_start = parse_iso(_epoch_to_iso(sub.get("current_start")))
+            user_start = parse_iso(user.get("plan_started_at"))
+            if not charged_start or user_start != charged_start:
+                # A refund for a previous cycle cannot affect a renewal.
+                return None
+            await execute(
+                """UPDATE users SET plan='free', billing_reference=NULL,
+                   plan_started_at=NULL,plan_expires_at=NULL,cancel_at_period_end=0,
+                   updated_at=?
+                   WHERE id=? AND billing_reference=? AND plan_started_at=?""",
+                (utc_now().isoformat(), uid, ref, user.get("plan_started_at")),
+            )
+            await _clear_pending_change(uid)
+            await _audit(uid, "billing.paid_period_fully_refunded",
+                         "subscription", ref, {"amount_paise": amount})
+            return await fetch_one("SELECT * FROM users WHERE id=?", (uid,))
+        except (ValueError, TypeError, AttributeError, OverflowError):
+            continue
+    return None
+
+
 _SUBSCRIPTION_TERMINAL_EVENTS = {
     "subscription.cancelled", "subscription.completed", "subscription.expired",
 }
@@ -1289,6 +1445,17 @@ async def razorpay_webhook(request: Request) -> Response:
                 event_created_at=provider_event_created_at,
                 status=str(subscription.get("status") or event_status),
             )
+
+        # UPI mandate cancellation does not refund the current paid period.
+        # A distinct, signed refund.processed for the full captured charge DOES
+        # end its matched period. Never affect unrelated payments/subscriptions.
+        if event_type == "refund.processed":
+            refund = (provider_payload.get("refund") or {}).get("entity") or {}
+            refunded_user = await _revoke_fully_refunded_subscription_payment(payment, refund)
+            if refunded_user is not None:
+                user = refunded_user
+                event_status = "fully_refunded"
+                resolved_plan = None
 
         # Track non-entitling one-time payment states from signed provider
         # webhooks. Razorpay documents both failed payments and late

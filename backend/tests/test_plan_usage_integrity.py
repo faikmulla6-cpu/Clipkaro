@@ -167,3 +167,170 @@ def test_immediate_cancellation_is_not_assumed_to_be_cycle_end(client):
     asyncio.run(_apply_provider_entity(current, cancelled, allow_provider_followup=False))
     stored = asyncio.run(fetch_one("SELECT plan FROM users WHERE id=?", (user_id,)))
     assert stored["plan"] == "free"
+
+
+# A UPI user can revoke future AutoPay without being refunded for the paid
+# current cycle. Never conflate cancelled mandate with cancelled paid access.
+import json
+
+
+async def _seed_captured_cycle(user_id, plan, subscription_id, *,
+                               refunded=0, event_start=START_EPOCH, event_end=END_EPOCH):
+    amount = PLAN_CATALOG[plan]["price_paise"]
+    await execute(
+        """INSERT INTO billing_checkouts
+           (id,user_id,kind,plan,provider_reference,amount,status,payment_id,created_at,verified_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+        (f"checkout-{subscription_id}",user_id,"subscription",plan,subscription_id,
+         amount,"verified",None,START,START),
+    )
+    payload = json.dumps({"payload":{
+        "subscription":{"entity":{"id":subscription_id,
+            "current_start":event_start,"current_end":event_end,"status":"active"}},
+        "payment":{"entity":{"id":f"pay_{subscription_id}","status":"captured",
+            "captured":True,"amount":amount,"currency":"INR",
+            "amount_refunded":refunded}},
+    }})
+    await execute(
+        """INSERT INTO payment_events
+           (id,provider_event_id,user_id,event_type,plan,amount,status,payload_json,created_at)
+           VALUES (?,?,?,?,?,?,?,?,?)""",
+        (f"paid-{subscription_id}",f"provider-{subscription_id}",user_id,
+         "subscription.charged",plan,amount,"verified",payload,START),
+    )
+
+
+@pytest.mark.parametrize("plan", ["creator", "growth", "pro", "agency"])
+def test_phonepe_autopay_revocation_preserves_paid_period_for_all_tiers(client, plan):
+    uid=signup(client,f"upi-revoked-{plan}@example.com")
+    ref=f"sub_phonepe_{plan}"
+    asyncio.run(make_recurring(uid,plan,ref))
+    asyncio.run(_seed_captured_cycle(uid,plan,ref))
+    old=asyncio.run(fetch_one("SELECT * FROM users WHERE id=?",(uid,)))
+    original_key=usage_period_key(old)
+    asyncio.run(execute(
+        "INSERT INTO usage(id,user_id,month,source_minutes,exports_used,exports_limit) VALUES (?,?,?,?,?,?)",
+        (f"paid-cycle-{plan}",uid,original_key,8.0,2,PLAN_CATALOG[plan]["exports"]),
+    ))
+    changed=asyncio.run(_apply_provider_entity(
+        old,entity(ref,f"plan_{plan}",status="cancelled"),allow_provider_followup=False))
+    assert changed["plan"]==plan
+    assert bool(changed["cancel_at_period_end"]) is True
+    assert usage_period_key(changed)==original_key
+    limits=client.get("/api/v1/usage").json()
+    assert limits["plan"]==plan
+    assert limits["processing_minutes_remaining"]==PLAN_CATALOG[plan]["processing_minutes"]-8
+    status=client.get("/api/v1/billing/status").json()
+    assert status["cancel_at_period_end"] is True
+    assert status["scheduled_plan"]=="free"
+
+
+def test_fully_refunded_cycle_cannot_grant_access(client):
+    uid=signup(client,"upi-refunded@example.com")
+    ref="sub_refunded"
+    asyncio.run(make_recurring(uid,"creator",ref))
+    asyncio.run(_seed_captured_cycle(uid,"creator",ref,
+                                     refunded=PLAN_CATALOG["creator"]["price_paise"]))
+    old=asyncio.run(fetch_one("SELECT * FROM users WHERE id=?",(uid,)))
+    current=asyncio.run(_apply_provider_entity(
+        old,entity(ref,"plan_creator",status="cancelled"),allow_provider_followup=False))
+    assert current["plan"]=="free"
+
+
+def test_prior_period_payment_cannot_grant_new_unpaid_cycle(client):
+    uid=signup(client,"upi-old-cycle@example.com")
+    ref="sub_old_cycle"
+    asyncio.run(make_recurring(uid,"creator",ref))
+    asyncio.run(_seed_captured_cycle(uid,"creator",ref))
+    old=asyncio.run(fetch_one("SELECT * FROM users WHERE id=?",(uid,)))
+    current=asyncio.run(_apply_provider_entity(
+        old,entity(ref,"plan_creator",start=END_EPOCH,end=NEXT_END_EPOCH,
+                   status="cancelled"),allow_provider_followup=False))
+    assert current["plan"]=="free"
+
+
+def test_old_subscription_cancel_cannot_revoke_new_paid_subscription(client):
+    uid=signup(client,"upi-superseded@example.com")
+    asyncio.run(make_recurring(uid,"growth","sub_new_active"))
+    old=asyncio.run(fetch_one("SELECT * FROM users WHERE id=?",(uid,)))
+    result=asyncio.run(_apply_provider_entity(
+        old,entity("sub_old_cancel","plan_creator",status="cancelled"),
+        allow_provider_followup=False))
+    assert result["plan"]=="growth"
+    assert result["billing_reference"]=="sub_new_active"
+
+
+def test_processed_refund_webhook_prevents_paid_cycle_entitlement(client):
+    uid=signup(client,"upi-refund-webhook@example.com")
+    ref="sub_webhook_refund"
+    asyncio.run(make_recurring(uid,"creator",ref))
+    asyncio.run(_seed_captured_cycle(uid,"creator",ref))
+    amount=PLAN_CATALOG["creator"]["price_paise"]
+    refund=json.dumps({"payload":{
+        "payment":{"entity":{"id":f"pay_{ref}","amount":amount,
+                            "amount_refunded":amount}},
+        "refund":{"entity":{"id":"rfnd_test","status":"processed",
+                           "amount":amount,"payment_id":f"pay_{ref}"}}}})
+    asyncio.run(execute(
+        """INSERT INTO payment_events
+           (id,provider_event_id,user_id,event_type,plan,amount,status,payload_json,created_at)
+           VALUES (?,?,?,?,?,?,?,?,?)""",
+        ("refunded-cycle","provider-refunded",uid,
+         "refund.processed","creator",amount,"processed",refund,START),
+    ))
+    old=asyncio.run(fetch_one("SELECT * FROM users WHERE id=?",(uid,)))
+    current=asyncio.run(_apply_provider_entity(
+        old,entity(ref,"plan_creator",status="cancelled"),allow_provider_followup=False))
+    assert current["plan"]=="free"
+
+
+def test_expired_paid_cycle_does_not_extend_paid_access(client):
+    uid=signup(client,"upi-cycle-ended@example.com")
+    ref="sub_cycle_expired"
+    asyncio.run(make_recurring(uid,"creator",ref))
+    asyncio.run(_seed_captured_cycle(uid,"creator",ref,
+                                     event_end=START_EPOCH+100))
+    old=asyncio.run(fetch_one("SELECT * FROM users WHERE id=?",(uid,)))
+    current=asyncio.run(_apply_provider_entity(
+        old,entity(ref,"plan_creator",end=START_EPOCH+100,
+                   status="cancelled"),allow_provider_followup=False))
+    assert current["plan"]=="free"
+
+@pytest.mark.parametrize("plan", ["creator", "growth", "pro", "agency"])
+def test_full_refund_revokes_only_matching_paid_cycle(client, plan):
+    from app.api.billing_lifecycle import _revoke_fully_refunded_subscription_payment
+    uid = signup(client, f"refund-revokes-{plan}@example.com")
+    ref = f"sub_refund_revokes_{plan}"
+    asyncio.run(make_recurring(uid, plan, ref))
+    asyncio.run(_seed_captured_cycle(uid, plan, ref))
+    amount = PLAN_CATALOG[plan]["price_paise"]
+    old = asyncio.run(fetch_one("SELECT * FROM users WHERE id=?", (uid,)))
+    protected = asyncio.run(_apply_provider_entity(
+        old, entity(ref,f"plan_{plan}",status="cancelled"),
+        allow_provider_followup=False,
+    ))
+    assert protected["plan"] == plan
+    actual = asyncio.run(_revoke_fully_refunded_subscription_payment(
+        {"id":f"pay_{ref}","amount":amount,"amount_refunded":amount,"currency":"INR"},
+        {"id":f"rfnd_{ref}","payment_id":f"pay_{ref}","status":"processed",
+         "amount":amount},
+    ))
+    assert actual and actual["plan"] == "free"
+
+
+def test_partial_refund_keeps_paid_cycle(client):
+    from app.api.billing_lifecycle import _revoke_fully_refunded_subscription_payment
+    uid = signup(client,"partial-refund@example.com")
+    ref = "sub_partial_refund"
+    asyncio.run(make_recurring(uid,"creator",ref))
+    asyncio.run(_seed_captured_cycle(uid,"creator",ref))
+    amount = PLAN_CATALOG["creator"]["price_paise"]
+    result = asyncio.run(_revoke_fully_refunded_subscription_payment(
+        {"id":f"pay_{ref}","amount":amount,"amount_refunded":amount-100,
+         "currency":"INR"},
+        {"id":"rfnd_partial","payment_id":f"pay_{ref}","status":"processed",
+         "amount":amount-100},
+    ))
+    assert result is None
+    current = asyncio.run(fetch_one("SELECT plan FROM users WHERE id=?", (uid,)))
+    assert current["plan"] == "creator"
