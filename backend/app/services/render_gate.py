@@ -8,6 +8,7 @@ from typing import Any, AsyncIterator
 
 from app.core.config import get_settings
 from .rendering import render_short
+from .karo_smart_layouts import prepare_smart_layout, VALID_MODES
 from .video import find_media_tool
 
 
@@ -131,6 +132,9 @@ async def render_short_limited(*args: Any, **kwargs: Any) -> None:
     exports behaviorally identical.
     """
     async with media_encode_slot():
+        layout_mode = str(kwargs.pop("layout_mode", "classic"))
+        if layout_mode not in VALID_MODES:
+            raise ValueError("Unsupported Smart Layout mode")
         mutable = list(args)
         keyframes = kwargs.get("crop_keyframes")
         if keyframes is None and len(mutable) > 14:
@@ -165,6 +169,46 @@ async def render_short_limited(*args: Any, **kwargs: Any) -> None:
         # frame and no destructive zoom of the burned-in subtitle band.
         if preserve_requested is True and source_caption_band is not None:
             zoom = 1.0
+
+        # Smart Layout composition runs before caption overlay and Smart Edit
+        # against the original source time range, then returns a clean portrait
+        # temporary source with unchanged original audio.
+        target_ratio = mutable[8] if len(mutable) > 8 else kwargs.get("aspect_ratio", "9:16")
+        if layout_mode != "classic" and target_ratio == "9:16" and preserve_requested is not True:
+            source = Path(mutable[0] if mutable else kwargs["source"])
+            output = Path(mutable[1] if len(mutable) > 1 else kwargs["output"])
+            start = float(mutable[2] if len(mutable) > 2 else kwargs["start"])
+            end = float(mutable[3] if len(mutable) > 3 else kwargs["end"])
+            ffmpeg = find_media_tool("ffmpeg")
+            prepared = await asyncio.to_thread(
+                prepare_smart_layout, source, output, start, end,
+                layout_mode, ffmpeg, 720, 1280,
+                max(30, int(get_settings().media_process_timeout_seconds)),
+            ) if ffmpeg else None
+            if prepared:
+                temp, actual = prepared
+                try:
+                    if mutable:
+                        mutable[0], mutable[2], mutable[3] = temp, 0., end-start
+                        if len(mutable) > 12:
+                            mutable[12] = 50.
+                        if len(mutable) > 14:
+                            mutable[14] = []
+                        if actual == "dual_stack" and len(mutable) > 13:
+                            mutable[13] = "center"
+                    else:
+                        kwargs.update(source=temp, start=0., end=end-start,
+                                      focus_x=50., crop_keyframes=[])
+                    if actual == "dual_stack":
+                        kwargs.update(caption_y=50., caption_x=50.)
+                        if not mutable:
+                            kwargs["caption_position"] = "center"
+                    # The layout already frames the speakers. Original manual
+                    # zoom/keyframes must not destroy those auto face crops.
+                    await render_short(*mutable, **kwargs)
+                finally:
+                    temp.unlink(missing_ok=True)
+                return
 
         if zoom <= 1.001:
             await render_short(*mutable, **kwargs)

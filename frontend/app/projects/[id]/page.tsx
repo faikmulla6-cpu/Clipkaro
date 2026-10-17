@@ -21,7 +21,7 @@ type TranscriptReviewSegment = {
   state: "needs_review" | "reviewed" | "corrected" | "clean"; flagged: boolean; reasons: string[];
 };
 type TranscriptReviewResponse = { language: string; summary: TranscriptReviewSummary; segments: TranscriptReviewSegment[] };
-type Project = { id: string; title: string; status: string; stage?: string; progress?: number; duration: number; language: string; detected_language?: string; clips: Clip[]; transcript_state?: TranscriptState; transcript_review?: TranscriptReviewSummary; source_available?: boolean; upgrade_blocked?: string; error?: string | null; updated_at?: string | null };
+type Project = { id: string; title: string; status: string; stage?: string; progress?: number; duration: number; language: string; detected_language?: string; clips: Clip[]; transcript_state?: TranscriptState; transcript_review?: TranscriptReviewSummary; source_available?: boolean; source_state?: "available" | "missing" | "expired" | "unverified"; upgrade_blocked?: string; error?: string | null; updated_at?: string | null };
 type ReprocessResponse = { job_id: string };
 type ClipPack = {
   clip_id: string; clip_title: string;
@@ -87,10 +87,10 @@ function MomentPreview({ projectId, clip, rank, behaviorSessionId, sourceAvailab
     }
     else { ref.current.pause(); setPlaying(false); }
   }
-  return <div className="moment-preview"><div className="preview-scene real-preview">{sourceAvailable ? <><video ref={ref} src={`${API_URL}/projects/${projectId}/media`} muted playsInline preload="metadata" onLoadedMetadata={loaded} onTimeUpdate={timeUpdate} /><button onClick={toggle}>{playing ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}</button></> : <div className="expired-media-note"><b>Source expired</b><span>Moment metadata is kept, but the private source file has left the retention window.</span></div>}<span className="moment-rank">#{rank} pick</span><span className="time-pill">{formatTime(clip.start_time)} – {formatTime(clip.end_time)}</span></div><div className="score-ring" style={{ "--score": `${clip.score * 3.6}deg` } as React.CSSProperties}><b>{clip.score}</b><small>score</small></div></div>;
+  return <div className="moment-preview"><div className="preview-scene real-preview">{sourceAvailable ? <><video ref={ref} src={`${API_URL}/projects/${projectId}/media`} muted playsInline preload="metadata" onLoadedMetadata={loaded} onTimeUpdate={timeUpdate} /><button onClick={toggle}>{playing ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}</button></> : <div className="expired-media-note"><b>Source temporarily unavailable</b><span>Refresh to recheck the original video in private storage.</span></div>}<span className="moment-rank">#{rank} pick</span><span className="time-pill">{formatTime(clip.start_time)} – {formatTime(clip.end_time)}</span></div><div className="score-ring" style={{ "--score": `${clip.score * 3.6}deg` } as React.CSSProperties}><b>{clip.score}</b><small>score</small></div></div>;
 }
 
-function MomentCard({ projectId, clip, rank, behaviorSessionId, sourceAvailable }: { projectId: string; clip: Clip; rank: number; behaviorSessionId: string; sourceAvailable: boolean }) {
+function MomentCard({ projectId, clip, rank, behaviorSessionId, sourceAvailable, sourceUnverified }: { projectId: string; clip: Clip; rank: number; behaviorSessionId: string; sourceAvailable: boolean; sourceUnverified: boolean }) {
   const articleRef = useRef<HTMLElement | null>(null);
   const impressionLogged = useRef(false);
   useEffect(() => {
@@ -122,7 +122,7 @@ function MomentCard({ projectId, clip, rank, behaviorSessionId, sourceAvailable 
 
   return <article className="moment-card" ref={articleRef}>
     <MomentPreview projectId={projectId} clip={clip} rank={rank} behaviorSessionId={behaviorSessionId} sourceAvailable={sourceAvailable} />
-    <div className="moment-body"><div className="platform-pill"><Target size={12} />{clip.platform}</div><h3>{clip.title}</h3><blockquote>“{clip.hook}”</blockquote><div className="why"><WandSparkles size={14} /><span>{clip.reason}</span></div><div className="score-bars">{Object.entries(clip.score_breakdown).slice(0, 5).map(([key, value]) => <div key={key}><span>{key}</span><i><b style={{ width: `${value}%` }} /></i><strong>{value}</strong></div>)}</div>{sourceAvailable ? <Link href={`/editor/${clip.id}?project=${projectId}`} className="primary-btn">Crop, caption and export <ChevronRight size={15} /></Link> : <Link href="/upload" className="secondary-btn">Upload source again <ChevronRight size={15}/></Link>}</div>
+    <div className="moment-body"><div className="platform-pill"><Target size={12} />{clip.platform}</div><h3>{clip.title}</h3><blockquote>“{clip.hook}”</blockquote><div className="why"><WandSparkles size={14} /><span>{clip.reason}</span></div><div className="score-bars">{Object.entries(clip.score_breakdown).slice(0, 5).map(([key, value]) => <div key={key}><span>{key}</span><i><b style={{ width: `${value}%` }} /></i><strong>{value}</strong></div>)}</div>{sourceAvailable ? <Link href={`/editor/${clip.id}?project=${projectId}`} className="primary-btn">Crop, caption and export <ChevronRight size={15} /></Link> : sourceUnverified ? <button type="button" className="secondary-btn" onClick={() => window.location.reload()}>Retry source check <RefreshCw size={15}/></button> : <Link href="/upload" className="secondary-btn">Upload source again <ChevronRight size={15}/></Link>}</div>
   </article>;
 }
 
@@ -173,7 +173,7 @@ function TranscriptReviewPanel({ projectId, sourceAvailable, summary, onChanged 
     </div>
     {notice && <div className="success-banner">{notice}</div>}
     {open && <div className="transcript-review-body">
-      <div className="review-video">{sourceAvailable ? <video ref={videoRef} src={`${API_URL}/projects/${projectId}/media`} controls preload="metadata" /> : <div className="expired-media-note"><b>Source expired</b><span>Corrections can still be reviewed from saved transcript text.</span></div>}</div>
+      <div className="review-video">{sourceAvailable ? <video ref={videoRef} src={`${API_URL}/projects/${projectId}/media`} controls preload="metadata" /> : <div className="expired-media-note"><b>Video temporarily unavailable</b><span>Corrections can still be reviewed from saved transcript text. Refresh to check storage again.</span></div>}</div>
       <div className="review-list">{state?.segments.length ? state.segments.map(segment => <button type="button" key={segment.index} className={current?.index === segment.index ? "active" : ""} onClick={() => void jump(segment)}><b>{formatTime(segment.start)} - {formatTime(segment.end)}</b><span>{segment.state === "corrected" ? "Corrected" : segment.reasons.join(", ") || "Reviewed"}</span></button>) : <p>No suspicious segments are currently flagged.</p>}</div>
       {current && <div className="review-editor">
         <div><b>{formatTime(current.start)} - {formatTime(current.end)}</b><small>{current.reasons.join(", ") || (current.state === "corrected" ? "Corrected" : "Review optional")}</small></div>
@@ -332,7 +332,7 @@ export default function ProjectDetail() {
         </button>
         <Link href="/upload" className="secondary-btn"><Upload size={15}/>Upload again</Link>
       </div>
-      {project.source_available === false && <small style={{ color: "var(--muted)" }}>The retained source file has expired, so retry is unavailable for this project.</small>}
+      {project.source_available === false && <small style={{ color: "var(--muted)" }}>The original video is currently unavailable. Please refresh to check storage again.</small>}
     </div>
   </AppShell>;
   if (["queued", "processing"].includes(project.status)) {
@@ -356,12 +356,12 @@ export default function ProjectDetail() {
 
   return <AppShell title={project.title} subtitle={`${project.clips.length} AI-ranked moments · ${formatTime(project.duration || 0)} source · ${languageNames[project.detected_language || project.language] || "Language pending"}`} action={<Link href="/projects" className="secondary-btn small"><ArrowLeft size={14} />All projects</Link>}>
     <div className="project-summary"><div><span className="eyebrow"><Sparkles size={12} /> ANALYSIS COMPLETE</span><h2>Your strongest moments, ranked</h2><p>Play the actual source moment, inspect every score, then open the real cropped preview in Creator Studio.</p></div><div className="summary-score"><small>Top potential</small><b>{project.clips[0]?.score || 0}</b><span>/100</span></div></div>
-    {!project.source_available && <div className="error-banner"><span>This source video has expired from private media storage. Your project history is preserved, but preview, re-analysis and new exports require uploading the source again.</span></div>}
+    {project.source_available === false && <div className="error-banner"><span>{project.source_state === "unverified" ? "ClipKaro could not verify your original video right now. It has NOT been confirmed expired. Your project and clips are safe; please retry the storage check." : "The original video is currently unavailable in private storage. Your project history is preserved; if it has expired or been deleted, re-uploading the source may be necessary."}</span> <button className="secondary-btn small" type="button" onClick={() => void load()}><RefreshCw size={13}/>Retry storage check</button></div>}
     {project.upgrade_blocked === "active_export" && <div className="error-banner"><span>This project needs a pipeline upgrade, but an export is still rendering. ClipKaro is preserving that export first; refresh after it finishes to upgrade the project safely.</span></div>}
     <div className="language-correction"><div><b>Spoken language</b><span>Detected: {languageNames[project.detected_language || project.language] || "Unknown"}. Wrong script or words? Re-analyse without uploading again. A completed source is not charged Karo Minutes twice; up to 3 correction runs are allowed per video in 24 hours.</span></div><select value={languageChoice} onChange={event=>setLanguageChoice(event.target.value)} disabled={reprocessing || project.source_available === false || project.upgrade_blocked === "active_export"}><option value="hi">Hindi</option><option value="hinglish">Hinglish</option><option value="en">English</option><option value="mr">Marathi</option><option value="auto">Auto detect</option></select><button className="secondary-btn small" onClick={reprocessLanguage} disabled={reprocessing || project.source_available === false || project.upgrade_blocked === "active_export"}>{reprocessing?"Re-analysing audio…":"Re-analyse language"}</button></div>
     <TranscriptReviewPanel projectId={project.id} sourceAvailable={project.source_available !== false} summary={project.transcript_review} onChanged={load} />
     <ContentPackPanel projectId={project.id} clips={project.clips} />
     <div className="moments-toolbar"><div className="filter-tabs">{["Best match", "Under 30 sec", "High hook", "High emotion"].map(item => <button key={item} onClick={() => setFilter(item)} className={filter === item ? "active" : ""}>{item}</button>)}</div><div className="view-toggle"><button className={view === "grid" ? "active" : ""} onClick={() => setView("grid")}><LayoutGrid size={15} /></button><button className={view === "list" ? "active" : ""} onClick={() => setView("list")}><List size={15} /></button></div></div>
-    {!clips.length ? <div className="empty-state compact"><h3>No clips match this filter</h3><button className="secondary-btn" onClick={() => setFilter("Best match")}>Show all moments</button></div> : <div className={`moment-grid ${view}`}>{clips.map((clip) => <MomentCard key={clip.id} projectId={project.id} clip={clip} rank={project.clips.findIndex(item => item.id === clip.id) + 1} behaviorSessionId={behaviorSessionRef.current} sourceAvailable={project.source_available !== false} />)}</div>}
+    {!clips.length ? <div className="empty-state compact"><h3>No clips match this filter</h3><button className="secondary-btn" onClick={() => setFilter("Best match")}>Show all moments</button></div> : <div className={`moment-grid ${view}`}>{clips.map((clip) => <MomentCard key={clip.id} projectId={project.id} clip={clip} rank={project.clips.findIndex(item => item.id === clip.id) + 1} behaviorSessionId={behaviorSessionRef.current} sourceAvailable={project.source_available !== false} sourceUnverified={project.source_state === "unverified"} />)}</div>}
   </AppShell>;
 }

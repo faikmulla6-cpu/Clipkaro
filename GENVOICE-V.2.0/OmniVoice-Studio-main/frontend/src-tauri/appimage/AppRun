@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# OmniVoice Studio — AppImage launcher
+#
+# Issue #56: AppImage shows a white screen on Fedora 44 / Ubuntu 24.04.
+# Root cause: WebKitGTK 2.44.x / 2.46.x has a compositing-path regression on
+# Wayland that blanks the surface on first paint. Setting
+# WEBKIT_DISABLE_COMPOSITING_MODE=1 forces WebKit to use a software fallback
+# that works correctly.
+#
+# We detect the WebKit version via pkg-config and ONLY set the env var on the
+# known-broken ranges. Setting it unconditionally regresses healthy WebKit
+# versions (2.48+) where the compositing path works fine.
+#
+# This file is copied into the AppImage staging directory by
+# scripts/inject-apprun.sh (wired into Tauri's beforeBundleCommand). See
+# .planning/decisions/apprun-strategy.md for the decision rationale.
+
+set -euo pipefail
+
+HERE="$(dirname -- "$(readlink -f -- "$0")")"
+
+# Sourced by AppRun.test.sh — keep this function pure so unit tests can stub
+# `pkg-config`, source the file, call _detect_webkit_workaround, and inspect
+# the resulting environment without exec'ing the binary.
+#
+# Version source (#961 follow-up): the WebKitGTK that actually RUNS is the
+# BUNDLED copy (LD_LIBRARY_PATH below puts $HERE/usr/lib first) — NOT the
+# host's. Asking the host's pkg-config therefore reads the wrong number
+# whenever host and bundle diverge (e.g. a user who builds from source has
+# dev packages installed, so pkg-config answers with their system's healthy
+# 2.48 while the bundle runs an older lib — skipping a workaround the running
+# library needs). inject-apprun.sh stamps the bundled version into
+# .bundled-webkitgtk-version at build time, where it is knowable by
+# construction; the host pkg-config path survives only as a fallback for
+# bundles predating the stamp. OMNIVOICE_APPRUN_WK_MARKER exists for the
+# unit tests to point at a fixture marker.
+_detect_webkit_workaround() {
+  local wk_version="0.0"
+  local marker="${OMNIVOICE_APPRUN_WK_MARKER:-$HERE/.bundled-webkitgtk-version}"
+  if [ -r "$marker" ]; then
+    # Empty/unreadable marker content → "0.0" (unknown) → fail-safe workaround,
+    # same philosophy as the missing-pkg-config branch below.
+    wk_version="$(cat "$marker" 2>/dev/null | tr -d '[:space:]')"
+    [ -n "$wk_version" ] || wk_version="0.0"
+  elif command -v pkg-config >/dev/null 2>&1; then
+    wk_version="$(pkg-config --modversion webkit2gtk-4.1 2>/dev/null \
+               || pkg-config --modversion webkit2gtk-4.0 2>/dev/null \
+               || echo "0.0")"
+  fi
+  case "$wk_version" in
+    2.44.*|2.46.*|0.0)
+      export WEBKIT_DISABLE_COMPOSITING_MODE=1
+      ;;
+  esac
+}
+
+_detect_webkit_workaround
+
+# Standard AppImage env that Tauri's auto-generated AppRun would have set.
+export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH:-}"
+export XDG_DATA_DIRS="${HERE}/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+
+exec "${HERE}/usr/bin/omnivoice-studio" "$@"

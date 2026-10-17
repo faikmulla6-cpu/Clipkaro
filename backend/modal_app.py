@@ -82,6 +82,7 @@ media_image = (
     # remains fail-closed if ClamAV cannot inspect an uploaded media object.
     .run_commands("freshclam --stdout")
     .pip_install_from_requirements("requirements.txt")
+    .pip_install("numpy==2.1.3", "opencv-python-headless==4.11.0.86")
     # copy=True is required because workdir/env are additional image steps.
     .add_local_dir(".", "/root/clipkaro", ignore=SOURCE_IGNORE, copy=True)
     .workdir("/root/clipkaro")
@@ -166,3 +167,29 @@ def run_media_job(job_id: str) -> int:
             worker_prefix="modal",
         )
     )
+
+
+@app.function(image=media_image, timeout=180, cpu=2.0, memory=4096, min_containers=0)
+def smart_layout_preflight() -> dict:
+    """Read-only smoke test in the SAME image used by the production media worker."""
+    import cv2
+    import numpy
+    from app.services.karo_smart_layouts import VALID_MODES
+    from app.services.video import find_media_tool
+
+    ffmpeg = find_media_tool("ffmpeg")
+    ffprobe = find_media_tool("ffprobe")
+    result = {
+        "ready": bool(ffmpeg and ffprobe and not cv2.CascadeClassifier(
+            cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+        ).empty()),
+        "ffmpeg": bool(ffmpeg),
+        "ffprobe": bool(ffprobe),
+        "opencv": cv2.__version__,
+        "numpy": numpy.__version__,
+        "layouts": sorted(VALID_MODES),
+    }
+    if not result["ready"]:
+        raise RuntimeError("Modal media image is missing Smart Layout dependencies")
+    print("KARO_SMART_LAYOUT_PREFLIGHT:", result)
+    return result

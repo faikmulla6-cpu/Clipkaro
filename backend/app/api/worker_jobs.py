@@ -29,19 +29,68 @@ MAX_REPROCESS_ATTEMPTS_PER_24H = 3
 BRAND_KIT_PLANS = {"creator", "growth", "pro", "agency"}
 
 
-async def _source_available(video: dict | None, user_id: str) -> bool:
-    if not video or str(video.get("status") or "") == "expired":
-        return False
+async def _source_state(video: dict | None, user_id: str) -> str:
+    """Distinguish deleted sources from temporary object-store errors.
+
+    A storage timeout is NOT evidence that a paid user's video expired.
+    Keep render/reprocess access fail-closed until a successful HEAD confirms
+    the object, but give the project page an accurate verification state.
+    """
+    if not video:
+        return "missing"
+    if str(video.get("status") or "") == "expired":
+        return "expired"
     settings = get_settings()
     if settings.normalized_storage_backend == "gcs":
         try:
-            key = validate_object_key(str(video.get("file_path") or ""), expected_prefix=f"users/{user_id}")
-            metadata = await asyncio.wait_for(get_storage_provider().stat(key), timeout=4)
-            return bool(metadata and (not video.get("object_generation") or metadata.generation == str(video["object_generation"])))
-        except (ValueError, RuntimeError, TimeoutError):
-            return False
+            key = validate_object_key(
+                str(video.get("file_path") or ""), expected_prefix=f"users/{user_id}"
+            )
+        except ValueError:
+            return "missing"
+        for attempt in range(2):
+            try:
+                metadata = await asyncio.wait_for(
+                    get_storage_provider().stat(key), timeout=10
+                )
+                if metadata is None:
+                    return "missing"
+                generation = str(video.get("object_generation") or "")
+                return "available" if not generation or metadata.generation == generation else "unverified"
+            except Exception as exc:
+                if attempt:
+                    # Never turn transient Backblaze/Cloudflare connectivity
+                    # issues into a permanent "your upload expired" claim.
+                    import logging
+                    logging.getLogger("clipkaro.source").warning(
+                        "Object-storage source check failed after retry: %s",
+                        type(exc).__name__,
+                    )
+                    return "unverified"
+                await asyncio.sleep(0.25)
+        return "unverified"
     path = confined_upload_path(video.get("file_path"))
-    return bool(path and path.is_file())
+    return "available" if path is not None and path.is_file() else "missing"
+
+
+async def _source_available(video: dict | None, user_id: str) -> bool:
+    """Backwards-compatible, fail-closed gate for export/re-analysis."""
+    return await _source_state(video, user_id) == "available"
+
+
+async def _require_source_available(video: dict | None, user_id: str) -> None:
+    state = await _source_state(video, user_id)
+    if state == "available":
+        return
+    if state == "unverified":
+        raise HTTPException(
+            503,
+            "ClipKaro cannot verify the source video in private storage right now. Please retry shortly.",
+            headers={"Retry-After": "5"},
+        )
+    raise HTTPException(
+        410, "The original source video is no longer available in private storage."
+    )
 
 
 async def _active_export_for_clip(clip_id: str, user_id: str) -> dict | None:
@@ -172,9 +221,11 @@ async def project_detail(project_id: str, tasks: BackgroundTasks, user: dict = D
     project["pipeline_version"] = project_routes.PIPELINE_VERSION
     project["transcript_state"] = state
     project["transcript_review"] = review["summary"]
-    source = await fetch_one("SELECT file_path,status FROM videos WHERE id=?", (project["video_id"],))
-    source_available = await _source_available(source, str(user["id"]))
+    source = await fetch_one("SELECT file_path,status,object_generation FROM videos WHERE id=?", (project["video_id"],))
+    source_state = await _source_state(source, str(user["id"]))
+    source_available = source_state == "available"
     project["source_available"] = source_available
+    project["source_state"] = source_state
     if not state["current"] and project.get("status") not in {"queued", "processing"}:
         video = await fetch_one("SELECT * FROM videos WHERE id=?", (project["video_id"],))
         active_export = await fetch_one(
@@ -205,7 +256,7 @@ async def project_detail(project_id: str, tasks: BackgroundTasks, user: dict = D
         else:
             # The source-retention policy may outlive derived project data.
             # Preserve the historical moments instead of creating a doomed job.
-            project["upgrade_blocked"] = "source_expired"
+            project["upgrade_blocked"] = "source_unverified" if source_state == "unverified" else "source_expired"
             clips = await fetch_all(
                 "SELECT * FROM clips WHERE video_id=? AND status<>'superseded' ORDER BY score DESC",
                 (project["video_id"],),
@@ -315,8 +366,7 @@ async def reprocess_project(
     )
     if not video:
         raise HTTPException(404, "Project not found.")
-    if not await _source_available(video, str(user["id"])):
-        raise HTTPException(410, "The retained source video has expired. Upload the source again to re-analyse it.")
+    await _require_source_available(video, str(user["id"]))
     project_state = await fetch_one("SELECT status FROM projects WHERE id=? AND user_id=?", (project_id, user["id"]))
     if project_state and project_state.get("status") in {"queued", "processing"}:
         raise HTTPException(409, "This project is already being processed. Wait for it to finish before re-analysing.")
@@ -375,11 +425,7 @@ async def export_clip(
             video = await fetch_one("SELECT * FROM videos WHERE id=?", (clip["video_id"],))
             if not video:
                 raise HTTPException(409, "This project no longer has a source video to upgrade.")
-            if not await _source_available(video, str(user["id"])):
-                raise HTTPException(
-                    410,
-                    "The source video has expired from private media storage. Upload it again to upgrade this project.",
-                )
+            await _require_source_available(video, str(user["id"]))
             await execute(
                 "UPDATE projects SET status='queued',progress=0,stage='upgrading',error=NULL,updated_at=? WHERE id=?",
                 (project_routes.utcnow(), clip["project_id"]),
@@ -430,8 +476,7 @@ async def export_clip(
         video = await fetch_one("SELECT * FROM videos WHERE id=?", (clip["video_id"],))
         if not video:
             raise HTTPException(409, "This clip no longer has a source video to render.")
-        if not await _source_available(video, str(user["id"])):
-            raise HTTPException(410, "The source video has expired from private media storage. Upload it again to create a new export.")
+        await _require_source_available(video, str(user["id"]))
 
         brand = None
         if effective_body.brand_kit_id:
