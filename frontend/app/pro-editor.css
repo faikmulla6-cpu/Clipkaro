@@ -645,3 +645,19 @@ radial-gradient(circle at 50% 12%,rgba(255,255,255,.9),rgba(242,245,240,.5) 45%,
 @media(max-width:1120px){
   .segment-reorder-grip{left:6px;width:19px}
 }
+
+
+/* Instant, audio-safe Smart Layout composition guide. No render or new export
+   is required when switching modes. The server uses actual face positions
+   per camera shot; this browser preview only previews panel geometry. */
+.pro-video-canvas .smart-preview-primary{position:absolute;inset:0;overflow:hidden;z-index:1}
+.pro-video-canvas .smart-preview-primary video{width:100%;height:100%;display:block;object-fit:cover}
+.pro-video-canvas .smart-preview-primary.smart-preview-top{inset:0 0 56% 0}
+.pro-video-canvas .smart-preview-secondary{position:absolute;inset:56% 0 0;overflow:hidden;z-index:1;background:#131a18}
+.pro-video-canvas .smart-preview-secondary video{display:block;width:100%;height:100%;object-fit:cover;object-position:84% 50%;pointer-events:none}
+.pro-video-canvas .smart-preview-band{position:absolute;top:44%;height:12%;inset-inline:0;background:linear-gradient(90deg,#0f2421,#152c27 45%,#0f2421);z-index:1;border-block:1px solid rgba(206,244,215,.15)}
+.pro-video-canvas .smart-preview-label{position:absolute;left:9px;bottom:8px;z-index:4;display:inline-flex;align-items:center;gap:4px;border:1px solid rgba(208,255,225,.18);background:rgba(9,31,24,.8);backdrop-filter:blur(8px);color:#e2ffe7;border-radius:20px;padding:5px 7px;font:800 8px/1 'Manrope',sans-serif;letter-spacing:.04em;pointer-events:none}
+.pro-video-canvas .caption-preview.smart-stack-captions{left:5%!important;right:5%!important;top:50%!important;bottom:auto!important;transform:translateY(-50%)!important;z-index:4;max-height:12%;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:min(4.3cqw,15px)!important;padding:0!important;background:transparent!important}
+.pro-video-canvas .caption-preview.smart-stack-captions .caption-content{display:block;line-height:1.05;max-height:100%;overflow:hidden}
+.pro-video-canvas .smart-preview-focus video{transition:object-position .25s ease,transform .3s ease}
+@media (prefers-reduced-motion: reduce){.pro-video-canvas .smart-preview-focus video{transition:none}}

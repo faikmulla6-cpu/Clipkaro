@@ -24,6 +24,7 @@ class LayoutPlan:
     height: int
     centers: tuple[tuple[float, float], tuple[float, float]]
     switches: tuple[tuple[float, int], ...] = ()
+    segments: tuple[object, ...] = ()
 
 
 def _clamp(value: float, lo: float, hi: float) -> float:
@@ -107,110 +108,16 @@ def _normalize_activity(values: list[tuple[float, float]]):
 
 def _detect(source: Path, start: float, duration: float, ffmpeg: str,
             mode: str) -> LayoutPlan | None:
-    """Sample bounded frames. Avoid GPU/model downloads on Modal CPU workers."""
-    import cv2
-    import numpy as np
-    capture = cv2.VideoCapture(str(source))
-    if not capture.isOpened():
-        return None
-    try:
-        w, h = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)), int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        if w < 240 or h < 160 or w / h < 1.15:  # Already vertical / unusable.
-            return None
-        window = .4
-        n = min(360, max(1, int(duration / window)))
-        detector = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
-        if detector.empty():
-            return None
-        observations = []
-        faces_seen = []
-        prev_rois = [None, None]
-        activity = []
-        for i in range(n):
-            t = start + (i + .5) * window
-            capture.set(cv2.CAP_PROP_POS_MSEC, t * 1000)
-            ok, frame = capture.read()
-            if not ok:
-                observations.append(None)
-                activity.append((0., 0.))
-                continue
-            sh, sw = frame.shape[:2]
-            scale = min(1., 640 / sw)
-            small = cv2.resize(frame, (int(sw * scale), int(sh * scale)))
-            grey = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
-            found = detector.detectMultiScale(grey, scaleFactor=1.12, minNeighbors=4,
-                                              minSize=(max(22, grey.shape[1] // 24), 22))
-            boxes = [(float(x) / grey.shape[1], float(y) / grey.shape[0],
-                      float(bw) / grey.shape[1], float(bh) / grey.shape[0])
-                     for x, y, bw, bh in found]
-            pair = _pair([(x + fw / 2, y + fh / 2, fw, fh) for x, y, fw, fh in boxes])
-            observations.append(pair)
-            if pair:
-                faces_seen.append(pair)
-            # Compare aligned, resized mouth regions. Like OpenShorts, normalize
-            # each person's movement against their own quiet/loud baseline.
-            scores = []
-            for j in (0, 1):
-                face = pair[j] if pair else None
-                if face is None:
-                    prev_rois[j] = None
-                    scores.append(0.)
-                    continue
-                cx, cy, fw, fh = face
-                x0 = int((cx - fw * .30) * grey.shape[1])
-                x1 = int((cx + fw * .30) * grey.shape[1])
-                y0 = int((cy + fh * .08) * grey.shape[0])
-                y1 = int((cy + fh * .46) * grey.shape[0])
-                roi = grey[max(0, y0):min(grey.shape[0], y1),
-                           max(0, x0):min(grey.shape[1], x1)]
-                if roi.size < 80:
-                    scores.append(0.)
-                    prev_rois[j] = None
-                    continue
-                normalized = cv2.resize(roi, (48, 24)).astype("float32")
-                old = prev_rois[j]
-                scores.append(float(np.mean(np.abs(normalized - old))) if old is not None else 0.)
-                prev_rois[j] = normalized
-            activity.append(tuple(scores))
-        if len(faces_seen) < max(5, int(n * .45)):
-            return None
-        # Median makes a momentary inaccurate box harmless; no imaginary faces.
-        c0 = tuple(float(np.median([row[0][k] for row in faces_seen])) for k in (0, 1))
-        c1 = tuple(float(np.median([row[1][k] for row in faces_seen])) for k in (0, 1))
-        if c1[0] - c0[0] < .16:
-            return None
-        centers = (c0, c1)
-        energy = _audio_energy(source, start, duration, n, window, ffmpeg)
-        normalized = _normalize_activity(activity)
-        votes = []
-        for i in range(n):
-            if observations[i] is None or energy[i] < .18:
-                votes.append(None)
-                continue
-            a, b = float(normalized[i][0]), float(normalized[i][1])
-            if a + b < .3 or abs(a - b) / max(a + b, .0001) < .22:
-                votes.append(None)
-            else:
-                votes.append(0 if a > b else 1)
-        turns = smooth_turns(votes, window)
-        counts = [votes.count(0), votes.count(1)]
-        confident = sum(counts)
-        conversation = confident >= max(5, n * .12) and min(counts) >= max(2, confident * .18)
-        if mode == "auto":
-            actual = "dual_stack" if conversation else "speaker_focus" if turns else "dual_stack"
-        elif mode == "speaker_focus":
-            actual = "speaker_focus" if turns else "dual_stack"
-        else:
-            actual = "dual_stack"
-        return LayoutPlan(actual, w, h, centers, turns)
-    finally:
-        capture.release()
+    """Plan each shot independently; two-shot medians must NEVER cross edits."""
+    from .karo_smart_scenes import analyze_scenes
+    return analyze_scenes(source, start, duration, mode, ffmpeg)
 
 
 def _crop_geometry(w: int, h: int, out_w: int, out_h: int,
-                   center: tuple[float, float]) -> tuple[int, int, int, int]:
+                   center: tuple[float, float],
+                   max_crop_w: int | None = None) -> tuple[int, int, int, int]:
     aspect = out_w / out_h
-    crop_w = min(w, int(h * aspect))
+    crop_w = min(w, int(h * aspect), max_crop_w or w)
     crop_w -= crop_w % 2
     crop_h = min(h, int(crop_w / aspect))
     crop_h -= crop_h % 2
@@ -242,6 +149,9 @@ def _focus_expression(plan: LayoutPlan) -> tuple[int, int, str]:
 
 
 def _filter(plan: LayoutPlan, duration: float, width: int, height: int) -> str:
+    if plan.segments:
+        from .karo_smart_scenes import compose_scene_filter
+        return compose_scene_filter(plan, duration, width, height)
     if plan.mode == "speaker_focus":
         cw, ch, x = _focus_expression(plan)
         return (f"[0:v]fps=30,crop={cw}:{ch}:x='{x}':y=0,"
@@ -276,7 +186,7 @@ def prepare_smart_layout(source: Path, output: Path, start: float, end: float,
     if plan is None:
         logger.info("No reliable two-speaker framing found; using classic crop.")
         return None
-    if plan.mode == "speaker_focus" and not plan.switches:
+    if plan.mode == "speaker_focus" and not plan.switches and not plan.segments:
         return None
     temp = output.with_name(f".{output.stem}.smart-layout.mp4")
     temp.unlink(missing_ok=True)
@@ -292,10 +202,14 @@ def prepare_smart_layout(source: Path, output: Path, start: float, end: float,
         if result.returncode or not temp.is_file() or temp.stat().st_size < 1000:
             logger.warning("Smart Layout precompose failed: %s", result.stderr.decode(errors="replace")[-700:])
             temp.unlink(missing_ok=True)
-            return None
-        logger.info("Karo Smart Layout export mode=%s switches=%d", plan.mode, len(plan.switches))
-        return temp, plan.mode
+            raise RuntimeError("Smart Layout render failed; no incorrect Classic export was substituted.")
+        actual_mode = ("dual_stack" if any(s.mode == "dual_stack" for s in plan.segments)
+                       else "speaker_focus" if any(s.mode in {"single", "speaker_focus"} for s in plan.segments)
+                       else "wide") if plan.segments else plan.mode
+        logger.info("Karo Smart Layout export requested=%s actual=%s scenes=%d",
+                    mode, actual_mode, len(plan.segments))
+        return temp, actual_mode
     except (OSError, subprocess.TimeoutExpired) as exc:
         logger.warning("Smart Layout precompose unavailable (%s)", type(exc).__name__)
         temp.unlink(missing_ok=True)
-        return None
+        raise RuntimeError("Smart Layout rendering engine is unavailable; try again later.") from exc

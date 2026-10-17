@@ -125,6 +125,7 @@ export default function Editor() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const videoRef = useRef<HTMLVideoElement>(null);
+  const secondaryVideoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const captionRef = useRef<HTMLDivElement>(null);
   const captionContentRef = useRef<HTMLSpanElement>(null);
@@ -174,7 +175,7 @@ export default function Editor() {
   const [captionAlignment, setCaptionAlignment] = useState<CaptionAlignment>("center");
   const [captionDragging, setCaptionDragging] = useState(false);
   const [ratio, setRatio] = useState("9:16");
-  const [layoutMode, setLayoutMode] = useState<"auto" | "dual_stack" | "speaker_focus" | "classic">("auto");
+  const [layoutMode, setLayoutMode] = useState<"auto" | "dual_stack" | "speaker_focus" | "classic">("classic");
   const [focusX, setFocusX] = useState(50);
   const [zoom, setZoom] = useState(1);
   const [resolution, setResolution] = useState("720p");
@@ -213,6 +214,40 @@ export default function Editor() {
   const [trimmingSegment, setTrimmingSegment] = useState(false);
   const [draggedSegmentIndex, setDraggedSegmentIndex] = useState<number | null>(null);
   const [dragOverSegmentIndex, setDragOverSegmentIndex] = useState<number | null>(null);
+
+  // Layout choice is immediately visible; both panels play the same private
+  // source in sync, with audio from the primary video only. Final export uses
+  // per-shot face detection and may safely select a single face on solo shots.
+  const previewDual = ratio === "9:16" && (layoutMode === "dual_stack" || layoutMode === "auto") && !preserveSourceCaptions;
+  const previewFocus = ratio === "9:16" && layoutMode === "speaker_focus" && !preserveSourceCaptions;
+
+  useEffect(() => {
+    if (!previewDual) return;
+    const source = videoRef.current;
+    const mirror = secondaryVideoRef.current;
+    if (!source || !mirror) return;
+    const sync = () => {
+      if (Number.isFinite(source.currentTime) && mirror.readyState >= 1
+          && Math.abs(mirror.currentTime - source.currentTime) > .12) {
+        mirror.currentTime = source.currentTime;
+      }
+      if (mirror.playbackRate !== source.playbackRate) mirror.playbackRate = source.playbackRate;
+      if (source.paused || source.ended) mirror.pause();
+      else if (mirror.paused) void mirror.play().catch(() => {});
+    };
+    for (const name of ["timeupdate", "seeked", "play", "pause", "ratechange", "loadedmetadata"]) {
+      source.addEventListener(name, sync);
+    }
+    mirror.addEventListener("loadedmetadata", sync);
+    sync();
+    return () => {
+      for (const name of ["timeupdate", "seeked", "play", "pause", "ratechange", "loadedmetadata"]) {
+        source.removeEventListener(name, sync);
+      }
+      mirror.removeEventListener("loadedmetadata", sync);
+      mirror.pause();
+    };
+  }, [previewDual, project?.id]);
 
   const freePlan = user?.plan === "free";
   const renderBusy = startingRender || (!!job && !["completed", "failed"].includes(job.status));
@@ -263,6 +298,7 @@ export default function Editor() {
   useEffect(() => {
     if (!user || lastPlanRef.current === user.plan) return;
     setWatermark(user.plan === "free");
+    setResolution(user.plan === "free" ? "720p" : "1080p");
     lastPlanRef.current = user.plan;
   }, [user]);
   useEffect(() => {
@@ -1122,7 +1158,7 @@ export default function Editor() {
     try {
       await save(false);
       const output = await postJSON<ExportResponse>(`/clips/${clip.id}/export`, {
-        resolution, aspect_ratio: ratio, caption_style: captionStyle, layout_mode: layoutMode,
+        resolution, aspect_ratio: ratio, caption_style: captionStyle, layout_mode: ratio === "9:16" ? layoutMode : "classic",
         caption_position: captionPosition, caption_x: captionX, caption_y: captionY, caption_scale: captionScale,
         caption_alignment: captionAlignment,
         focus_x: focusX, zoom, hook_text: hook, hook_enabled: hookEnabled, watermark, brand_kit_id: brandKitId || null,
@@ -1181,7 +1217,7 @@ export default function Editor() {
   );
 
   const selectedBrandKit = brandKits.find(kit => kit.id === brandKitId);
-  const positionClass = captionY === null ? "position-" + captionPosition : "caption-custom-position";
+  const positionClass = previewDual ? "position-center smart-stack-captions" : captionY === null ? "position-" + captionPosition : "caption-custom-position";
   const selectedCaptionStyle = captionStyles.find(style => style.id === captionStyle);
   const baseCaptionRatio = selectedCaptionStyle?.font_size_width_ratio ?? .065;
   const captionInsetRatio = selectedCaptionStyle?.horizontal_inset_ratio ?? .06;
@@ -1297,13 +1333,13 @@ export default function Editor() {
               <div className="pro-editor-field"><label>Canvas ratio</label><div className="ratio-options">{[["9:16", Smartphone, "Shorts"], ["4:5", AlignCenter, "Feed"], ["1:1", Square, "Square"]].map(([value, Icon, name]) => <button type="button" key={value as string} className={ratio === value ? "active" : ""} onClick={() => setRatio(value as string)}><Icon size={17}/><b>{value as string}</b><small>{name as string}</small></button>)}</div></div>
               <div className="pro-editor-field">
                 <label>Karo Smart Layouts</label>
-                <select aria-label="Karo Smart Layout" value={layoutMode} onChange={event => setLayoutMode(event.target.value as typeof layoutMode)} disabled={ratio !== "9:16"}>
+                <select aria-label="Karo Smart Layout" value={layoutMode} onChange={event => { const selected = event.target.value as typeof layoutMode; setLayoutMode(selected); if (selected !== "classic") setPreserveSourceCaptions(false); }} disabled={ratio !== "9:16"}>
                   <option value="auto">Auto Director · Detect two speakers</option>
                   <option value="dual_stack">Dual Stack · Top / bottom + middle captions</option>
                   <option value="speaker_focus">Speaker Focus · Follow the person speaking</option>
                   <option value="classic">Classic · Single-person crop</option>
                 </select>
-                <p className="field-note">Applies during export on 9:16 videos. Two visible faces are required. Uncertain scenes safely use Classic. Original-source preview does not display the Smart Layout until rendering.</p>
+                <p className="field-note">Layout changes the live canvas immediately. Dual Stack places two speaker views above and below a caption band; Speaker Focus fills the frame. The live view is a composition guide: final export detects faces in each camera shot and safely switches to a single subject or full-frame view when two faces are not visible.</p>
               </div>
               <div className="pro-editor-stat-grid"><span><small>Ratio</small><b>{ratio}</b></span><span><small>Focus</small><b>{Math.round(focusX)}%</b></span><span><small>Zoom</small><b>{Math.round(zoom*100)}%</b></span></div>
               <p className="pro-editor-note">Framing changes are reflected in the exported MP4, not only in preview.</p>
@@ -1321,7 +1357,7 @@ export default function Editor() {
           {activeTool === "export" && <>
             <div className="pro-editor-panel-head"><span>EXPORT</span><h2>Ready to publish</h2><p>Everything below reflects the settings that will be sent to the renderer.</p></div>
             <div className="pro-editor-context-scroll">
-              <div className="export-summary pro-editor-export-summary"><span>Format <b>{ratio}</b></span><span>Duration <b>{editedDuration.toFixed(1)}s</b></span><span>Captions <b>{styles.find(style => style[0] === captionStyle)?.[1]}</b></span><span>Caption size <b>{Math.round(captionScale*100)}%</b></span><span>Placement <b>{captionY === null ? (captionPosition === "bottom" ? "Lower" : captionPosition === "above" ? "Upper" : "Centre") : "Custom"}</b></span><span>Align <b>{captionAlignment}</b></span><span>Layout <b>{ratio === "9:16" ? layoutMode.replace("_", " ") : "Classic"}</b></span><span>Frame <b>{preserveSourceCaptions ? "Full" : Math.round(focusX) + "%"}</b></span><span>Zoom <b>{preserveSourceCaptions ? "100% safe" : Math.round(zoom*100) + "%"}</b></span><span>India <b>{indiaQualityMode ? captionLanguageStyle.replace("_", " ") : "Off"}</b></span><span>Brand <b>{selectedBrandKit?.name || "None"}</b></span></div>
+              <div className="export-summary pro-editor-export-summary"><span>Format <b>{ratio}</b></span><span>Duration <b>{editedDuration.toFixed(1)}s</b></span><span>Captions <b>{styles.find(style => style[0] === captionStyle)?.[1]}</b></span><span>Caption size <b>{Math.round(captionScale*100)}%</b></span><span>Placement <b>{captionY === null ? (captionPosition === "bottom" ? "Lower" : captionPosition === "above" ? "Upper" : "Centre") : "Custom"}</b></span><span>Align <b>{captionAlignment}</b></span><span>Layout <b>{ratio === "9:16" ? layoutMode.replace("_", " ") : "Classic"}</b></span><span>Frame <b>{ratio === "9:16" && layoutMode !== "classic" ? "Face-aware" : preserveSourceCaptions ? "Full" : Math.round(focusX) + "%"}</b></span><span>Zoom <b>{ratio === "9:16" && layoutMode !== "classic" ? "Automatic" : preserveSourceCaptions ? "100% safe" : Math.round(zoom*100) + "%"}</b></span><span>India <b>{indiaQualityMode ? captionLanguageStyle.replace("_", " ") : "Off"}</b></span><span>Brand <b>{selectedBrandKit?.name || "None"}</b></span></div>
             </div>
           </>}
         </aside>
@@ -1331,7 +1367,8 @@ export default function Editor() {
             <span>{editedDuration.toFixed(1)}s edited</span>
           </div>
           <div ref={canvasRef} className={"video-canvas pro-video-canvas ratio-" + ratio.replace(":", "-")}>
-            <video
+            <div className={"smart-preview-primary" + (previewDual ? " smart-preview-top" : "") + (previewFocus ? " smart-preview-focus" : "")}>
+              <video
               ref={videoRef}
               src={API_URL + "/projects/" + project.id + "/media"}
               preload="metadata"
@@ -1342,10 +1379,22 @@ export default function Editor() {
               onPause={() => setPlaying(false)}
               style={{
                 objectFit: preserveSourceCaptions ? "contain" : "cover",
-                objectPosition: String(focusX) + "% 50%",
-                transform: preserveSourceCaptions ? "scale(1)" : "scale(" + String(zoom) + ")",
+                objectPosition: previewDual ? "16% 50%" : previewFocus ? "50% 50%" : String(focusX) + "% 50%",
+                transform: preserveSourceCaptions || previewDual ? "scale(1)" : previewFocus ? "scale(1.08)" : "scale(" + String(zoom) + ")",
               }}
             />
+            </div>
+            {previewDual && <>
+              <div className="smart-preview-band" aria-hidden="true" />
+              <div className="smart-preview-secondary" aria-hidden="true">
+                <video ref={secondaryVideoRef} src={API_URL + "/projects/" + project.id + "/media"}
+                  muted playsInline preload="metadata" tabIndex={-1}
+                  style={{ objectPosition: "84% 50%" }}/>
+              </div>
+            </>}
+            {ratio === "9:16" && layoutMode !== "classic" && <div className="smart-preview-label">
+              <Sparkles size={11}/> {layoutMode === "auto" ? "AUTO DIRECTOR" : layoutMode === "dual_stack" ? "DUAL STACK" : "SPEAKER FOCUS"} · LIVE GUIDE
+            </div>}
             <button className="canvas-play pro-canvas-play" onClick={togglePlayback}>{playing ? <Pause fill="currentColor"/> : <Play fill="currentColor"/>}</button>
             {hookEnabled && showHook && visibleHook && <div className="canvas-hook">{visibleHook}</div>}
             {captionState.visible && <div
@@ -1450,8 +1499,8 @@ export default function Editor() {
                 <p className="field-note caption-reflow-note"><Check size={12}/> Text wraps and reflows automatically as caption size changes.</p>
               </div>
               <div className="toggle-row pro-editor-toggle">
-                <div><b>Preserve source captions</b><span>{sourceHasCaptions ? "Detected near " + Math.round((sourceCaptionBand ?? .82)*100) + "% height" : "Use when source already contains subtitles"}</span></div>
-                <button className={preserveSourceCaptions ? "on" : ""} aria-pressed={preserveSourceCaptions} onClick={() => setPreserveSourceCaptions(value => !value)}><i/></button>
+                <div><b>Preserve source captions</b><span>{ratio === "9:16" && layoutMode !== "classic" ? "Switch to Classic to keep burned-in subtitles. Smart Layout uses ClipKaro captions." : sourceHasCaptions ? "Detected near " + Math.round((sourceCaptionBand ?? .82)*100) + "% height" : "Use when source already contains subtitles"}</span></div>
+                <button className={preserveSourceCaptions ? "on" : ""} aria-label="Preserve source captions" aria-pressed={preserveSourceCaptions} disabled={ratio === "9:16" && layoutMode !== "classic"} onClick={() => setPreserveSourceCaptions(value => !value)}><i/></button>
               </div>
             </div>
           </>}
@@ -1461,20 +1510,20 @@ export default function Editor() {
             <div className="pro-editor-inspector-scroll">
               <div className="pro-editor-field">
                 <label><MoveHorizontal size={13}/> Manual reframe: {focusX}%</label>
-                <input className="focus-slider" type="range" min="0" max="100" value={focusX} onChange={event => setFocusX(Number(event.target.value))}/>
+                <input className="focus-slider" type="range" min="0" max="100" value={focusX} disabled={ratio === "9:16" && layoutMode !== "classic"} onChange={event => setFocusX(Number(event.target.value))}/>
                 <div className="focus-labels"><span>Left</span><span>Centre</span><span>Right</span></div>
               </div>
-              <div className={"pro-editor-field zoom-section" + (preserveSourceCaptions ? " disabled" : "")}>
-                <div className="zoom-heading"><label><ZoomIn size={13}/> Video zoom: {Math.round(zoom*100)}%</label><button className="zoom-reset" type="button" disabled={preserveSourceCaptions || zoom===1} onClick={() => setZoom(1)}>Reset</button></div>
+              <div className={"pro-editor-field zoom-section" + (preserveSourceCaptions || (ratio === "9:16" && layoutMode !== "classic") ? " disabled" : "")}>
+                <div className="zoom-heading"><label><ZoomIn size={13}/> Video zoom: {Math.round(zoom*100)}%</label><button className="zoom-reset" type="button" disabled={preserveSourceCaptions || (ratio === "9:16" && layoutMode !== "classic") || zoom===1} onClick={() => setZoom(1)}>Reset</button></div>
                 <div className="zoom-control">
-                  <button type="button" aria-label="Zoom out" disabled={preserveSourceCaptions || zoom<=1} onClick={() => setZoom(value => clamp(Number((value-.05).toFixed(2)),1,2))}><ZoomOut size={15}/></button>
-                  <input aria-label="Video zoom" type="range" min="1" max="2" step=".05" value={zoom} disabled={preserveSourceCaptions} onChange={event => setZoom(Number(event.target.value))}/>
-                  <button type="button" aria-label="Zoom in" disabled={preserveSourceCaptions || zoom>=2} onClick={() => setZoom(value => clamp(Number((value+.05).toFixed(2)),1,2))}><ZoomIn size={15}/></button>
+                  <button type="button" aria-label="Zoom out" disabled={preserveSourceCaptions || (ratio === "9:16" && layoutMode !== "classic") || zoom<=1} onClick={() => setZoom(value => clamp(Number((value-.05).toFixed(2)),1,2))}><ZoomOut size={15}/></button>
+                  <input aria-label="Video zoom" type="range" min="1" max="2" step=".05" value={zoom} disabled={preserveSourceCaptions || (ratio === "9:16" && layoutMode !== "classic")} onChange={event => setZoom(Number(event.target.value))}/>
+                  <button type="button" aria-label="Zoom in" disabled={preserveSourceCaptions || (ratio === "9:16" && layoutMode !== "classic") || zoom>=2} onClick={() => setZoom(value => clamp(Number((value+.05).toFixed(2)),1,2))}><ZoomIn size={15}/></button>
                 </div>
                 <div className="zoom-scale"><span>100%</span><span>150%</span><span>200%</span></div>
                 {preserveSourceCaptions && <p className="zoom-safe-note"><AlertTriangle size={12}/><span>Zoom stays at 100% while original captions are preserved.</span></p>}
               </div>
-              <div className="pro-editor-help-card"><MoveHorizontal size={15}/><div><b>Export-safe framing</b><p>Classic uses manual focus and zoom. Smart Layouts automatically frame detected speakers in 9:16 exports.</p></div></div>
+              <div className="pro-editor-help-card"><MoveHorizontal size={15}/><div><b>Export-safe framing</b><p>Classic uses manual focus and zoom. Smart Layouts use automatic per-shot face framing; manual sliders do not override them. Your layout choice is previewed immediately above.</p></div></div>
             </div>
           </
 >}

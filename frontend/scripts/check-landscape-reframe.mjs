@@ -19,7 +19,9 @@ const cropTracking = read("backend/app/services/crop_tracking.py");
 requireText(editor, "const [focusX, setFocusX] = useState(50);", "manual focus state must exist");
 requireText(editor, "Manual reframe: {focusX}%", "manual focus must remain visible in Creator Studio");
 requireText(editor, 'className="focus-slider" type="range" min="0" max="100"', "manual focus must expose the full 0..100 range");
-requireText(editor, 'objectPosition: String(focusX) + "% 50%"', "preview must react to the exact manual focus value");
+requireText(editor, 'previewDual ? "16% 50%" : previewFocus ? "50% 50%" : String(focusX) + "% 50%"', "Classic preview must use exact manual focus; Smart Layout uses automatic guides");
+requireText(editor, 'previewDual && <>', "Dual Stack must immediately render a synchronized second speaker panel");
+requireText(editor, 'secondaryVideoRef', "Dual Stack must keep both local browser playback panels in sync");
 requireText(editor, 'objectFit: preserveSourceCaptions ? "contain" : "cover"', "preview must expose source-caption safe framing");
 requireText(editor, "focus_x: focusX", "export request must send the previewed manual focus value");
 requireText(editor, "preserve_source_captions: preserveSourceCaptions", "export request must send source-caption safe framing choice");
@@ -27,7 +29,7 @@ requireText(editor, "India Quality Mode", "creator studio must expose the India 
 requireText(editor, "caption_language_style: captionLanguageStyle", "export request must send the caption language style");
 requireText(editor, "reviewSuggested &&", "creator studio must gate transcript review warnings from backend truth");
 requireText(editor, "<b>Review suggested</b>", "creator studio must surface transcript review warnings");
-requireText(editor, 'Frame <b>{preserveSourceCaptions ? "Full" : Math.round(focusX) + "%"}</b>', "export summary must disclose crop versus full-frame mode");
+requireText(editor, 'Frame <b>{ratio === "9:16" && layoutMode !== "classic" ? "Face-aware" : preserveSourceCaptions ? "Full" : Math.round(focusX) + "%"}</b>', "export summary must distinguish Smart Layout face framing from Classic manual crop");
 requireText(css, ".video-canvas video{width:100%;height:100%;object-fit:cover}", "preview must use cover-crop semantics like FFmpeg");
 
 // The backend must validate and consume the same value. Keep dynamic keyframe

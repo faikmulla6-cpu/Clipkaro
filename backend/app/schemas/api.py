@@ -145,6 +145,13 @@ class ExportRequest(BaseModel):
 
     @model_validator(mode="after")
     def carry_render_controls(self):
+        # Do not silently ignore a requested Smart Layout because the caller
+        # combined it with incompatible canvas/caption-preservation settings.
+        if self.layout_mode != "classic":
+            if self.aspect_ratio != "9:16":
+                raise ValueError("Karo Smart Layouts require a 9:16 canvas.")
+            if self.preserve_source_captions:
+                raise ValueError("Choose Classic to preserve burned-in source captions; Smart Layout uses new captions.")
         # Existing API and durable-worker paths already persist crop_keyframes.
         # One internal marker keeps zoom and the explicit preserve toggle intact
         # across both execution paths without changing public crop semantics.

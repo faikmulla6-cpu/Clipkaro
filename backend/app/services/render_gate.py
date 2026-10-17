@@ -180,9 +180,13 @@ async def render_short_limited(*args: Any, **kwargs: Any) -> None:
             start = float(mutable[2] if len(mutable) > 2 else kwargs["start"])
             end = float(mutable[3] if len(mutable) > 3 else kwargs["end"])
             ffmpeg = find_media_tool("ffmpeg")
+            if not ffmpeg:
+                raise RuntimeError("Smart Layout requires the FFmpeg media engine; no incorrect Classic export was substituted.")
+            requested_resolution = str(mutable[7] if len(mutable) > 7 else kwargs.get("resolution", "720p"))
+            smart_width, smart_height = (1080, 1920) if requested_resolution == "1080p" else (720, 1280)
             prepared = await asyncio.to_thread(
                 prepare_smart_layout, source, output, start, end,
-                layout_mode, ffmpeg, 720, 1280,
+                layout_mode, ffmpeg, smart_width, smart_height,
                 max(30, int(get_settings().media_process_timeout_seconds)),
             ) if ffmpeg else None
             if prepared:
