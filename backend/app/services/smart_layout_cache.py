@@ -59,7 +59,7 @@ class AnalysisIdentity:
         generation = str(self.generation or "").strip()
         if not generation or len(generation) > 160:
             raise ValueError("A confirmed source generation is required")
-        if any(ord(char) < 32 for char in generation):
+        if any(ord(char) < 32 or char in (chr(92), '/') for char in generation):
             raise ValueError("Invalid source generation")
         return AnalysisIdentity(uid, pid, cid, vid, generation,
                                 round(start, 4), round(end, 4))
