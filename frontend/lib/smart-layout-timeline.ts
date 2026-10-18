@@ -81,7 +81,7 @@ export function parseSmartLayoutPlan(input: unknown): SmartLayoutPlan | null {
     previousEnd = raw.end as number;
   }
   if (Math.abs(previousEnd - duration) > .065) return null;
-  return input as SmartLayoutPlan;
+  return input as unknown as SmartLayoutPlan;
 }
 
 export function findScene(plan: SmartLayoutPlan, sourceTime: number): SmartLayoutScene | null {
