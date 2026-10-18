@@ -154,5 +154,63 @@ class PrivateAnalysisCacheTests(unittest.TestCase):
             private_plan_key(AnalysisIdentity("../../secrets", project, clip, video, "v1", 0, 10))
 
 
+
+class SharedVariantsTests(unittest.TestCase):
+    def test_three_modes_reuse_exact_same_camera_scene_evidence(self):
+        from dataclasses import dataclass, field
+        from app.services.smart_layout_variants import (
+            all_layout_variants, all_variants_match_source,
+        )
+        @dataclass(frozen=True)
+        class Evidence:
+            start: float
+            end: float
+            mode: str
+            centers: tuple = ()
+            switches: tuple = ()
+        @dataclass(frozen=True)
+        class AutoPlan:
+            mode: str = "auto"
+            width: int = 1280
+            height: int = 720
+            segments: tuple = field(default_factory=tuple)
+
+        evidence = AutoPlan(segments=(
+            Evidence(0,3,"dual_stack",((.2,.4),(.8,.4))),
+            Evidence(3,6,"single",((.75,.35),)),
+            Evidence(6,8,"wide"),
+        ))
+        bundle = all_layout_variants(evidence,source_start=42,duration=8)
+        self.assertTrue(all_variants_match_source(bundle))
+        self.assertEqual(bundle["auto"]["scenes"][0]["layout"],"dual_stack")
+        self.assertEqual(bundle["speaker_focus"]["scenes"][0]["layout"],"speaker_focus")
+        self.assertEqual(bundle["dual_stack"]["scenes"][0]["layout"],"dual_stack")
+        for value in bundle.values():
+            self.assertEqual([s["layout"] for s in value["scenes"][1:]],
+                             ["single","wide"])
+            self.assertEqual(len(value["scenes"][1]["crops"]),1)
+            self.assertEqual(value["source_start"],42)
+
+    def test_split_mode_does_not_invent_a_second_face(self):
+        from dataclasses import dataclass
+        from app.services.smart_layout_variants import all_layout_variants
+        @dataclass(frozen=True)
+        class One:
+            start: float = 0
+            end: float = 3
+            mode: str = "single"
+            centers: tuple = ((.75,.32),)
+            switches: tuple = ()
+        @dataclass(frozen=True)
+        class Plan:
+            mode: str = "auto"
+            width: int = 1280
+            height: int = 720
+            segments: tuple = (One(),)
+        bundle = all_layout_variants(Plan(),source_start=0,duration=3)
+        for item in bundle.values():
+            self.assertEqual(item["scenes"][0]["layout"],"single")
+            self.assertEqual(len(item["scenes"][0]["crops"]),1)
+
 if __name__ == "__main__":
     unittest.main()
