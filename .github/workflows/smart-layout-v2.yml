@@ -1,0 +1,36 @@
+name: Smart Layout v2 isolated contract checks
+
+on:
+  push:
+    branches:
+      - work/secure-smart-layout-v2-20261018
+  pull_request:
+    branches:
+      - feature/creator-pulse-next-move
+
+permissions:
+  contents: read
+
+jobs:
+  layout-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout source only
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify strict Python contract without cloud credentials
+        env:
+          PYTHONPATH: backend
+        run: python -m unittest discover -s backend/tests -p test_smart_layout_contract_v2.py -v
+      - name: Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify browser geometry without dependencies or media access
+        run: node frontend/scripts/check-smart-layout-v2.mjs
