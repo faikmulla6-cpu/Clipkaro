@@ -47,16 +47,13 @@ class SmartLayoutSecurityTests(unittest.IsolatedAsyncioTestCase):
                 await api._owned(clip,user)
             self.assertEqual(exc.exception.status_code,409)
 
-    async def test_malformed_cache_never_returned_or_marked_ready(self):
+    async def test_malformed_database_cache_never_returned_or_marked_ready(self):
         uid,pid,cid,vid=user_ids()
         identity=AnalysisIdentity(uid,pid,cid,vid,"etag:xyz",0.,2.)
-        key=private_plan_key(identity)
-        payload=json.dumps({"version":2,"cache_key":key,"plans":{"auto":{"scenes":["../../etc"]}}}).encode()
-        class Storage:
-            async def stat(self,k):return SimpleNamespace(size=len(payload),generation="etag:xyz")
-            async def download(self,k,destination):
-                destination.write_bytes(payload)
-        with patch.object(api,"get_storage_provider",return_value=Storage()):
+        payload={"version":2,"cache_key":private_plan_key(identity),
+                 "plans":{"auto":{"scenes":["../../etc"]}}}
+        with patch("app.services.smart_layout_repository.read_plan",
+                   new_callable=AsyncMock,return_value=payload):
             status=await api._cached({"source_width":1280,"source_height":720},identity)
         self.assertIsNone(status)
 
@@ -79,7 +76,7 @@ class SmartLayoutSecurityTests(unittest.IsolatedAsyncioTestCase):
                "headers":[(b"range",b"bytes=2-9")]}
         req=Request(scope)
         owned={"original_filename":"a.mp4","file_path":key,"object_generation":"etag:abc"}
-        with patch.object(api,"enabled",return_value=True), \
+        with patch.object(api,"enabled_for_user",return_value=True), \
              patch.object(api,"_owned",new_callable=AsyncMock,return_value=owned), \
              patch.object(api,"get_storage_provider",return_value=fake), \
              patch.object(api,"S3StorageProvider",FakeS3), \
@@ -102,7 +99,7 @@ class SmartLayoutSecurityTests(unittest.IsolatedAsyncioTestCase):
             async def stat(self,k):return SimpleNamespace(size=777,generation="etag:new")
         row={"original_filename":"a.mp4","file_path":key,"object_generation":"etag:old"}
         req=Request({"type":"http","method":"GET","path":"/v1/test","headers":[]})
-        with patch.object(api,"enabled",return_value=True), \
+        with patch.object(api,"enabled_for_user",return_value=True), \
              patch.object(api,"_owned",new_callable=AsyncMock,return_value=row), \
              patch.object(api,"get_storage_provider",return_value=FakeS3()), \
              patch.object(api,"S3StorageProvider",FakeS3), \
@@ -114,49 +111,6 @@ class SmartLayoutSecurityTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__=="__main__":
     unittest.main()
-
-
-class SmartLayoutPurgeScopeTests(unittest.IsolatedAsyncioTestCase):
-    async def test_only_explicit_owner_project_analysis_versions_can_be_purged(self):
-        from app.services import smart_layout_cleanup as cleanup
-        from app.services.smart_layout_cache import AnalysisIdentity,private_plan_key
-        uid,pid,cid,vid=user_ids()
-        key=private_plan_key(AnalysisIdentity(uid,pid,cid,vid,"etag:v1",0,5))
-        class FakeS3:
-            bucket="private"
-            def __init__(self):
-                self.client=MagicMock()
-                self.client.list_object_versions.return_value={
-                    "Versions":[{"Key":key,"VersionId":"1234"}],
-                    "DeleteMarkers":[{"Key":key,"VersionId":"dead"}],
-                    "IsTruncated":False}
-        fake=FakeS3()
-        with patch.object(cleanup,"S3StorageProvider",FakeS3):
-            count=await cleanup.purge_smart_layout_plans(fake,uid,pid)
-        self.assertEqual(count,2)
-        self.assertEqual(fake.client.delete_object.call_count,2)
-        for call in fake.client.delete_object.call_args_list:
-            self.assertEqual(call.kwargs["Key"],key)
-
-    async def test_unexpected_object_refuses_entire_purge_page(self):
-        from app.services import smart_layout_cleanup as cleanup
-        from app.services.smart_layout_cache import AnalysisIdentity,private_plan_key
-        uid,pid,cid,vid=user_ids()
-        key=private_plan_key(AnalysisIdentity(uid,pid,cid,vid,"etag:v1",0,5))
-        other_uid=str(uuid.uuid4())
-        forbidden=key.replace(uid,other_uid)
-        class FakeS3:
-            bucket="private"
-            def __init__(self):
-                self.client=MagicMock()
-                self.client.list_object_versions.return_value={
-                    "Versions":[{"Key":key,"VersionId":"good"},{"Key":forbidden,"VersionId":"bad"}],
-                    "IsTruncated":False}
-        fake=FakeS3()
-        with patch.object(cleanup,"S3StorageProvider",FakeS3):
-            with self.assertRaises(ValueError):
-                await cleanup.purge_smart_layout_plans(fake,uid,pid)
-        fake.client.delete_object.assert_not_called()
 
 
 class PrivateSourceRaceTests(unittest.IsolatedAsyncioTestCase):
@@ -176,7 +130,7 @@ class PrivateSourceRaceTests(unittest.IsolatedAsyncioTestCase):
         row={"original_filename":"original.mp4","file_path":key,"object_generation":"etag:approved"}
         req=Request({"type":"http","method":"GET",
                      "path":"/api/v1/source","headers":[(b"range",b"bytes=0-99")]})
-        with patch.object(api,"enabled",return_value=True), \
+        with patch.object(api,"enabled_for_user",return_value=True), \
              patch.object(api,"_owned",new_callable=AsyncMock,return_value=row), \
              patch.object(api,"get_storage_provider",return_value=obj), \
              patch.object(api,"S3StorageProvider",FakeS3), \
@@ -187,3 +141,71 @@ class PrivateSourceRaceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(exc.exception.status_code,409)
         self.assertTrue(stale.closed)
         self.assertEqual(obj.client.get_object.call_args.kwargs["IfMatch"],'"approved"')
+
+
+class VerifiedB2DownloadTests(unittest.IsolatedAsyncioTestCase):
+    async def test_analysis_download_checks_b2_etag_and_never_uses_latest_unchecked(self):
+        from app.services import smart_layout_job as job
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as folder:
+            class FakeS3:
+                bucket = "private"
+                def __init__(self, etag):
+                    self.client = MagicMock()
+                    self.client.get_object.return_value = {
+                        "ETag": '"' + etag + '"',
+                        "Body": io.BytesIO(b"A" * 1500),
+                    }
+            fake = FakeS3("approved")
+            with patch.object(job, "S3StorageProvider", FakeS3):
+                target = Path(folder) / "source.mp4"
+                await job._download_verified_source(fake,"users/owner/source.mp4",target,"etag:approved")
+                self.assertEqual(target.stat().st_size,1500)
+                self.assertEqual(fake.client.get_object.call_args.kwargs["IfMatch"],'"approved"')
+                target.unlink()
+                swapped = FakeS3("replaced")
+                with self.assertRaises(RuntimeError):
+                    await job._download_verified_source(swapped,"users/owner/source.mp4",target,"etag:approved")
+                self.assertFalse(target.exists())
+
+    async def test_analysis_download_version_id_is_exact(self):
+        from app.services import smart_layout_job as job
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as folder:
+            class FakeS3:
+                bucket = "private"
+                def __init__(self):
+                    self.client = MagicMock()
+                    self.client.get_object.return_value = {
+                        "VersionId":"fixed-version",
+                        "ETag":'"any-etag"',
+                        "Body":io.BytesIO(b"B" * 1500),
+                    }
+            storage = FakeS3()
+            target = Path(folder) / "video.mp4"
+            with patch.object(job,"S3StorageProvider",FakeS3):
+                await job._download_verified_source(storage,"users/owner/video.mp4",target,
+                                                    "version:fixed-version")
+            self.assertEqual(storage.client.get_object.call_args.kwargs["VersionId"],"fixed-version")
+            self.assertEqual(target.stat().st_size,1500)
+
+
+class SmartLayoutCanaryGateTests(unittest.IsolatedAsyncioTestCase):
+    async def test_canary_defaults_off_and_requires_explicit_allowlist(self):
+        owner = str(uuid.uuid4())
+        stranger = str(uuid.uuid4())
+        with patch.dict(os.environ, {"KARO_REAL_PREVIEW_ENABLED":"true",
+                                     "KARO_REAL_PREVIEW_CANARY_USERS":""}):
+            self.assertFalse(api.enabled_for_user(owner))
+            self.assertFalse((await api.preview_capabilities({"id":owner}))["available"])
+        with patch.dict(os.environ, {"KARO_REAL_PREVIEW_ENABLED":"true",
+                                     "KARO_REAL_PREVIEW_CANARY_USERS":owner}):
+            self.assertTrue(api.enabled_for_user(owner))
+            self.assertFalse(api.enabled_for_user(stranger))
+            self.assertTrue((await api.preview_capabilities({"id":owner}))["available"])
+            self.assertFalse((await api.preview_capabilities({"id":stranger}))["available"])
+        with patch.dict(os.environ, {"KARO_REAL_PREVIEW_ENABLED":"false",
+                                     "KARO_REAL_PREVIEW_CANARY_USERS":"*"}):
+            self.assertFalse(api.enabled_for_user(owner))

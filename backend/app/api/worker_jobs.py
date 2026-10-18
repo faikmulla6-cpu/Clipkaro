@@ -482,8 +482,8 @@ async def export_clip(
         # BEFORE inserting an exports row. Never reserve a Free export for
         # a preview that has not completed, or quietly use a different crop.
         if body.layout_mode != "classic":
-            from app.api.smart_layout_v2 import enabled as smart_v2_enabled
-            if smart_v2_enabled():
+            from app.api.smart_layout_v2 import enabled_for_user as smart_v2_enabled
+            if smart_v2_enabled(str(user["id"])):
                 from app.api.smart_layout_v2 import _cached, _identity
                 versioned_clip = {
                     **video, "clip_id": clip_id, "video_id": clip["video_id"],

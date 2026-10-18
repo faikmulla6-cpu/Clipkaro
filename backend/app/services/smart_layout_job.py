@@ -14,10 +14,69 @@ from app.core.database import fetch_one
 from app.services.jobs import update_job
 from app.services.smart_layout_cache import AnalysisIdentity, MODEL_VERSION, private_plan_key
 from app.services.smart_layout_variants import all_layout_variants, all_variants_match_source
-from app.services.storage import validate_object_key
+from app.services.storage import S3StorageProvider, validate_object_key
 from app.services.video import find_media_tool
 
 MAX_LAYOUT_JSON_BYTES = 131072
+MAX_SOURCE_BYTES = 2_500_000_000
+
+
+async def _download_verified_source(storage, key: str, destination: Path,
+                                    generation: str) -> None:
+    """Pin the video bytes to the DB-confirmed B2 generation.
+
+    A latest-object download is NOT enough: the source can be replaced while
+    an analysis is queued. Stream to private scratch, never return signed URLs.
+    """
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if isinstance(storage, S3StorageProvider):
+        def _copy() -> None:
+            request = {"Bucket": storage.bucket, "Key": key}
+            if generation.startswith("version:"):
+                request["VersionId"] = generation.removeprefix("version:")
+            elif generation.startswith("etag:"):
+                request["IfMatch"] = '"' + generation.removeprefix("etag:") + '"'
+            else:
+                raise RuntimeError("Unverifiable source version")
+            response = storage.client.get_object(**request)
+            body = response["Body"]
+            try:
+                actual = (str(response.get("VersionId") or "") if generation.startswith("version:")
+                          else str(response.get("ETag") or "").strip('"'))
+                wanted = generation.split(":", 1)[1]
+                if actual != wanted:
+                    raise RuntimeError("Source version changed during analysis download")
+                total = 0
+                with destination.open("wb") as file:
+                    while True:
+                        chunk = body.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        total += len(chunk)
+                        if total > MAX_SOURCE_BYTES:
+                            raise RuntimeError("Smart Layout source exceeds processing limit")
+                        file.write(chunk)
+                if total < 1000:
+                    raise RuntimeError("Source download was incomplete")
+            finally:
+                body.close()
+        try:
+            await asyncio.to_thread(_copy)
+        except Exception:
+            destination.unlink(missing_ok=True)
+            raise
+        return
+
+    current = await storage.stat(key)
+    if not current or current.generation != generation or current.size > MAX_SOURCE_BYTES:
+        raise RuntimeError("Source generation could not be verified")
+    await storage.download(key, destination, generation=generation)
+    after = await storage.stat(key)
+    if not after or after.generation != generation or destination.stat().st_size != after.size:
+        destination.unlink(missing_ok=True)
+        raise RuntimeError("Source changed during download")
+
+
 ALLOWED_EXTENSIONS = frozenset({".mp4", ".mov", ".webm", ".mkv", ".avi"})
 
 
@@ -31,7 +90,7 @@ async def run_smart_layout_analysis(job: dict, scratch: Path, storage) -> None:
         """SELECT c.id clip_id,c.start_time,c.end_time,v.id video_id,
                   v.file_path,v.object_generation,v.original_filename,
                   v.duration source_duration,v.status source_status,
-                  v.width source_width,v.height source_height,p.id project_id
+                  v.width source_width,v.height source_height,v.expires_at,p.id project_id
            FROM clips c JOIN videos v ON v.id=c.video_id
            JOIN projects p ON p.id=v.project_id
            WHERE c.id=? AND p.user_id=?""", (clip_id, user_id),
@@ -71,8 +130,8 @@ async def run_smart_layout_analysis(job: dict, scratch: Path, storage) -> None:
         raise RuntimeError("This video container cannot be analyzed for Smart Layout.")
     source = scratch / "uploads" / ("smart-source" + extension)
     await update_job(job["id"], 15, "downloading", "Preparing private source frames")
-    await storage.download(
-        source_key, source, generation=row.get("object_generation")
+    await _download_verified_source(
+        storage, source_key, source, str(row.get("object_generation") or "")
     )
     if not source.is_file() or source.stat().st_size < 1000:
         raise RuntimeError("The source is not readable.")
@@ -97,16 +156,11 @@ async def run_smart_layout_analysis(job: dict, scratch: Path, storage) -> None:
     ).encode("utf-8")
     if len(encoded) > MAX_LAYOUT_JSON_BYTES:
         raise RuntimeError("Smart Layout analysis result exceeded safe limits.")
-    result_path = scratch / "analysis.json"
-    result_path.write_bytes(encoded)
     await update_job(job["id"], 88, "saving", "Saving private reusable framing plan")
     from app.api.smart_layout_v2 import _identity
     fresh = await _owned(clip_id, user_id)
     if _identity(fresh, user_id) != identity:
         raise RuntimeError("The clip or source changed during Smart Layout analysis.")
-    uploaded = await storage.upload(
-        result_path, key, content_type="application/json"
-    )
-    if uploaded.size != len(encoded):
-        raise RuntimeError("Smart Layout cache upload size mismatch.")
+    from app.services.smart_layout_repository import store_plan
+    await store_plan(identity, record, source_expires_at=row.get("expires_at"))
     await update_job(job["id"], 100, "ready", "Smart Layout analysis ready", "completed")

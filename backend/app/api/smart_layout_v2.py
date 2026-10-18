@@ -38,9 +38,30 @@ def enabled() -> bool:
     return os.getenv("KARO_REAL_PREVIEW_ENABLED", "false").lower() == "true"
 
 
-def _require_feature() -> None:
+def enabled_for_user(user_id: str) -> bool:
+    # Rollout is explicitly opt-in. An empty allowlist NEVER enables every
+    # customer by accident; "*" requires deliberate operator approval.
     if not enabled():
+        return False
+    canary = {v.strip() for v in os.getenv("KARO_REAL_PREVIEW_CANARY_USERS", "").split(",") if v.strip()}
+    return "*" in canary or str(user_id) in canary
+
+
+def _require_feature(user_id: str) -> None:
+    if not enabled_for_user(user_id):
         raise HTTPException(404, "This preview is not available.")
+
+
+@router.get("/smart-layout-v2/capabilities")
+async def preview_capabilities(user: dict = Depends(current_user)) -> dict:
+    """Allow the browser to discover the backend version at runtime.
+
+    No build-time NEXT_PUBLIC flag, bucket key, customer identifier or
+    pricing/entitlement is returned. The old editor never has to guess
+    whether this backend version can analyze actual faces.
+    """
+    return {"available": enabled_for_user(str(user["id"])),
+            "model_version": MODEL_VERSION if enabled_for_user(str(user["id"])) else None}
 
 
 async def _owned(clip_id: str, user_id: str) -> dict:
@@ -83,51 +104,41 @@ def _identity(row: dict, uid: str) -> AnalysisIdentity:
 
 
 async def _cached(row: dict, identity: AnalysisIdentity) -> dict | None:
+    """Read only this owner's exact source/trim analysis from Postgres.
+
+    No Backblaze cache objects or object versions are created, so normal
+    project deletion removes all analysis through FK CASCADE.
+    """
+    from app.services.smart_layout_contract import validate_serialized_plan
+    from app.services.smart_layout_repository import read_plan
     key = private_plan_key(identity)
-    storage = get_storage_provider()
     try:
-        item = await asyncio.wait_for(storage.stat(key), timeout=12)
+        cached = await read_plan(identity)
     except Exception as exc:
-        raise HTTPException(503, "Private preview storage is temporarily unavailable.") from exc
-    if item is None:
+        raise HTTPException(503, "Private preview cache is temporarily unavailable.") from exc
+    if not cached:
         return None
-    if item.size < 100 or item.size > _MAX_JSON:
-        return None  # Corrupt object: worker must replace it; never serve it.
     try:
-        with tempfile.TemporaryDirectory(prefix="clipkaro-plan-") as tmp:
-            destination = Path(tmp) / "plan.json"
-            await asyncio.wait_for(storage.download(key, destination), timeout=15)
-            if destination.stat().st_size > _MAX_JSON:
-                raise ValueError("Unsafe cached plan size")
-            cached = json.loads(destination.read_text(encoding="utf-8"))
         plans = cached.get("plans")
-        if isinstance(plans, dict):
-            from app.services.smart_layout_contract import validate_serialized_plan
-            for item in plans.values():
-                validate_serialized_plan(item)
         if (not isinstance(plans, dict) or cached.get("version") != 2
             or cached.get("model_version") != MODEL_VERSION
             or cached.get("cache_key") != key or not all_variants_match_source(plans)):
-            raise ValueError("Invalid cached plan")
-        if any(
-            abs(float(p.get("source_start", -1)) - identity.start) > .01
-            or abs(float(p.get("duration", -1)) - (identity.end - identity.start)) > .01
-            or int(p.get("source_width", 0)) != int(row["source_width"])
-            or int(p.get("source_height", 0)) != int(row["source_height"])
-            for p in plans.values()
-        ):
-            raise ValueError("Plan does not belong to this source generation")
-        return {"status": "ready", "plans": plans}
-    except (asyncio.TimeoutError, OSError) as exc:
-        raise HTTPException(503, "Private preview storage is temporarily unavailable.") from exc
-    except (ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
-        # Fail closed, but permit the authorized worker to re-analyze and
-        # atomically replace a stale or corrupt cache without changing B2 ACLs.
+            raise ValueError("Mismatched preview analysis")
+        for item in plans.values():
+            validate_serialized_plan(item)
+            if (
+                abs(float(item["source_start"]) - identity.start) > .01
+                or abs(float(item["duration"]) - (identity.end-identity.start)) > .01
+                or int(item["source_width"]) != int(row["source_width"])
+                or int(item["source_height"]) != int(row["source_height"])
+            ):
+                raise ValueError("Private source dimensions or range changed")
+        return {"status":"ready", "plans":plans}
+    except (ValueError, KeyError, TypeError) as exc:
         import logging
         logging.getLogger("clipkaro.smartlayout.v2").warning(
-            "Private Smart Layout cache invalid: %s", type(exc).__name__)
+            "Private layout cache invalid: %s",type(exc).__name__)
         return None
-
 
 async def _active_job(clip_id: str, uid: str, key: str) -> dict | None:
     rows = await fetch_all(
@@ -149,7 +160,7 @@ async def _active_job(clip_id: str, uid: str, key: str) -> dict | None:
 
 @router.get("/clips/{clip_id}/smart-layout-v2")
 async def analysis_status(clip_id: str, user: dict = Depends(current_user)) -> dict:
-    _require_feature()
+    _require_feature(str(user["id"]))
     row = await _owned(clip_id, str(user["id"]))
     identity = _identity(row, str(user["id"]))
     ready = await _cached(row, identity)
@@ -163,7 +174,7 @@ async def analysis_status(clip_id: str, user: dict = Depends(current_user)) -> d
 async def request_analysis(
     clip_id: str, tasks: BackgroundTasks, user: dict = Depends(current_user),
 ) -> dict:
-    _require_feature()
+    _require_feature(str(user["id"]))
     uid = str(user["id"])
     row = await _owned(clip_id, uid)
     identity = _identity(row, uid)
@@ -218,7 +229,7 @@ async def original_canvas_video(
     DO NOT redirect to B2: cross-origin signed video can taint browser Canvas.
     The request cannot supply a B2 key or access another user's source.
     """
-    _require_feature()
+    _require_feature(str(user["id"]))
     uid = str(user["id"])
     row = await _owned(clip_id, uid)
     if Path(str(row["original_filename"])).suffix.lower() != ".mp4":
@@ -269,7 +280,14 @@ async def original_canvas_video(
         response = await asyncio.to_thread(storage.client.get_object, **request_kwargs)
     except Exception as exc:
         raise HTTPException(503, "Private preview media is temporarily unavailable.") from exc
-    if storage._generation(response) != generation:
+    response_version = str(response.get("VersionId") or "").strip()
+    response_etag = str(response.get("ETag") or "").strip().strip('"')
+    same_source = (
+        response_version == generation.removeprefix("version:")
+        if generation.startswith("version:")
+        else response_etag == generation.removeprefix("etag:")
+    )
+    if not same_source:
         await asyncio.to_thread(response["Body"].close)
         raise HTTPException(409, "The source changed while loading; please reload the editor.")
     body = response["Body"]

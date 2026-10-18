@@ -39,7 +39,8 @@ type CaptionLanguageStyle = "auto" | "roman_hinglish" | "original";
 type CaptionAlignment = "left" | "center" | "right";
 type PostKaroStatus = { plan_eligible: boolean; ready: boolean };
 
-const SMART_LAYOUT_V2_ENABLED = process.env.NEXT_PUBLIC_SMART_LAYOUT_V2 === "true";
+// Preview capability is discovered from the authenticated production backend.
+ // No fragile Hostinger build-time NEXT_PUBLIC switch is required.
 type SmartPlanModes = "auto" | "dual_stack" | "speaker_focus";
 type LayoutAnalysisResponse = { status: string; job_id?: string; plans?: Record<SmartPlanModes, unknown> };
 const styles = [
@@ -184,6 +185,8 @@ export default function Editor() {
   const [layoutPlans, setLayoutPlans] = useState<Record<SmartPlanModes, SmartLayoutPlan> | null>(null);
   const [layoutAnalysis, setLayoutAnalysis] = useState<"idle" | "analyzing" | "ready" | "error">("idle");
   const [layoutAnalysisError, setLayoutAnalysisError] = useState("");
+  const [smartCapability, setSmartCapability] = useState<"checking" | "ready" | "unavailable">("checking");
+  const SMART_LAYOUT_V2_ENABLED = smartCapability === "ready";
   const [focusX, setFocusX] = useState(50);
   const [zoom, setZoom] = useState(1);
   const [resolution, setResolution] = useState("720p");
@@ -223,16 +226,24 @@ export default function Editor() {
   const [draggedSegmentIndex, setDraggedSegmentIndex] = useState<number | null>(null);
   const [dragOverSegmentIndex, setDragOverSegmentIndex] = useState<number | null>(null);
 
-  // The old static two-video composition is retained ONLY for old deployments.
-  // In v2 one authenticated original feeds one Canvas, using exact media-worker
-  // crop rectangles; without an analysis we show an honest pending state.
+  // V2 ONLY: show actual crop analysis, not duplicated placeholder speakers.
+  // Until the authenticated backend accepts this user, the canvas stays a
+  // single honest source frame and never simulates multiple detected faces.
   const smartRequested = SMART_LAYOUT_V2_ENABLED && ratio === "9:16" && layoutMode !== "classic" && !preserveSourceCaptions;
   const verifiedLayoutPlans = layoutPlans && clip && Math.abs(layoutPlans.auto.source_start - clip.start_time) <= .02
     && Math.abs(layoutPlans.auto.duration - (clip.end_time - clip.start_time)) <= .02 ? layoutPlans : null;
   const realPlan = smartRequested && verifiedLayoutPlans && layoutAnalysis !== "error" ? verifiedLayoutPlans[layoutMode] : null;
   const actualScene = realPlan ? findScene(realPlan, playhead) : null;
-  const previewDual = !SMART_LAYOUT_V2_ENABLED && ratio === "9:16" && (layoutMode === "dual_stack" || layoutMode === "auto") && !preserveSourceCaptions;
-  const previewFocus = !SMART_LAYOUT_V2_ENABLED && ratio === "9:16" && layoutMode === "speaker_focus" && !preserveSourceCaptions;
+  const previewDual = false;
+  const previewFocus = false;
+
+  useEffect(() => {
+    let active = true;
+    api<{available: boolean; model_version?: string | null}>("/smart-layout-v2/capabilities")
+      .then(value => { if (active) setSmartCapability(value.available ? "ready" : "unavailable"); })
+      .catch(() => { if (active) setSmartCapability("unavailable"); });
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     if (!previewDual) return;
@@ -1094,7 +1105,16 @@ export default function Editor() {
     setPlayhead(video.currentTime);
   }
 
-  function onLoaded() { seekToClipStart(); }
+  function onLoaded() {
+    const video = videoRef.current;
+    if (realPlan && video && Number.isFinite(playhead) && playhead >= start && playhead <= end) {
+      // Switching the existing player to the protected byte-range source
+      // MUST NOT unexpectedly jump from the user's current scene to 0.
+      video.currentTime = playhead;
+      return;
+    }
+    seekToClipStart();
+  }
   function onTimeUpdate() {
     const video = videoRef.current;
     const pieces = timelineLayout.pieces;
@@ -1447,7 +1467,7 @@ export default function Editor() {
                   <option value="speaker_focus">Speaker Focus · Follow the person speaking</option>
                   <option value="classic">Classic · Single-person crop</option>
                 </select>
-                <p className="field-note">{SMART_LAYOUT_V2_ENABLED ? "When analysis finishes, layouts switch instantly using detected faces. Two panels appear ONLY when two real people are visible together. Analysis does not cost an export." : "Current preview is a composition guide. Accurate speaker framing requires the v2 preview rollout."}</p>
+                <p className="field-note">{smartCapability === "ready" ? "Frames are analyzed privately; each mode uses the actual source faces. Two panels appear only when two people are visible together. No export is charged." : "Real, face-aware preview becomes available when your secure video-analysis worker is enabled. Clipkaro does not fake two-speaker previews."}</p>
               </div>
               <div className="pro-editor-stat-grid"><span><small>Ratio</small><b>{ratio}</b></span><span><small>Focus</small><b>{Math.round(focusX)}%</b></span><span><small>Zoom</small><b>{Math.round(zoom*100)}%</b></span></div>
               <p className="pro-editor-note">Framing changes are reflected in the exported MP4, not only in preview.</p>
@@ -1496,6 +1516,10 @@ export default function Editor() {
             </div>
             {realPlan && <canvas ref={smartCanvasRef} className="smart-layout-v2-canvas"
               width={360} height={640} aria-label="Analyzed Smart Layout preview"/>}
+            {ratio === "9:16" && layoutMode !== "classic" && smartCapability !== "ready" &&
+              <div className="smart-layout-v2-status" role="status">
+                {smartCapability === "checking" ? "Checking secure Smart Layout availability…" : "Real Smart Layout preview is not active for this account. No simulated split is shown."}
+              </div>}
             {smartRequested && !realPlan && <div className="smart-layout-v2-status" role="status">
               {layoutAnalysis === "error" ? <><span>Smart Layout preview unavailable: {layoutAnalysisError}</span><button type="button" onClick={() => { setLayoutPlans(null); setLayoutAnalysis("idle"); setLayoutAnalysisError(""); }}>Retry analysis</button></> : "Analyzing real speaker positions…"}
             </div>}
@@ -1508,7 +1532,7 @@ export default function Editor() {
               </div>
             </>}
             {ratio === "9:16" && layoutMode !== "classic" && <div className="smart-preview-label">
-              <Sparkles size={11}/> {layoutMode === "auto" ? "AUTO DIRECTOR" : layoutMode === "dual_stack" ? "DUAL STACK" : "SPEAKER FOCUS"} · {realPlan ? "ANALYZED PREVIEW" : SMART_LAYOUT_V2_ENABLED ? "ANALYSIS PENDING" : "LIVE GUIDE"}
+              <Sparkles size={11}/> {layoutMode === "auto" ? "AUTO DIRECTOR" : layoutMode === "dual_stack" ? "DUAL STACK" : "SPEAKER FOCUS"} · {realPlan ? "ANALYZED PREVIEW" : SMART_LAYOUT_V2_ENABLED ? "ANALYSIS PENDING" : "NOT ANALYZED"}
             </div>}
             <button className="canvas-play pro-canvas-play" onClick={togglePlayback}>{playing ? <Pause fill="currentColor"/> : <Play fill="currentColor"/>}</button>
             {hookEnabled && showHook && visibleHook && <div className="canvas-hook">{visibleHook}</div>}

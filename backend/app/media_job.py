@@ -153,8 +153,8 @@ async def _render_export_durable(
         # V2 must use the SAME private timeline the editor paints. A stale
         # cache fails explicitly, never triggers a second face-detection pass.
         canonical_layout_v2 = None
-        from app.api.smart_layout_v2 import enabled as smart_v2_enabled
-        if smart_v2_enabled() and request.layout_mode != "classic":
+        from app.api.smart_layout_v2 import enabled_for_user as smart_v2_enabled
+        if smart_v2_enabled(str(job["user_id"])) and request.layout_mode != "classic":
             from app.api.smart_layout_v2 import _cached
             from app.services.smart_layout_cache import AnalysisIdentity
             identity = AnalysisIdentity(

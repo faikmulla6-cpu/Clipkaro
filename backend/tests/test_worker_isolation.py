@@ -166,3 +166,71 @@ def test_worker_reconstructs_full_export_request_before_render(client: TestClien
     assert restored.caption_position == "above"
     assert restored.watermark is False
     assert asyncio.run(fetch_one("SELECT * FROM job_claims WHERE job_id=?", (job_id,))) is None
+
+
+class SmartAnalysisSchedulingTests:
+    def test_preview_jobs_are_recoverable_and_never_jump_a_paid_export(self, client):
+        import asyncio
+        from app.services.jobs import create_job, claim_next_job, release_claim, requeue_interrupted_worker_jobs
+        user = _signup(client, "preview-queue@example.com")
+        # Preview arrives first; the ordinary processing job must have priority.
+        preview = asyncio.run(create_job(user["id"], "smart_layout_analysis",
+                     project_id="preview-project", payload={"clip_id":"example-clip"}))
+        paid = asyncio.run(create_job(user["id"], "render_export",
+                     project_id="paid-project",payload={"request":{}}))
+        first = asyncio.run(claim_next_job("worker-one"))
+        assert first and first["id"] == paid
+        asyncio.run(release_claim(paid))
+        second = asyncio.run(claim_next_job("worker-two"))
+        assert second and second["id"] == preview
+        assert second["payload"]["clip_id"] == "example-clip"
+        assert asyncio.run(requeue_interrupted_worker_jobs()) == 1
+        resumed = asyncio.run(claim_next_job("worker-three"))
+        assert resumed and resumed["id"] == preview
+        asyncio.run(release_claim(preview))
+
+
+
+def test_smart_layout_cache_uses_private_rows_and_cascades_on_project_deletion(client: TestClient):
+    import uuid
+    from datetime import datetime,timedelta,timezone
+    from app.services.smart_layout_cache import AnalysisIdentity, private_plan_key
+    from app.services.smart_layout_repository import (
+        init_smart_layout_repository,store_plan,read_plan,expire_old_plans,
+    )
+    user=_signup(client,"layout-postgres-cascade@example.com")
+    project_id,video_id,clip_id=[str(uuid.uuid4()) for _ in range(3)]
+    stamp=datetime.now(timezone.utc).isoformat()
+    source_expires=(datetime.now(timezone.utc)+timedelta(days=35)).isoformat()
+    asyncio.run(execute(
+        "INSERT INTO projects VALUES (?,?,?,'','ready',100,'ready','auto','auto',NULL,?,?)",
+        (project_id,user["id"],"V2 private-cache fixture",stamp,stamp),
+    ))
+    asyncio.run(execute(
+        "INSERT INTO videos VALUES (?,?,?,60,1280,720,2000,?,'ready',?,?)",
+        (video_id,project_id,"source.mp4","users/owner/source.mp4",stamp,source_expires),
+    ))
+    asyncio.run(execute(
+        "INSERT INTO clips VALUES (?,?,1,31,?,?,?,?,88,'{}','shorts','suggested',?,?)",
+        (clip_id,video_id,"Hook","Title","Reason","Transcript",stamp,stamp),
+    ))
+    asyncio.run(init_smart_layout_repository())
+    identity=AnalysisIdentity(user["id"],project_id,clip_id,video_id,
+                              "etag:fixture-only",1,31)
+    record={"version":2,"cache_key":private_plan_key(identity),
+            "plans":{"auto":{"safe":"coordinates only"}}}
+    asyncio.run(store_plan(identity,record,source_expires_at=source_expires))
+    assert asyncio.run(read_plan(identity))==record
+    other=AnalysisIdentity(str(uuid.uuid4()),project_id,clip_id,video_id,
+                           "etag:fixture-only",1,31)
+    assert asyncio.run(read_plan(other)) is None
+    row=asyncio.run(fetch_one(
+        "SELECT expires_at FROM smart_layout_plans WHERE cache_key=?",
+        (private_plan_key(identity),),
+    ))
+    assert row
+    expiry=datetime.fromisoformat(row["expires_at"])
+    assert expiry<datetime.now(timezone.utc)+timedelta(days=15)
+    asyncio.run(execute("DELETE FROM projects WHERE id=?",(project_id,)))
+    assert asyncio.run(read_plan(identity)) is None
+    asyncio.run(expire_old_plans())

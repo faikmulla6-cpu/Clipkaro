@@ -168,8 +168,9 @@ async def claim_next_job(worker_id: str) -> dict[str, Any] | None:
                FROM jobs j LEFT JOIN job_payloads p ON p.job_id=j.id
                LEFT JOIN job_claims c ON c.job_id=j.id
                WHERE j.status='queued' AND c.job_id IS NULL
-                 AND j.kind IN ('process_video','upgrade_pipeline','render_export')
-               ORDER BY j.created_at ASC,j.id ASC LIMIT 1"""
+                 AND j.kind IN ('process_video','upgrade_pipeline','render_export','smart_layout_analysis')
+               ORDER BY CASE WHEN j.kind='smart_layout_analysis' THEN 1 ELSE 0 END,
+                        j.created_at ASC,j.id ASC LIMIT 1"""
         )
         row = await cursor.fetchone()
         if not row:

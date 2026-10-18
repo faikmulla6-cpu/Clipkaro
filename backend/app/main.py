@@ -60,6 +60,10 @@ async def lifespan(_: FastAPI):
                 settings.alignment_backend, settings.require_forced_alignment
             )
     await init_db()
+    from app.api.smart_layout_v2 import enabled as smart_layout_v2_enabled
+    if smart_layout_v2_enabled():
+        from app.services.smart_layout_repository import init_smart_layout_repository
+        await init_smart_layout_repository()
     await init_job_queue()
     await init_cloud_uploads()
     # Identity schema is installed before any request can authenticate. Existing

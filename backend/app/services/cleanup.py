@@ -20,6 +20,10 @@ async def cleanup_expired() -> int:
     remain eligible for the next sweep instead of falsely claiming deletion.
     """
     timestamp = datetime.now(timezone.utc).isoformat()
+    from app.api.smart_layout_v2 import enabled as smart_layout_v2_enabled
+    if smart_layout_v2_enabled():
+        from app.services.smart_layout_repository import expire_old_plans
+        await expire_old_plans()
     files = await fetch_all(
         "SELECT id,file_path FROM videos WHERE expires_at<? AND status<>'expired'",
         (timestamp,),
