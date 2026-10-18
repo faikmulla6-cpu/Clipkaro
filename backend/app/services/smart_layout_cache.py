@@ -94,6 +94,13 @@ def safe_owner_key(key: str, user_id: str, project_id: str) -> bool:
         prefix = ("users/" + _uuid(user_id, "user_id") +
                   "/projects/" + _uuid(project_id, "project_id") +
                   "/smart-layout/" + ANALYSIS_SCHEMA + "/")
-        return isinstance(key, str) and key.startswith(prefix) and len(key) < 450
+        if not isinstance(key, str) or not key.startswith(prefix) or len(key) >= 450:
+            return False
+        suffix = key[len(prefix):]
+        parts = suffix.split("/")
+        if len(parts) != 2 or parts[0] != _uuid(parts[0], "clip_id"):
+            return False
+        return (len(parts[1]) == 69 and parts[1].endswith(".json") and
+                all(c in "0123456789abcdef" for c in parts[1][:64]))
     except ValueError:
         return False
