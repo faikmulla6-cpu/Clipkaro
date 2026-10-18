@@ -5,7 +5,7 @@ const css = fs.readFileSync(new URL("../app/globals.css", import.meta.url), "utf
 
 for (const token of [
   "Smart Edit V1", "Clean Speech", "splitAtPlayhead", "undoEdit", "redoEdit",
-  "edit_plan: editPlan", "source_words", "timeline-removal", "rangeContains",
+  "edit_plan: { ...editPlan, layout_mode: layoutMode }", "source_words", "timeline-removal", "rangeContains",
 ]) {
   if (!editor.includes(token)) throw new Error(`Smart Edit contract is missing: ${token}`);
 }

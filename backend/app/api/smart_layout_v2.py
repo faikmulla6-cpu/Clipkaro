@@ -254,13 +254,24 @@ async def original_canvas_video(
     end = min(size-1, start+_MAX_RANGE-1, requested_end)
     if not await consume_rate_limit(uid, group="smart_layout_media", limit=360, window_seconds=3600):
         raise HTTPException(429, "Private preview download rate exceeded.")
+    # Lock the range request to the generation authenticated above. A new
+    # object version appearing between HEAD and GET must never be previewed
+    # under an older clip's face/expiry analysis.
+    request_kwargs = {"Bucket": storage.bucket, "Key": key,
+                      "Range": f"bytes={start}-{end}"}
+    if generation.startswith("version:"):
+        request_kwargs["VersionId"] = generation.removeprefix("version:")
+    elif generation.startswith("etag:"):
+        request_kwargs["IfMatch"] = '"' + generation.removeprefix("etag:") + '"'
+    else:
+        raise HTTPException(409, "Cannot verify original source version.")
     try:
-        response = await asyncio.to_thread(
-            storage.client.get_object, Bucket=storage.bucket, Key=key,
-            Range=f"bytes={start}-{end}",
-        )
+        response = await asyncio.to_thread(storage.client.get_object, **request_kwargs)
     except Exception as exc:
         raise HTTPException(503, "Private preview media is temporarily unavailable.") from exc
+    if storage._generation(response) != generation:
+        await asyncio.to_thread(response["Body"].close)
+        raise HTTPException(409, "The source changed while loading; please reload the editor.")
     body = response["Body"]
     async def stream():
         try:

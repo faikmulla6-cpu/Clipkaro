@@ -73,10 +73,14 @@ single-face/uncertain shots, never fabricate a second person.
 
 - Python contract, media and security tests in isolated Modal: 25 passed
   before the subsequent persistence/cache-purge test additions.
-- Existing rendering, Smart Edit, layout, billing, subscription and
-  source-availability regression suite in isolated Modal: 156 passed.
+- Latest isolated Modal compatibility suite: **160 passed**, including
+  rendering, Smart Edit, layout, billing, subscriptions, source availability,
+  private media ETag/version pinning, malformed-plan checks and purge scopes.
 - Node geometry and Canvas tests passed.
-- Next.js production build with v2 enabled compiled and typechecked.
+- Next.js production build with v2 enabled compiled and typechecked;
+  frontend framing, caption, Smart Edit and canvas tests passed.
+- Authenticated MP4 proxy GET now pins the approved object VersionId or
+  If-Match ETag, refusing a replacement object between HEAD and GET.
 - Actual 59.56-second private podcast: detected 1 wide + 3 single-person
   shots, and rendered valid full-length 360x640 MP4s for requested Dual Stack
   and Speaker Focus without creating exports or uploading output.

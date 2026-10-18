@@ -68,8 +68,11 @@ class SmartLayoutSecurityTests(unittest.IsolatedAsyncioTestCase):
             bucket="hidden"
             client=MagicMock()
             async def stat(self,k):return SimpleNamespace(size=len(source),generation="etag:abc")
+            @staticmethod
+            def _generation(response):return "etag:" + str(response.get("ETag","")).strip('"')
         fake=FakeS3()
         fake.client.get_object.side_effect=lambda **kw:{
+            "ETag":'"abc"',
             "Body":io.BytesIO(source[int(kw["Range"].split("=")[1].split("-")[0]):int(kw["Range"].split("-")[-1])+1])
         }
         scope={"type":"http","method":"GET","path":"/v1/test",
@@ -89,6 +92,7 @@ class SmartLayoutSecurityTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("location",res.headers)
         self.assertEqual(body,source[2:10])
         self.assertEqual(fake.client.get_object.call_args.kwargs["Key"],key)
+        self.assertEqual(fake.client.get_object.call_args.kwargs["IfMatch"],'"abc"')
 
     async def test_cross_generation_media_fails_closed(self):
         uid,pid,cid,vid=user_ids()
@@ -153,3 +157,33 @@ class SmartLayoutPurgeScopeTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(ValueError):
                 await cleanup.purge_smart_layout_plans(fake,uid,pid)
         fake.client.delete_object.assert_not_called()
+
+
+class PrivateSourceRaceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_generation_swap_between_head_and_get_is_rejected(self):
+        uid,pid,cid,vid=user_ids()
+        key=f"users/{uid}/projects/{pid}/videos/{vid}/original.mp4"
+        stale=io.BytesIO(b"replacement media must never reach preview")
+        class FakeS3:
+            bucket="private"
+            client=MagicMock()
+            async def stat(self,k):return SimpleNamespace(size=200,generation="etag:approved")
+            @staticmethod
+            def _generation(response):
+                return "etag:"+str(response.get("ETag","")).strip('"')
+        obj=FakeS3()
+        obj.client.get_object.return_value={"ETag":'"replaced"',"Body":stale}
+        row={"original_filename":"original.mp4","file_path":key,"object_generation":"etag:approved"}
+        req=Request({"type":"http","method":"GET",
+                     "path":"/api/v1/source","headers":[(b"range",b"bytes=0-99")]})
+        with patch.object(api,"enabled",return_value=True), \
+             patch.object(api,"_owned",new_callable=AsyncMock,return_value=row), \
+             patch.object(api,"get_storage_provider",return_value=obj), \
+             patch.object(api,"S3StorageProvider",FakeS3), \
+             patch.object(api,"get_settings",return_value=SimpleNamespace(normalized_storage_backend="gcs")), \
+             patch.object(api,"consume_rate_limit",new_callable=AsyncMock,return_value=True):
+            with self.assertRaises(HTTPException) as exc:
+                await api.original_canvas_video(cid,req,{"id":uid})
+        self.assertEqual(exc.exception.status_code,409)
+        self.assertTrue(stale.closed)
+        self.assertEqual(obj.client.get_object.call_args.kwargs["IfMatch"],'"approved"')

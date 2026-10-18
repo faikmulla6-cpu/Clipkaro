@@ -382,7 +382,11 @@ export default function Editor() {
         setSourceHasCaptions(hasSourceCaptions); setSourceCaptionBand(track.source_caption_band ?? null);
         setReviewSuggested(!!track.review_suggested); setReviewReasons(track.review_reasons || []);
         setIndiaQualityHint(track.india_quality?.india_quality_suitable ? `${track.india_quality.likely_language_style || "Indian speech"} detected` : "");
-        if (hasSourceCaptions) setPreserveSourceCaptions(true);
+        // A previously saved Smart Layout must not be silently disabled just
+        // because the original upload contained burned-in subtitles.
+        if (hasSourceCaptions) {
+          setPreserveSourceCaptions(!track.edit_plan?.layout_mode || track.edit_plan.layout_mode === "classic");
+        }
       }).catch(() => { setTimedCaptionWords([]); setSourceWords([]); setEditPlan(emptyEditPlan()); setCleanSpeechRanges([]); setCaptionCards([]); setSpeechRegions([]); setSourceHasCaptions(false); setSourceCaptionBand(null); setPreserveSourceCaptions(false); setReviewSuggested(false); setReviewReasons([]); setIndiaQualityHint(""); });
     } catch (cause) {
       setLoadError(cause instanceof Error ? cause.message : "The project could not be loaded.");
