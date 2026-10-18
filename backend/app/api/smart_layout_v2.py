@@ -119,6 +119,18 @@ async def _cached(row: dict, identity: AnalysisIdentity) -> dict | None:
     if not cached:
         return None
     try:
+        # API ownership query aliases videos.width/height as source_width/
+        # source_height. Export's verified SELECT * FROM videos has width/
+        # height instead. Both are the SAME authenticated source: never
+        # misreport a validated plan as missing simply due to SQL aliases.
+        source_width = row.get("source_width")
+        source_height = row.get("source_height")
+        if source_width is None:
+            source_width = row.get("width")
+        if source_height is None:
+            source_height = row.get("height")
+        source_width = int(source_width)
+        source_height = int(source_height)
         plans = cached.get("plans")
         if (not isinstance(plans, dict) or cached.get("version") != 2
             or cached.get("model_version") != MODEL_VERSION
@@ -129,8 +141,8 @@ async def _cached(row: dict, identity: AnalysisIdentity) -> dict | None:
             if (
                 abs(float(item["source_start"]) - identity.start) > .01
                 or abs(float(item["duration"]) - (identity.end-identity.start)) > .01
-                or int(item["source_width"]) != int(row["source_width"])
-                or int(item["source_height"]) != int(row["source_height"])
+                or int(item["source_width"]) != source_width
+                or int(item["source_height"]) != source_height
             ):
                 raise ValueError("Private source dimensions or range changed")
         return {"status":"ready", "plans":plans}
