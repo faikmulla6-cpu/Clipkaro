@@ -18,7 +18,7 @@ const fixture = {
       crops: [[100, 40, 590, 460], [620, 70, 590, 460]],
       switches: [], caption_zone: "middle" },
     { start: 3, end: 5, layout: "single",
-      crops: [[560, 10, 404, 718]],
+      crops: [[560, 10, 404, 700]],
       switches: [], caption_zone: "bottom" },
     { start: 5, end: 8, layout: "wide",
       crops: [[0, 0, 1280, 720]],
