@@ -121,5 +121,38 @@ class SafeTimelineContractTests(unittest.TestCase):
         self.assertNotIn("file_path", repr(result))
 
 
+
+class PrivateAnalysisCacheTests(unittest.TestCase):
+    def test_customer_source_and_trim_are_part_of_cache_identity(self):
+        import uuid
+        from app.services.smart_layout_cache import AnalysisIdentity, private_plan_key, safe_owner_key
+        uid, project, clip, video = [str(uuid.uuid4()) for _ in range(4)]
+        item = AnalysisIdentity(uid, project, clip, video, "etag:v1", 523.46, 583.02)
+        path = private_plan_key(item)
+        self.assertTrue(safe_owner_key(path, uid, project))
+        self.assertFalse(safe_owner_key(path, str(uuid.uuid4()), project))
+        self.assertFalse(safe_owner_key(path, uid, str(uuid.uuid4())))
+        self.assertNotIn("etag:v1", path)
+        self.assertTrue(path.startswith(f"users/{uid}/projects/{project}/smart-layout/v2/"))
+        other_generation = AnalysisIdentity(uid, project, clip, video, "etag:v2", 523.46, 583.02)
+        other_trim = AnalysisIdentity(uid, project, clip, video, "etag:v1", 523.46, 580.02)
+        other_video = AnalysisIdentity(uid, project, clip, str(uuid.uuid4()), "etag:v1", 523.46, 583.02)
+        for changed in (other_generation, other_trim, other_video):
+            self.assertNotEqual(private_plan_key(changed), path)
+
+    def test_path_and_duration_injection_fails_closed(self):
+        import uuid
+        from app.services.smart_layout_cache import AnalysisIdentity, private_plan_key
+        uid, project, clip, video = [str(uuid.uuid4()) for _ in range(4)]
+        for generation in ("", "bad\\nfilename", "x"*161):
+            with self.assertRaises(ValueError):
+                private_plan_key(AnalysisIdentity(uid, project, clip, video, generation, 0, 10))
+        for start, end in ((10, 9), (0, 181), (0, float("nan")), (-1, 10)):
+            with self.assertRaises(ValueError):
+                private_plan_key(AnalysisIdentity(uid, project, clip, video, "v1", start, end))
+        with self.assertRaises(ValueError):
+            private_plan_key(AnalysisIdentity("../../secrets", project, clip, video, "v1", 0, 10))
+
+
 if __name__ == "__main__":
     unittest.main()
