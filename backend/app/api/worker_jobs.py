@@ -478,6 +478,28 @@ async def export_clip(
             raise HTTPException(409, "This clip no longer has a source video to render.")
         await _require_source_available(video, str(user["id"]))
 
+        # If the v2 rollout is enabled, verify the exact authorized plan
+        # BEFORE inserting an exports row. Never reserve a Free export for
+        # a preview that has not completed, or quietly use a different crop.
+        if body.layout_mode != "classic":
+            from app.api.smart_layout_v2 import enabled as smart_v2_enabled
+            if smart_v2_enabled():
+                from app.api.smart_layout_v2 import _cached, _identity
+                versioned_clip = {
+                    **video, "clip_id": clip_id, "video_id": clip["video_id"],
+                    "project_id": clip["project_id"],
+                    "start_time": clip["start_time"], "end_time": clip["end_time"],
+                }
+                identity = _identity(versioned_clip, str(user["id"]))
+                analyzed = await _cached(versioned_clip, identity)
+                if not analyzed:
+                    raise HTTPException(
+                        409,
+                        "Analyze the selected Smart Layout in the editor before exporting. No export allowance was consumed.",
+                    )
+                if body.layout_mode not in analyzed["plans"]:
+                    raise HTTPException(409, "The selected Smart Layout has no matching analysis.")
+
         brand = None
         if effective_body.brand_kit_id:
             if active_plan not in BRAND_KIT_PLANS:

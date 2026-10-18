@@ -37,6 +37,11 @@ def all_layout_variants(auto_plan: Any, *, source_start: float,
                 derived = replace(scene, mode="dual_stack", switches=())
             elif pair and choice == "speaker_focus":
                 derived = replace(scene, mode="speaker_focus")
+            elif getattr(scene, "mode", None) == "dual_stack":
+                # Auto Director may choose Dual Stack while still recording
+                # mouth-motion votes. Those votes cannot be applied to split
+                # scenes; they belong only in Speaker Focus.
+                derived = replace(scene, switches=())
             else:
                 derived = scene
             scenes.append(derived)

@@ -3,6 +3,7 @@
 import { ErrorState } from "@/components/ErrorState";
 import { useAuth } from "@/components/AuthProvider";
 import { API_URL, api, patchJSON, postJSON } from "@/lib/api";
+import { findScene, paintSmartLayoutFrame, parseSmartLayoutPlan, type SmartLayoutPlan } from "@/lib/smart-layout-timeline";
 import { downloadExport, newBehaviorSession, trackClipBehavior } from "@/lib/behavior";
 import {
   AlertTriangle, AlignCenter, AlignLeft, AlignRight, ArrowLeft, ArrowRight, Captions, Check, Download, Film, GripVertical, Loader2, LockKeyhole, MoveHorizontal,
@@ -21,7 +22,7 @@ type ExportStatus = { id: string; status: string; progress: number; download_url
 type Job = { id?: string; status: string; progress: number; message: string; error?: string; export_id?: string };
 type TimedWord = { start: number; end: number; text: string; confidence?: number; source_start?: number; source_end?: number };
 type RemovedRange = { start: number; end: number; reason: string };
-type EditPlan = { version: number; removed_ranges: RemovedRange[]; split_points: number[]; segment_order?: number[] };
+type EditPlan = { version: number; removed_ranges: RemovedRange[]; split_points: number[]; segment_order?: number[]; layout_mode?: "classic" | SmartPlanModes };
 type SpeechRegion = { id: number; start: number; end: number };
 type CaptionCard = { start: number; end: number; lines: string[]; words: TimedWord[] };
 type CaptionTrack = {
@@ -38,6 +39,9 @@ type CaptionLanguageStyle = "auto" | "roman_hinglish" | "original";
 type CaptionAlignment = "left" | "center" | "right";
 type PostKaroStatus = { plan_eligible: boolean; ready: boolean };
 
+const SMART_LAYOUT_V2_ENABLED = process.env.NEXT_PUBLIC_SMART_LAYOUT_V2 === "true";
+type SmartPlanModes = "auto" | "dual_stack" | "speaker_focus";
+type LayoutAnalysisResponse = { status: string; job_id?: string; plans?: Record<SmartPlanModes, unknown> };
 const styles = [
   ["kinetic", "Kinetic", "Punchy highlighted words"],
   ["clean", "Clean", "Readable creator standard"],
@@ -126,6 +130,7 @@ export default function Editor() {
   const { user, loading: authLoading } = useAuth();
   const videoRef = useRef<HTMLVideoElement>(null);
   const secondaryVideoRef = useRef<HTMLVideoElement>(null);
+  const smartCanvasRef = useRef<HTMLCanvasElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const captionRef = useRef<HTMLDivElement>(null);
   const captionContentRef = useRef<HTMLSpanElement>(null);
@@ -176,6 +181,9 @@ export default function Editor() {
   const [captionDragging, setCaptionDragging] = useState(false);
   const [ratio, setRatio] = useState("9:16");
   const [layoutMode, setLayoutMode] = useState<"auto" | "dual_stack" | "speaker_focus" | "classic">("classic");
+  const [layoutPlans, setLayoutPlans] = useState<Record<SmartPlanModes, SmartLayoutPlan> | null>(null);
+  const [layoutAnalysis, setLayoutAnalysis] = useState<"idle" | "analyzing" | "ready" | "error">("idle");
+  const [layoutAnalysisError, setLayoutAnalysisError] = useState("");
   const [focusX, setFocusX] = useState(50);
   const [zoom, setZoom] = useState(1);
   const [resolution, setResolution] = useState("720p");
@@ -215,11 +223,16 @@ export default function Editor() {
   const [draggedSegmentIndex, setDraggedSegmentIndex] = useState<number | null>(null);
   const [dragOverSegmentIndex, setDragOverSegmentIndex] = useState<number | null>(null);
 
-  // Layout choice is immediately visible; both panels play the same private
-  // source in sync, with audio from the primary video only. Final export uses
-  // per-shot face detection and may safely select a single face on solo shots.
-  const previewDual = ratio === "9:16" && (layoutMode === "dual_stack" || layoutMode === "auto") && !preserveSourceCaptions;
-  const previewFocus = ratio === "9:16" && layoutMode === "speaker_focus" && !preserveSourceCaptions;
+  // The old static two-video composition is retained ONLY for old deployments.
+  // In v2 one authenticated original feeds one Canvas, using exact media-worker
+  // crop rectangles; without an analysis we show an honest pending state.
+  const smartRequested = SMART_LAYOUT_V2_ENABLED && ratio === "9:16" && layoutMode !== "classic" && !preserveSourceCaptions;
+  const verifiedLayoutPlans = layoutPlans && clip && Math.abs(layoutPlans.auto.source_start - clip.start_time) <= .02
+    && Math.abs(layoutPlans.auto.duration - (clip.end_time - clip.start_time)) <= .02 ? layoutPlans : null;
+  const realPlan = smartRequested && verifiedLayoutPlans && layoutAnalysis !== "error" ? verifiedLayoutPlans[layoutMode] : null;
+  const actualScene = realPlan ? findScene(realPlan, playhead) : null;
+  const previewDual = !SMART_LAYOUT_V2_ENABLED && ratio === "9:16" && (layoutMode === "dual_stack" || layoutMode === "auto") && !preserveSourceCaptions;
+  const previewFocus = !SMART_LAYOUT_V2_ENABLED && ratio === "9:16" && layoutMode === "speaker_focus" && !preserveSourceCaptions;
 
   useEffect(() => {
     if (!previewDual) return;
@@ -249,6 +262,94 @@ export default function Editor() {
     };
   }, [previewDual, project?.id]);
 
+  useEffect(() => {
+    if (!SMART_LAYOUT_V2_ENABLED || !clip?.id || !smartRequested || verifiedLayoutPlans || layoutAnalysis === "error") return;
+    let disposed = false;
+    let poll: number | null = null;
+    let requested = false;
+    let attempts = 0;
+    setLayoutAnalysis("analyzing");
+    setLayoutAnalysisError("");
+    const check = async (): Promise<void> => {
+      try {
+        let status = await api<LayoutAnalysisResponse>(`/clips/${clip.id}/smart-layout-v2`);
+        if (status.status === "not_started" && !requested) {
+          requested = true;
+          status = await postJSON<LayoutAnalysisResponse>(`/clips/${clip.id}/smart-layout-v2`, {});
+        }
+        if (disposed) return;
+        if (status.status === "ready" && status.plans) {
+          const next = {} as Record<SmartPlanModes, SmartLayoutPlan>;
+          for (const mode of ["auto", "dual_stack", "speaker_focus"] as const) {
+            const item = parseSmartLayoutPlan(status.plans[mode]);
+            if (!item || item.requested_mode !== mode
+                || Math.abs(item.source_start - clip.start_time) > .02
+                || Math.abs(item.duration - (clip.end_time - clip.start_time)) > .02) {
+              throw new Error("Private framing analysis does not match this clip.");
+            }
+            next[mode] = item;
+          }
+          setLayoutPlans(next);
+          setLayoutAnalysis("ready");
+          return;
+        }
+        if ((status.status === "queued" || status.status === "processing") && ++attempts <= 120) {
+          poll = window.setTimeout(() => { void check(); }, 2000);
+          return;
+        }
+        throw new Error("Preview analysis was not completed. Try again later.");
+      } catch (reason) {
+        if (!disposed) {
+          setLayoutAnalysis("error");
+          setLayoutAnalysisError(reason instanceof Error ? reason.message : "Preview analysis is unavailable.");
+        }
+      }
+    };
+    void check();
+    return () => { disposed = true; if (poll !== null) window.clearTimeout(poll); };
+  }, [clip?.id, clip?.start_time, clip?.end_time, smartRequested, verifiedLayoutPlans, layoutAnalysis]);
+
+  useEffect(() => {
+    if (!realPlan) return;
+    const video = videoRef.current;
+    const canvas = smartCanvasRef.current;
+    if (!video || !canvas) return;
+    const ctx = canvas.getContext("2d", { alpha: false });
+    if (!ctx) return;
+    let cancelled = false;
+    let frameHandle = 0;
+    let timerHandle = 0;
+    const draw = () => {
+      if (cancelled) return;
+      try {
+        paintSmartLayoutFrame(ctx, video, realPlan, video.currentTime);
+      } catch {
+        setLayoutPlans(null);
+        setLayoutAnalysis("error");
+        setLayoutAnalysisError("The private media preview cannot be drawn securely. Retry later.");
+      }
+    };
+    const tick = () => {
+      draw();
+      if (cancelled) return;
+      if (typeof video.requestVideoFrameCallback === "function") {
+        frameHandle = video.requestVideoFrameCallback(() => tick());
+      } else {
+        timerHandle = window.requestAnimationFrame(tick);
+      }
+    };
+    video.addEventListener("seeked", draw);
+    video.addEventListener("loadeddata", draw);
+    tick();
+    return () => {
+      cancelled = true;
+      video.removeEventListener("seeked", draw);
+      video.removeEventListener("loadeddata", draw);
+      if (frameHandle && typeof video.cancelVideoFrameCallback === "function") video.cancelVideoFrameCallback(frameHandle);
+      if (timerHandle) window.cancelAnimationFrame(timerHandle);
+    };
+  }, [realPlan, clip?.id]);
+
   const freePlan = user?.plan === "free";
   const renderBusy = startingRender || (!!job && !["completed", "failed"].includes(job.status));
 
@@ -268,6 +369,7 @@ export default function Editor() {
       const data = await api<Project>(`/projects/${projectId}`);
       const selected = data.clips.find(item => item.id === clipId);
       if (!selected) throw new Error("This clip no longer exists in the project.");
+      setLayoutPlans(null); setLayoutAnalysis("idle"); setLayoutAnalysisError("");
       setProject(data); setClip(selected); setHook(selected.hook); setTitle(selected.title);
       setTranscript(selected.transcript_text || selected.hook);
       setStart(selected.start_time); setEnd(selected.end_time); setPlayhead(selected.start_time);
@@ -275,6 +377,7 @@ export default function Editor() {
         const hasSourceCaptions = !!track.source_has_burned_captions;
         const source = track.source_words || track.words;
         setSourceWords(source); setTimedCaptionWords(source); setCaptionCards(track.source_words ? [] : (track.cards || [])); setSpeechRegions(track.speech_regions || []);
+        if (track.edit_plan?.layout_mode) setLayoutMode(track.edit_plan.layout_mode);
         setEditPlan(track.edit_plan || emptyEditPlan()); setCleanSpeechRanges(track.clean_speech_ranges || []); setUndoPlans([]); setRedoPlans([]);
         setSourceHasCaptions(hasSourceCaptions); setSourceCaptionBand(track.source_caption_band ?? null);
         setReviewSuggested(!!track.review_suggested); setReviewReasons(track.review_reasons || []);
@@ -1086,7 +1189,8 @@ export default function Editor() {
     setSaving(true); setError("");
     try {
       const updated = await patchJSON<Clip>(`/clips/${clip.id}`, {
-        hook, title, transcript_text: transcript, start_time: start, end_time: end, edit_plan: editPlan,
+        hook, title, transcript_text: transcript, start_time: start, end_time: end,
+        edit_plan: { ...editPlan, layout_mode: layoutMode },
       });
       setClip(updated);
       if (changedFields.length) {
@@ -1217,7 +1321,7 @@ export default function Editor() {
   );
 
   const selectedBrandKit = brandKits.find(kit => kit.id === brandKitId);
-  const positionClass = previewDual ? "position-center smart-stack-captions" : captionY === null ? "position-" + captionPosition : "caption-custom-position";
+  const positionClass = (realPlan && actualScene?.layout === "dual_stack") || previewDual ? "position-center smart-stack-captions" : captionY === null ? "position-" + captionPosition : "caption-custom-position";
   const selectedCaptionStyle = captionStyles.find(style => style.id === captionStyle);
   const baseCaptionRatio = selectedCaptionStyle?.font_size_width_ratio ?? .065;
   const captionInsetRatio = selectedCaptionStyle?.horizontal_inset_ratio ?? .06;
@@ -1339,7 +1443,7 @@ export default function Editor() {
                   <option value="speaker_focus">Speaker Focus · Follow the person speaking</option>
                   <option value="classic">Classic · Single-person crop</option>
                 </select>
-                <p className="field-note">Layout changes the live canvas immediately. Dual Stack places two speaker views above and below a caption band; Speaker Focus fills the frame. The live view is a composition guide: final export detects faces in each camera shot and safely switches to a single subject or full-frame view when two faces are not visible.</p>
+                <p className="field-note">{SMART_LAYOUT_V2_ENABLED ? "When analysis finishes, layouts switch instantly using detected faces. Two panels appear ONLY when two real people are visible together. Analysis does not cost an export." : "Current preview is a composition guide. Accurate speaker framing requires the v2 preview rollout."}</p>
               </div>
               <div className="pro-editor-stat-grid"><span><small>Ratio</small><b>{ratio}</b></span><span><small>Focus</small><b>{Math.round(focusX)}%</b></span><span><small>Zoom</small><b>{Math.round(zoom*100)}%</b></span></div>
               <p className="pro-editor-note">Framing changes are reflected in the exported MP4, not only in preview.</p>
@@ -1370,7 +1474,8 @@ export default function Editor() {
             <div className={"smart-preview-primary" + (previewDual ? " smart-preview-top" : "") + (previewFocus ? " smart-preview-focus" : "")}>
               <video
               ref={videoRef}
-              src={API_URL + "/projects/" + project.id + "/media"}
+              src={realPlan ? API_URL + "/clips/" + clip.id + "/smart-layout-v2/media" : API_URL + "/projects/" + project.id + "/media"}
+              crossOrigin={realPlan ? "use-credentials" : undefined}
               preload="metadata"
               playsInline
               onLoadedMetadata={onLoaded}
@@ -1380,10 +1485,16 @@ export default function Editor() {
               style={{
                 objectFit: preserveSourceCaptions ? "contain" : "cover",
                 objectPosition: previewDual ? "16% 50%" : previewFocus ? "50% 50%" : String(focusX) + "% 50%",
-                transform: preserveSourceCaptions || previewDual ? "scale(1)" : previewFocus ? "scale(1.08)" : "scale(" + String(zoom) + ")",
+                transform: preserveSourceCaptions || previewDual || !!realPlan ? "scale(1)" : previewFocus ? "scale(1.08)" : "scale(" + String(zoom) + ")",
+                opacity: realPlan ? 0 : 1,
               }}
             />
             </div>
+            {realPlan && <canvas ref={smartCanvasRef} className="smart-layout-v2-canvas"
+              width={360} height={640} aria-label="Analyzed Smart Layout preview"/>}
+            {smartRequested && !realPlan && <div className="smart-layout-v2-status" role="status">
+              {layoutAnalysis === "error" ? <><span>Smart Layout preview unavailable: {layoutAnalysisError}</span><button type="button" onClick={() => { setLayoutPlans(null); setLayoutAnalysis("idle"); setLayoutAnalysisError(""); }}>Retry analysis</button></> : "Analyzing real speaker positions…"}
+            </div>}
             {previewDual && <>
               <div className="smart-preview-band" aria-hidden="true" />
               <div className="smart-preview-secondary" aria-hidden="true">
@@ -1393,7 +1504,7 @@ export default function Editor() {
               </div>
             </>}
             {ratio === "9:16" && layoutMode !== "classic" && <div className="smart-preview-label">
-              <Sparkles size={11}/> {layoutMode === "auto" ? "AUTO DIRECTOR" : layoutMode === "dual_stack" ? "DUAL STACK" : "SPEAKER FOCUS"} · LIVE GUIDE
+              <Sparkles size={11}/> {layoutMode === "auto" ? "AUTO DIRECTOR" : layoutMode === "dual_stack" ? "DUAL STACK" : "SPEAKER FOCUS"} · {realPlan ? "ANALYZED PREVIEW" : SMART_LAYOUT_V2_ENABLED ? "ANALYSIS PENDING" : "LIVE GUIDE"}
             </div>}
             <button className="canvas-play pro-canvas-play" onClick={togglePlayback}>{playing ? <Pause fill="currentColor"/> : <Play fill="currentColor"/>}</button>
             {hookEnabled && showHook && visibleHook && <div className="canvas-hook">{visibleHook}</div>}

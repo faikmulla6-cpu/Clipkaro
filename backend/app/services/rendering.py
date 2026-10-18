@@ -720,7 +720,8 @@ async def render_short(source: Path, output: Path, start: float, end: float, srt
                        source_caption_band: float | None = None,
                        caption_x: float = 50.0, caption_y: float | None = None,
                        caption_scale: float = 1.0, caption_alignment: str = "center",
-                       edit_ranges: list[dict[str, float]] | None = None) -> None:
+                       edit_ranges: list[dict[str, float]] | None = None,
+                       scene_caption_zones: list[dict] | None = None) -> None:
     if not ffmpeg_available():
         raise RuntimeError("FFmpeg and FFprobe are required to export video.")
     ffmpeg, ffprobe = find_media_tool("ffmpeg"), find_media_tool("ffprobe")
@@ -757,6 +758,9 @@ async def render_short(source: Path, output: Path, start: float, end: float, srt
             caption_x=caption_x, caption_y=caption_y, caption_scale=caption_scale,
             caption_alignment=caption_alignment,
         )
+        if scene_caption_zones:
+            from .smart_layout_captions import position_ass_by_scene
+            position_ass_by_scene(ass, scene_caption_zones, width, height, edit_ranges)
         # Pass an explicitly escaped absolute path.  On Windows, FFmpeg's ASS
         # filter can resolve a basename against the source instead of its cwd,
         # silently producing a valid-looking export with no caption overlay.

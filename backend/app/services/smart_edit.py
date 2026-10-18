@@ -78,7 +78,7 @@ def normalize_edit_plan(value: Any, duration: float) -> dict[str, Any]:
 
     segments = _logical_segments(points, duration)
     segment_order = _normalise_segment_order(source.get("segment_order"), len(segments))
-    return {
+    result = {
         "version": 2,
         "removed_ranges": [
             {**item, "start": round(item["start"], 3), "end": round(item["end"], 3)}
@@ -87,6 +87,11 @@ def normalize_edit_plan(value: Any, duration: float) -> dict[str, Any]:
         "split_points": [round(point, 3) for point in points],
         "segment_order": segment_order,
     }
+    # Optional editor preference is stored alongside this clip\'s Smart Edit
+    # plan without a database migration. Unknown metadata is never persisted.
+    if source.get("layout_mode") in {"classic","auto","dual_stack","speaker_focus"}:
+        result["layout_mode"] = source["layout_mode"]
+    return result
 
 
 def plan_reorders_segments(plan: dict[str, Any], duration: float) -> bool:

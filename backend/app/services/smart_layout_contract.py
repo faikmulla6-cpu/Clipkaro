@@ -195,3 +195,54 @@ def scene_at(payload: dict[str, Any], relative_time: float) -> dict[str, Any] | 
         if scene["start"] <= t < scene["end"]:
             return scene
     return None
+
+
+def validate_serialized_plan(raw: Any) -> dict[str, Any]:
+    """Revalidate cached JSON before returning it or feeding its crops to FFmpeg.
+
+    Cache bytes are untrusted even though they're stored in a private bucket.
+    Reject NaN, oversized timelines, disjoint frames and unexpected FFmpeg
+    expression inputs; no client-authored coordinates become executable args.
+    """
+    if not isinstance(raw, dict) or raw.get("version") != VERSION or raw.get("requested_mode") not in MODES:
+        raise UnsafeLayoutPlan("Invalid version or layout mode")
+    w = raw.get("source_width")
+    h = raw.get("source_height")
+    if type(w) is not int or type(h) is not int or not (240 <= w <= MAX_SOURCE_EDGE and 160 <= h <= MAX_SOURCE_EDGE):
+        raise UnsafeLayoutPlan("Unsafe source dimensions")
+    _bounded(raw.get("source_start"), 0, 86400, "start")
+    duration = _bounded(raw.get("duration"), .1, MAX_CLIP_SECONDS, "duration")
+    if raw.get("preview_width") != PREVIEW_WIDTH or raw.get("preview_height") != PREVIEW_HEIGHT:
+        raise UnsafeLayoutPlan("Invalid coordinate space")
+    sections = raw.get("scenes")
+    if not isinstance(sections, list) or not (1 <= len(sections) <= MAX_SCENES):
+        raise UnsafeLayoutPlan("Invalid scene count")
+    last = 0.0
+    for scene in sections:
+        if not isinstance(scene, dict) or scene.get("layout") not in SCENE_LAYOUTS:
+            raise UnsafeLayoutPlan("Invalid scene layout")
+        kind = scene["layout"]
+        a = _bounded(scene.get("start"), 0, duration, "scene start")
+        b = _bounded(scene.get("end"), 0, duration + .01, "scene end")
+        if abs(a-last) > .065 or b-a < .03:
+            raise UnsafeLayoutPlan("Disjoint scene timeline")
+        crops = scene.get("crops")
+        count = 2 if kind in {"dual_stack", "speaker_focus"} else 1
+        if not isinstance(crops, list) or len(crops) != count:
+            raise UnsafeLayoutPlan("Invalid speaker panel count")
+        for crop in crops:
+            if not isinstance(crop, list) or len(crop) != 4 or any(type(n) is not int for n in crop):
+                raise UnsafeLayoutPlan("Invalid crop coordinates")
+            _rect(*crop, w, h)
+        if kind == "dual_stack" and crops[0] == crops[1]:
+            raise UnsafeLayoutPlan("Split preview cannot duplicate the same crop")
+        if scene.get("caption_zone") != ("middle" if kind=="dual_stack" else "bottom"):
+            raise UnsafeLayoutPlan("Captions disagree with scene geometry")
+        raw_switches = scene.get("switches")
+        _transitions(raw_switches, b-a, count)
+        if kind != "speaker_focus" and raw_switches:
+            raise UnsafeLayoutPlan("Invalid speaking transitions for this scene")
+        last = b
+    if abs(last-duration) > .065:
+        raise UnsafeLayoutPlan("Incomplete scene coverage")
+    return raw

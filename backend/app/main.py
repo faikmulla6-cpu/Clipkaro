@@ -16,6 +16,7 @@ from app.api.routes import router, _process_project
 from app.api.settings import init_user_preferences, router as settings_router
 from app.api.billing_lifecycle import init_subscription_lifecycle, router as billing_lifecycle_router
 from app.api.media import router as media_router
+from app.api.smart_layout_v2 import router as smart_layout_v2_router
 from app.api.email_verification import router as email_verification_router
 from app.api.account_security import router as account_security_router
 from app.api.secure_upload import router as secure_upload_router
@@ -385,6 +386,7 @@ def _legacy_route_is_replaced(route) -> bool:
 router.routes[:] = [route for route in router.routes if not _legacy_route_is_replaced(route)]
 app.include_router(billing_lifecycle_router, prefix=settings.api_prefix)
 app.include_router(media_router, prefix=settings.api_prefix)
+app.include_router(smart_layout_v2_router, prefix=settings.api_prefix)
 app.include_router(account_security_router, prefix=settings.api_prefix)
 app.include_router(email_verification_router, prefix=settings.api_prefix)
 app.include_router(secure_upload_router, prefix=settings.api_prefix)

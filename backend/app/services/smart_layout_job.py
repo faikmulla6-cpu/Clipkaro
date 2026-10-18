@@ -1,0 +1,112 @@
+"""Isolated media-worker task that caches owner-scoped Smart Layout analysis.
+
+Never reads a user URL, creates an export, charges credits, or changes a
+project's processing status. Only a previously owned Clipkaro source can enter
+this pipeline. A single Auto Director face-analysis pass produces all modes.
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+from pathlib import Path
+
+from app.core.database import fetch_one
+from app.services.jobs import update_job
+from app.services.smart_layout_cache import AnalysisIdentity, MODEL_VERSION, private_plan_key
+from app.services.smart_layout_variants import all_layout_variants, all_variants_match_source
+from app.services.storage import validate_object_key
+from app.services.video import find_media_tool
+
+MAX_LAYOUT_JSON_BYTES = 131072
+ALLOWED_EXTENSIONS = frozenset({".mp4", ".mov", ".webm", ".mkv", ".avi"})
+
+
+async def run_smart_layout_analysis(job: dict, scratch: Path, storage) -> None:
+    clip_id = str((job.get("payload") or {}).get("clip_id") or "")
+    user_id = str(job.get("user_id") or "")
+    if not clip_id or not user_id:
+        raise RuntimeError("Smart Layout job is missing its trusted identity.")
+    from app.api.smart_layout_v2 import _owned
+    row = await fetch_one(
+        """SELECT c.id clip_id,c.start_time,c.end_time,v.id video_id,
+                  v.file_path,v.object_generation,v.original_filename,
+                  v.duration source_duration,v.status source_status,
+                  v.width source_width,v.height source_height,p.id project_id
+           FROM clips c JOIN videos v ON v.id=c.video_id
+           JOIN projects p ON p.id=v.project_id
+           WHERE c.id=? AND p.user_id=?""", (clip_id, user_id),
+    )
+    if not row or str(row["source_status"]) != "ready":
+        raise RuntimeError("The authorized source is unavailable for Smart Layout.")
+    # Enforce the identical ownership, source-expiry and superseded-clip policy
+    # used by the public route, even for an already queued background job.
+    await _owned(clip_id, user_id)
+    start, end = float(row["start_time"]), float(row["end_time"])
+    if start < 0 or end <= start or end > float(row["source_duration"]) + .1:
+        raise RuntimeError("The clip range is invalid for the source.")
+    identity = AnalysisIdentity(
+        user_id=user_id, project_id=str(row["project_id"]),
+        clip_id=clip_id, video_id=str(row["video_id"]),
+        generation=str(row.get("object_generation") or ""),
+        start=start, end=end,
+    ).validated()
+    key = private_plan_key(identity)
+    expected_key = str((job.get("payload") or {}).get("cache_key") or "")
+    if expected_key != key:
+        # Request made before a source replacement/trim should never write a
+        # new source's results under an earlier cache identity.
+        raise RuntimeError("Smart Layout source version changed; please retry.")
+    from app.api.smart_layout_v2 import _cached
+    # Check existing cache via the same strict validator as the API. For an
+    # invalid object, overwrite with a newly verified plan; never claim ready.
+    if await _cached({"source_width": row["source_width"], "source_height": row["source_height"]}, identity):
+        await update_job(job["id"], 100, "ready", "Smart Layout analysis cached", "completed")
+        return
+
+    source_key = validate_object_key(
+        str(row.get("file_path") or ""), expected_prefix=f"users/{user_id}"
+    )
+    extension = Path(str(row.get("original_filename") or "")).suffix.lower()
+    if extension not in ALLOWED_EXTENSIONS:
+        raise RuntimeError("This video container cannot be analyzed for Smart Layout.")
+    source = scratch / "uploads" / ("smart-source" + extension)
+    await update_job(job["id"], 15, "downloading", "Preparing private source frames")
+    await storage.download(
+        source_key, source, generation=row.get("object_generation")
+    )
+    if not source.is_file() or source.stat().st_size < 1000:
+        raise RuntimeError("The source is not readable.")
+    ffmpeg = find_media_tool("ffmpeg")
+    if not ffmpeg:
+        raise RuntimeError("Smart Layout analysis engine is unavailable.")
+    from app.services.karo_smart_layouts import _detect
+    await update_job(job["id"], 40, "analyzing", "Finding camera shots and visible faces")
+    base = await asyncio.to_thread(_detect, source, start, end - start, ffmpeg, "auto")
+    if base is None:
+        raise RuntimeError("This footage cannot be analyzed reliably; Classic remains available.")
+    plans = all_layout_variants(base, source_start=start, duration=end-start)
+    if not all_variants_match_source(plans):
+        raise RuntimeError("Smart Layout scene analysis is inconsistent.")
+
+    record = {
+        "version": 2, "model_version": MODEL_VERSION,
+        "cache_key": key, "plans": plans,
+    }
+    encoded = json.dumps(
+        record, ensure_ascii=False, separators=(",", ":"), allow_nan=False
+    ).encode("utf-8")
+    if len(encoded) > MAX_LAYOUT_JSON_BYTES:
+        raise RuntimeError("Smart Layout analysis result exceeded safe limits.")
+    result_path = scratch / "analysis.json"
+    result_path.write_bytes(encoded)
+    await update_job(job["id"], 88, "saving", "Saving private reusable framing plan")
+    from app.api.smart_layout_v2 import _identity
+    fresh = await _owned(clip_id, user_id)
+    if _identity(fresh, user_id) != identity:
+        raise RuntimeError("The clip or source changed during Smart Layout analysis.")
+    uploaded = await storage.upload(
+        result_path, key, content_type="application/json"
+    )
+    if uploaded.size != len(encoded):
+        raise RuntimeError("Smart Layout cache upload size mismatch.")
+    await update_job(job["id"], 100, "ready", "Smart Layout analysis ready", "completed")

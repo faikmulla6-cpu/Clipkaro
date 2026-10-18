@@ -1,97 +1,106 @@
-# Clipkaro Smart Layout v2 — security-first integration (work in progress)
+# Clipkaro Smart Layout v2 — isolated engineering and release gate
 
-## Status and scope
+**Status: development branch / DRAFT PULL REQUEST ONLY. NOT DEPLOYED.**
+Base: `feature/creator-pulse-next-move`. Branch: `work/secure-smart-layout-v2-20261018`.
 
-This is **isolated, unmerged development work**. It does not replace the
-currently deployed editor, modify OpenShorts/OmniVoice, change B2 CORS, use an
-external AI API, create paid exports, or change billing/entitlements.
+## Problem and intended result
 
-The current editor draws two synchronized copies of the same browser video
-using fixed 16%/84% horizontal positions. This **cannot** know whether one or
-two faces are visible, and explains the duplicate-person screenshots. The
-current Modal exporter instead runs an internal OpenCV scene analyzer. The
-preview and export must share the **same authoritative timeline**.
+The old editor plays two copies of one source video with fixed left/right CSS
+positions; these are not face detections. The v1 export separately detects
+camera scenes, so its framing is unrelated to the editor guide. That explains
+the same speaker appearing twice in the user's screenshots.
 
-## Shared contract (initial implementation)
+V2 analyzes the private source once, derives all requested modes from the
+same verified shot evidence, and uses a canonical timeline of source pixel
+crops in both a Canvas 2D browser preview and the final FFmpeg graph. For
+single-face/uncertain shots, never fabricate a second person.
 
-- `backend/app/services/smart_layout_contract.py`: bounded serialization of
-  already-analyzed scenes and exact source-pixel crop rectangles.
-- `frontend/lib/smart-layout-timeline.ts`: untrusted JSON validation,
-  scene lookup, focus easing and Canvas 2D painting using those rectangles.
-- Python and Node contract tests cover duplicate people, scene gaps, malformed
-  coordinates, caption positioning, camera cut changes and focus transitions.
-- Timeline times are **clip-local**, with `source_start` explicitly encoded to
-  avoid off-by-one-clip seek errors.
-- All plans are limited to 180 seconds, 24 scenes, 42 speaker transitions per
-  scene, finite numbers and dimensions <= 16384. No user IDs, signed URLs,
-  face embeddings, cloud object keys or customer metadata belong in a plan.
+## Implemented on this branch
 
-Neither new module accesses storage or customer accounts. A plan is only a
-description of authorized geometry; it does not authorize media access.
+- `backend/app/services/smart_layout_contract.py`: versioned strict
+  schema for clip-relative scenes, finite coordinates, 24-scene cap, and
+  actual one-/two-face crop rectangles; malicious plans fail closed.
+- `backend/app/services/smart_layout_variants.py`: Auto Director, Dual Stack
+  and Speaker Focus from one authorized scene analysis. Speaker turns only
+  affect focus shots. No duplicate-person split.
+- `backend/app/services/smart_layout_cache.py`: owner/project scoped B2 key
+  containing SHA-256 fingerprint of video, exact generation, clip start/end
+  and model version. Key holds no public or signed access token.
+- `backend/app/services/smart_layout_job.py`: bounded, no-export-charge,
+  private Modal media worker. Rechecks ownership and source expiry before
+  saving the result. A failed analysis cannot mark the project/export failed.
+- `backend/app/api/smart_layout_v2.py`: authenticated, default-disabled
+  analysis GET/POST endpoints, source authorization, global/user compute
+  budgets, idempotent job checks and strict cache validation. Private MP4
+  media is streamed by Clipkaro itself in bounded HTTP ranges, rather than
+  redirecting a Canvas decoder to another B2 origin.
+- `frontend/lib/smart-layout-timeline.ts`: no network dependencies;
+  draws the actual analyzed crop at the source timestamp from ONE authorized
+  <video> into Canvas. V2 editor displays analysis pending/error/retry instead
+  of pretending a fixed two-panel CSS guide has tracked a face.
+- `backend/app/services/smart_layout_render_v2.py`: scene-local FFmpeg
+  crop graph consuming the exact private JSON plan, at 720x1280 or 1080x1920,
+  with original audio preserved.
+- `backend/app/services/smart_layout_captions.py`: splits ASS Dialogue
+  events at actual camera cuts, places captions on the seam only for genuine
+  Dual Stack segments and maps scene times through Smart Edit's retained
+  source ranges. Other scenes preserve the chosen caption settings.
+- Clip-level layout selection persisted in existing Smart Edit plan JSON.
+  Unknown modes are rejected; no new database table or migration required.
+- `backend/app/services/smart_layout_cleanup.py`: strict project-scoped
+  versioned-cache purge helper (not yet attached to source deletion or expiry
+  pending a dedicated live B2 permissions audit).
 
-## Planned source-of-truth integration (NOT YET IMPLEMENTED)
+## Security and compatibility
 
-1. **Ownership / gating**: only the authenticated clip owner can request a
-   layout analysis. Verify clip -> video -> project -> user ownership. Never
-   accept a client-supplied storage key, URL or user ID.
-2. **Asynchronous worker**: launch ONE bounded, idempotent media-analysis job
-   in the existing Modal worker; no FFmpeg or face model in the API container.
-   Bind it to clip ID, source object generation, start/end, model version and
-   optional edit-plan version. Limit concurrent jobs and retries per user.
-   A preview analysis must not reserve or charge an AI Short or export.
-3. **Private cache**: store a small, versioned JSON plan beneath the owner's
-   existing B2 namespace, keyed by an irreversible hash of the source version
-   and clip time range. Never include a signed URL in JSON or log it.
-4. **Mode derivation**: analyze faces/scenes once, derive Auto Director,
-   Dual Stack or Speaker Focus from the same evidence. Dual Stack needs two
-   **co-visible** genuine faces, not two face detections from different
-   moments. Otherwise show one speaker or a full-frame safe composition.
-5. **Preview**: the editor fetches only its owner's cached plan, validates its
-   schema, and paints frames from ONE authorized video source using the exact
-   crop boxes. Playback, seek, trim, reordering and captions must resolve to
-   the same source timestamp. If a plan is pending, clearly show "Analyzing"
-   rather than a fake split. On failure, show an accurate retry state.
-6. **Transport / CORS**: production `/projects/{id}/media` redirects to a
-   time-limited B2 URL. Before enabling Canvas in production, verify an
-   origin-restricted policy or implement an authenticated, bounded
-   same-origin preview stream with correct HTTP Range support. Do **not**
-   change bucket access from private to public, use wildcard credentials,
-   embed long-lived presigned URLs, or loosen Clipkaro CSP to make it work.
-7. **Final export**: consume the **same validated, versioned plan** that the
-   editor paints; if source/clip/version has changed, invalidate/re-analyze.
-   Do not recompute independent unshared face centers. Apply scene-specific
-   caption placement (middle only for real dual shots). Exports are still
-   created through the existing permission/quota path.
-8. **Saved edits**: explicitly persist the selected layout and any permitted
-   overrides in the existing clip-edit workflow. Reopen must show the chosen
-   mode rather than revert to Classic.
+- Both flags must be enabled together for a canary ONLY:
+  `KARO_REAL_PREVIEW_ENABLED=true` on the backend and
+  `NEXT_PUBLIC_SMART_LAYOUT_V2=true` at frontend BUILD TIME.
+  Both default to off. Do not enable in production before release gates.
+- Input is a clip ID only, matched via the project's authenticated user.
+  The client never supplies an object key, signed URL or crop plan to FFmpeg.
+- Source-generation mismatch, expiry, superseded clip, invalid face count,
+  NaN/infinite coordinates, timeline gaps and cache corruption fail closed.
+- No third-party face API, no new secret, no public bucket, no new B2 CORS.
+- A pre-export readiness check runs before inserting a billable export row.
+  A queued v2 render is bound to the currently authorized cached plan.
+- The old Creator Pulse behavior is preserved unless both feature flags are
+  intentionally enabled.
+- Global job queue definitions, imported OpenShorts code and imported
+  OmniVoice/GenVoice code are untouched.
 
-## Hard security and product requirements
+## Tests performed (2026-10-18)
 
-- No changes in `openshorts-main/` or `GENVOICE-V.2.0/`.
-- Never authorize via a raw B2 key or a client-side plan alone.
-- No use of third-party face/cloud AI without reviewing model, license and
-  consent; no production bucket CORS updates without a dedicated audit.
-- Bound worker CPU/time, payload size, DB job volume and storage operations.
-- Return no user-identifying or sensitive speaker geometry beyond the owner's
-  authorized source; no face embeddings, identities or emotion claims.
-- Deletion and source expiry invalidate analysis objects.
-- A Canvas SecurityError must **not** turn into a fake working layout.
-- Use a feature flag/canary on new paths; preserve the existing production
-  export until a full integration test passes.
-- Visually compare scene crops, safe areas, subtitles, watermark, audio sync
-  and 720p/1080p exports on **actual mixed-camera podcasts**.
+- Python contract, media and security tests in isolated Modal: 25 passed
+  before the subsequent persistence/cache-purge test additions.
+- Existing rendering, Smart Edit, layout, billing, subscription and
+  source-availability regression suite in isolated Modal: 156 passed.
+- Node geometry and Canvas tests passed.
+- Next.js production build with v2 enabled compiled and typechecked.
+- Actual 59.56-second private podcast: detected 1 wide + 3 single-person
+  shots, and rendered valid full-length 360x640 MP4s for requested Dual Stack
+  and Speaker Focus without creating exports or uploading output.
+  Correct behavior for that source is a single subject, NOT two fake panels.
 
-## Release gate
+## Release blockers — do not merge or deploy until all are cleared
 
-1. Python contract and security tests pass.
-2. Node geometry / Canvas tests pass.
-3. Existing billing, account security, upload, source-access and render tests
-   still pass.
-4. Authenticated preview transport passes CORS and byte-range tests.
-5. Same private source produces matching preview and export at camera cuts,
-   across two-person scenes, solo shots and no-face fallbacks.
-6. Production build passes, B2 stays private, and no other repo tree differs.
-7. Human approval of screenshots and a full MP4 before rollout.
+1. Rerun the expanded test suite and obtain passing GitHub CI on the FINAL
+   commit (including persisted preferences and mock B2 purge tests).
+2. Review/complete the new-cache deletion hooks in both project deletion
+   and source-expiry cleanup. Audit B2 ListObjectVersions permissions and
+   secure expiry of older object generations; the helper alone is insufficient.
+3. Verify actual authenticated browser playback through the production
+   Next/Hostinger proxy (cookies, credentialed CORS, CSP and Range seek).
+   Do not broaden B2 public ACL or global bucket CORS as a workaround.
+4. Confirm preview/export pixel parity for dual-person footage, two-way
+   speaking transitions, camera cuts, profile faces and Smart Edit reorder.
+5. Before any production enabling, canary a small approved group, monitor
+   analysis job queue/worker cost, handle rollback and compare the final
+   downloaded MP4 with the browser preview.
+6. Improve face tracking robustness for difficult angles if testing reveals
+   misses. The present model remains Clipkaro's OpenCV CPU detector;
+   it is NOT a licensed new MediaPipe or voice-identity model.
+7. Get explicit rollout approval after the full MP4/caption review.
 
-**Do not merge or deploy this branch until these gates pass.**
+No live customer project, database, billing row or Backblaze bucket setting
+was changed by this development work.

@@ -150,6 +150,25 @@ async def _render_export_durable(
             request.preserve_source_captions,
             request.caption_position,
         )
+        # V2 must use the SAME private timeline the editor paints. A stale
+        # cache fails explicitly, never triggers a second face-detection pass.
+        canonical_layout_v2 = None
+        from app.api.smart_layout_v2 import enabled as smart_v2_enabled
+        if smart_v2_enabled() and request.layout_mode != "classic":
+            from app.api.smart_layout_v2 import _cached
+            from app.services.smart_layout_cache import AnalysisIdentity
+            identity = AnalysisIdentity(
+                user_id=str(job["user_id"]), project_id=str(clip["project_id"]),
+                clip_id=str(clip["id"]),video_id=str(video["id"]),
+                generation=str(video.get("object_generation") or ""),
+                start=float(clip["start_time"]),end=float(clip["end_time"]),
+            ).validated()
+            checked = await _cached({
+                "source_width":video["width"], "source_height":video["height"],
+            },identity)
+            if not checked:
+                raise RuntimeError("Smart Layout analysis is not ready. Return to the editor to finish it.")
+            canonical_layout_v2 = checked["plans"][request.layout_mode]
         try:
             await render_short_limited(
                 source,
@@ -174,6 +193,7 @@ async def _render_export_durable(
                 caption_alignment=request.caption_alignment,
                 edit_ranges=kept_ranges(plan,clip["end_time"]-clip["start_time"]),
                 layout_mode=request.layout_mode,
+                smart_layout_plan_v2=canonical_layout_v2,
             )
         except Exception as exc:
             # Keep the creator-facing failure generic, but preserve the actual
@@ -389,6 +409,10 @@ async def _run_youtube_import(job: dict, scratch: Path, storage) -> None:
 
 async def _run(job: dict, scratch: Path) -> None:
     storage = get_storage_provider()
+    if job["kind"] == "smart_layout_analysis":
+        from app.services.smart_layout_job import run_smart_layout_analysis
+        await run_smart_layout_analysis(job, scratch, storage)
+        return
     if job["kind"] == "import_youtube":
         await _run_youtube_import(job, scratch, storage)
         return
@@ -505,6 +529,15 @@ async def run_job(job_id: str, *, execution_id: str = "", worker_prefix: str = "
         else:
             category = str(exc) if str(exc) in {"MEDIA_VALIDATION_FAILED", "EXPORT_FAILED"} else "PROVIDER_TEMPORARY_FAILURE"
         failure_message = public_message or "Media processing failed"
+
+        if job.get("kind") == "smart_layout_analysis":
+            # A PREVIEW error must never turn a completed customer project into
+            # failed, and must never mutate an export/usage reservation.
+            logger.warning("Private Smart Layout preview failed job_id=%s category=%s", job_id, category)
+            await update_job(job_id, int(job.get("progress") or 0), "failed",
+                             "Smart Layout analysis could not complete. Retry or use Classic.",
+                             "failed", "SMART_LAYOUT_ANALYSIS_FAILED")
+            return 1
 
         if job.get("export_id"):
             current_export = await fetch_one("SELECT status FROM exports WHERE id=?", (job["export_id"],))

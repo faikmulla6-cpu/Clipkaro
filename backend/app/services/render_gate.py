@@ -133,6 +133,7 @@ async def render_short_limited(*args: Any, **kwargs: Any) -> None:
     """
     async with media_encode_slot():
         layout_mode = str(kwargs.pop("layout_mode", "classic"))
+        canonical_v2 = kwargs.pop("smart_layout_plan_v2", None)
         if layout_mode not in VALID_MODES:
             raise ValueError("Unsupported Smart Layout mode")
         mutable = list(args)
@@ -184,11 +185,24 @@ async def render_short_limited(*args: Any, **kwargs: Any) -> None:
                 raise RuntimeError("Smart Layout requires the FFmpeg media engine; no incorrect Classic export was substituted.")
             requested_resolution = str(mutable[7] if len(mutable) > 7 else kwargs.get("resolution", "720p"))
             smart_width, smart_height = (1080, 1920) if requested_resolution == "1080p" else (720, 1280)
-            prepared = await asyncio.to_thread(
-                prepare_smart_layout, source, output, start, end,
-                layout_mode, ffmpeg, smart_width, smart_height,
-                max(30, int(get_settings().media_process_timeout_seconds)),
-            ) if ffmpeg else None
+            if canonical_v2 is not None:
+                from .smart_layout_render_v2 import precompose_v2
+                if not isinstance(canonical_v2, dict) or canonical_v2.get("requested_mode") != layout_mode:
+                    raise RuntimeError("Smart Layout analysis does not match selected mode.")
+                if (abs(float(canonical_v2.get("source_start", -1)) - start) > .02
+                    or abs(float(canonical_v2.get("duration", -1)) - (end-start)) > .02):
+                    raise RuntimeError("Smart Layout analysis no longer matches this clip.")
+                prepared = await asyncio.to_thread(
+                    precompose_v2, source, output, canonical_v2, ffmpeg,
+                    smart_width, smart_height,
+                    max(30,int(get_settings().media_process_timeout_seconds)),
+                )
+            else:
+                prepared = await asyncio.to_thread(
+                    prepare_smart_layout, source, output, start, end,
+                    layout_mode, ffmpeg, smart_width, smart_height,
+                    max(30, int(get_settings().media_process_timeout_seconds)),
+                )
             if prepared:
                 temp, actual = prepared
                 try:
@@ -198,12 +212,14 @@ async def render_short_limited(*args: Any, **kwargs: Any) -> None:
                             mutable[12] = 50.
                         if len(mutable) > 14:
                             mutable[14] = []
-                        if actual == "dual_stack" and len(mutable) > 13:
+                        if actual == "dual_stack" and canonical_v2 is None and len(mutable) > 13:
                             mutable[13] = "center"
                     else:
                         kwargs.update(source=temp, start=0., end=end-start,
                                       focus_x=50., crop_keyframes=[])
-                    if actual == "dual_stack":
+                    if canonical_v2 is not None:
+                        kwargs["scene_caption_zones"] = canonical_v2["scenes"]
+                    elif actual == "dual_stack":
                         kwargs.update(caption_y=50., caption_x=50.)
                         if not mutable:
                             kwargs["caption_position"] = "center"
