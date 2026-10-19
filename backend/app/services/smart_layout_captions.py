@@ -7,10 +7,14 @@ scratch directory as the export. The existing caption style is preserved.
 from __future__ import annotations
 
 import re
+from collections import defaultdict
 from pathlib import Path
 
 _ASS = re.compile(r"^(\d+):(\d{2}):(\d{2})[.](\d{2})$")
 _PREFIX = re.compile(r"^((?:\{[^{}]*\})*)")
+_POSITION = re.compile(r"\\pos\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)")
+_TEXT_ANCHOR = re.compile(r"\\an5(?!\d)")
+_DRAWING = re.compile(r"\\p[1-9](?!\d)")
 
 
 def _seconds(value: str) -> float:
@@ -49,49 +53,87 @@ def _regions(scenes: list[dict], edit_ranges: list[dict] | None) -> list[tuple[f
     return sorted(mapped)
 
 
+def _positioned_text_y(text: str) -> float | None:
+    """Only inspect ASS overrides, never the customer's spoken text."""
+    prefix = _PREFIX.match(text).group(1)
+    position = _POSITION.search(prefix)
+    if position and _TEXT_ANCHOR.search(prefix) and not _DRAWING.search(prefix):
+        return float(position.group(2))
+    return None
+
+
+def _move_to_middle(text: str, delta_y: float, center_x: int,
+                    center_y: int) -> str:
+    prefix = _PREFIX.match(text).group(1)
+    position = _POSITION.search(prefix)
+    if position:
+        # India Pop has individual words anchored at their centers (\an5)
+        # and separate coloured vector-pill backgrounds anchored top-left
+        # (\an7). Move BOTH with one delta, preserving every original tag.
+        shifted_y = round(float(position.group(2)) + delta_y)
+        new_position = f"\\pos({position.group(1)},{shifted_y})"
+        return (prefix[:position.start()] + new_position + prefix[position.end():]
+                + text[len(prefix):])
+    # Plain legacy ASS subtitles have no absolute position to translate.
+    # Insert a SINGLE centered position without affecting colours or timing.
+    return f"{{\\an5\\pos({center_x},{center_y})}}" + text
+
+
 def position_ass_by_scene(path: Path, scenes: list[dict], output_width: int,
                           output_height: int, edit_ranges: list[dict] | None) -> None:
-    """Rewrite ASS events without touching language/style/watermark.
+    """Keep solo captions low; move complete Dual Stack cards to the seam.
 
-    Captions crossing a camera cut are split at the cut, so only the dual-shot
-    portion is relocated to the central divider.
+    Split each dialogue event at the camera/Smart Edit boundaries. A caption
+    card's text and its separately drawn active-word highlight share exact
+    ASS Start/End values, so shift the whole card as one visual unit. Merely
+    APPENDING a second \pos after the first is unreliable in libass, and was
+    the cause of subtitles covering the lower speaker in customer exports.
     """
-    if not scenes or not any(scene["caption_zone"]=="middle" for scene in scenes):
+    if not scenes or not any(s["caption_zone"] == "middle" for s in scenes):
         return
-    regions = _regions(scenes,edit_ranges)
+    regions = _regions(scenes, edit_ranges)
     if not regions:
         return
     contents = path.read_text(encoding="utf-8-sig")
-    output = []
-    middle_tag = r"{\an5\pos("+str(output_width//2)+","+str(output_height//2)+")}"
+    rows: list[str | list[str]] = []
+    centered: dict[tuple[str, str, str], list[list[str]]] = defaultdict(list)
+
     for line in contents.splitlines(keepends=True):
         if not line.startswith("Dialogue:"):
-            output.append(line)
+            rows.append(line)
             continue
-        head = line.rstrip("\r\n").split(",",9)
-        if len(head) != 10:
+        fields = line.rstrip("\r\n").split(",", 9)
+        if len(fields) != 10:
             raise ValueError("Unexpected ASS subtitle record")
-        a = _seconds(head[1])
-        b = _seconds(head[2])
-        if b <= a:
+        start, end = _seconds(fields[1]), _seconds(fields[2])
+        if end <= start:
             continue
-        parts = []
-        for region_start,region_end,zone in regions:
-            x = max(a,region_start)
-            y = min(b,region_end)
-            if y-x >= .015:
-                segment = head.copy()
-                segment[1],segment[2] = _format(x),_format(y)
-                if zone=="middle":
-                    prefix = _PREFIX.match(segment[9]).group(1)
-                    # Position tag after any existing style overrides, so it
-                    # wins against old user-authored bottom position overrides.
-                    segment[9] = prefix+middle_tag+segment[9][len(prefix):]
-                parts.append(",".join(segment)+"\n")
-        if parts:
-            output.extend(parts)
-        else:
-            # A subtitle not in retained footage cannot be remapped to an
-            # arbitrary scene: drop it, rather than show captions on wrong faces.
-            continue
-    path.write_text("".join(output),encoding="utf-8-sig")
+        for region_start, region_end, zone in regions:
+            a, b = max(start, region_start), min(end, region_end)
+            if b - a < .015:
+                continue
+            part = fields.copy()
+            part[1], part[2] = _format(a), _format(b)
+            rows.append(part)
+            if zone == "middle":
+                centered[(part[1], part[2], part[3])].append(part)
+
+    for group in centered.values():
+        # One word-state emits multiple text events, and often a vector
+        # background. Text positions define the card's actual vertical
+        # center; using the pill's top-left would shift it incorrectly.
+        text_ys = [_positioned_text_y(fields[9]) for fields in group]
+        text_ys = [value for value in text_ys if value is not None]
+        shift_y = (
+            output_height / 2 - (min(text_ys) + max(text_ys)) / 2
+            if text_ys else 0.
+        )
+        for fields in group:
+            fields[9] = _move_to_middle(
+                fields[9], shift_y, output_width // 2, output_height // 2
+            )
+
+    path.write_text("".join(
+        row if isinstance(row, str) else ",".join(row) + "\n"
+        for row in rows
+    ), encoding="utf-8-sig")
