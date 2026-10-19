@@ -441,9 +441,12 @@ def test_locked_fair_access_plans(client: TestClient):
     assert by_id["mini_pass"]["price"] == 59 and by_id["mini_pass"]["processing_minutes"] == 125 and by_id["mini_pass"]["shorts"] == 5
     assert by_id["mini_pass"]["source_minutes_per_short"] == 25
     assert by_id["mini_pass"]["unlimited_exports"] is True
-    assert by_id["creator"]["price"] == 199 and by_id["creator"]["processing_minutes"] == 60 and by_id["creator"]["shorts"] == 15
-    assert by_id["growth"]["price"] == 399 and by_id["growth"]["processing_minutes"] == 180 and by_id["growth"]["shorts"] == 50
-    assert by_id["pro"]["price"] == 799 and by_id["pro"]["processing_minutes"] == 480 and by_id["pro"]["shorts"] == 150
+    assert by_id["creator"]["price"] == 199 and by_id["creator"]["processing_minutes"] == 900 and by_id["creator"]["shorts"] == 15
+    assert by_id["creator"]["source_minutes_per_short"] == 60
+    assert by_id["growth"]["price"] == 399 and by_id["growth"]["processing_minutes"] == 9000 and by_id["growth"]["shorts"] == 50
+    assert by_id["growth"]["source_minutes_per_short"] == 180
+    assert by_id["pro"]["price"] == 799 and by_id["pro"]["processing_minutes"] == 72000 and by_id["pro"]["shorts"] == 150
+    assert by_id["pro"]["source_minutes_per_short"] == 480
     assert by_id["agency"]["price"] == 1999 and by_id["agency"]["processing_minutes"] == 1500 and by_id["agency"]["shorts"] == 500
     assert all(by_id[key]["unlimited_exports"] is True for key in ("mini_pass", "creator", "growth", "pro", "agency"))
 

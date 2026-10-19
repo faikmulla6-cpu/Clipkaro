@@ -161,7 +161,7 @@ def test_immediate_upgrade_preserves_current_cycle_usage_and_reservations(client
     reservation = asyncio.run(fetch_one("SELECT * FROM usage_reservations WHERE id='reservation-old'"))
     assert reservation and reservation["period_key"] == new_key
     usage = client.get("/api/v1/usage").json()
-    assert usage["processing_minutes_remaining"] == 130.0
+    assert usage["processing_minutes_remaining"] == 8950.0
     assert usage["shorts_used"] == 1
     assert usage["shorts_remaining"] == 49
     assert usage["unlimited_exports"] is True

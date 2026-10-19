@@ -113,7 +113,7 @@ def test_new_billing_cycle_does_not_inherit_old_paid_usage(client):
     usage = client.get("/api/v1/usage").json()
     assert usage["plan"] == "growth"
     assert usage["source_minutes"] == 0
-    assert usage["processing_minutes_remaining"] == 180.0
+    assert usage["processing_minutes_remaining"] == 9000.0
     assert asyncio.run(fetch_one("SELECT source_minutes FROM usage WHERE id='old-cycle'"))["source_minutes"] == 56.0
 
 
