@@ -33,8 +33,12 @@ def all_layout_variants(auto_plan: Any, *, source_start: float,
                 getattr(scene, "mode", None) in {"dual_stack", "speaker_focus"}
                 and len(getattr(scene, "centers", ())) == 2
             )
-            if pair and choice == "dual_stack":
-                derived = replace(scene, mode="dual_stack", switches=())
+            # Dual Stack can use weaker-but-stable two-face evidence in an
+            # uninterrupted wide shot. Auto Director never changes its layout.
+            wide_pair = tuple(getattr(scene, "pair_centers", ()))
+            if choice == "dual_stack" and (pair or len(wide_pair) == 2):
+                centers = scene.centers if pair else wide_pair
+                derived = replace(scene, mode="dual_stack", centers=centers, switches=())
             elif pair and choice == "speaker_focus":
                 derived = replace(scene, mode="speaker_focus")
             elif getattr(scene, "mode", None) == "dual_stack":
