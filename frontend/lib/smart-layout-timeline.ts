@@ -84,6 +84,11 @@ export function parseSmartLayoutPlan(input: unknown): SmartLayoutPlan | null {
   return input as unknown as SmartLayoutPlan;
 }
 
+/** Report how much of the actual analyzed clip can truly show two live faces. */
+export function dualStackCoverageSeconds(plan: SmartLayoutPlan): number {
+  return plan.scenes.reduce((total, scene) => total + (scene.layout === "dual_stack" ? scene.end - scene.start : 0), 0);
+}
+
 export function findScene(plan: SmartLayoutPlan, sourceTime: number): SmartLayoutScene | null {
   if (!finite(sourceTime)) return null;
   const local = sourceTime - plan.source_start;

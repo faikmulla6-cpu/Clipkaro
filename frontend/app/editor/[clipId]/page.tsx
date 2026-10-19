@@ -3,7 +3,7 @@
 import { ErrorState } from "@/components/ErrorState";
 import { useAuth } from "@/components/AuthProvider";
 import { API_URL, api, patchJSON, postJSON } from "@/lib/api";
-import { findScene, paintSmartLayoutFrame, parseSmartLayoutPlan, type SmartLayoutPlan } from "@/lib/smart-layout-timeline";
+import { dualStackCoverageSeconds, findScene, paintSmartLayoutFrame, parseSmartLayoutPlan, type SmartLayoutPlan } from "@/lib/smart-layout-timeline";
 import { downloadExport, newBehaviorSession, trackClipBehavior } from "@/lib/behavior";
 import {
   AlertTriangle, AlignCenter, AlignLeft, AlignRight, ArrowLeft, ArrowRight, Captions, Check, Download, Film, GripVertical, Loader2, LockKeyhole, MoveHorizontal,
@@ -197,6 +197,7 @@ export default function Editor() {
   const [downloading, setDownloading] = useState(false);
   const [job, setJob] = useState<Job | null>(null);
   const [exportId, setExportId] = useState("");
+  const [exportLayoutMode, setExportLayoutMode] = useState<"classic" | SmartPlanModes | null>(null);
   const [error, setError] = useState("");
   const [drawerDismissed, setDrawerDismissed] = useState(false);
   const [timedCaptionWords, setTimedCaptionWords] = useState<TimedWord[]>([]);
@@ -234,6 +235,9 @@ export default function Editor() {
     && Math.abs(layoutPlans.auto.duration - (clip.end_time - clip.start_time)) <= .02 ? layoutPlans : null;
   const realPlan = smartRequested && verifiedLayoutPlans && layoutAnalysis !== "error" ? verifiedLayoutPlans[layoutMode] : null;
   const actualScene = realPlan ? findScene(realPlan, playhead) : null;
+  const dualStackCoverage = realPlan && layoutMode === "dual_stack" ? dualStackCoverageSeconds(realPlan) : null;
+  const currentExportLayoutMode = ratio === "9:16" ? layoutMode : "classic";
+  const exportedLayoutIsStale = exportLayoutMode !== null && exportLayoutMode !== currentExportLayoutMode;
   const previewDual = false;
   const previewFocus = false;
 
@@ -1279,6 +1283,18 @@ export default function Editor() {
 
   async function render() {
     if (!clip || renderStartRef.current || renderBusy) return;
+    // Never charge an export for a Dual Stack selection that cannot split.
+    // Auto Director and Speaker Focus retain their existing fallback behavior.
+    if (ratio === "9:16" && layoutMode === "dual_stack") {
+      if (!realPlan) {
+        setError("Wait for private two-speaker analysis before exporting Dual Stack. No export was started.");
+        return;
+      }
+      if (dualStackCoverageSeconds(realPlan) <= 0) {
+        setError("Dual Stack has no verified two-speaker shots in this clip. No new export was started or charged.");
+        return;
+      }
+    }
     renderStartRef.current = true;
     setStartingRender(true);
     setDrawerDismissed(false);
@@ -1295,6 +1311,7 @@ export default function Editor() {
         caption_language_style: captionLanguageStyle,
       });
       setExportId(output.id);
+      setExportLayoutMode(ratio === "9:16" ? layoutMode : "classic");
       setJob({ id: output.job_id, status: "queued", progress: 0, message: "Waiting for the render worker", export_id: output.id });
       watchJob(output.job_id);
     } catch (cause) {
@@ -1467,7 +1484,13 @@ export default function Editor() {
                   <option value="speaker_focus">Speaker Focus · Follow the person speaking</option>
                   <option value="classic">Classic · Single-person crop</option>
                 </select>
-                <p className="field-note">{smartCapability === "ready" ? "Frames are analyzed privately; each mode uses the actual source faces. Two panels appear only when two people are visible together. No export is charged." : "Real, face-aware preview becomes available when your secure video-analysis worker is enabled. Clipkaro does not fake two-speaker previews."}</p>
+                <p className="field-note">{smartCapability === "ready" ? "Frames are analyzed privately using the source video. Two live panels require two faces in the same shot. Preview analysis uses no export credit." : "Real, face-aware preview becomes available when your secure video-analysis worker is enabled. Clipkaro does not fake two-speaker previews."}</p>
+                {layoutMode === "dual_stack" && dualStackCoverage !== null &&
+                  <p className="field-note" role="status">
+                    {dualStackCoverage > 0
+                      ? `Verified two-person Dual Stack: ${dualStackCoverage.toFixed(1)} of ${realPlan!.duration.toFixed(1)} seconds. Other shots remain single-person; captions move to the middle only during verified split scenes.`
+                      : "No simultaneous two-face shots detected. Dual Stack cannot produce two live panels from separate close-ups; the preview check does not use export credits."}
+                  </p>}
               </div>
               <div className="pro-editor-stat-grid"><span><small>Ratio</small><b>{ratio}</b></span><span><small>Focus</small><b>{Math.round(focusX)}%</b></span><span><small>Zoom</small><b>{Math.round(zoom*100)}%</b></span></div>
               <p className="pro-editor-note">Framing changes are reflected in the exported MP4, not only in preview.</p>
@@ -1814,7 +1837,7 @@ export default function Editor() {
       </section>
 
       {error && <div className={`floating-error ${error === "Saved" ? "success" : ""}`}>{error}</div>}
-      {job && !drawerDismissed && <div className="export-drawer"><div className="export-icon">{job.status === "completed" ? <Check /> : job.status === "failed" ? <span>!</span> : <Loader2 className="spin" />}</div><div><b>{job.status === "completed" ? "Your Short is ready" : job.status === "failed" ? job.error || job.message : job.message}</b><span>{job.status === "completed" ? "The downloaded MP4 matches this crop, zoom and caption style" : `${job.progress}% complete`}</span><div className="progress"><i style={{ width: `${job.progress}%` }} /></div></div>{job.status === "completed" && <div className="post-karo-drawer-actions">
+      {job && !drawerDismissed && <div className="export-drawer"><div className="export-icon">{job.status === "completed" ? <Check /> : job.status === "failed" ? <span>!</span> : <Loader2 className="spin" />}</div><div><b>{job.status === "completed" ? (exportedLayoutIsStale ? "Your previous Short is ready" : "Your Short is ready") : job.status === "failed" ? job.error || job.message : job.message}</b><span>{job.status === "completed" ? (exportedLayoutIsStale ? "This MP4 uses the previously exported layout. Export Short again to apply your newly selected layout." : "This MP4 uses the settings selected when export started.") : `${job.progress}% complete`}</span><div className="progress"><i style={{ width: `${job.progress}%` }} /></div></div>{job.status === "completed" && <div className="post-karo-drawer-actions">
         <button className="secondary-btn" type="button" onClick={downloadReadyExport} disabled={downloading}>{downloading ? <Loader2 className="spin" size={15}/> : <Download size={15}/>} {downloading ? "Preparing…" : "Download MP4"}</button>
         <button className={postKaro?.ready ? "primary-btn" : "post-karo-locked-btn"} type="button" onClick={openPostKaro}>{postKaro?.ready ? <Send size={15}/> : <LockKeyhole size={14}/>} Post Now</button>
         {showPostKaroPrompt && <div className="post-karo-gate-backdrop" onMouseDown={() => setShowPostKaroPrompt(false)}>
