@@ -105,6 +105,42 @@ class SmartV2UnitTests(unittest.TestCase):
             out.unlink(missing_ok=True)
 
 
+    def test_both_live_panels_advance_through_same_original_timeline(self):
+        ffmpeg = shutil.which("ffmpeg")
+        if not ffmpeg:
+            self.skipTest("FFmpeg unavailable")
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "two-live-speakers.mp4"
+            output = Path(tmp) / "output.mp4"
+            # Two different moving test patterns share one 2-second video
+            # timeline, just like the user's continuous wide podcast source.
+            subprocess.run([
+                ffmpeg, "-nostdin", "-v", "error", "-y",
+                "-f", "lavfi", "-i", "testsrc2=size=320x360:rate=15:duration=2",
+                "-f", "lavfi", "-i", "testsrc=size=320x360:rate=15:duration=2",
+                "-filter_complex", "[0:v][1:v]hstack=inputs=2,format=yuv420p[v]",
+                "-map", "[v]", "-c:v", "libx264", "-threads", "2",
+                "-preset", "ultrafast", str(source),
+            ], check=True, capture_output=True, timeout=30)
+            evidence = LayoutPlan("auto", 640, 360, ((.25,.34),(.75,.34)),
+                                  segments=(Scene(0.,2.,"dual_stack",
+                                                  ((.25,.34),(.75,.34))),))
+            plan = all_layout_variants(evidence, source_start=0, duration=2)["dual_stack"]
+            result, actual = precompose_v2(source, output, plan, ffmpeg, 360, 640, 70)
+            self.assertEqual(actual, "dual_stack")
+            for label, crop in (("top", "crop=360:260:0:0"),
+                                ("bottom", "crop=360:260:0:380")):
+                output_hashes = subprocess.run([
+                    ffmpeg, "-v", "error", "-i", str(result),
+                    "-vf", crop, "-an", "-f", "framemd5", "-",
+                ], check=True, capture_output=True, text=True, timeout=30).stdout
+                frames = [row.split(",")[-1].strip() for row in output_hashes.splitlines()
+                          if row and not row.startswith("#")]
+                self.assertGreater(len(set(frames)), 3,
+                                   f"{label} panel must show moving video, never a frozen face")
+            result.unlink(missing_ok=True)
+
+
 if __name__=="__main__":
     unittest.main()
 

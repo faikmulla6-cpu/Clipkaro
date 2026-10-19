@@ -25,6 +25,9 @@ class Scene:
     mode: str
     centers: tuple[tuple[float, float], ...] = ()
     switches: tuple[tuple[float, int], ...] = ()
+    # Independent, stable same-frame two-face evidence for the explicitly
+    # selected Dual Stack layout. Auto Director's existing decision is intact.
+    pair_centers: tuple[tuple[float, float], ...] = ()
 
 
 def scene_boundaries(visuals: list, pairs: list, singles: list) -> list[int]:
@@ -61,17 +64,64 @@ def _single_face(found) -> tuple[float, float, float, float] | None:
     return max(significant, key=lambda f: f[2] * f[3])
 
 
+def _wider_pair(faces: list) -> tuple | None:
+    """Small real faces in a wide shot, without guessing any missing person."""
+    candidates = sorted(
+        (f for f in faces if f[2] >= .030 and f[3] >= .042),
+        key=lambda f: f[2] * f[3], reverse=True,
+    )[:2]
+    if len(candidates) != 2:
+        return None
+    left, right = sorted(candidates, key=lambda f: f[0])
+    return (left, right) if right[0] - left[0] >= .18 else None
+
+
+def _stable_wide_pair(candidates: list, singles: list,
+                      start_i: int, end_i: int) -> tuple[tuple[float, float], ...]:
+    """Anchor two *simultaneous* live crops despite intermittent detections.
+
+    A small number of front-facing frames is enough for an unchanged wide
+    camera, but a brief cutaway or occasional poster false positive is not.
+    Crops continue sampling the same live timestamp; no stills are created.
+    """
+    import numpy as np
+    count = max(1, end_i - start_i)
+    found = [(i - start_i, candidates[i]) for i in range(start_i, end_i)
+             if candidates[i] is not None]
+    minimum = max(3, math.ceil(count * .12))
+    if len(found) < minimum:
+        return ()
+    if count >= 8 and found[-1][0] - found[0][0] < (count - 1) * .55:
+        return ()
+    # Disallow a solo close-up scene masquerading as a two-person wide shot.
+    large = sum(bool(face and face[2] >= .16) for face in singles[start_i:end_i])
+    if large > count * .40 and len(found) < count * .55:
+        return ()
+    coordinates = np.asarray([[[f[0], f[1]] for f in pair]
+                              for _, pair in found], dtype=float)
+    centers = np.median(coordinates, axis=0)
+    stable = np.all(np.abs(coordinates - centers) <= (.10, .14), axis=(1, 2))
+    if int(np.count_nonzero(stable)) < minimum or np.mean(stable) < .75:
+        return ()
+    centers = np.median(coordinates[stable], axis=0)
+    if centers[1, 0] - centers[0, 0] < .18:
+        return ()
+    return tuple((float(p[0]), float(p[1])) for p in centers)
+
+
 def _decisions_for_scene(
     start_i: int, end_i: int, pairs: list, singles: list,
     scores: list, energy: list, requested: str,
     start_seconds: float, end_seconds: float,
     window: float,
+    candidates: list | None = None,
 ) -> Scene:
     import numpy as np
     from .karo_smart_layouts import _normalize_activity, smooth_turns
     count = max(1, end_i - start_i)
     matched = [p for p in pairs[start_i:end_i] if p is not None]
     available = [f for f in singles[start_i:end_i] if f is not None]
+    anchor = _stable_wide_pair(candidates, singles, start_i, end_i) if candidates is not None else ()
     # One person taking a close-up must never be duplicated into split panels.
     if len(matched) >= max(3, math.ceil(count * .55)):
         first = tuple(float(np.median([p[0][k] for p in matched])) for k in (0, 1))
@@ -99,12 +149,13 @@ def _decisions_for_scene(
                 mode = "dual_stack" if conversational else "speaker_focus"
             else:
                 mode = "speaker_focus"
-            return Scene(start_seconds, end_seconds, mode, (first, second), changes)
+            return Scene(start_seconds, end_seconds, mode, (first, second), changes,
+                         anchor or (first, second))
     if len(available) >= max(2, math.ceil(count * .22)):
         # Face position in a close-up is independent of the last wide shot.
         face = tuple(float(np.median([f[k] for f in available])) for k in (0, 1))
-        return Scene(start_seconds, end_seconds, "single", (face,))
-    return Scene(start_seconds, end_seconds, "wide")
+        return Scene(start_seconds, end_seconds, "single", (face,), pair_centers=anchor)
+    return Scene(start_seconds, end_seconds, "wide", pair_centers=anchor)
 
 
 def analyze_scenes(source: Path, start: float, duration: float, mode: str, ffmpeg: str):
@@ -126,7 +177,7 @@ def analyze_scenes(source: Path, start: float, duration: float, mode: str, ffmpe
         detector = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
         if detector.empty():
             return None
-        visuals, pairs, singles, motion = [], [], [], []
+        visuals, pairs, singles, motion, candidate_pairs = [], [], [], [], []
         mouth_before = [None, None]
         for i in range(count):
             t = start + min(duration - .001, (i + .5) * interval)
@@ -136,6 +187,7 @@ def analyze_scenes(source: Path, start: float, duration: float, mode: str, ffmpe
                 visuals.append(None)
                 pairs.append(None)
                 singles.append(None)
+                candidate_pairs.append(None)
                 motion.append((0., 0.))
                 continue
             height, width = frame.shape[:2]
@@ -155,6 +207,22 @@ def analyze_scenes(source: Path, start: float, duration: float, mode: str, ffmpe
             pair = _pair(faces)
             pairs.append(pair)
             singles.append(_single_face(faces))
+            wider = pair or _wider_pair(faces)
+            if wider is None:
+                # Wide cameras often show smaller/dimmer faces. This second
+                # pass is evidence ONLY for explicit Dual Stack, and cannot
+                # affect Auto Director's already-tuned shot decisions.
+                enhanced = cv2.equalizeHist(grey)
+                extra = detector.detectMultiScale(
+                    enhanced, scaleFactor=1.08, minNeighbors=3,
+                    minSize=(max(18, grey.shape[1] // 34), 18),
+                )
+                more_faces = [((x + fw / 2) / grey.shape[1],
+                               (y + fh / 2) / grey.shape[0],
+                               fw / grey.shape[1], fh / grey.shape[0])
+                              for x, y, fw, fh in extra]
+                wider = _wider_pair(more_faces)
+            candidate_pairs.append(wider)
             scores = []
             for j in (0, 1):
                 face = pair[j] if pair else None
@@ -194,7 +262,7 @@ def analyze_scenes(source: Path, start: float, duration: float, mode: str, ffmpe
                 continue
             scenes.append(_decisions_for_scene(
                 i, j, pairs, singles, motion, loudness, mode,
-                round(a, 3), round(b, 3), interval,
+                round(a, 3), round(b, 3), interval, candidate_pairs,
             ))
         if not scenes:
             return None
