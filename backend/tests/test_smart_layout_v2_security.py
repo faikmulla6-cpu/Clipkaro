@@ -109,8 +109,51 @@ class SmartLayoutSecurityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(exc.exception.status_code,409)
 
 
-if __name__=="__main__":
-    unittest.main()
+    async def test_private_mkv_range_preserves_media_type_without_redirect(self):
+        uid, pid, cid, vid = user_ids()
+        key = f"users/{uid}/projects/{pid}/videos/{vid}/source.mkv"
+        raw = b"matroska-source-bytes"
+        class FakeS3:
+            bucket = "owner-only"
+            client = MagicMock()
+            async def stat(self, _key):
+                return SimpleNamespace(size=len(raw), generation="etag:original")
+        fake = FakeS3()
+        fake.client.get_object.return_value = {
+            "ETag": '"original"',
+            "Body": io.BytesIO(raw[0:12]),
+        }
+        request = Request({
+            "type": "http", "method": "GET", "path": "/api/preview",
+            "headers": [(b"range", b"bytes=0-11")],
+        })
+        row = {"original_filename": "clip-from-youtube.mkv",
+               "file_path": key, "object_generation": "etag:original"}
+        with patch.object(api, "enabled_for_user", return_value=True), \
+             patch.object(api, "_owned", new_callable=AsyncMock, return_value=row), \
+             patch.object(api, "get_storage_provider", return_value=fake), \
+             patch.object(api, "S3StorageProvider", FakeS3), \
+             patch.object(api, "get_settings", return_value=SimpleNamespace(normalized_storage_backend="gcs")), \
+             patch.object(api, "consume_rate_limit", new_callable=AsyncMock, return_value=True):
+            response = await api.original_canvas_video(cid, request, {"id": uid})
+            body = b"".join([chunk async for chunk in response.body_iterator])
+        self.assertEqual(response.status_code, 206)
+        self.assertEqual(response.media_type, "video/x-matroska")
+        self.assertEqual(body, raw[:12])
+        self.assertEqual(response.headers["content-range"], f"bytes 0-11/{len(raw)}")
+        self.assertNotIn("location", response.headers)
+
+    async def test_unsupported_original_container_rejected_before_download(self):
+        uid, cid = user_ids()[:2]
+        request = Request({"type": "http", "method": "GET", "path": "/api/preview", "headers": []})
+        with patch.object(api, "enabled_for_user", return_value=True), \
+             patch.object(api, "_owned", new_callable=AsyncMock,
+                          return_value={"original_filename": "podcast.avi"}), \
+             patch.object(api, "get_storage_provider") as storage:
+            with self.assertRaises(HTTPException) as error:
+                await api.original_canvas_video(cid, request, {"id": uid})
+        self.assertEqual(error.exception.status_code, 422)
+        storage.assert_not_called()
 
 
 class PrivateSourceRaceTests(unittest.IsolatedAsyncioTestCase):

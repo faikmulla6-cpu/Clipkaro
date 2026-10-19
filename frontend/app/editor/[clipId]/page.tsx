@@ -185,6 +185,7 @@ export default function Editor() {
   const [layoutPlans, setLayoutPlans] = useState<Record<SmartPlanModes, SmartLayoutPlan> | null>(null);
   const [layoutAnalysis, setLayoutAnalysis] = useState<"idle" | "analyzing" | "ready" | "error">("idle");
   const [layoutAnalysisError, setLayoutAnalysisError] = useState("");
+  const [smartMediaError, setSmartMediaError] = useState("");
   const [smartCapability, setSmartCapability] = useState<"checking" | "ready" | "unavailable">("checking");
   const SMART_LAYOUT_V2_ENABLED = smartCapability === "ready";
   const [focusX, setFocusX] = useState(50);
@@ -234,6 +235,7 @@ export default function Editor() {
   const verifiedLayoutPlans = layoutPlans && clip && Math.abs(layoutPlans.auto.source_start - clip.start_time) <= .02
     && Math.abs(layoutPlans.auto.duration - (clip.end_time - clip.start_time)) <= .02 ? layoutPlans : null;
   const realPlan = smartRequested && verifiedLayoutPlans && layoutAnalysis !== "error" ? verifiedLayoutPlans[layoutMode] : null;
+  const securePreviewActive = !!realPlan && !smartMediaError;
   const actualScene = realPlan ? findScene(realPlan, playhead) : null;
   const dualStackCoverage = realPlan && layoutMode === "dual_stack" ? dualStackCoverageSeconds(realPlan) : null;
   const currentExportLayoutMode = ratio === "9:16" ? layoutMode : "classic";
@@ -325,7 +327,7 @@ export default function Editor() {
   }, [clip?.id, clip?.start_time, clip?.end_time, smartRequested, verifiedLayoutPlans, layoutAnalysis]);
 
   useEffect(() => {
-    if (!realPlan) return;
+    if (!securePreviewActive || !realPlan) return;
     const video = videoRef.current;
     const canvas = smartCanvasRef.current;
     if (!video || !canvas) return;
@@ -363,7 +365,7 @@ export default function Editor() {
       if (frameHandle && typeof video.cancelVideoFrameCallback === "function") video.cancelVideoFrameCallback(frameHandle);
       if (timerHandle) window.cancelAnimationFrame(timerHandle);
     };
-  }, [realPlan, clip?.id]);
+  }, [realPlan, clip?.id, securePreviewActive]);
 
   const freePlan = user?.plan === "free";
   const renderBusy = startingRender || (!!job && !["completed", "failed"].includes(job.status));
@@ -384,7 +386,7 @@ export default function Editor() {
       const data = await api<Project>(`/projects/${projectId}`);
       const selected = data.clips.find(item => item.id === clipId);
       if (!selected) throw new Error("This clip no longer exists in the project.");
-      setLayoutPlans(null); setLayoutAnalysis("idle"); setLayoutAnalysisError("");
+      setLayoutPlans(null); setLayoutAnalysis("idle"); setLayoutAnalysisError(""); setSmartMediaError("");
       setProject(data); setClip(selected); setHook(selected.hook); setTitle(selected.title);
       setTranscript(selected.transcript_text || selected.hook);
       setStart(selected.start_time); setEnd(selected.end_time); setPlayhead(selected.start_time);
@@ -1192,7 +1194,14 @@ export default function Editor() {
         video.currentTime = start + pieces[0].sourceStart;
       }
       playbackPieceIndexRef.current = pieceIndex;
-      await video.play();
+      try {
+        await video.play();
+      } catch {
+        setPlaying(false);
+        if (realPlan) setSmartMediaError("Playback could not start. This source may require browser-compatible MP4 preview media.");
+        else setError("The source video could not be played in this browser.");
+        return;
+      }
       if (clip && !previewLogged.current) {
         previewLogged.current = true;
         trackClipBehavior(clip.id, "preview_started", {
@@ -1283,6 +1292,11 @@ export default function Editor() {
 
   async function render() {
     if (!clip || renderStartRef.current || renderBusy) return;
+    // Do not charge for a Smart Layout whose source preview cannot be verified.
+    if (smartRequested && smartMediaError) {
+      setError("Smart Layout source playback is unavailable. No export was started; retry with a browser-compatible source.");
+      return;
+    }
     // Never charge an export for a Dual Stack selection that cannot split.
     // Auto Director and Speaker Focus retain their existing fallback behavior.
     if (ratio === "9:16" && layoutMode === "dual_stack") {
@@ -1362,7 +1376,7 @@ export default function Editor() {
   );
 
   const selectedBrandKit = brandKits.find(kit => kit.id === brandKitId);
-  const positionClass = (realPlan && actualScene?.layout === "dual_stack") || previewDual ? "position-center smart-stack-captions" : captionY === null ? "position-" + captionPosition : "caption-custom-position";
+  const positionClass = (securePreviewActive && actualScene?.layout === "dual_stack") || previewDual ? "position-center smart-stack-captions" : captionY === null ? "position-" + captionPosition : "caption-custom-position";
   const selectedCaptionStyle = captionStyles.find(style => style.id === captionStyle);
   const baseCaptionRatio = selectedCaptionStyle?.font_size_width_ratio ?? .065;
   const captionInsetRatio = selectedCaptionStyle?.horizontal_inset_ratio ?? .06;
@@ -1521,23 +1535,28 @@ export default function Editor() {
             <div className={"smart-preview-primary" + (previewDual ? " smart-preview-top" : "") + (previewFocus ? " smart-preview-focus" : "")}>
               <video
               ref={videoRef}
-              src={realPlan ? API_URL + "/clips/" + clip.id + "/smart-layout-v2/media" : API_URL + "/projects/" + project.id + "/media"}
-              crossOrigin={realPlan ? "use-credentials" : undefined}
+              src={securePreviewActive ? API_URL + "/clips/" + clip.id + "/smart-layout-v2/media" : API_URL + "/projects/" + project.id + "/media"}
+              crossOrigin={securePreviewActive ? "use-credentials" : undefined}
               preload="metadata"
               playsInline
               onLoadedMetadata={onLoaded}
               onTimeUpdate={onTimeUpdate}
               onPlay={() => setPlaying(true)}
               onPause={() => setPlaying(false)}
+              onError={() => {
+                setPlaying(false);
+                if (securePreviewActive) setSmartMediaError("Secure preview video could not load. Showing the original source instead; this is not a verified Dual Stack preview.");
+                else setError("The source video could not be played in this browser. A browser-compatible MP4 may be required.");
+              }}
               style={{
                 objectFit: preserveSourceCaptions ? "contain" : "cover",
                 objectPosition: previewDual ? "16% 50%" : previewFocus ? "50% 50%" : String(focusX) + "% 50%",
                 transform: preserveSourceCaptions || previewDual || !!realPlan ? "scale(1)" : previewFocus ? "scale(1.08)" : "scale(" + String(zoom) + ")",
-                opacity: realPlan ? 0 : 1,
+                opacity: securePreviewActive ? 0 : 1,
               }}
             />
             </div>
-            {realPlan && <canvas ref={smartCanvasRef} className="smart-layout-v2-canvas"
+            {securePreviewActive && <canvas ref={smartCanvasRef} className="smart-layout-v2-canvas"
               width={360} height={640} aria-label="Analyzed Smart Layout preview"/>}
             {ratio === "9:16" && layoutMode !== "classic" && smartCapability !== "ready" &&
               <div className="smart-layout-v2-status" role="status">
@@ -1546,6 +1565,7 @@ export default function Editor() {
             {smartRequested && !realPlan && <div className="smart-layout-v2-status" role="status">
               {layoutAnalysis === "error" ? <><span>Smart Layout preview unavailable: {layoutAnalysisError}</span><button type="button" onClick={() => { setLayoutPlans(null); setLayoutAnalysis("idle"); setLayoutAnalysisError(""); }}>Retry analysis</button></> : "Analyzing real speaker positions…"}
             </div>}
+            {smartMediaError && smartRequested && <div className="smart-layout-v2-status" role="alert">{smartMediaError} Please do not export until this is fixed.</div>}
             {previewDual && <>
               <div className="smart-preview-band" aria-hidden="true" />
               <div className="smart-preview-secondary" aria-hidden="true">
@@ -1555,7 +1575,7 @@ export default function Editor() {
               </div>
             </>}
             {ratio === "9:16" && layoutMode !== "classic" && <div className="smart-preview-label">
-              <Sparkles size={11}/> {layoutMode === "auto" ? "AUTO DIRECTOR" : layoutMode === "dual_stack" ? "DUAL STACK" : "SPEAKER FOCUS"} · {realPlan ? "ANALYZED PREVIEW" : SMART_LAYOUT_V2_ENABLED ? "ANALYSIS PENDING" : "NOT ANALYZED"}
+              <Sparkles size={11}/> {layoutMode === "auto" ? "AUTO DIRECTOR" : layoutMode === "dual_stack" ? "DUAL STACK" : "SPEAKER FOCUS"} · {smartMediaError ? "SOURCE VIEW ONLY" : realPlan ? "ANALYZED PREVIEW" : SMART_LAYOUT_V2_ENABLED ? "ANALYSIS PENDING" : "NOT ANALYZED"}
             </div>}
             <button className="canvas-play pro-canvas-play" onClick={togglePlayback}>{playing ? <Pause fill="currentColor"/> : <Play fill="currentColor"/>}</button>
             {hookEnabled && showHook && visibleHook && <div className="canvas-hook">{visibleHook}</div>}

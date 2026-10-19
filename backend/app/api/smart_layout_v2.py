@@ -32,6 +32,7 @@ _MAX_JSON = 131072
 _CHUNK = 64 * 1024
 _MAX_RANGE = 4 * 1024 * 1024
 _BYTE_RANGE = re.compile(r"^bytes=(\d+)-(\d*)$", re.ASCII)
+_BROWSER_SOURCE_TYPES = {".mp4": "video/mp4", ".mkv": "video/x-matroska", ".webm": "video/webm"}
 
 
 def enabled() -> bool:
@@ -236,7 +237,7 @@ async def request_analysis(
 async def original_canvas_video(
     clip_id: str, request: Request, user: dict = Depends(current_user),
 ):
-    """Same-origin, authenticated, bounded HTTP Range proxy for private MP4.
+    """Same-origin, authenticated, bounded HTTP Range proxy for private video.
 
     DO NOT redirect to B2: cross-origin signed video can taint browser Canvas.
     The request cannot supply a B2 key or access another user's source.
@@ -244,14 +245,17 @@ async def original_canvas_video(
     _require_feature(str(user["id"]))
     uid = str(user["id"])
     row = await _owned(clip_id, uid)
-    if Path(str(row["original_filename"])).suffix.lower() != ".mp4":
-        raise HTTPException(422, "This browser preview requires an MP4 source.")
+    # Serve the verified original bytes with a truthful container type.
+    # Modern browsers may decode MKV/WebM natively; never label MKV as MP4.
+    source_type = _BROWSER_SOURCE_TYPES.get(Path(str(row["original_filename"])).suffix.lower())
+    if not source_type:
+        raise HTTPException(422, "This private preview requires an MP4, MKV, or WebM source.")
     storage = get_storage_provider()
     if get_settings().normalized_storage_backend != "gcs":
         local = confined_upload_path(row.get("file_path"))
         if not local or not local.is_file():
             raise HTTPException(410, "Original source is unavailable.")
-        return FileResponse(local, media_type="video/mp4", headers={"Cache-Control":"private, no-store"})
+        return FileResponse(local, media_type=source_type, headers={"Cache-Control":"private, no-store"})
     if not isinstance(storage, S3StorageProvider):
         raise HTTPException(503, "Private preview media service is unavailable.")
     key = validate_object_key(
@@ -315,7 +319,7 @@ async def original_canvas_video(
         finally:
             await asyncio.to_thread(body.close)
     return StreamingResponse(
-        stream(), status_code=206, media_type="video/mp4",
+        stream(), status_code=206, media_type=source_type,
         headers={
             "Accept-Ranges":"bytes",
             "Content-Range":f"bytes {start}-{end}/{size}",
