@@ -194,8 +194,8 @@ async def request_analysis(
     if ready:
         return ready
     key = private_plan_key(identity)
-    if not await consume_rate_limit(uid, group="smart_layout_preview", limit=8, window_seconds=86400):
-        raise HTTPException(429, "Too many preview analysis requests today. Please retry later.")
+    # A cache hit or already-running analysis must not consume another daily
+    # allowance. Deduplicate under the per-clip distributed lock first.
     async with distributed_advisory_lock("smart-layout-v2:"+uid+":"+clip_id):
         cached = await _cached(row, identity)
         if cached:
@@ -210,6 +210,10 @@ async def request_analysis(
         )
         if int((pending or {}).get("n") or 0) >= 2:
             raise HTTPException(429, "Two previews are already being analyzed.")
+        # Only a genuinely new queued job should consume this user's allowance.
+        # Keep the existing 8-per-24-hour quota and global capacity cap.
+        if not await consume_rate_limit(uid, group="smart_layout_preview", limit=8, window_seconds=86400):
+            raise HTTPException(429, "Daily limit of 8 Smart Layout analyses reached. Try again after the 24-hour window resets. Preview analysis does not use export credits.")
         # Free preview compute is globally budgeted separately from billing.
         # A burst of analysis requests must not exhaust media-worker capacity.
         if not await consume_rate_limit(
