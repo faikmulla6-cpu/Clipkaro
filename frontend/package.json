@@ -16,6 +16,7 @@
     "check:content-pack": "node scripts/check-content-pack.mjs",
     "check:transcript-review": "node scripts/check-transcript-review.mjs",
     "check:quality-fixes": "node scripts/check-quality-fixes.mjs",
+    "check:r2-upload": "node scripts/check-cloudflare-r2-upload.mjs",
     "check:release-identity": "node scripts/check-release-identity.mjs",
     "check:search-discovery": "node scripts/check-search-discovery.mjs",
     "check:caption-composition": "node scripts/check-caption-composition.mjs",
@@ -27,7 +28,7 @@
     "build": "next build --webpack",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "check:release": "npm run check:settings-trust && npm run check:analytics-truth && npm run check:billing-lifecycle && npm run check:email-verification && npm run check:security-foundation && npm run check:legal-privacy && npm run check:behavioral-learning && npm run check:landscape-reframe && npm run check:content-pack && npm run check:transcript-review && npm run check:quality-fixes && npm run check:caption-composition && npm run check:search-discovery && npm run check:public-mobile && npm run check:release-identity"
+    "check:release": "npm run check:settings-trust && npm run check:analytics-truth && npm run check:billing-lifecycle && npm run check:email-verification && npm run check:security-foundation && npm run check:legal-privacy && npm run check:behavioral-learning && npm run check:landscape-reframe && npm run check:content-pack && npm run check:transcript-review && npm run check:quality-fixes && npm run check:r2-upload && npm run check:caption-composition && npm run check:search-discovery && npm run check:public-mobile && npm run check:release-identity"
   },
   "dependencies": {
     "@radix-ui/react-progress": "^1.1.7",

@@ -4,6 +4,7 @@ import { AlertCircle, Check, ChevronRight, CloudUpload, FileVideo, Loader2, Lock
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AccountSettings, API_URL, api } from "@/lib/api";
+import { DirectStorageUploadError, isTransientStorageUploadError } from "@/lib/direct-storage-upload";
 
 const UPLOAD_URL = `${API_URL}/projects/upload`;
 const DIRECT_GCS_UPLOAD = process.env.NEXT_PUBLIC_UPLOAD_MODE === "direct_gcs";
@@ -46,6 +47,7 @@ export function DirectUploadFallback({ embedded = false, disabled = false, onAct
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [retryingPrivateUpload, setRetryingPrivateUpload] = useState(false);
   const [job, setJob] = useState<Job | null>(null);
   const [error, setError] = useState("");
   const [preflight, setPreflight] = useState<Preflight | null>(null);
@@ -133,14 +135,16 @@ export function DirectUploadFallback({ embedded = false, disabled = false, onAct
     };
   }
 
-  function send(xhr: XMLHttpRequest, body: XMLHttpRequestBodyInit): Promise<XMLHttpRequest> {
+  function send(xhr: XMLHttpRequest, body: XMLHttpRequestBodyInit, privateStorage = false): Promise<XMLHttpRequest> {
     activeUpload.current = xhr;
     return new Promise<XMLHttpRequest>((resolve, reject) => {
       xhr.upload.onprogress = (event) => {
         if (event.lengthComputable) setUploadProgress(Math.round((event.loaded / event.total) * 100));
       };
-      xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve(xhr) : reject(new Error(xhr.responseText || "Upload failed."));
-      xhr.onerror = () => reject(new Error("Could not reach private media storage."));
+      xhr.onload = () => xhr.status >= 200 && xhr.status < 300
+        ? resolve(xhr)
+        : reject(privateStorage ? new DirectStorageUploadError(xhr.status, xhr.responseText || "") : new Error(xhr.responseText || "Upload failed."));
+      xhr.onerror = () => reject(new Error(privateStorage ? "Could not reach Cloudflare R2 upload storage. Check your network and try again." : "Could not reach private media storage."));
       xhr.onabort = () => reject(new Error("Upload cancelled."));
       xhr.send(body);
     }).finally(() => { activeUpload.current = null; });
@@ -160,10 +164,28 @@ export function DirectUploadFallback({ embedded = false, disabled = false, onAct
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ filename: file.name, content_type: contentType, size: file.size, title, language, category }),
         });
-        const xhr = new XMLHttpRequest();
-        xhr.open(session.method, session.upload_url);
-        Object.entries(session.headers).forEach(([name, value]) => xhr.setRequestHeader(name, value));
-        await send(xhr, file);
+        const put = async () => {
+          const xhr = new XMLHttpRequest();
+          xhr.open(session.method, session.upload_url);
+          Object.entries(session.headers).forEach(([name, value]) => xhr.setRequestHeader(name, value));
+          await send(xhr, file, true);
+        };
+        try {
+          await put();
+        } catch (cause) {
+          // One bounded retry for a confirmed transient R2 response, using
+          // the SAME signed key and session (never create a second project).
+          // Never retry authorization/CORS errors or an expiring signature.
+          if (!isTransientStorageUploadError(cause) || Date.parse(session.expires_at) <= Date.now() + 60_000) throw cause;
+          setRetryingPrivateUpload(true);
+          try {
+            await new Promise<void>((resolve) => window.setTimeout(resolve, 1500));
+            setUploadProgress(0);
+            await put();
+          } finally {
+            setRetryingPrivateUpload(false);
+          }
+        }
         const completed = await api<UploadCompletion>(`/uploads/${session.upload_session_id}/complete`, { method: "POST" });
         setJob({ status: "queued", progress: 0, stage: "queued", message: "Your video is in the processing queue", project_id: completed.project_id });
         watch(completed.job_id, completed.project_id);
@@ -227,7 +249,7 @@ export function DirectUploadFallback({ embedded = false, disabled = false, onAct
         <div className="field"><label>Content type</label><select id="category" value={category} onChange={(event) => setCategory(event.target.value as AccountSettings["creator_category"])}><option value="auto">Let AI decide</option><option value="education">Education</option><option value="podcast">Podcast</option><option value="business">Business</option><option value="motivation">Motivation</option><option value="spiritual">Spiritual</option><option value="local-business">Local business</option></select></div>
       </div>}
 
-      {busy && uploadProgress < 100 && <div className="processing-box"><div><Loader2 className="spin" size={20}/><div><b>Uploading securely</b><span>{uploadProgress}% transferred</span></div><strong>{uploadProgress}%</strong><button type="button" className="secondary-btn" onClick={() => activeUpload.current?.abort()}>Cancel</button></div><div className="progress large"><span style={{ width: `${uploadProgress}%` }}/></div></div>}
+      {busy && (uploadProgress < 100 || retryingPrivateUpload) && <div className="processing-box"><div><Loader2 className="spin" size={20}/><div><b>{retryingPrivateUpload ? "Retrying Cloudflare R2 upload" : "Uploading securely"}</b><span>{retryingPrivateUpload ? "Temporary R2 error; one safe retry with the same upload session" : `${uploadProgress}% transferred`}</span></div><strong>{uploadProgress}%</strong><button type="button" className="secondary-btn" onClick={() => activeUpload.current?.abort()}>Cancel</button></div><div className="progress large"><span style={{ width: `${uploadProgress}%` }}/></div></div>}
       {error && <div className="error-banner"><AlertCircle size={18}/><span>{error}</span></div>}
       <div className="studio-actions"><span><Check size={15}/> I own or have permission to use this video.</span><button className="primary-btn" disabled={!file || busy || disabled || preflight?.ready === false} onClick={upload}><Sparkles size={17}/> {preflight?.ready === false ? "Fix processing engine first" : "Find my best moments"} <ChevronRight size={17}/></button></div>
       {!embedded && <div className="how-grid">{[["01", "Upload privately", "Your original stays yours."], ["02", "Watch AI work", "Live stages, no mystery spinner."], ["03", "Choose & polish", "Edit only the moments you want."]].map((item) => <div key={item[0]}><span>{item[0]}</span><div><b>{item[1]}</b><p>{item[2]}</p></div></div>)}</div>}

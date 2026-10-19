@@ -248,7 +248,7 @@ class GCSStorageProvider:
 
 
 class S3StorageProvider:
-    """Private S3-compatible adapter used by Backblaze B2 on Modal."""
+    """Private S3-compatible adapter for Cloudflare R2 on Modal."""
 
     def __init__(self) -> None:
         endpoint = os.environ.get("S3_ENDPOINT_URL", "").strip().rstrip("/")
