@@ -1,7 +1,7 @@
 /** Lightweight Node 24+ contract check, without React, private media or exports. */
 import assert from "node:assert/strict";
 import {
-  parseSmartLayoutPlan, findScene, focusRectAt, paintSmartLayoutFrame,
+  parseSmartLayoutPlan, findScene, focusRectAt, paintSmartLayoutFrame, dualStackCoverageSeconds,
 } from "../lib/smart-layout-timeline.ts";
 
 const fixture = {
@@ -27,6 +27,9 @@ const fixture = {
 };
 const parsed = parseSmartLayoutPlan(fixture);
 assert.ok(parsed, "valid layout timeline must parse");
+assert.equal(dualStackCoverageSeconds(parsed), 3, "only genuine paired scenes count as Dual Stack");
+assert.equal(dualStackCoverageSeconds({ ...parsed, scenes: parsed.scenes.slice(1) }), 0,
+             "solo and wide scenes cannot be advertised as dual-video coverage");
 assert.equal(findScene(parsed, 524)?.layout, "dual_stack");
 assert.equal(findScene(parsed, 526.7)?.layout, "single");
 assert.equal(findScene(parsed, 529)?.layout, "wide");
