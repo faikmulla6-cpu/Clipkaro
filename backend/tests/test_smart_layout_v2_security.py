@@ -209,3 +209,53 @@ class SmartLayoutCanaryGateTests(unittest.IsolatedAsyncioTestCase):
         with patch.dict(os.environ, {"KARO_REAL_PREVIEW_ENABLED":"false",
                                      "KARO_REAL_PREVIEW_CANARY_USERS":"*"}):
             self.assertFalse(api.enabled_for_user(owner))
+
+
+class SmartLayoutExportCacheAliasTests(unittest.IsolatedAsyncioTestCase):
+    async def test_export_video_dimensions_match_preview_aliases(self):
+        """Regression: displayed ANALYZED PREVIEW must not become export 409.
+
+        Project/clip authorization and cache-key checks remain unchanged:
+        only SQL column aliases differ between the two trusted code paths.
+        """
+        from app.services.smart_layout_contract import from_media_plan
+        from app.services.smart_layout_cache import AnalysisIdentity, private_plan_key
+        from app.services.smart_layout_cache import MODEL_VERSION
+        identity = AnalysisIdentity(
+            *user_ids(), generation="etag:verified-fixture",
+            start=1.0, end=4.0,
+        )
+        variants = {}
+        for mode in ("auto", "dual_stack", "speaker_focus"):
+            evidence = SimpleNamespace(
+                mode=mode, width=1280, height=720,
+                segments=[SimpleNamespace(
+                    start=0.0, end=3.0, mode="wide",
+                    centers=(), switches=()
+                )],
+            )
+            variants[mode] = from_media_plan(
+                evidence, source_start=1.0, duration=3.0
+            )
+        cache = {
+            "version": 2, "model_version": MODEL_VERSION,
+            "cache_key": private_plan_key(identity), "plans": variants,
+        }
+        with patch("app.services.smart_layout_repository.read_plan",
+                   new_callable=AsyncMock, return_value=cache):
+            preview = await api._cached(
+                {"source_width": 1280, "source_height": 720}, identity
+            )
+            export = await api._cached(
+                {"width": 1280, "height": 720}, identity
+            )
+            self.assertEqual(preview, export)
+            self.assertEqual(export["status"], "ready")
+            self.assertIn("dual_stack", export["plans"])
+            self.assertIn("speaker_focus", export["plans"])
+            self.assertIsNone(await api._cached(
+                {"width": 640, "height": 360}, identity
+            ))
+            self.assertIsNone(await api._cached(
+                {"width": 1280}, identity
+            ))

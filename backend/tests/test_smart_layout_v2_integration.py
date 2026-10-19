@@ -105,6 +105,42 @@ class SmartV2UnitTests(unittest.TestCase):
             out.unlink(missing_ok=True)
 
 
+    def test_both_live_panels_advance_through_same_original_timeline(self):
+        ffmpeg = shutil.which("ffmpeg")
+        if not ffmpeg:
+            self.skipTest("FFmpeg unavailable")
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "two-live-speakers.mp4"
+            output = Path(tmp) / "output.mp4"
+            # Two different moving test patterns share one 2-second video
+            # timeline, just like the user's continuous wide podcast source.
+            subprocess.run([
+                ffmpeg, "-nostdin", "-v", "error", "-y",
+                "-f", "lavfi", "-i", "testsrc2=size=320x360:rate=15:duration=2",
+                "-f", "lavfi", "-i", "testsrc=size=320x360:rate=15:duration=2",
+                "-filter_complex", "[0:v][1:v]hstack=inputs=2,format=yuv420p[v]",
+                "-map", "[v]", "-c:v", "libx264", "-threads", "2",
+                "-preset", "ultrafast", str(source),
+            ], check=True, capture_output=True, timeout=30)
+            evidence = LayoutPlan("auto", 640, 360, ((.25,.34),(.75,.34)),
+                                  segments=(Scene(0.,2.,"dual_stack",
+                                                  ((.25,.34),(.75,.34))),))
+            plan = all_layout_variants(evidence, source_start=0, duration=2)["dual_stack"]
+            result, actual = precompose_v2(source, output, plan, ffmpeg, 360, 640, 70)
+            self.assertEqual(actual, "dual_stack")
+            for label, crop in (("top", "crop=360:260:0:0"),
+                                ("bottom", "crop=360:260:0:380")):
+                output_hashes = subprocess.run([
+                    ffmpeg, "-v", "error", "-i", str(result),
+                    "-vf", crop, "-an", "-f", "framemd5", "-",
+                ], check=True, capture_output=True, text=True, timeout=30).stdout
+                frames = [row.split(",")[-1].strip() for row in output_hashes.splitlines()
+                          if row and not row.startswith("#")]
+                self.assertGreater(len(set(frames)), 3,
+                                   f"{label} panel must show moving video, never a frozen face")
+            result.unlink(missing_ok=True)
+
+
 if __name__=="__main__":
     unittest.main()
 
@@ -122,3 +158,44 @@ class LayoutPreferencePersistenceTests(unittest.TestCase):
         self.assertEqual(selection["removed_ranges"][0]["reason"],"pause")
         invalid=normalize_edit_plan({"layout_mode":"file:///private/key"},4.)
         self.assertNotIn("layout_mode",invalid)
+
+
+class HighResolutionSplitSafetyTests(unittest.TestCase):
+    def test_even_chroma_boundaries_at_customer_export_resolutions(self):
+        plan = timeline()["dual_stack"]
+        for width,height,band,half in ((360,640,76,282),(720,1280,152,564),(1080,1920,232,844)):
+            graph = compose_v2_filter(plan,4.,width,height)
+            self.assertIn(f"scale={width}:{half}",graph)
+            self.assertIn(f"s={width}x{band}",graph)
+            self.assertEqual((height-band)//2,half)
+            self.assertEqual(half % 2,0)
+
+    def test_1080p_real_ffmpeg_split_and_audio_survive_scene_boundaries(self):
+        ffmpeg=shutil.which("ffmpeg")
+        ffprobe=shutil.which("ffprobe")
+        if not ffmpeg or not ffprobe:self.skipTest("FFmpeg unavailable")
+        with tempfile.TemporaryDirectory() as tmp:
+            source=Path(tmp)/"input.mp4"
+            result_output=Path(tmp)/"result.mp4"
+            cmd=[ffmpeg,"-nostdin","-v","error","-y",
+                 "-f","lavfi","-i","color=c=red:s=320x360:r=30:d=4",
+                 "-f","lavfi","-i","color=c=blue:s=320x360:r=30:d=4",
+                 "-f","lavfi","-i","sine=frequency=440:sample_rate=44100:duration=4",
+                 "-filter_complex","[0:v][1:v]hstack=inputs=2[v]",
+                 "-map","[v]","-map","2:a","-c:v","libx264","-threads","2",
+                 "-preset","ultrafast","-c:a","aac",str(source)]
+            subprocess.run(cmd,check=True,capture_output=True,timeout=40)
+            output,layout=precompose_v2(
+                source,result_output,timeline()["dual_stack"],
+                ffmpeg,1080,1920,timeout=140,
+            )
+            self.assertEqual(layout,"dual_stack")
+            probe=subprocess.run([ffprobe,"-v","error","-show_entries",
+                        "format=duration:stream=codec_type,width,height",
+                        "-of","json",str(output)],
+                        check=True,capture_output=True,text=True,timeout=25)
+            info=json.loads(probe.stdout)
+            video=next(x for x in info["streams"] if x["codec_type"]=="video")
+            self.assertEqual((video["width"],video["height"]),(1080,1920))
+            self.assertTrue(any(x["codec_type"]=="audio" for x in info["streams"]))
+            self.assertLess(abs(float(info["format"]["duration"])-4),.17)

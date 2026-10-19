@@ -103,6 +103,49 @@ if __name__ == "__main__":
 
 
 class SceneAwareTests(unittest.TestCase):
+    def test_intermittent_two_face_evidence_enables_only_explicit_live_dual(self):
+        from app.services.karo_smart_scenes import _decisions_for_scene
+        from app.services.smart_layout_variants import all_layout_variants
+        samples = 25
+        small_a, small_b = (.23, .35, .052, .075), (.77, .36, .053, .072)
+        # Both people are in the continuous wide camera shot. Haar only
+        # recognizes the faces in seven of the 25 sampled frames.
+        intermittent = [None] * samples
+        for index in (0, 4, 8, 12, 16, 20, 24):
+            intermittent[index] = (small_a, small_b)
+        strict = [None] * samples
+        singles = [small_a] * samples
+        scene = _decisions_for_scene(
+            0, samples, strict, singles, [(0., 0.)] * samples,
+            [0.] * samples, "auto", 0., 10., .4, intermittent,
+        )
+        self.assertEqual(scene.mode, "single", "keep Auto Director unchanged")
+        self.assertEqual(len(scene.pair_centers), 2)
+        plan = LayoutPlan("auto", 1280, 720, ((.25, .36), (.75, .36)),
+                          segments=(scene,))
+        layouts = all_layout_variants(plan, source_start=0, duration=10)
+        self.assertEqual(layouts["auto"]["scenes"][0]["layout"], "single")
+        self.assertEqual(layouts["speaker_focus"]["scenes"][0]["layout"], "single")
+        self.assertEqual(layouts["dual_stack"]["scenes"][0]["layout"], "dual_stack")
+        self.assertEqual(layouts["dual_stack"]["scenes"][0]["caption_zone"], "middle")
+        self.assertNotEqual(*layouts["dual_stack"]["scenes"][0]["crops"])
+
+    def test_brief_or_unstable_two_face_evidence_never_creates_live_dual(self):
+        from app.services.karo_smart_scenes import _stable_wide_pair, _wider_pair
+        a, b = (.25, .35, .04, .065), (.75, .37, .04, .065)
+        self.assertIsNotNone(_wider_pair([a, b]))
+        self.assertIsNone(_wider_pair([a]))
+        self.assertIsNone(_wider_pair([a, (.31, .37, .04, .065)]))
+        frames = [None] * 25
+        for index in (0, 1, 2, 3, 4, 5, 6):
+            frames[index] = (a, b)
+        self.assertEqual(_stable_wide_pair(frames, [a]*25, 0, 25), (),
+                         "brief opening wide shot is not an all-scene anchor")
+        for index in (0, 4, 8, 12, 16, 20, 24):
+            frames[index] = (a, b)
+        self.assertEqual(_stable_wide_pair(frames, [(.4,.3,.23,.28)]*25, 0, 25), (),
+                         "single close-ups must not be split using weak pair evidence")
+
     def test_each_camera_shot_has_independent_layout(self):
         from app.services.karo_smart_scenes import _decisions_for_scene
         both = ((.24,.37,.10,.14),(.77,.36,.10,.14))

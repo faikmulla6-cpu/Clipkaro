@@ -109,7 +109,12 @@ def compose_v2_filter(plan: dict[str, Any], duration: float,
         fragments.append(f"[src{i}]trim=start={t:.3f}:duration={length:.3f},setpts=PTS-STARTPTS[shot{i}]")
         mode = scene["layout"]
         if mode == "dual_stack":
-            band = (output_height * 12 // 100) // 2 * 2
+            # Both stack panels MUST have even heights for yuv420p chroma.
+            # At 1080x1920 the old band=230 gave odd half=845 and FFmpeg
+            # aborted with malloc_consolidate(): invalid chunk size.
+            if output_height % 4:
+                raise UnsafeLayoutPlan("Split-layout output must align to four rows")
+            band = max(4, round(output_height * .12 / 4) * 4)
             half = (output_height-band)//2
             fragments.append(f"[shot{i}]split=2[a{i}][b{i}]")
             for name,src,crop in (("top",f"a{i}",scene["crops"][0]),("bottom",f"b{i}",scene["crops"][1])):
@@ -137,32 +142,117 @@ def compose_v2_filter(plan: dict[str, Any], duration: float,
 
 def precompose_v2(source, output, plan: dict[str, Any], ffmpeg: str,
                   width: int, height: int, timeout: int) -> tuple[Any, str]:
-    """Encode one private intermediate with real source and unchanged audio.
+    """Encode one scene per FFmpeg process, then join and restore audio.
 
-    No fallback to Classic when user explicitly asked for Smart Layout.
+    The old shared split/trim/concat filtergraph aborted with glibc allocator
+    corruption on an actual 1080p, three-shot podcast under 2 CPU/4 GiB.
+    Sequential scenes bound the filtergraph, memory and worker concurrency.
+    No independent face detection, external API, billing or storage writes.
     """
+    import logging
     import subprocess
+    import tempfile
+    import time
+    from pathlib import Path
+
+    logger = logging.getLogger("clipkaro.smart_layout_v2")
+    validate_serialized_plan(plan)
+    # Match the original guard before spawning any encoders.
+    compose_v2_filter(plan, float(plan["duration"]), width, height)
     source_start = float(plan["source_start"])
     duration = float(plan["duration"])
-    graph = compose_v2_filter(plan, duration, width, height)
     temp = output.with_name(f".{output.stem}.smart-v2.mp4")
+    temp.parent.mkdir(parents=True, exist_ok=True)
     temp.unlink(missing_ok=True)
+    deadline = time.monotonic() + max(30, int(timeout))
+
+    def ffmpeg_run(command: list[str], label: str, result_path: Path) -> None:
+        left = deadline - time.monotonic()
+        if left < 5:
+            raise RuntimeError("Smart Layout time budget expired")
+        try:
+            result = subprocess.run(
+                command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                check=False, timeout=left,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"Smart Layout {label} time limit exceeded") from exc
+        if result.returncode != 0 or not result_path.is_file() or result_path.stat().st_size < 1000:
+            # Server-side logs only, NEVER customer-facing FFmpeg diagnostics
+            # or arbitrary signed source URLs.
+            detail = result.stderr.decode("utf-8", errors="replace")[-650:]
+            detail = detail.replace(str(source), "<private-source>").replace(str(result_path), "<scratch-output>")
+            logger.warning("Smart Layout %s failed exit=%d diagnostic=%s",
+                           label, result.returncode, detail)
+            raise RuntimeError(f"Smart Layout {label} could not complete")
+
     try:
-        command = [
-            ffmpeg, "-nostdin","-v","error","-y","-ss",str(source_start),
-            "-i",str(source),"-t",str(duration),"-filter_complex",graph,
-            "-map","[vout]","-map","0:a?","-c:v","libx264",
-            "-preset","veryfast","-crf","22","-pix_fmt","yuv420p",
-            "-c:a","aac","-b:a","128k","-movflags","+faststart",str(temp),
-        ]
-        output_result = subprocess.run(command,stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,check=False,timeout=timeout)
-        if output_result.returncode or not temp.is_file() or temp.stat().st_size < 1000:
-            raise RuntimeError("Smart Layout v2 could not render this video.")
-        actual = ("dual_stack" if any(scene["layout"]=="dual_stack" for scene in plan["scenes"])
-                  else "speaker_focus" if any(scene["layout"] in {"single","speaker_focus"} for scene in plan["scenes"])
+        with tempfile.TemporaryDirectory(prefix="smart-v2-scenes-", dir=temp.parent) as workspace:
+            root = Path(workspace)
+            scene_files = []
+            for i, scene in enumerate(plan["scenes"]):
+                # FFmpeg consumes exactly the face crops the canvas displays,
+                # but processes ONE shot per subprocess to avoid multi-shot
+                # graph heap corruption at 1080p.
+                begin = float(scene["start"])
+                length = float(scene["end"]) - begin
+                shifted = {
+                    **plan,
+                    "source_start": source_start + begin,
+                    "duration": length,
+                    "scenes": [{**scene, "start": 0., "end": length}],
+                }
+                graph = compose_v2_filter(shifted, length, width, height)
+                scene_output = root / f"scene-{i:02d}.mp4"
+                ffmpeg_run([
+                    ffmpeg, "-nostdin", "-v", "error", "-y",
+                    "-ss", f"{source_start+begin:.6f}", "-i", str(source),
+                    "-t", f"{length:.6f}",
+                    "-filter_complex_threads", "1",
+                    "-filter_complex", graph,
+                    "-map", "[vout]", "-an",
+                    "-c:v", "libx264", "-threads", "2",
+                    "-preset", "veryfast", "-crf", "22",
+                    "-r", "30", "-pix_fmt", "yuv420p",
+                    "-video_track_timescale", "30000",
+                    "-movflags", "+faststart", str(scene_output),
+                ], f"scene_{i}", scene_output)
+                scene_files.append(scene_output)
+
+            # The concat manifest contains only generated filenames (no
+            # customer paths or untrusted input). All encoded scenes share
+            # the same resolution, pixel format, frame rate and timebase.
+            manifest = root / "video_parts.txt"
+            manifest.write_text(
+                "".join(f"file 'scene-{i:02d}.mp4'\n" for i in range(len(scene_files))),
+                encoding="utf-8",
+            )
+            joined = root / "video_joined.mp4"
+            ffmpeg_run([
+                ffmpeg, "-nostdin", "-v", "error", "-y",
+                "-f", "concat", "-safe", "0", "-i", str(manifest),
+                "-map", "0:v:0", "-c:v", "copy", "-an",
+                "-movflags", "+faststart", str(joined),
+            ], "video_join", joined)
+
+            # Restore original audio using exactly the clip's source range,
+            # rather than re-encoding each camera shot independently.
+            ffmpeg_run([
+                ffmpeg, "-nostdin", "-v", "error", "-y",
+                "-i", str(joined),
+                "-ss", f"{source_start:.6f}", "-t", f"{duration:.6f}",
+                "-i", str(source),
+                "-map", "0:v:0", "-map", "1:a:0?",
+                "-c:v", "copy", "-c:a", "aac", "-b:a", "128k",
+                "-t", f"{duration:.6f}", "-movflags", "+faststart",
+                str(temp),
+            ], "audio_mux", temp)
+
+        actual = ("dual_stack" if any(s["layout"] == "dual_stack" for s in plan["scenes"])
+                  else "speaker_focus" if any(s["layout"] in {"single", "speaker_focus"}
+                                              for s in plan["scenes"])
                   else "wide")
-        return temp,actual
-    except (OSError,RuntimeError,subprocess.TimeoutExpired) as exc:
+        return temp, actual
+    except Exception:
         temp.unlink(missing_ok=True)
-        raise RuntimeError("Smart Layout v2 preview/export composition failed.") from exc
+        raise
