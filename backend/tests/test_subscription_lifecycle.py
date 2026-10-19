@@ -196,8 +196,9 @@ def test_lower_recurring_plan_is_scheduled_without_reducing_current_limits(clien
     pending = asyncio.run(fetch_one("SELECT * FROM subscription_plan_changes WHERE user_id=?", (user_id,)))
     assert pending and pending["to_plan"] == "growth" and pending["change_kind"] == "downgrade"
     usage = client.get("/api/v1/usage").json()
-    assert usage["processing_minutes_limit"] == 480
-    assert usage["processing_minutes_remaining"] == 280.0
+    assert usage["processing_minutes_limit"] == 72000
+    assert usage["processing_minutes_remaining"] == 71800.0
+    assert usage["source_minutes_per_short"] == 480
     status = client.get("/api/v1/billing/status").json()
     assert status["plan"] == "pro"
     assert status["scheduled_plan"] == "growth"

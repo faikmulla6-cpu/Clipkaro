@@ -664,7 +664,8 @@ def test_growth_subscription_signature_and_provider_plan_are_verified(client: Te
     assert client.get("/api/v1/auth/me").json()["plan"] == "growth"
     usage = client.get("/api/v1/usage").json()
     assert usage["exports_limit"] == 50
-    assert usage["processing_minutes_limit"] == 180
+    assert usage["processing_minutes_limit"] == 9000
+    assert usage["source_minutes_per_short"] == 180
 
 
 def test_karo_minutes_are_atomically_reserved_and_refunded(client: TestClient):

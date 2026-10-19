@@ -46,7 +46,7 @@ logger = logging.getLogger("clipkaro.pipeline")
 PLAN_SHORT_LIMITS = {key: int(value.get("shorts", value["exports"])) for key, value in PLAN_CATALOG.items()}
 PLAN_PROCESSING_MINUTES = {key: float(value["processing_minutes"]) for key, value in PLAN_CATALOG.items()}
 PLAN_MAX_SOURCE_MINUTES = {
-    "free": 15, "mini_pass": 25, "creator": 60, "growth": 180, "pro": 240, "agency": 240,
+    "free": 15, "mini_pass": 25, "creator": 60, "growth": 180, "pro": 480, "agency": 240,
 }
 TEMPLATES = [
     {"id":"india-pop","name":"India Pop","category":"Trending","caption_style":"hindi-pop","primary":"#FF6B35","accent":"#FFD84D","best_for":"Hindi & Hinglish"},

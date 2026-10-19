@@ -334,3 +334,46 @@ def test_partial_refund_keeps_paid_cycle(client):
     assert result is None
     current = asyncio.run(fetch_one("SELECT plan FROM users WHERE id=?", (uid,)))
     assert current["plan"] == "creator"
+
+@pytest.mark.parametrize("plan,max_source,shorts", [
+    ("creator", 60, 15),
+    ("growth", 180, 50),
+    ("pro", 480, 150),
+])
+def test_paid_plans_use_a_per_short_source_cap(plan, max_source, shorts):
+    """Pricing, processor limits, period accounting and published plan must agree."""
+    from app.api.routes import PLAN_MAX_SOURCE_MINUTES, PLAN_PROCESSING_MINUTES
+    entitlement = PLAN_CATALOG[plan]
+    assert entitlement["source_minutes_per_short"] == max_source
+    assert PLAN_MAX_SOURCE_MINUTES[plan] == max_source
+    assert entitlement["shorts"] == shorts
+    assert entitlement["processing_minutes"] == max_source * shorts
+    assert PLAN_PROCESSING_MINUTES[plan] == max_source * shorts
+
+
+def test_creator_can_reserve_two_fifty_five_minute_sources(client):
+    """Regression: a second 55-minute Creator source must not fail old 60m pool."""
+    from unittest.mock import AsyncMock
+    user_id = signup(client, "per-short-creator@example.com")
+    asyncio.run(make_recurring(user_id, "creator", "sub_per_short_1"))
+    assert client.get("/api/v1/usage").json()["source_minutes_per_short"] == 60
+
+    with patch("app.api.routes._process_project", new=AsyncMock()):
+        created = []
+        for ix in range(2):
+            response = client.post("/api/v1/projects/upload",
+                                   data={"title": f"Long source {ix+1}"},
+                                   files={"file": (f"long-{ix+1}.mp4", b"video", "video/mp4")})
+            assert response.status_code == 201
+            created.append(response.json()["video_id"])
+
+    for video_id in created:
+        asyncio.run(execute(
+            "UPDATE videos SET duration=?,width=1920,height=1080,status='validated' WHERE id=?",
+            (55 * 60, video_id),
+        ))
+    state = client.get("/api/v1/usage").json()
+    assert state["shorts_used"] == 2
+    assert state["shorts_remaining"] == 13
+    assert state["source_minutes"] == pytest.approx(110)
+    assert state["processing_minutes_remaining"] == pytest.approx(790)
