@@ -86,7 +86,7 @@ def position_ass_by_scene(path: Path, scenes: list[dict], output_width: int,
     Split each dialogue event at the camera/Smart Edit boundaries. A caption
     card's text and its separately drawn active-word highlight share exact
     ASS Start/End values, so shift the whole card as one visual unit. Merely
-    APPENDING a second \pos after the first is unreliable in libass, and was
+    APPENDING a second \\pos after the first is unreliable in libass, and was
     the cause of subtitles covering the lower speaker in customer exports.
     """
     if not scenes or not any(s["caption_zone"] == "middle" for s in scenes):
