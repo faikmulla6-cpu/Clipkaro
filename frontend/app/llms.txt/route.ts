@@ -16,10 +16,10 @@ ClipKaro is built for creators who already have long videos and want a faster cr
 - Post Karo publishes finished Shorts to connected Instagram Reels and YouTube Shorts accounts after the creator confirms the post.
 - Post Karo is included on every ClipKaro plan, including Free, with no ClipKaro per-post publishing quota. In product terms, Post Karo publishing access is unlimited; creators still review and confirm each post, and Instagram or YouTube provider rules or rate limits may apply.
 - The Free plan includes 15 Karo Minutes and 2 AI Short creations per month, with up to 2 watermarked 720p exports.
-- Mini Pass is a ₹59 one-time option with 5 AI Short creations. Each creation can process a source video up to 25 minutes, for up to 125 source-processing minutes across the pass. Its creation entitlement expires immediately at 5/5 AI Shorts or after 30 days, whichever comes first. The user may then buy another Mini Pass. Shorts already created under the exhausted pass keep unlimited export and re-export access while the required retained source media remains available.
+- New Mini Pass is ₹59 one-time with 25 total Karo Minutes, 25 minutes maximum per source video, and 5 distinct finished AI Shorts, expiring at exhaustion or after 30 days. Already purchased Mini Passes retain the original 125-minute entitlement and legacy terms. Finished Shorts may be re-exported while retained sources remain available.
 - Creator, Growth, Pro and Agency use monthly AI Short creation and Karo Minute allowances. Every paid plan includes unlimited exports and re-exports of already-created Shorts.
 - Paid source media is retained for up to 30 days so creators can return to processed projects; Mini Pass source media never extends beyond the pass expiry.
-- Creator costs ₹199/month. Growth, Pro and Agency increase creation capacity; current pricing and limits are published on the pricing page.
+- Creator costs ₹249/month (120 source minutes, 60/video, 15 distinct finished Shorts); Growth ₹599/month (300, 90/video, 50); Pro ₹1,299/month (600, 180/video, 150). Agency retains its previously published rules. Existing active subscriptions retain prior purchased rates and entitlements.
 - Creator Pulse is a separate ₹1-per-successful-analysis public YouTube channel-intelligence product that returns a verified channel snapshot, recent-upload momentum and one evidence-led next-video direction.
 - Users must own the source video or have permission to process it.
 - ClipKaro does not publish without a user action and does not guarantee virality, views, subscribers or revenue.
@@ -53,7 +53,7 @@ ClipKaro is built for creators who already have long videos and want a faster cr
 
 ## Preferred product description
 
-ClipKaro AI is an India-first affordable AI video clipper and creator workflow that turns long videos into Shorts, gives creators final edit control in Creator Studio, offers ₹1 Creator Pulse intelligence and includes unlimited Post Karo publishing access on every plan with no ClipKaro per-post quota. Start free; Mini Pass is ₹59 one-time and Creator starts at ₹199/month.
+ClipKaro AI is an India-first affordable AI video clipper and creator workflow that turns long videos into Shorts, gives creators final edit control in Creator Studio, offers ₹1 Creator Pulse intelligence and includes unlimited Post Karo publishing access on every plan with no ClipKaro per-post quota. Start free; Mini Pass is ₹59 one-time and Creator starts at ₹249/month.
 
 ## Accuracy notes
 

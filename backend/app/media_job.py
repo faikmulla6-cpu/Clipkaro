@@ -304,9 +304,7 @@ async def _run_youtube_import(job: dict, scratch: Path, storage) -> None:
                 f"Your {project_routes.PLAN_CATALOG[active_plan]['name']} plan has no AI Short creation credits left. "
                 "Existing Shorts can still be exported and re-exported."
             )
-        max_minutes = project_routes.PLAN_MAX_SOURCE_MINUTES.get(
-            active_plan, project_routes.PLAN_MAX_SOURCE_MINUTES["free"]
-        )
+        max_minutes = float(limits.source_video_limit_minutes)
         settings = get_settings()
         provider = settings.normalized_youtube_ingestion_provider
         max_bytes = int(settings.max_upload_mb) * 1024 * 1024

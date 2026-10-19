@@ -13,10 +13,10 @@ export default function LegalNoticePage() {
     <LegalSection title="2. Digital service and prices">
       <p>ClipKaro AI is a digital video-processing service. Plan prices are shown in Indian rupees before checkout. The amount sent to Razorpay matches the selected plan price configured in ClipKaro. There are no undisclosed ClipKaro product fees added after the displayed checkout price. Taxes and invoice particulars are handled as applicable.</p>
       <LegalList items={[
-        <>Mini Pass: ₹59 one-time, 5 AI Shorts, each allowing up to 25 minutes of source-video processing (up to 125 source-processing minutes across the pass). The creation entitlement expires at 5/5 AI Shorts or after 30 days, whichever comes first; created Shorts keep unlimited exports and re-exports while retained source media remains available. No automatic renewal.</>,
-        <>Creator: ₹199 per month, 60 total source-processing Karo Minutes, 15 AI Short creations and unlimited exports and re-exports.</>,
-        <>Growth: ₹399 per month, 180 total source-processing Karo Minutes, 50 AI Short creations and unlimited exports and re-exports.</>,
-        <>Pro: ₹799 per month, 480 total source-processing Karo Minutes, 150 AI Short creations and unlimited exports and re-exports.</>,
+        <>New Mini Pass: ₹59 one-time, 25 total source-processing minutes, up to 25 minutes per source video, and 5 unique finished AI Shorts. Creation ends at 5 finished Shorts, exhausted Karo Minutes, or 30 days. Existing Mini Pass purchases retain their original 125-minute allowance and creation terms. Re-exports remain included while source media is retained. No automatic renewal.</>,
+        <>New Creator: ₹249 per month, 120 total source-processing Karo Minutes, up to 60 minutes per source video, 15 unique finished AI Shorts and unlimited re-exports.</>,
+        <>New Growth: ₹599 per month, 300 total source-processing Karo Minutes, up to 90 minutes per source video, 50 unique finished AI Shorts and unlimited re-exports.</>,
+        <>New Pro: ₹1,299 per month, 600 total source-processing Karo Minutes, up to 180 minutes per source video, 150 unique finished AI Shorts and unlimited re-exports.</>,
         <>Agency: ₹1,999 per month, 1,500 total source-processing Karo Minutes, 500 AI Short creations and unlimited exports and re-exports.</>,
       ]}/>
     </LegalSection>

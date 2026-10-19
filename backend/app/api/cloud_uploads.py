@@ -85,6 +85,8 @@ async def initialize_upload(body: UploadInitRequest, user: dict = Depends(curren
             402,
             "No AI Short creation credits remain in this plan. Existing Shorts can still be edited, exported and re-exported.",
         )
+    if limits.processing_minutes_remaining < 0.01:
+        raise HTTPException(402, "No Karo Minutes remain for processing a new source video. Existing Shorts can still be re-exported.")
     if not cloud_object_storage_enabled():
         raise HTTPException(409, "Direct cloud upload is not enabled for this environment.")
     filename = Path(body.filename).name

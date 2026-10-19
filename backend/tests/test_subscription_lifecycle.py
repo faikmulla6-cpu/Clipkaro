@@ -134,6 +134,12 @@ def test_immediate_upgrade_preserves_current_cycle_usage_and_reservations(client
         ("reservation-old", user_id, old_key, "minutes", 5.0, "project-in-flight", "reserved", START, START),
     ))
 
+    asyncio.run(execute(
+        """INSERT INTO short_credit_reservations
+           (clip_id,user_id,period_key,export_id,status,created_at,updated_at)
+           VALUES (?,?,?,?,?,?,?)""",
+        ("upgrade-finished",user_id,old_key,"upgrade-export","finalized",START,START),
+    ))
     calls: list[tuple[str, str, dict]] = []
 
     async def provider(method, path, **kwargs):
@@ -161,7 +167,9 @@ def test_immediate_upgrade_preserves_current_cycle_usage_and_reservations(client
     reservation = asyncio.run(fetch_one("SELECT * FROM usage_reservations WHERE id='reservation-old'"))
     assert reservation and reservation["period_key"] == new_key
     usage = client.get("/api/v1/usage").json()
-    assert usage["processing_minutes_remaining"] == 8950.0
+    assert usage["processing_minutes_remaining"] == 250.0
+    slot = asyncio.run(fetch_one("SELECT period_key FROM short_credit_reservations WHERE clip_id='upgrade-finished'"))
+    assert slot and slot["period_key"] == new_key
     assert usage["shorts_used"] == 1
     assert usage["shorts_remaining"] == 49
     assert usage["unlimited_exports"] is True
@@ -196,9 +204,9 @@ def test_lower_recurring_plan_is_scheduled_without_reducing_current_limits(clien
     pending = asyncio.run(fetch_one("SELECT * FROM subscription_plan_changes WHERE user_id=?", (user_id,)))
     assert pending and pending["to_plan"] == "growth" and pending["change_kind"] == "downgrade"
     usage = client.get("/api/v1/usage").json()
-    assert usage["processing_minutes_limit"] == 72000
-    assert usage["processing_minutes_remaining"] == 71800.0
-    assert usage["source_minutes_per_short"] == 480
+    assert usage["processing_minutes_limit"] == 600
+    assert usage["processing_minutes_remaining"] == 400.0
+    assert usage["source_minutes_per_short"] == 180
     status = client.get("/api/v1/billing/status").json()
     assert status["plan"] == "pro"
     assert status["scheduled_plan"] == "growth"

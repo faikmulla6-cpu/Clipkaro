@@ -22,7 +22,7 @@ T = TypeVar("T")
 logger = logging.getLogger("clipkaro.database")
 _LOCK_MESSAGES = ("database is locked", "database table is locked", "database schema is locked")
 _LOCK_PRIMARY_CODES = {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}
-POSTGRES_SCHEMA_REVISION = "20261006_08"
+POSTGRES_SCHEMA_REVISION = "20261020_10"
 _postgres_pool: Any = None
 
 
@@ -292,11 +292,43 @@ CREATE TABLE IF NOT EXISTS billing_plans (
   plan_key TEXT PRIMARY KEY, provider_plan_id TEXT UNIQUE NOT NULL, amount INTEGER NOT NULL,
   currency TEXT NOT NULL DEFAULT 'INR', created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS short_credit_reservations (
+  clip_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, period_key TEXT NOT NULL,
+  export_id TEXT NOT NULL, status TEXT NOT NULL
+    CHECK(status IN ('reserved','finalized','released')),
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_short_credit_period
+  ON short_credit_reservations(user_id,period_key,status);
+CREATE TABLE IF NOT EXISTS billing_plan_versions (
+  provider_plan_id TEXT PRIMARY KEY, plan_key TEXT NOT NULL, amount INTEGER NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'INR', created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS legacy_billing_subscriptions (
+  subscription_id TEXT PRIMARY KEY, plan_key TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS plan_entitlement_snapshots (
+  user_id TEXT NOT NULL, period_key TEXT NOT NULL, plan_key TEXT NOT NULL,
+  processing_minutes REAL NOT NULL CHECK(processing_minutes>0),
+  shorts INTEGER NOT NULL CHECK(shorts>0),
+  source_video_limit_minutes REAL NOT NULL CHECK(source_video_limit_minutes>0),
+  short_mode TEXT NOT NULL CHECK(short_mode IN ('source_projects','finished_shorts')),
+  price_paise INTEGER NOT NULL CHECK(price_paise>=0), created_at TEXT NOT NULL,
+  PRIMARY KEY(user_id,period_key), FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
 CREATE TABLE IF NOT EXISTS billing_checkouts (
   id TEXT PRIMARY KEY, user_id TEXT NOT NULL, kind TEXT NOT NULL, plan TEXT NOT NULL,
   provider_reference TEXT UNIQUE NOT NULL, amount INTEGER NOT NULL, status TEXT NOT NULL,
   payment_id TEXT, created_at TEXT NOT NULL, verified_at TEXT,
   FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS checkout_entitlement_snapshots (
+  checkout_id TEXT PRIMARY KEY, processing_minutes REAL NOT NULL,
+  shorts INTEGER NOT NULL, source_video_limit_minutes REAL NOT NULL,
+  short_mode TEXT NOT NULL CHECK(short_mode IN ('source_projects','finished_shorts')),
+  price_paise INTEGER NOT NULL, created_at TEXT NOT NULL,
+  FOREIGN KEY(checkout_id) REFERENCES billing_checkouts(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_projects_user ON projects(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_videos_project ON videos(project_id);
@@ -351,38 +383,39 @@ BEGIN
       FROM projects p JOIN users u ON u.id=p.user_id WHERE p.id=NEW.project_id
     );
 
-  SELECT CASE WHEN (
-    SELECT COUNT(DISTINCT r.resource_id) >=
-      CASE u.plan
-        WHEN 'mini_pass' THEN 5 WHEN 'creator' THEN 15 WHEN 'growth' THEN 50
-        WHEN 'pro' THEN 150 WHEN 'agency' THEN 500 ELSE 2 END
-    FROM projects p JOIN users u ON u.id=p.user_id
-    LEFT JOIN usage_reservations r ON r.user_id=u.id
-      AND r.period_key=(
-        CASE WHEN u.plan='free'
-          THEN 'free:' || strftime('%Y-%m','now')
-          ELSE u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local') || ':' ||
-               substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19)
-        END
-      )
-      AND r.kind='minutes' AND r.status IN ('reserved','finalized')
+  SELECT CASE WHEN EXISTS(
+    SELECT 1 FROM projects p JOIN users u ON u.id=p.user_id
+    LEFT JOIN plan_entitlement_snapshots s ON s.user_id=u.id
+      AND s.period_key=(CASE WHEN u.plan='free' THEN 'free:' || strftime('%Y-%m','now')
+        ELSE u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local')
+             || ':' || substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19) END)
     WHERE p.id=NEW.project_id
+      AND COALESCE(s.short_mode,'source_projects')='source_projects'
+      AND (SELECT COUNT(DISTINCT r.resource_id) FROM usage_reservations r
+           WHERE r.user_id=u.id AND r.kind='minutes'
+             AND r.status IN ('reserved','finalized')
+             AND r.period_key=(CASE WHEN u.plan='free' THEN 'free:' || strftime('%Y-%m','now')
+               ELSE u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local')
+                    || ':' || substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19) END))
+          >= COALESCE(s.shorts,CASE u.plan
+            WHEN 'mini_pass' THEN 5 WHEN 'creator' THEN 15 WHEN 'growth' THEN 50
+            WHEN 'pro' THEN 150 WHEN 'agency' THEN 500 ELSE 2 END)
   ) THEN RAISE(ABORT,'AI_SHORT_QUOTA_EXCEEDED') END;
 
-  SELECT CASE WHEN (
-    SELECT COALESCE(us.source_minutes,0) + (NEW.duration / 60.0) >
-      CASE u.plan
-        WHEN 'mini_pass' THEN 125.0 WHEN 'creator' THEN 900.0 WHEN 'growth' THEN 9000.0
-        WHEN 'pro' THEN 72000.0 WHEN 'agency' THEN 1500.0 ELSE 15.0 END
-    FROM projects p JOIN users u ON u.id=p.user_id
+  SELECT CASE WHEN EXISTS(
+    SELECT 1 FROM projects p JOIN users u ON u.id=p.user_id
     LEFT JOIN usage us ON us.user_id=u.id AND us.month=(
-      CASE WHEN u.plan='free'
-        THEN 'free:' || strftime('%Y-%m','now')
-        ELSE u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local') || ':' ||
-             substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19)
-      END
-    )
-    WHERE p.id=NEW.project_id
+      CASE WHEN u.plan='free' THEN 'free:' || strftime('%Y-%m','now')
+        ELSE u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local')
+          || ':' || substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19) END)
+    LEFT JOIN plan_entitlement_snapshots s ON s.user_id=u.id AND s.period_key=(
+      CASE WHEN u.plan='free' THEN 'free:' || strftime('%Y-%m','now')
+        ELSE u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local')
+          || ':' || substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19) END)
+    WHERE p.id=NEW.project_id AND COALESCE(us.source_minutes,0)+(NEW.duration/60.0)>
+      COALESCE(s.processing_minutes,CASE u.plan
+        WHEN 'mini_pass' THEN 25.0 WHEN 'creator' THEN 120.0 WHEN 'growth' THEN 300.0
+        WHEN 'pro' THEN 600.0 WHEN 'agency' THEN 1500.0 ELSE 15.0 END)+0.0000001
   ) THEN RAISE(ABORT,'KARO_MINUTES_QUOTA_EXCEEDED') END;
 
   UPDATE usage SET source_minutes=source_minutes + (NEW.duration / 60.0)
@@ -453,6 +486,87 @@ BEGIN
   );
   UPDATE usage_reservations SET status='released',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
   WHERE kind='minutes' AND resource_id=OLD.id AND status='reserved';
+END;
+
+-- New-price paid plans spend one Short only on first export of a distinct clip.
+-- Legacy subscriptions and existing Mini Passes retain previously bought rights.
+DROP TRIGGER IF EXISTS trg_reserve_paid_short;
+CREATE TRIGGER trg_reserve_paid_short
+BEFORE INSERT ON exports
+WHEN EXISTS(
+  SELECT 1 FROM users u JOIN plan_entitlement_snapshots s ON s.user_id=u.id
+  WHERE u.id=NEW.user_id AND u.plan NOT IN ('free','agency')
+    AND s.short_mode='finished_shorts'
+    AND s.period_key=(u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local')
+      || ':' || substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19))
+)
+BEGIN
+  SELECT CASE WHEN EXISTS(
+    SELECT 1 FROM short_credit_reservations r
+    WHERE r.user_id=NEW.user_id AND r.clip_id=NEW.clip_id
+      AND r.status='reserved'
+  ) THEN RAISE(ABORT,'SHORT_RENDER_ALREADY_RESERVED') END;
+
+  SELECT CASE WHEN NOT EXISTS(
+    SELECT 1 FROM short_credit_reservations r
+    WHERE r.user_id=NEW.user_id AND r.clip_id=NEW.clip_id
+      AND r.status='finalized'
+  ) AND NOT EXISTS(
+    SELECT 1 FROM exports e WHERE e.user_id=NEW.user_id
+      AND e.clip_id=NEW.clip_id AND e.status='ready'
+  ) AND (
+    SELECT COUNT(DISTINCT clip_id) FROM short_credit_reservations r
+    WHERE r.user_id=NEW.user_id AND r.status IN ('reserved','finalized')
+      AND r.period_key=(
+        SELECT u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local')
+          || ':' || substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19)
+        FROM users u WHERE u.id=NEW.user_id
+      )
+  ) >= (
+    SELECT s.shorts FROM plan_entitlement_snapshots s JOIN users u ON u.id=s.user_id
+    WHERE u.id=NEW.user_id AND s.period_key=(
+      u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local')
+      || ':' || substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19))
+  ) THEN RAISE(ABORT,'AI_SHORT_QUOTA_EXCEEDED') END;
+
+  INSERT INTO short_credit_reservations
+    (clip_id,user_id,period_key,export_id,status,created_at,updated_at)
+  SELECT NEW.clip_id,u.id,u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local')
+      || ':' || substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19),
+    NEW.id,'reserved',strftime('%Y-%m-%dT%H:%M:%fZ','now'),strftime('%Y-%m-%dT%H:%M:%fZ','now')
+  FROM users u WHERE u.id=NEW.user_id
+    AND NOT EXISTS(SELECT 1 FROM short_credit_reservations r WHERE r.user_id=NEW.user_id
+      AND r.clip_id=NEW.clip_id AND r.status='finalized')
+    AND NOT EXISTS(SELECT 1 FROM exports e WHERE e.user_id=NEW.user_id
+      AND e.clip_id=NEW.clip_id AND e.status='ready')
+  ON CONFLICT(clip_id) DO UPDATE SET
+    period_key=excluded.period_key,export_id=excluded.export_id,status='reserved',
+    updated_at=excluded.updated_at
+  WHERE short_credit_reservations.status='released'
+    AND short_credit_reservations.user_id=excluded.user_id;
+END;
+
+DROP TRIGGER IF EXISTS trg_finalize_paid_short;
+CREATE TRIGGER trg_finalize_paid_short AFTER UPDATE OF status ON exports
+WHEN NEW.status='ready' AND OLD.status<>'ready'
+BEGIN
+  UPDATE short_credit_reservations SET status='finalized',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+  WHERE user_id=NEW.user_id AND clip_id=NEW.clip_id AND export_id=NEW.id AND status='reserved';
+END;
+
+DROP TRIGGER IF EXISTS trg_release_failed_paid_short;
+CREATE TRIGGER trg_release_failed_paid_short BEFORE UPDATE OF status ON exports
+WHEN NEW.status IN ('failed','expired') AND OLD.status<>NEW.status
+BEGIN
+  UPDATE short_credit_reservations SET status='released',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+  WHERE user_id=NEW.user_id AND clip_id=NEW.clip_id AND export_id=NEW.id AND status='reserved';
+END;
+
+DROP TRIGGER IF EXISTS trg_release_deleted_paid_short;
+CREATE TRIGGER trg_release_deleted_paid_short BEFORE DELETE ON exports
+BEGIN
+  UPDATE short_credit_reservations SET status='released',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+  WHERE user_id=OLD.user_id AND clip_id=OLD.clip_id AND export_id=OLD.id AND status='reserved';
 END;
 
 -- Paid plans render and re-render without consuming AI Short creation credits.
@@ -591,8 +705,12 @@ def _translate_quota_error(exc: Exception) -> None:
     message = str(exc)
     if "AI_SHORT_QUOTA_EXCEEDED" in message:
         raise UsageQuotaExceeded(
-            "No AI Short creation credits remain after accounting for sources already queued or processing. "
+            "No AI Short creation credits remain after accounting for reserved or finalized creations. "
             "Existing Shorts can still be edited, exported and re-exported."
+        ) from exc
+    if "SHORT_RENDER_ALREADY_RESERVED" in message:
+        raise UsageQuotaExceeded(
+            "This Short is already rendering. Wait for the existing render to finish."
         ) from exc
     if "KARO_MINUTES_QUOTA_EXCEEDED" in message:
         raise UsageQuotaExceeded(
@@ -734,6 +852,50 @@ async def init_db() -> None:
             for name, statement in migrations.items():
                 if name not in columns:
                     await db.execute(statement)
+            # Upgrade a pre-existing SQLite installation without removing
+            # any old purchased minutes, prior Razorpay plan IDs or legacy terms.
+            await db.execute("""INSERT OR IGNORE INTO billing_plan_versions
+                (provider_plan_id,plan_key,amount,currency,created_at)
+                SELECT provider_plan_id,plan_key,amount,currency,created_at FROM billing_plans""")
+            await db.execute("""INSERT OR IGNORE INTO legacy_billing_subscriptions
+                (subscription_id,plan_key)
+                SELECT billing_reference,plan FROM users
+                WHERE billing_reference LIKE 'sub_%' AND plan IN ('creator','growth','pro')""")
+            # Pending checkouts can be captured AFTER the new prices go live.
+            # Freeze old-price benefits from the historic checkout itself.
+            await db.execute("""INSERT OR IGNORE INTO checkout_entitlement_snapshots
+              (checkout_id,processing_minutes,shorts,source_video_limit_minutes,
+               short_mode,price_paise,created_at)
+              SELECT id,CASE plan
+                WHEN 'mini_pass' THEN 125 WHEN 'creator' THEN 60
+                WHEN 'growth' THEN 180 WHEN 'pro' THEN 480 ELSE 1500 END,
+                CASE plan WHEN 'mini_pass' THEN 5 WHEN 'creator' THEN 15
+                  WHEN 'growth' THEN 50 WHEN 'pro' THEN 150 ELSE 500 END,
+                CASE plan WHEN 'mini_pass' THEN 25 WHEN 'creator' THEN 60
+                  WHEN 'growth' THEN 180 WHEN 'pro' THEN 240 ELSE 240 END,
+                'source_projects',amount,created_at FROM billing_checkouts
+              WHERE status IN ('created','authorized')
+                AND plan IN ('mini_pass','creator','growth','pro','agency')""")
+            await db.execute("""INSERT OR IGNORE INTO plan_entitlement_snapshots
+                (user_id,period_key,plan_key,processing_minutes,shorts,
+                source_video_limit_minutes,short_mode,price_paise,created_at)
+                SELECT id,
+                  plan || ':' || COALESCE(NULLIF(billing_reference,''),id,'local')
+                    || ':' || substr(COALESCE(plan_started_at,strftime('%Y-%m','now')),1,19),
+                  plan,
+                  CASE plan WHEN 'mini_pass' THEN 125 WHEN 'creator' THEN 60
+                    WHEN 'growth' THEN 180 WHEN 'pro' THEN 480 ELSE 1500 END,
+                  CASE plan WHEN 'mini_pass' THEN 5 WHEN 'creator' THEN 15
+                    WHEN 'growth' THEN 50 WHEN 'pro' THEN 150 ELSE 500 END,
+                  CASE plan WHEN 'mini_pass' THEN 25 WHEN 'creator' THEN 60
+                    WHEN 'growth' THEN 180 WHEN 'pro' THEN 240 ELSE 240 END,
+                  'source_projects',
+                  CASE plan WHEN 'mini_pass' THEN 5900 WHEN 'creator' THEN 19900
+                    WHEN 'growth' THEN 39900 WHEN 'pro' THEN 79900 ELSE 199900 END,
+                  strftime('%Y-%m-%dT%H:%M:%fZ','now')
+                FROM users
+                WHERE plan IN ('mini_pass','creator','growth','pro')
+                  AND billing_reference IS NOT NULL""")
             await db.commit()
         except Exception:
             await db.rollback()

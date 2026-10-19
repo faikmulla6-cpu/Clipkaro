@@ -161,7 +161,7 @@ const softwareStructuredData = {
     "Saved Creator Pulse history and previous-scan comparison",
     "Private source and export media handling",
     "Free plan with 15 Karo Minutes and 2 Shorts per month",
-    "₹59 one-time Mini Pass and Creator plan from ₹199 per month",
+    "₹59 one-time Mini Pass and Creator plan from ₹249 per month",
   ],
 };
 

@@ -31,7 +31,7 @@ PLAN_CATALOG: dict[str, dict[str, Any]] = {
         "exports": 5,
         "shorts": 5,
         "unlimited_exports": True,
-        "processing_minutes": 125,
+        "processing_minutes": 25,
         "source_minutes_per_short": 25,
         "resolution": "1080p",
         "watermark": False,
@@ -40,12 +40,12 @@ PLAN_CATALOG: dict[str, dict[str, Any]] = {
     },
     "creator": {
         "name": "Creator",
-        "price": 199,
-        "price_paise": 19900,
+        "price": 249,
+        "price_paise": 24900,
         "exports": 15,
         "shorts": 15,
         "unlimited_exports": True,
-        "processing_minutes": 900,
+        "processing_minutes": 120,
         "source_minutes_per_short": 60,
         "resolution": "1080p",
         "watermark": False,
@@ -53,13 +53,13 @@ PLAN_CATALOG: dict[str, dict[str, Any]] = {
     },
     "growth": {
         "name": "Growth",
-        "price": 399,
-        "price_paise": 39900,
+        "price": 599,
+        "price_paise": 59900,
         "exports": 50,
         "shorts": 50,
         "unlimited_exports": True,
-        "processing_minutes": 9000,
-        "source_minutes_per_short": 180,
+        "processing_minutes": 300,
+        "source_minutes_per_short": 90,
         "resolution": "1080p",
         "watermark": False,
         "billing": "subscription",
@@ -67,13 +67,13 @@ PLAN_CATALOG: dict[str, dict[str, Any]] = {
     },
     "pro": {
         "name": "Pro",
-        "price": 799,
-        "price_paise": 79900,
+        "price": 1299,
+        "price_paise": 129900,
         "exports": 150,
         "shorts": 150,
         "unlimited_exports": True,
-        "processing_minutes": 72000,
-        "source_minutes_per_short": 480,
+        "processing_minutes": 600,
+        "source_minutes_per_short": 180,
         "resolution": "1080p",
         "watermark": False,
         "billing": "subscription",
@@ -91,6 +91,78 @@ PLAN_CATALOG: dict[str, dict[str, Any]] = {
         "billing": "subscription",
     },
 }
+
+# Legacy paid purchases are preserved as purchased. New subscriptions/pass
+# purchases get the current catalog through an immutable period snapshot.
+LEGACY_PLAN_LIMITS = {
+    "mini_pass": (125.0, 25.0, 5900),
+    "creator": (60.0, 60.0, 19900),
+    "growth": (180.0, 180.0, 39900),
+    "pro": (480.0, 240.0, 79900),
+}
+
+async def entitlement_for(user: dict[str, Any]) -> dict[str, Any]:
+    """Snapshot minute and finished-Short rights per purchased billing period.
+
+    Never silently rewrite rights for existing passes or old-price subscribers.
+    SQL reservation triggers read this very same snapshot, not browser claims.
+    """
+    plan = str(user.get("plan") or "free")
+    catalog = PLAN_CATALOG.get(plan, PLAN_CATALOG["free"])
+    default = {
+        "processing_minutes": float(catalog["processing_minutes"]),
+        "shorts": int(catalog["shorts"]),
+        "source_video_limit_minutes": float(catalog.get("source_minutes_per_short") or
+                                            (240 if plan == "agency" else 15)),
+        "short_mode": "finished_shorts" if plan in {"mini_pass", "creator", "growth", "pro"} else "source_projects",
+        "price_paise": int(catalog["price_paise"]),
+    }
+    if plan in {"free", "agency"}:
+        return default
+    period = usage_period_key(user)
+    snapshot = await fetch_one(
+        "SELECT * FROM plan_entitlement_snapshots WHERE user_id=? AND period_key=?",
+        (str(user["id"]), period),
+    )
+    if snapshot:
+        return snapshot
+    reference = str(user.get("billing_reference") or "")
+    purchased = await fetch_one(
+        """SELECT s.* FROM checkout_entitlement_snapshots s
+           JOIN billing_checkouts c ON c.id=s.checkout_id
+           WHERE c.user_id=? AND c.provider_reference=? AND c.plan=?""",
+        (str(user["id"]), reference, plan),
+    ) if reference else None
+    if purchased:
+        default.update(
+            processing_minutes=float(purchased["processing_minutes"]),
+            shorts=int(purchased["shorts"]),
+            source_video_limit_minutes=float(purchased["source_video_limit_minutes"]),
+            short_mode=str(purchased["short_mode"]),
+            price_paise=int(purchased["price_paise"]),
+        )
+    legacy = await fetch_one(
+        "SELECT plan_key FROM legacy_billing_subscriptions WHERE subscription_id=?",
+        (reference,),
+    ) if reference.startswith("sub_") else None
+    if not purchased and legacy and legacy["plan_key"] == plan and plan in LEGACY_PLAN_LIMITS:
+        minutes, video_max, price = LEGACY_PLAN_LIMITS[plan]
+        default.update(processing_minutes=minutes, source_video_limit_minutes=video_max,
+                       price_paise=price, short_mode="source_projects")
+    await execute(
+        """INSERT INTO plan_entitlement_snapshots
+           (user_id,period_key,plan_key,processing_minutes,shorts,source_video_limit_minutes,
+            short_mode,price_paise,created_at)
+           VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,period_key) DO NOTHING""",
+        (str(user["id"]), period, plan, default["processing_minutes"], default["shorts"],
+         default["source_video_limit_minutes"], default["short_mode"],
+         default["price_paise"], utc_now().isoformat()),
+    )
+    return await fetch_one(
+        "SELECT * FROM plan_entitlement_snapshots WHERE user_id=? AND period_key=?",
+        (str(user["id"]), period),
+    ) or default
+
 
 SUBSCRIPTION_PLANS = {key for key, value in PLAN_CATALOG.items() if value["billing"] == "subscription"}
 PAID_PLANS = {key for key in PLAN_CATALOG if key != "free"}
@@ -126,23 +198,32 @@ def usage_period_key(user: dict[str, Any]) -> str:
 
 
 async def mini_pass_is_exhausted(user: dict[str, Any]) -> bool:
-    """A Mini Pass expires for new creation as soon as its 5th source is consumed.
+    """A pass ends at 5 credited Shorts, its minute pool, or after 30 days.
 
-    Keep the underlying paid-pass marker until the retention deadline so Shorts
-    created by that purchase can still be edited, exported and re-exported.
-    A replacement Mini Pass receives a new billing reference/usage period.
+    Legacy paid passes retain source-project counting and 125 minutes. New
+    purchases count first successfully rendered unique Shorts, with 25 minutes.
     """
     if str(user.get("plan") or "") != "mini_pass":
         return False
     period = usage_period_key(user)
-    row = await fetch_one(
-        """SELECT COUNT(DISTINCT resource_id) count FROM usage_reservations
-           WHERE user_id=? AND period_key=? AND kind='minutes'
-             AND status IN ('reserved','finalized')""",
-        (str(user["id"]), period),
-    )
-    limit = int(PLAN_CATALOG["mini_pass"].get("shorts") or 5)
-    return int((row or {}).get("count") or 0) >= limit
+    snapshot = await entitlement_for(user)
+    if snapshot["short_mode"] == "finished_shorts":
+        row = await fetch_one(
+            """SELECT COUNT(*) count FROM short_credit_reservations
+               WHERE user_id=? AND period_key=? AND status IN ('reserved','finalized')""",
+            (str(user["id"]), period),
+        )
+    else:
+        row = await fetch_one(
+            """SELECT COUNT(DISTINCT resource_id) count FROM usage_reservations
+               WHERE user_id=? AND period_key=? AND kind='minutes'
+                 AND status IN ('reserved','finalized')""",
+            (str(user["id"]), period),
+        )
+    minute_row = await fetch_one("SELECT source_minutes FROM usage WHERE user_id=? AND month=?",
+                                 (str(user["id"]), period))
+    minutes = float((minute_row or {}).get("source_minutes") or 0)
+    return int((row or {}).get("count") or 0) >= int(snapshot["shorts"]) or minutes >= float(snapshot["processing_minutes"])-0.001
 
 
 def verify_order_signature(order_id: str, payment_id: str, signature: str) -> bool:
@@ -249,8 +330,8 @@ async def probe_razorpay_readiness(*, live: bool = True) -> dict[str, object]:
 async def ensure_razorpay_plan(plan_key: str) -> str:
     if plan_key not in SUBSCRIPTION_PLANS:
         raise ValueError("This is not a recurring plan.")
-    existing = await fetch_one("SELECT provider_plan_id FROM billing_plans WHERE plan_key=?", (plan_key,))
-    if existing:
+    existing = await fetch_one("SELECT provider_plan_id,amount FROM billing_plans WHERE plan_key=?", (plan_key,))
+    if existing and int(existing["amount"]) == int(PLAN_CATALOG[plan_key]["price_paise"]):
         return str(existing["provider_plan_id"])
 
     plan = PLAN_CATALOG[plan_key]
@@ -270,6 +351,11 @@ async def ensure_razorpay_plan(plan_key: str) -> str:
                 and (notes.get("clipkaro_plan") == plan_key or details.get("name") == expected_name)
             ):
                 provider_id = str(item["id"])
+                await execute(
+                    "INSERT INTO billing_plan_versions(provider_plan_id,plan_key,amount,currency,created_at) VALUES (?,?,?,?,?) "
+                    "ON CONFLICT(provider_plan_id) DO NOTHING",
+                    (provider_id, plan_key, plan["price_paise"], "INR", utc_now().isoformat()),
+                )
                 await execute(
                     "INSERT OR REPLACE INTO billing_plans(plan_key,provider_plan_id,amount,currency,created_at) VALUES (?,?,?,?,?)",
                     (plan_key, provider_id, plan["price_paise"], "INR", utc_now().isoformat()),
@@ -295,6 +381,11 @@ async def ensure_razorpay_plan(plan_key: str) -> str:
         },
     )
     provider_id = str(created["id"])
+    await execute(
+        "INSERT INTO billing_plan_versions(provider_plan_id,plan_key,amount,currency,created_at) VALUES (?,?,?,?,?) "
+        "ON CONFLICT(provider_plan_id) DO NOTHING",
+        (provider_id, plan_key, plan["price_paise"], "INR", utc_now().isoformat()),
+    )
     await execute(
         "INSERT OR REPLACE INTO billing_plans(plan_key,provider_plan_id,amount,currency,created_at) VALUES (?,?,?,?,?)",
         (plan_key, provider_id, plan["price_paise"], "INR", utc_now().isoformat()),
@@ -323,6 +414,9 @@ async def activate_entitlement(
            WHERE id=?""",
         (plan_key, reference, started, period_end, int(cancel_at_period_end), utc_now().isoformat(), user_id),
     )
+    fresh = await fetch_one("SELECT * FROM users WHERE id=?", (user_id,))
+    if fresh:
+        await entitlement_for(fresh)
 
 
 async def downgrade_to_free(user_id: str) -> None:
@@ -363,7 +457,9 @@ async def sync_subscription_if_needed(user: dict[str, Any], force: bool = False)
     start = iso_from_epoch(entity.get("current_start")) or user.get("plan_started_at")
     end = iso_from_epoch(entity.get("current_end")) or user.get("plan_expires_at")
     provider_plan_id = str(entity.get("plan_id") or "")
-    expected = await fetch_one("SELECT plan_key FROM billing_plans WHERE provider_plan_id=?", (provider_plan_id,))
+    expected = await fetch_one("SELECT plan_key FROM billing_plan_versions WHERE provider_plan_id=?", (provider_plan_id,))
+    if not expected:
+        expected = await fetch_one("SELECT plan_key FROM billing_plans WHERE provider_plan_id=?", (provider_plan_id,))
     # Provider notes are descriptive only and must never become entitlement
     # authority. If an older subscription is missing a local plan mapping, keep
     # the already-trusted local plan until the canonical billing lifecycle can

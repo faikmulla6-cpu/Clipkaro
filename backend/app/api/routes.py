@@ -39,14 +39,14 @@ from app.services.video import probe_metadata, save_upload
 from app.services.media_delivery import remove_preview_files
 from app.services.storage_paths import confined_export_path, confined_upload_path
 from app.services.public_errors import safe_export_failure, safe_project_failure
-from app.services.billing import PLAN_CATALOG, sync_subscription_if_needed, usage_period_key
+from app.services.billing import PLAN_CATALOG, entitlement_for, sync_subscription_if_needed, usage_period_key
 
 router = APIRouter()
 logger = logging.getLogger("clipkaro.pipeline")
 PLAN_SHORT_LIMITS = {key: int(value.get("shorts", value["exports"])) for key, value in PLAN_CATALOG.items()}
 PLAN_PROCESSING_MINUTES = {key: float(value["processing_minutes"]) for key, value in PLAN_CATALOG.items()}
 PLAN_MAX_SOURCE_MINUTES = {
-    "free": 15, "mini_pass": 25, "creator": 60, "growth": 180, "pro": 480, "agency": 240,
+    "free": 15, "mini_pass": 25, "creator": 60, "growth": 90, "pro": 180, "agency": 240,
 }
 TEMPLATES = [
     {"id":"india-pop","name":"India Pop","category":"Trending","caption_style":"hindi-pop","primary":"#FF6B35","accent":"#FFD84D","best_for":"Hindi & Hinglish"},
@@ -165,8 +165,10 @@ async def update_me(body: dict, user: dict = Depends(current_user)) -> UserOut:
 async def get_usage_for(user: dict) -> UsageOut:
     user = await sync_subscription_if_needed(user)
     plan = str(user.get("plan") or "free")
-    short_limit = PLAN_SHORT_LIMITS.get(plan, PLAN_SHORT_LIMITS["free"])
-    minute_limit = PLAN_PROCESSING_MINUTES.get(plan, PLAN_PROCESSING_MINUTES["free"])
+    entitlement = await entitlement_for(user)
+    short_limit = int(entitlement["shorts"])
+    minute_limit = float(entitlement["processing_minutes"])
+    short_mode = str(entitlement["short_mode"])
     unlimited_exports = bool(PLAN_CATALOG.get(plan, PLAN_CATALOG["free"]).get("unlimited_exports"))
     period = usage_period_key(user)
     row = await fetch_one("SELECT * FROM usage WHERE user_id=? AND month=?", (user["id"], period))
@@ -181,14 +183,22 @@ async def get_usage_for(user: dict) -> UsageOut:
         if int(row["exports_limit"]) != short_limit:
             await execute("UPDATE usage SET exports_limit=? WHERE id=?", (short_limit, row["id"]))
 
-    short_row = await fetch_one(
-        """SELECT COUNT(DISTINCT resource_id) count FROM usage_reservations
-           WHERE user_id=? AND period_key=? AND kind='minutes' AND status IN ('reserved','finalized')""",
-        (user["id"], period),
-    )
+    if short_mode == "finished_shorts":
+        short_row = await fetch_one(
+            """SELECT COUNT(*) count FROM short_credit_reservations
+               WHERE user_id=? AND period_key=? AND status IN ('reserved','finalized')""",
+            (user["id"], period),
+        )
+    else:
+        short_row = await fetch_one(
+            """SELECT COUNT(DISTINCT resource_id) count FROM usage_reservations
+               WHERE user_id=? AND period_key=? AND kind='minutes'
+                 AND status IN ('reserved','finalized')""",
+            (user["id"], period),
+        )
     shorts_used = int((short_row or {}).get("count") or 0)
     shorts_remaining = max(short_limit - shorts_used, 0)
-    pass_exhausted = plan == "mini_pass" and shorts_remaining <= 0
+    pass_exhausted = plan == "mini_pass" and (shorts_remaining <= 0 or minutes >= minute_limit - 0.001)
 
     if unlimited_exports:
         legacy_used, legacy_limit, legacy_remaining = shorts_used, short_limit, shorts_remaining
@@ -206,7 +216,10 @@ async def get_usage_for(user: dict) -> UsageOut:
         source_minutes=round(minutes, 1),
         processing_minutes_limit=minute_limit,
         processing_minutes_remaining=round(max(minute_limit-minutes, 0), 1),
-        source_minutes_per_short=PLAN_CATALOG.get(plan, PLAN_CATALOG["free"]).get("source_minutes_per_short"),
+        source_minutes_per_short=float(entitlement["source_video_limit_minutes"]) if plan != "free" else None,
+        source_video_limit_minutes=float(entitlement["source_video_limit_minutes"]),
+        short_unit=short_mode,
+        plan_price_paise=int(entitlement["price_paise"]),
         period_key=period,
     )
 
@@ -345,11 +358,11 @@ async def _process_project(
         source_caption_scan = await detect_burned_captions(source_path, float(metadata["duration"]))
         limits = await get_usage_for(user)
         active_plan = limits.plan
-        max_minutes = PLAN_MAX_SOURCE_MINUTES.get(active_plan, PLAN_MAX_SOURCE_MINUTES["free"])
+        max_minutes = float(limits.source_video_limit_minutes)
         source_minutes = float(metadata["duration"]) / 60
         if not force_transcribe and limits.shorts_remaining <= 0:
             raise ValueError(
-                f"Your {PLAN_CATALOG[active_plan]['name']} plan has no AI Short creation credits left. "
+                f"Your {PLAN_CATALOG[active_plan]['name']} plan has no AI Short credits left. "
                 "Existing Shorts can still be edited, exported and re-exported."
             )
         if source_minutes > max_minutes:

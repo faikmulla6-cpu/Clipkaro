@@ -47,7 +47,7 @@ const aboutStructuredData = {
         "Creator Studio drag-and-place captions, 65% to 160% sizing, alignment, zoom, reframe and Hook Text On/Off",
         "₹1 Creator Pulse YouTube channel intelligence",
         "Unlimited Post Karo publishing access to connected Instagram Reels and YouTube Shorts accounts on every plan",
-        "Free plan, ₹59 one-time Mini Pass and Creator plan from ₹199 per month",
+        "Free plan, ₹59 one-time Mini Pass and Creator plan from ₹249 per month",
       ],
     },
     {
