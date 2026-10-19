@@ -58,9 +58,9 @@ const audiences = [
 
 const plans = [
   { name: "Free", price: "₹0", suffix: "/month", note: "Try the full create-to-publish loop.", items: ["2 AI Shorts / month", "15 source-processing minutes", "Up to 2 exports", "Source media kept 24 hours", "720p with watermark", "Unlimited Post Karo"], href: "/signup", featured: false },
-  { name: "Mini Pass", price: "₹59", suffix: "one-time", note: "5 AI Shorts. Pass ends when all 5 are used.", items: ["5 AI Shorts", "Up to 25 min source video per Short", "Expires at 5/5 AI Shorts or after 30 days", "Unlimited exports & re-exports for created Shorts", "Up to 125 source-processing minutes total", "1080p · no watermark", "Unlimited Post Karo"], href: "/signup?plan=mini_pass", featured: false },
-  { name: "Growth", price: "₹399", suffix: "/month", note: "For serious weekly creators.", items: ["50 AI Shorts / month", "180 source-processing minutes", "Unlimited exports & re-exports", "Source media kept up to 30 days", "1080p · no watermark", "Unlimited Post Karo"], href: "/signup?plan=growth", featured: true },
-  { name: "Pro", price: "₹799", suffix: "/month", note: "For daily creator output.", items: ["150 AI Shorts / month", "480 source-processing minutes", "Unlimited exports & re-exports", "Source media kept up to 30 days", "1080p · no watermark", "Unlimited Post Karo"], href: "/signup?plan=pro", featured: false },
+  { name: "Mini Pass", price: "₹59", suffix: "one-time", note: "5 finished AI Shorts", items: ["5 finished AI Shorts", "25 total Karo Minutes/pass", "Up to 25 minutes per source video", "Ends at Shorts/minutes exhaustion or 30 days", "Existing purchased passes retain 125 minutes", "Unlimited re-exports of finished Shorts while source is retained", "1080p · no watermark", "Unlimited Post Karo"], href: "/signup?plan=mini_pass", featured: false },
+  { name: "Growth", price: "₹599", suffix: "/month", note: "For serious weekly creators.", items: ["50 unique finished AI Shorts / month", "300 total Karo Minutes/month", "Up to 90 minutes per source video", "Unlimited re-exports of finished Shorts", "Source media kept up to 30 days", "1080p · no watermark", "Unlimited Post Karo"], href: "/signup?plan=growth", featured: true },
+  { name: "Pro", price: "₹1,299", suffix: "/month", note: "For daily creator output.", items: ["150 unique finished AI Shorts / month", "600 total Karo Minutes/month", "Up to 180 minutes per source video", "Unlimited re-exports of finished Shorts", "Source media kept up to 30 days", "1080p · no watermark", "Unlimited Post Karo"], href: "/signup?plan=pro", featured: false },
   { name: "Agency", price: "₹1,999", suffix: "/month", note: "For higher-volume client work.", items: ["500 AI Shorts / month", "1,500 source-processing minutes", "Unlimited exports & re-exports", "Source media kept up to 30 days", "1080p · no watermark", "Unlimited Post Karo"], href: "/signup?plan=agency", featured: false },
 ] as const;
 
@@ -218,7 +218,7 @@ export function HomeExperience() {
               <article>
                 <span>02</span>
                 <h3>Is ClipKaro an affordable AI clipper with unlimited posting?</h3>
-                <p>Yes. ClipKaro starts free at ₹0, offers a ₹59 one-time Mini Pass and Creator from ₹199/month. Every plan includes unlimited Post Karo publishing access with no ClipKaro per-post quota; creation limits and connected-platform rules still apply.</p>
+                <p>Yes. ClipKaro starts free at ₹0, offers a ₹59 one-time Mini Pass and Creator from ₹249/month. Every plan includes unlimited Post Karo publishing access with no ClipKaro per-post quota; creation limits and connected-platform rules still apply.</p>
               </article>
               <article>
                 <span>03</span>
@@ -292,11 +292,11 @@ export function HomeExperience() {
           </section>
 
           <section className={styles.pricing} id="pricing">
-            <div className={styles.pricingHead}><div data-public-reveal="left"><span>Extremely affordable creator pricing</span><h2>Start free. Pay for creation capacity, not every post.</h2></div><p data-public-reveal="right">Free starts at ₹0. Mini Pass is ₹59 one-time. Creator starts at ₹199/month. Every plan includes unlimited Post Karo publishing access; Karo Minutes and Short creation limits scale with the plan.</p></div>
+            <div className={styles.pricingHead}><div data-public-reveal="left"><span>Extremely affordable creator pricing</span><h2>Start free. Pay for creation capacity, not every post.</h2></div><p data-public-reveal="right">Free starts at ₹0. Mini Pass is ₹59 one-time. Creator starts at ₹249/month. Every plan includes unlimited Post Karo publishing access; Karo Minutes and Short creation limits scale with the plan.</p></div>
             <div className={styles.planGrid}>
               {plans.map((plan)=><article key={plan.name} className={plan.featured?styles.planFeatured:""} data-public-reveal="scale">{plan.featured&&<span className={styles.popular}>MOST POPULAR</span>}<h3>{plan.name}</h3><p>{plan.note}</p><div className={styles.planPrice}>{plan.price}<small>{plan.suffix}</small></div><ul>{plan.items.map((item)=><li key={item}><Check size={14}/>{item}</li>)}</ul><TransitionLink href={plan.href} className={plan.featured?styles.planPrimary:styles.planSecondary}>{plan.name==="Free"?"Start free":plan.name==="Mini Pass"?"Get Mini Pass":`Choose ${plan.name}`} <ArrowRight size={14}/></TransitionLink></article>)}
             </div>
-            <div className={styles.pricingFoot} data-public-reveal="scale"><span>Free ₹0 · Mini Pass ₹59 one-time · Creator ₹199/month · unlimited Post Karo access on every plan.</span><TransitionLink href="/pricing">Compare every plan <ArrowRight size={14}/></TransitionLink></div>
+            <div className={styles.pricingFoot} data-public-reveal="scale"><span>Free ₹0 · Mini Pass ₹59 one-time · Creator ₹249/month · unlimited Post Karo access on every plan.</span><TransitionLink href="/pricing">Compare every plan <ArrowRight size={14}/></TransitionLink></div>
           </section>
 
           <section className={styles.creatorStory}>

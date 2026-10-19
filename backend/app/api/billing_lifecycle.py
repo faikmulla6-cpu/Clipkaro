@@ -157,7 +157,9 @@ async def _resolve_plan(entity: dict[str, Any], fallback: str | None = None) -> 
     """
     provider_plan_id = str(entity.get("plan_id") or "")
     if provider_plan_id:
-        mapped = await fetch_one("SELECT plan_key FROM billing_plans WHERE provider_plan_id=?", (provider_plan_id,))
+        mapped = await fetch_one("SELECT plan_key FROM billing_plan_versions WHERE provider_plan_id=?", (provider_plan_id,))
+        if not mapped:
+            mapped = await fetch_one("SELECT plan_key FROM billing_plans WHERE provider_plan_id=?", (provider_plan_id,))
         plan = str((mapped or {}).get("plan_key") or "")
         if plan in SUBSCRIPTION_PLANS:
             return plan
@@ -260,6 +262,10 @@ async def _migrate_usage_and_activate(
                 )
             await db.execute(
                 "UPDATE usage_reservations SET period_key=?,updated_at=? WHERE user_id=? AND period_key=?",
+                (new_key, now_iso, user["id"], old_key),
+            )
+            await db.execute(
+                "UPDATE short_credit_reservations SET period_key=?,updated_at=? WHERE user_id=? AND period_key=?",
                 (new_key, now_iso, user["id"], old_key),
             )
         else:
@@ -698,6 +704,11 @@ async def _recent_reusable_checkout(user_id: str, plan: str, kind: str) -> dict[
     )
     if not row:
         return None
+    # A checkout prepared before a plan-price change must never authorize
+    # the new published plan using a stale Razorpay amount.
+    if int(row.get("amount") or 0) != int(PLAN_CATALOG[plan]["price_paise"]):
+        await execute("UPDATE billing_checkouts SET status='expired' WHERE id=? AND status IN ('created','authorized')", (row["id"],))
+        return None
     created = parse_iso(str(row.get("created_at") or ""))
     if not created or utc_now() - created > timedelta(minutes=15):
         return None
@@ -707,6 +718,13 @@ async def _recent_reusable_checkout(user_id: str, plan: str, kind: str) -> dict[
 @router.post("/billing/checkout")
 async def billing_checkout(body: dict, user: dict = Depends(current_user)) -> dict[str, Any]:
     plan = str(body.get("plan", "")).lower()
+    if plan in {"mini_pass","creator","growth","pro","agency"}:
+        expected = body.get("expected_price_paise")
+        current_amount = int(PLAN_CATALOG[plan]["price_paise"])
+        if (expected is not None and (type(expected) is not int or expected != current_amount)) or (
+            get_settings().app_env == "production" and expected != current_amount
+        ):
+            raise HTTPException(409, "Pricing has changed. Refresh Plans & billing before continuing to Razorpay.")
     user = await sync_subscription_if_needed(user)
     current_plan = str(user.get("plan") or "free")
     active_reference = str(user.get("billing_reference") or "")
@@ -784,11 +802,30 @@ async def billing_checkout(body: dict, user: dict = Depends(current_user)) -> di
             logger.warning("Razorpay checkout creation failed error_type=%s", type(exc).__name__)
             raise HTTPException(502, "Razorpay could not start checkout. Please retry in a moment.") from exc
 
-        await execute(
-            """INSERT INTO billing_checkouts(id,user_id,kind,plan,provider_reference,amount,status,payment_id,created_at,verified_at)
-               VALUES (?,?,?,?,?,?,'created',NULL,?,NULL)""",
-            (str(uuid.uuid4()), fresh["id"], kind, plan, reference, catalog["price_paise"], utc_now().isoformat()),
-        )
+        # Record the provider checkout and exact benefits bought in ONE
+        # database transaction; a delayed callback must not obtain a later
+        # version of the plan by accident.
+        checkout_id, checkout_at = str(uuid.uuid4()), utc_now().isoformat()
+        async def _persist_purchased_checkout(db) -> None:
+            await db.execute(
+                """INSERT INTO billing_checkouts
+                   (id,user_id,kind,plan,provider_reference,amount,status,payment_id,created_at,verified_at)
+                   VALUES (?,?,?,?,?,?,'created',NULL,?,NULL)""",
+                (checkout_id, fresh["id"], kind, plan, reference,
+                 catalog["price_paise"], checkout_at),
+            )
+            await db.execute(
+                """INSERT INTO checkout_entitlement_snapshots
+                   (checkout_id,processing_minutes,shorts,source_video_limit_minutes,
+                    short_mode,price_paise,created_at)
+                   VALUES (?,?,?,?,?,?,?)""",
+                (checkout_id, catalog["processing_minutes"], catalog["shorts"],
+                 catalog.get("source_minutes_per_short") or 240,
+                 "finished_shorts" if plan in {"mini_pass","creator","growth","pro"}
+                 else "source_projects", catalog["price_paise"], checkout_at),
+            )
+        await run_in_transaction(_persist_purchased_checkout, mode="IMMEDIATE",
+                                 operation_name="freeze purchased plan at checkout")
         await _audit(fresh["id"], "billing.checkout_created", kind, reference, {"plan": plan, "amount": catalog["price_paise"]})
         return _checkout_payload(fresh, plan, kind, reference)
 
@@ -886,7 +923,15 @@ async def billing_verify(body: dict, user: dict = Depends(current_user)) -> dict
         except RuntimeError as exc:
             raise HTTPException(502, "Payment was received, but subscription status could not be confirmed. Refresh billing shortly.") from exc
         provider_plan_id = str(entity.get("plan_id") or "")
-        expected = await fetch_one("SELECT provider_plan_id FROM billing_plans WHERE plan_key=?", (plan,))
+        expected = await fetch_one(
+            "SELECT provider_plan_id FROM billing_plan_versions WHERE provider_plan_id=? AND plan_key=? AND amount=?",
+            (provider_plan_id, plan, int(checkout["amount"])),
+        )
+        if not expected:
+            expected = await fetch_one(
+                "SELECT provider_plan_id FROM billing_plans WHERE provider_plan_id=? AND plan_key=? AND amount=?",
+                (provider_plan_id, plan, int(checkout["amount"])),
+            )
         if not expected or provider_plan_id != str(expected["provider_plan_id"]):
             raise HTTPException(400, "Subscription plan verification failed.")
         provider_status = str(entity.get("status") or "")

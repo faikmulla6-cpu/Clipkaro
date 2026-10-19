@@ -52,7 +52,7 @@ if (seoTemplate.includes('"FAQPage"')) throw new Error("Search discovery contrac
 requireText(pricing, "pricingStructuredData", "pricing page must expose machine-readable current offers");
 requireText(pricing, 'name: "Free", price: "0"', "pricing schema must include the free plan");
 requireText(pricing, 'name: "Mini Pass", price: "59"', "pricing schema must include the ₹59 Mini Pass");
-requireText(pricing, 'name: "Creator", price: "199"', "pricing schema must include the ₹199 Creator plan");
+requireText(pricing, 'name: "Creator", price: String(PUBLIC_PRICING.creator.price)', "pricing schema must use the current Creator plan price");
 for (const privatePath of ['"/account"', '"/admin"', '"/api"', '"/creator-pulse"', '"/dashboard"', '"/editor"', '"/post-karo"', '"/projects"', '"/upload"']) {
   requireText(robots, privatePath, `${privatePath} must stay excluded from search indexing`);
 }

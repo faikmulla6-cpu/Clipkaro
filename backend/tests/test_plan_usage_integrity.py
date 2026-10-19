@@ -84,6 +84,13 @@ def test_same_cycle_paid_upgrade_preserves_usage(client, old_plan, new_plan):
         (f"upgrade-reservation-{old_plan}-{new_plan}", user_id, old_period, "minutes",
          20., "already-consumed-short", "finalized", START, START),
     ))
+    asyncio.run(execute(
+        """INSERT INTO short_credit_reservations
+           (clip_id,user_id,period_key,export_id,status,created_at,updated_at)
+           VALUES (?,?,?,?,?,?,?)""",
+        ("previous-finished-short",user_id,old_period,
+         "previous-finished-export","finalized",START,START),
+    ))
     applied = asyncio.run(_apply_provider_entity(
         original, entity("sub_retain", f"plan_{new_plan}"), allow_provider_followup=False,
     ))
@@ -92,6 +99,11 @@ def test_same_cycle_paid_upgrade_preserves_usage(client, old_plan, new_plan):
     assert usage["source_minutes"] == 20.0
     assert usage["processing_minutes_remaining"] == PLAN_CATALOG[new_plan]["processing_minutes"] - 20
     assert usage["shorts_remaining"] == PLAN_CATALOG[new_plan]["shorts"] - 1
+    paid_short = asyncio.run(fetch_one(
+        "SELECT period_key,status FROM short_credit_reservations WHERE clip_id=?",
+        ("previous-finished-short",),
+    ))
+    assert paid_short and paid_short["period_key"] == usage["period_key"] and paid_short["status"] == "finalized"
 
 
 def test_new_billing_cycle_does_not_inherit_old_paid_usage(client):
@@ -113,7 +125,7 @@ def test_new_billing_cycle_does_not_inherit_old_paid_usage(client):
     usage = client.get("/api/v1/usage").json()
     assert usage["plan"] == "growth"
     assert usage["source_minutes"] == 0
-    assert usage["processing_minutes_remaining"] == 180.0
+    assert usage["processing_minutes_remaining"] == 300.0
     assert asyncio.run(fetch_one("SELECT source_minutes FROM usage WHERE id='old-cycle'"))["source_minutes"] == 56.0
 
 
@@ -334,3 +346,47 @@ def test_partial_refund_keeps_paid_cycle(client):
     assert result is None
     current = asyncio.run(fetch_one("SELECT plan FROM users WHERE id=?", (uid,)))
     assert current["plan"] == "creator"
+
+@pytest.mark.parametrize("plan,max_source,minutes,shorts,price", [
+    ("creator",60,120,15,249),
+    ("growth",90,300,50,599),
+    ("pro",180,600,150,1299),
+])
+def test_paid_plans_use_independent_source_and_finished_short_limits(plan,max_source,minutes,shorts,price):
+    """The actual period cap is independent of per-upload cap and output count."""
+    from app.api.routes import PLAN_MAX_SOURCE_MINUTES, PLAN_PROCESSING_MINUTES
+    entitlement = PLAN_CATALOG[plan]
+    assert entitlement["price"] == price and entitlement["price_paise"]==price*100
+    assert entitlement["source_minutes_per_short"] == max_source
+    assert PLAN_MAX_SOURCE_MINUTES[plan] == max_source
+    assert entitlement["shorts"] == shorts
+    assert entitlement["processing_minutes"] == minutes
+    assert PLAN_PROCESSING_MINUTES[plan] == minutes
+
+
+def test_creator_can_reserve_two_fifty_five_minute_sources(client):
+    """Regression: a second 55-minute Creator source must not fail old 60m pool."""
+    from unittest.mock import AsyncMock
+    user_id = signup(client, "per-short-creator@example.com")
+    asyncio.run(make_recurring(user_id, "creator", "sub_per_short_1"))
+    assert client.get("/api/v1/usage").json()["source_minutes_per_short"] == 60
+
+    with patch("app.api.routes._process_project", new=AsyncMock()):
+        created = []
+        for ix in range(2):
+            response = client.post("/api/v1/projects/upload",
+                                   data={"title": f"Long source {ix+1}"},
+                                   files={"file": (f"long-{ix+1}.mp4", b"video", "video/mp4")})
+            assert response.status_code == 201
+            created.append(response.json()["video_id"])
+
+    for video_id in created:
+        asyncio.run(execute(
+            "UPDATE videos SET duration=?,width=1920,height=1080,status='validated' WHERE id=?",
+            (55 * 60, video_id),
+        ))
+    state = client.get("/api/v1/usage").json()
+    assert state["shorts_used"] == 0  # Sources are not finished Shorts
+    assert state["shorts_remaining"] == 15
+    assert state["source_minutes"] == pytest.approx(110)
+    assert state["processing_minutes_remaining"] == pytest.approx(10)

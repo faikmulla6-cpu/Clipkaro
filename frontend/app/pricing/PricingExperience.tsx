@@ -6,6 +6,7 @@ import { Logo } from "@/components/Logo";
 import { MobileLandingMenu } from "@/components/MobileLandingMenu";
 import { api, postJSON, Usage, usageMiniPassExhausted } from "@/lib/api";
 import { LEGAL_LINKS, LEGAL_VERSION, LegalStatus, TRUST_PROFILE } from "@/lib/legal";
+import { PUBLIC_PRICING, planFeatureMinutes, type PricingPlanId } from "@/lib/pricing-contract";
 import { ArrowRight, Check, Loader2, ShieldCheck, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -86,19 +87,19 @@ declare global {
 
 const copy: Record<string, { tagline: string; features: string[] }> = {
   free: { tagline: "Try ClipKaro before paying", features: ["2 AI Shorts / month", "15 total source-processing minutes / month", "Up to 2 exports / month", "Source media kept 24 hours", "720p with ClipKaro watermark", "Unlimited Post Karo · Instagram + YouTube"] },
-  mini_pass: { tagline: "5 AI Shorts. The pass ends when all 5 are used.", features: ["5 AI Shorts", "Up to 25 min source video per Short", "Pass expires after 5/5 AI Shorts are used or after 30 days", "Unlimited exports & re-exports for created Shorts", "Up to 125 source-processing minutes across the pass", "1080p · no watermark", "Unlimited Post Karo · Instagram + YouTube"] },
-  creator: { tagline: "For new creators building consistency", features: ["15 AI Shorts / month", "60 total source-processing minutes / month", "Unlimited exports & re-exports", "Paid source media kept up to 30 days", "1080p · no watermark", "Full AI clip quality", "Unlimited Post Karo · Instagram + YouTube"] },
-  growth: { tagline: "For serious creators publishing every week", features: ["50 AI Shorts / month", "180 total source-processing minutes / month", "Unlimited exports & re-exports", "Paid source media kept up to 30 days", "1080p · no watermark", "Brand kit + creator workflow", "Unlimited Post Karo · Instagram + YouTube"] },
-  pro: { tagline: "For daily creators and growing channels", features: ["150 AI Shorts / month", "480 total source-processing minutes / month", "Unlimited exports & re-exports", "Paid source media kept up to 30 days", "1080p · no watermark", "Priority creator workflow", "Unlimited Post Karo · Instagram + YouTube"] },
+  mini_pass: { tagline: "One-time pass · 5 finished AI Shorts", features: ["5 unique finished AI Shorts", planFeatureMinutes("mini_pass"), "Creation access ends when 5 Shorts or 25 Karo Minutes are used, or after 30 days", "Existing Mini Pass purchases retain their original 125-minute allowance", "Unlimited re-exports of finished Shorts while source media is retained", "1080p · no watermark", "Unlimited Post Karo · Instagram + YouTube"] },
+  creator: { tagline: "For new creators building consistency", features: ["15 unique finished AI Shorts / month", planFeatureMinutes("creator"), "Unlimited re-exports of finished Shorts", "Paid source media kept up to 30 days", "1080p · no watermark", "Full AI clip quality", "Unlimited Post Karo · Instagram + YouTube"] },
+  growth: { tagline: "For serious creators publishing every week", features: ["50 unique finished AI Shorts / month", planFeatureMinutes("growth"), "Unlimited re-exports of finished Shorts", "Paid source media kept up to 30 days", "1080p · no watermark", "Brand kit + creator workflow", "Unlimited Post Karo · Instagram + YouTube"] },
+  pro: { tagline: "For daily creators and growing channels", features: ["150 unique finished AI Shorts / month", planFeatureMinutes("pro"), "Unlimited re-exports of finished Shorts", "Paid source media kept up to 30 days", "1080p · no watermark", "Priority creator workflow", "Unlimited Post Karo · Instagram + YouTube"] },
   agency: { tagline: "For client work and high-volume teams", features: ["500 AI Shorts / month", "1,500 total source-processing minutes / month", "Unlimited exports & re-exports", "Paid source media kept up to 30 days", "1080p · no watermark", "Agency-scale usage", "Unlimited Post Karo · Instagram + YouTube"] },
 };
 
 const fallbackPlans: Plan[] = [
   { id: "free", name: "Free", price: 0, exports: 2, shorts: 2, unlimited_exports: false, processing_minutes: 15, watermark: true, resolution: "720p", billing: "free", popular: false },
-  { id: "mini_pass", name: "Mini Pass", price: 59, exports: 5, shorts: 5, unlimited_exports: true, processing_minutes: 125, source_minutes_per_short: 25, watermark: false, resolution: "1080p", billing: "one_time", popular: false },
-  { id: "creator", name: "Creator", price: 199, exports: 15, shorts: 15, unlimited_exports: true, processing_minutes: 60, watermark: false, resolution: "1080p", billing: "subscription", popular: false },
-  { id: "growth", name: "Growth", price: 399, exports: 50, shorts: 50, unlimited_exports: true, processing_minutes: 180, watermark: false, resolution: "1080p", billing: "subscription", popular: true },
-  { id: "pro", name: "Pro", price: 799, exports: 150, shorts: 150, unlimited_exports: true, processing_minutes: 480, watermark: false, resolution: "1080p", billing: "subscription", popular: false },
+  { id: "mini_pass", name: "Mini Pass", price: 59, exports: 5, shorts: 5, unlimited_exports: true, processing_minutes: 25, source_minutes_per_short: 25, watermark: false, resolution: "1080p", billing: "one_time", popular: false },
+  { id: "creator", name: "Creator", price: 249, exports: 15, shorts: 15, unlimited_exports: true, processing_minutes: 120, source_minutes_per_short: 60, watermark: false, resolution: "1080p", billing: "subscription", popular: false },
+  { id: "growth", name: "Growth", price: 599, exports: 50, shorts: 50, unlimited_exports: true, processing_minutes: 300, source_minutes_per_short: 90, watermark: false, resolution: "1080p", billing: "subscription", popular: true },
+  { id: "pro", name: "Pro", price: 1299, exports: 150, shorts: 150, unlimited_exports: true, processing_minutes: 600, source_minutes_per_short: 180, watermark: false, resolution: "1080p", billing: "subscription", popular: false },
   { id: "agency", name: "Agency", price: 1999, exports: 500, shorts: 500, unlimited_exports: true, processing_minutes: 1500, watermark: false, resolution: "1080p", billing: "subscription", popular: false },
 ];
 
@@ -200,7 +201,7 @@ function PublicPricing({ plans }: { plans: Plan[] }) {
             <ul>{details.features.map((item) => <li key={item}><Check size={13}/>{item}</li>)}</ul>
             <Link href={`/signup?plan=${encodeURIComponent(plan.id)}`} className={plan.popular ? "primary-btn" : "secondary-btn"}>{cta}</Link>
             {plan.billing === "subscription" && <p className="muted-copy">Renews monthly until cancelled or changed.</p>}
-            {plan.billing === "one_time" && <p className="muted-copy">Expires when all 5 AI Shorts are used or after 30 days, whichever comes first. Never auto-renews.</p>}
+            {plan.billing === "one_time" && <p className="muted-copy">Creation access expires after 5 finished Shorts, 25 total Karo Minutes, or 30 days, whichever comes first. Never auto-renews. Existing pass rights are protected.</p>}
           </div>;
         })}
       </div>
@@ -294,8 +295,15 @@ export function PricingExperience({ publicFallback }: { publicFallback?: React.R
     setError("");
     setNotice("");
     try {
+      const expected = PUBLIC_PRICING[plan.id as PricingPlanId];
+      if (!expected || plan.price !== expected.price || plan.shorts !== expected.shorts
+          || plan.processing_minutes !== expected.minutes
+          || (plan.id !== "free" && plan.id !== "agency"
+             && plan.source_minutes_per_short !== expected.maxVideo)) {
+        throw new Error("Plan details are updating. Checkout is temporarily unavailable until pricing and backend limits match.");
+      }
       if (createsOrIncreasesPaidCommitment(plan)) await ensureLegalCheckoutReady();
-      const checkout = await postJSON<Checkout>("/billing/checkout", { plan: plan.id });
+      const checkout = await postJSON<Checkout>("/billing/checkout", { plan: plan.id, expected_price_paise: plan.price * 100 });
 
       if (checkout.kind === "subscription_change") {
         const targetName = plans.find((item) => item.id === checkout.target_plan)?.name || plan.name;
@@ -410,7 +418,17 @@ export function PricingExperience({ publicFallback }: { publicFallback?: React.R
   const currentPlan = (status?.plan || user?.plan || "free").toLowerCase();
   const miniPassExhausted = currentPlan === "mini_pass" && Boolean(status?.mini_pass_exhausted || (usage && usageMiniPassExhausted(usage)));
   const currentIsRecurring = ["creator", "growth", "pro", "agency"].includes(currentPlan);
-  const currentPrice = plans.find((plan) => plan.id === currentPlan)?.price || 0;
+  const currentPrice = typeof usage?.plan_price_paise === "number"
+    ? usage.plan_price_paise / 100
+    : plans.find((plan) => plan.id === currentPlan)?.price || 0;
+  const currentCatalog = PUBLIC_PRICING[currentPlan as PricingPlanId];
+  const protectedLegacy = Boolean(usage && currentCatalog
+    && typeof usage.plan_price_paise === "number" && usage.short_unit && (
+    usage.processing_minutes_limit !== currentCatalog.minutes
+    || usage.plan_price_paise !== currentCatalog.price * 100
+    || (["mini_pass", "creator", "growth", "pro"].includes(currentPlan)
+      && usage.short_unit === "source_projects")
+  ));
   const scheduledPlan = status?.scheduled_plan || null;
   const scheduledPlanName = plans.find((plan) => plan.id === scheduledPlan)?.name || (scheduledPlan === "free" ? "Free" : scheduledPlan);
 
@@ -456,16 +474,22 @@ export function PricingExperience({ publicFallback }: { publicFallback?: React.R
   }
 
   return <AppShell title="Plans & billing" subtitle="Fair Access Pricing — same strong AI, pay only for the usage you need.">
-    <div className="billing-principle"><Sparkles size={18}/><div><b>Start small. Grow when you grow.</b><span>Every paid plan includes 1080p, no watermark and unlimited exports & re-exports of created Shorts. Mini Pass creation access ends at 5/5 AI Shorts or 30 days, whichever comes first.</span></div><ShieldCheck size={18}/></div>
+    <div className="billing-principle"><Sparkles size={18}/><div><b>Start small. Grow when you grow.</b><span>Every paid plan includes 1080p, no watermark and unlimited exports & re-exports of created Shorts. New Mini Pass creation access ends at 5 finished Shorts, 25 Karo Minutes, or 30 days, whichever comes first. Existing passes retain their purchased minutes.</span></div><ShieldCheck size={18}/></div>
     {legalStatus && legalStatus.razorpay_mode === "test" && <div className="info-banner" style={{background: "#e8f5e9", border: "1px solid #c8e6c9", color: "#1b5e20", padding: 12, borderRadius: 8, marginBottom: 16}}>🧪 <b>Razorpay Test Mode</b> — Payments are simulated. No real money will be charged. Use test card numbers from Razorpay documentation.</div>}
     {legalStatus && legalStatus.razorpay_mode === "live" && legalStatus.development_live_opt_in && <div className="error-banner"><span>⚠️ <b>Razorpay LIVE Mode</b> — this local checkout can charge real money. Use only an account/payment method you intentionally want to charge.</span></div>}
     {error && <div className="error-banner"><span>{error}</span></div>}
     {notice && <div className="success-banner"><span>{notice}</span></div>}
+    {protectedLegacy && usage && <div className="billing-manage">
+      <div>
+        <b>Your previously purchased plan is protected</b>
+        <span>You are on the existing {currentPlan} terms: ₹{(usage.plan_price_paise || 0) / 100}{currentPlan === "mini_pass" ? " one-time" : "/month"}, {usage.processing_minutes_limit} Karo Minutes for this billing period and {usage.shorts_limit ?? usage.exports_limit} source-project creation credits. These remain your effective limits and bill; the new-price offers below apply only to newly selected plans.</span>
+      </div>
+    </div>}
 
     <div className="billing-manage">
       <div>
         <b>Before you pay</b>
-        <span>Mini Pass is ₹59 one-time. Its creation entitlement expires as soon as all 5 AI Shorts are used, or after 30 days if unused capacity remains. Already-created Shorts keep unlimited export and re-export access while their retained source media remains available. Creator, Growth, Pro and Agency renew monthly at the selected plan price until cancelled or changed. Review the <Link href="/refund-policy" target="_blank" rel="noopener noreferrer">Refund Policy</Link> and <Link href="/legal-notice" target="_blank" rel="noopener noreferrer">consumer information</Link>.</span>
+        <span>Mini Pass is ₹59 one-time for 25 total source-processing minutes and 5 finished Shorts. New passes expire on exhausted minutes, 5 created Shorts, or after 30 days; existing paid passes keep their original 125 minutes. Already-created Shorts keep unlimited export and re-export access while their retained source media remains available. Creator, Growth, Pro and Agency renew monthly at the selected plan price until cancelled or changed. Review the <Link href="/refund-policy" target="_blank" rel="noopener noreferrer">Refund Policy</Link> and <Link href="/legal-notice" target="_blank" rel="noopener noreferrer">consumer information</Link>.</span>
       </div>
     </div>
 
@@ -515,7 +539,7 @@ export function PricingExperience({ publicFallback }: { publicFallback?: React.R
             {busy === plan.id && <Loader2 className="spin" size={14}/>} {button.label}
           </button>
           {plan.billing === "subscription" && !current && <p className="muted-copy">Renews monthly until cancelled or changed.</p>}
-          {plan.billing === "one_time" && <p className="muted-copy">{miniPassExhausted ? "Previous Mini Pass expired at 5/5 AI Shorts · buy another anytime." : "One-time purchase · expires at 5/5 AI Shorts or after 30 days · no auto-renewal."}</p>}
+          {plan.billing === "one_time" && <p className="muted-copy">{miniPassExhausted ? "Previous Mini Pass creation allowance ended · buy another anytime." : "One-time purchase · ends at 5 finished Shorts, 25 total minutes, or 30 days · no auto-renewal."}</p>}
           {current && status?.scheduled_change_type === "downgrade" && <p className="muted-copy">Current until {formatDate(status.scheduled_plan_effective_at)}</p>}
         </div>;
       })}

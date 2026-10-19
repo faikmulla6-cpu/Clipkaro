@@ -10,6 +10,7 @@ from app.core.config import get_settings
 from app.core.database import UsageQuotaExceeded, execute, fetch_all, fetch_one
 from app.main import app
 from app.services.legal import LEGAL_VERSION
+from app.services.billing import usage_period_key
 
 
 @pytest.fixture()
@@ -438,12 +439,15 @@ def test_locked_fair_access_plans(client: TestClient):
     by_id = {row["id"]: row for row in rows}
     assert by_id["free"]["price"] == 0 and by_id["free"]["processing_minutes"] == 15 and by_id["free"]["shorts"] == 2
     assert by_id["free"]["unlimited_exports"] is False
-    assert by_id["mini_pass"]["price"] == 59 and by_id["mini_pass"]["processing_minutes"] == 125 and by_id["mini_pass"]["shorts"] == 5
+    assert by_id["mini_pass"]["price"] == 59 and by_id["mini_pass"]["processing_minutes"] == 25 and by_id["mini_pass"]["shorts"] == 5
     assert by_id["mini_pass"]["source_minutes_per_short"] == 25
     assert by_id["mini_pass"]["unlimited_exports"] is True
-    assert by_id["creator"]["price"] == 199 and by_id["creator"]["processing_minutes"] == 60 and by_id["creator"]["shorts"] == 15
-    assert by_id["growth"]["price"] == 399 and by_id["growth"]["processing_minutes"] == 180 and by_id["growth"]["shorts"] == 50
-    assert by_id["pro"]["price"] == 799 and by_id["pro"]["processing_minutes"] == 480 and by_id["pro"]["shorts"] == 150
+    assert by_id["creator"]["price"] == 249 and by_id["creator"]["processing_minutes"] == 120 and by_id["creator"]["shorts"] == 15
+    assert by_id["creator"]["source_minutes_per_short"] == 60
+    assert by_id["growth"]["price"] == 599 and by_id["growth"]["processing_minutes"] == 300 and by_id["growth"]["shorts"] == 50
+    assert by_id["growth"]["source_minutes_per_short"] == 90
+    assert by_id["pro"]["price"] == 1299 and by_id["pro"]["processing_minutes"] == 600 and by_id["pro"]["shorts"] == 150
+    assert by_id["pro"]["source_minutes_per_short"] == 180
     assert by_id["agency"]["price"] == 1999 and by_id["agency"]["processing_minutes"] == 1500 and by_id["agency"]["shorts"] == 500
     assert all(by_id[key]["unlimited_exports"] is True for key in ("mini_pass", "creator", "growth", "pro", "agency"))
 
@@ -535,7 +539,7 @@ def test_mini_pass_order_is_verified_before_entitlement(client: TestClient):
     assert usage["shorts_limit"] == 5
     assert usage["shorts_remaining"] == 5
     assert usage["unlimited_exports"] is True
-    assert usage["processing_minutes_limit"] == 125
+    assert usage["processing_minutes_limit"] == 25
     assert usage["source_minutes_per_short"] == 25
 
 
@@ -645,7 +649,7 @@ def test_growth_subscription_signature_and_provider_plan_are_verified(client: Te
     async def ensure_growth_plan(_plan):
         await execute(
             "INSERT OR REPLACE INTO billing_plans(plan_key,provider_plan_id,amount,currency,created_at) VALUES (?,?,?,?,?)",
-            ("growth", "plan_growth_live", 39900, "INR", "2026-08-07T00:00:00+00:00"),
+            ("growth", "plan_growth_live", 59900, "INR", "2026-08-07T00:00:00+00:00"),
         )
         return "plan_growth_live"
 
@@ -664,7 +668,8 @@ def test_growth_subscription_signature_and_provider_plan_are_verified(client: Te
     assert client.get("/api/v1/auth/me").json()["plan"] == "growth"
     usage = client.get("/api/v1/usage").json()
     assert usage["exports_limit"] == 50
-    assert usage["processing_minutes_limit"] == 180
+    assert usage["processing_minutes_limit"] == 300
+    assert usage["source_minutes_per_short"] == 90
 
 
 def test_karo_minutes_are_atomically_reserved_and_refunded(client: TestClient):
@@ -804,6 +809,16 @@ def test_mini_pass_caps_new_ai_short_creations_even_with_minutes_left(client: Te
            plan_started_at=?,plan_expires_at=? WHERE id=?""",
         ("order-mini-create-cap", "2026-10-06T00:00:00+00:00", "2026-11-05T00:00:00+00:00", user_id),
     ))
+    # Customer purchased the original 125-minute / source-credit Mini Pass.
+    legacy = asyncio.run(fetch_one("SELECT * FROM users WHERE id=?", (user_id,)))
+    asyncio.run(execute(
+        """INSERT INTO plan_entitlement_snapshots
+           (user_id,period_key,plan_key,processing_minutes,shorts,source_video_limit_minutes,
+            short_mode,price_paise,created_at)
+           VALUES (?,?,?,?,?,?,?,?,?)""",
+        (user_id,usage_period_key(legacy),"mini_pass",125.0,5,25.0,
+         "source_projects",5900,"2026-10-06T00:00:00+00:00"),
+    ))
 
     uploads = []
     with patch("app.api.routes._process_project", new=AsyncMock()):
@@ -858,6 +873,16 @@ def test_mini_pass_exports_and_reexports_do_not_consume_creation_credits(client:
         """UPDATE users SET plan='mini_pass',billing_reference=?,
            plan_started_at=?,plan_expires_at=? WHERE id=?""",
         ("order-mini-render", "2026-10-06T00:00:00+00:00", "2026-11-05T00:00:00+00:00", user_id),
+    ))
+    # Legacy source-project creation credits remain unchanged for old purchases.
+    legacy = asyncio.run(fetch_one("SELECT * FROM users WHERE id=?", (user_id,)))
+    asyncio.run(execute(
+        """INSERT INTO plan_entitlement_snapshots
+           (user_id,period_key,plan_key,processing_minutes,shorts,source_video_limit_minutes,
+            short_mode,price_paise,created_at)
+           VALUES (?,?,?,?,?,?,?,?,?)""",
+        (user_id,usage_period_key(legacy),"mini_pass",125.0,5,25.0,
+         "source_projects",5900,"2026-10-06T00:00:00+00:00"),
     ))
 
     with patch("app.api.routes._process_project", new=AsyncMock()):

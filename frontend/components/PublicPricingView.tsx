@@ -25,7 +25,7 @@ export function PublicPricingView({ plans }: { plans: PublicPlanView[] }) {
           <header className={styles.hero} data-public-reveal>
             <span><Sparkles size={14}/> Extremely affordable creator pricing</span>
             <h1>Start free. <em>Pay for creation capacity, not every post.</em></h1>
-            <p>ClipKaro starts at ₹0, offers a ₹59 one-time Mini Pass and Creator from ₹199/month. Paid plans charge for AI Short creation capacity—not repeated renders—so finished Shorts can be exported and re-exported without another paid credit. The Mini Pass expires for new creation at 5/5 AI Shorts or after 30 days, whichever comes first.</p>
+            <p>ClipKaro starts at ₹0, offers a ₹59 one-time Mini Pass and Creator from ₹249/month. Paid plans charge for AI Short creation capacity—not repeated renders—so finished Shorts can be exported and re-exported without another paid credit. A new Mini Pass is limited to 25 total Karo Minutes and 5 unique finished Shorts, expiring at the first limit or after 30 days; previously purchased passes keep their original rights.</p>
             <div className={styles.heroTrust}><b>No card required to start</b><b>Unlimited exports & re-exports on paid plans</b><b>Unlimited Post Karo on every plan</b><b>Mini Pass never auto-renews</b></div>
           </header>
 
