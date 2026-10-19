@@ -28,6 +28,10 @@ jobs:
         env:
           PYTHONPATH: backend
         run: python -m unittest discover -s backend/tests -p test_smart_layout_contract_v2.py -v
+      - name: Verify middle-strip caption geometry with real FFmpeg
+        env:
+          PYTHONPATH: backend
+        run: python -m unittest discover -s backend/tests -p test_smart_layout_caption_board.py -v
       - name: Node 24
         uses: actions/setup-node@v4
         with:
