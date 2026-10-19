@@ -211,6 +211,56 @@ class SmartLayoutCanaryGateTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(api.enabled_for_user(owner))
 
 
+class PreviewQuotaDedupTests(unittest.IsolatedAsyncioTestCase):
+    """Existing jobs are reusable even when no new preview slots remain."""
+
+    async def test_existing_processing_job_does_not_charge_daily_allowance(self):
+        from contextlib import asynccontextmanager
+
+        @asynccontextmanager
+        async def unlocked(*_args):
+            yield
+
+        uid, cid = user_ids()[:2]
+        running = {"status": "processing", "job_id": "existing"}
+        with patch.object(api, "_require_feature"), \
+             patch.object(api, "_owned", new_callable=AsyncMock, return_value={}), \
+             patch.object(api, "_identity", return_value=object()), \
+             patch.object(api, "private_plan_key", return_value="verified-owner-key"), \
+             patch.object(api, "_cached", new_callable=AsyncMock, side_effect=[None, None]), \
+             patch.object(api, "_active_job", new_callable=AsyncMock, return_value=running), \
+             patch.object(api, "distributed_advisory_lock", side_effect=unlocked), \
+             patch.object(api, "consume_rate_limit", new_callable=AsyncMock, return_value=False) as limit:
+            result = await api.request_analysis(cid, None, {"id": uid})
+        self.assertEqual(result, running)
+        limit.assert_not_awaited()
+
+    async def test_daily_limit_still_prevents_new_job_creation(self):
+        from contextlib import asynccontextmanager
+
+        @asynccontextmanager
+        async def unlocked(*_args):
+            yield
+
+        uid, cid = user_ids()[:2]
+        with patch.object(api, "_require_feature"), \
+             patch.object(api, "_owned", new_callable=AsyncMock, return_value={}), \
+             patch.object(api, "_identity", return_value=object()), \
+             patch.object(api, "private_plan_key", return_value="verified-owner-key"), \
+             patch.object(api, "_cached", new_callable=AsyncMock, side_effect=[None, None]), \
+             patch.object(api, "_active_job", new_callable=AsyncMock, return_value=None), \
+             patch.object(api, "fetch_one", new_callable=AsyncMock, return_value={"n": 0}), \
+             patch.object(api, "distributed_advisory_lock", side_effect=unlocked), \
+             patch.object(api, "consume_rate_limit", new_callable=AsyncMock, return_value=False) as limit, \
+             patch.object(api, "create_job", new_callable=AsyncMock) as create:
+            with self.assertRaises(HTTPException) as exc:
+                await api.request_analysis(cid, None, {"id": uid})
+        self.assertEqual(exc.exception.status_code, 429)
+        self.assertIn("24-hour", str(exc.exception.detail))
+        limit.assert_awaited_once_with(uid, group="smart_layout_preview", limit=8, window_seconds=86400)
+        create.assert_not_awaited()
+
+
 class SmartLayoutExportCacheAliasTests(unittest.IsolatedAsyncioTestCase):
     async def test_export_video_dimensions_match_preview_aliases(self):
         """Regression: displayed ANALYZED PREVIEW must not become export 409.
