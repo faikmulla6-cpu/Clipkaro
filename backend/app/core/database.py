@@ -22,7 +22,7 @@ T = TypeVar("T")
 logger = logging.getLogger("clipkaro.database")
 _LOCK_MESSAGES = ("database is locked", "database table is locked", "database schema is locked")
 _LOCK_PRIMARY_CODES = {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}
-POSTGRES_SCHEMA_REVISION = "20261020_10"
+POSTGRES_SCHEMA_REVISION = "20261021_11"
 _postgres_pool: Any = None
 
 
@@ -323,6 +323,28 @@ CREATE TABLE IF NOT EXISTS billing_checkouts (
   payment_id TEXT, created_at TEXT NOT NULL, verified_at TEXT,
   FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+-- Paid top-ups are independent from plan snapshots and survive billing periods.
+CREATE TABLE IF NOT EXISTS credit_topup_wallets (
+  user_id TEXT PRIMARY KEY, minutes_balance REAL NOT NULL DEFAULT 0 CHECK(minutes_balance>=-0.000001),
+  shorts_balance INTEGER NOT NULL DEFAULT 0 CHECK(shorts_balance>=0), updated_at TEXT NOT NULL,
+  FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS credit_topup_checkouts (
+  id TEXT PRIMARY KEY, user_id TEXT NOT NULL, provider_reference TEXT UNIQUE NOT NULL,
+  minutes INTEGER NOT NULL CHECK(minutes>=0),shorts INTEGER NOT NULL CHECK(shorts>=0),
+  amount_paise INTEGER NOT NULL CHECK(amount_paise>0), status TEXT NOT NULL,
+  payment_id TEXT,created_at TEXT NOT NULL,verified_at TEXT,
+  FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS credit_topup_spends (
+  user_id TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('minutes','shorts')),
+  resource_id TEXT NOT NULL, amount REAL NOT NULL CHECK(amount>0),
+  status TEXT NOT NULL CHECK(status IN ('reserved','finalized','released')),
+  created_at TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(kind,resource_id),
+  FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_credit_topup_checkouts_user ON credit_topup_checkouts(user_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_credit_topup_spends_user ON credit_topup_spends(user_id,status);
 CREATE TABLE IF NOT EXISTS checkout_entitlement_snapshots (
   checkout_id TEXT PRIMARY KEY, processing_minutes REAL NOT NULL,
   shorts INTEGER NOT NULL, source_video_limit_minutes REAL NOT NULL,
@@ -397,26 +419,111 @@ BEGIN
              AND r.period_key=(CASE WHEN u.plan='free' THEN 'free:' || strftime('%Y-%m','now')
                ELSE u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local')
                     || ':' || substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19) END))
-          >= COALESCE(s.shorts,CASE u.plan
+           >= COALESCE(s.shorts,CASE u.plan
             WHEN 'mini_pass' THEN 5 WHEN 'creator' THEN 15 WHEN 'growth' THEN 50
             WHEN 'pro' THEN 150 WHEN 'agency' THEN 500 ELSE 2 END)
+      AND (u.plan NOT IN ('creator','growth','pro','agency') OR
+           COALESCE((SELECT w.shorts_balance FROM credit_topup_wallets w WHERE w.user_id=u.id),0)<=0)
   ) THEN RAISE(ABORT,'AI_SHORT_QUOTA_EXCEEDED') END;
 
-  SELECT CASE WHEN EXISTS(
-    SELECT 1 FROM projects p JOIN users u ON u.id=p.user_id
-    LEFT JOIN usage us ON us.user_id=u.id AND us.month=(
-      CASE WHEN u.plan='free' THEN 'free:' || strftime('%Y-%m','now')
-        ELSE u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local')
-          || ':' || substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19) END)
-    LEFT JOIN plan_entitlement_snapshots s ON s.user_id=u.id AND s.period_key=(
-      CASE WHEN u.plan='free' THEN 'free:' || strftime('%Y-%m','now')
-        ELSE u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local')
-          || ':' || substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19) END)
-    WHERE p.id=NEW.project_id AND COALESCE(us.source_minutes,0)+(NEW.duration/60.0)>
-      COALESCE(s.processing_minutes,CASE u.plan
-        WHEN 'mini_pass' THEN 25.0 WHEN 'creator' THEN 120.0 WHEN 'growth' THEN 300.0
-        WHEN 'pro' THEN 600.0 WHEN 'agency' THEN 1500.0 ELSE 15.0 END)+0.0000001
-  ) THEN RAISE(ABORT,'KARO_MINUTES_QUOTA_EXCEEDED') END;
+  UPDATE credit_topup_wallets SET shorts_balance=shorts_balance-1,
+    updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+    WHERE user_id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id) AND EXISTS(SELECT 1 FROM users u LEFT JOIN plan_entitlement_snapshots s ON s.user_id=u.id
+  AND s.period_key=(SELECT CASE WHEN u.plan='free' THEN 'free:' || strftime('%Y-%m','now') ELSE
+  u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local') || ':' ||
+  substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19) END FROM users u WHERE u.id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id))
+  WHERE u.id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id) AND COALESCE(s.short_mode,'source_projects')='source_projects'
+  AND (SELECT COUNT(DISTINCT r.resource_id) FROM usage_reservations r
+       WHERE r.user_id=u.id AND r.period_key=(SELECT CASE WHEN u.plan='free' THEN 'free:' || strftime('%Y-%m','now') ELSE
+  u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local') || ':' ||
+  substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19) END FROM users u WHERE u.id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id)) AND r.kind='minutes'
+         AND r.status IN ('reserved','finalized'))>=COALESCE(s.shorts,CASE u.plan
+       WHEN 'creator' THEN 15 WHEN 'growth' THEN 50 WHEN 'pro' THEN 150
+       WHEN 'mini_pass' THEN 5 WHEN 'agency' THEN 500 ELSE 2 END));
+  INSERT INTO credit_topup_spends(user_id,kind,resource_id,amount,status,created_at,updated_at)
+    SELECT (SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id),'shorts',NEW.project_id,1,'reserved',
+      strftime('%Y-%m-%dT%H:%M:%fZ','now'),strftime('%Y-%m-%dT%H:%M:%fZ','now')
+    WHERE EXISTS(SELECT 1 FROM users u LEFT JOIN plan_entitlement_snapshots s ON s.user_id=u.id
+  AND s.period_key=(SELECT CASE WHEN u.plan='free' THEN 'free:' || strftime('%Y-%m','now') ELSE
+  u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local') || ':' ||
+  substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19) END FROM users u WHERE u.id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id))
+  WHERE u.id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id) AND COALESCE(s.short_mode,'source_projects')='source_projects'
+  AND (SELECT COUNT(DISTINCT r.resource_id) FROM usage_reservations r
+       WHERE r.user_id=u.id AND r.period_key=(SELECT CASE WHEN u.plan='free' THEN 'free:' || strftime('%Y-%m','now') ELSE
+  u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local') || ':' ||
+  substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19) END FROM users u WHERE u.id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id)) AND r.kind='minutes'
+         AND r.status IN ('reserved','finalized'))>=COALESCE(s.shorts,CASE u.plan
+       WHEN 'creator' THEN 15 WHEN 'growth' THEN 50 WHEN 'pro' THEN 150
+       WHEN 'mini_pass' THEN 5 WHEN 'agency' THEN 500 ELSE 2 END))
+    ON CONFLICT(kind,resource_id) DO UPDATE SET status='reserved',updated_at=excluded.updated_at
+      WHERE credit_topup_spends.status='released' AND credit_topup_spends.user_id=excluded.user_id;
+
+  SELECT CASE WHEN (COALESCE((SELECT us.source_minutes FROM usage us WHERE us.user_id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id) AND us.month=(SELECT CASE WHEN u.plan='free' THEN 'free:' || strftime('%Y-%m','now') ELSE
+  u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local') || ':' ||
+  substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19) END FROM users u WHERE u.id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id))),0)+(NEW.duration/60.0)) > (COALESCE((SELECT s.processing_minutes FROM plan_entitlement_snapshots s WHERE s.user_id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id) AND s.period_key=(SELECT CASE WHEN u.plan='free' THEN 'free:' || strftime('%Y-%m','now') ELSE
+  u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local') || ':' ||
+  substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19) END FROM users u WHERE u.id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id))),
+  (SELECT CASE u.plan WHEN 'creator' THEN 120.0 WHEN 'growth' THEN 300.0 WHEN 'pro' THEN 600.0
+    WHEN 'mini_pass' THEN 25.0 WHEN 'agency' THEN 1500.0 ELSE 15.0 END FROM users u WHERE u.id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id)))+(CASE WHEN (SELECT u.plan FROM users u WHERE u.id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id)) IN ('creator','growth','pro','agency') THEN COALESCE((SELECT w.minutes_balance FROM credit_topup_wallets w WHERE w.user_id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id)),0) ELSE 0 END)+0.0000001)
+    THEN RAISE(ABORT,'KARO_MINUTES_QUOTA_EXCEEDED') END;
+  UPDATE credit_topup_wallets SET minutes_balance=minutes_balance-(MAX(0,(COALESCE((SELECT us.source_minutes FROM usage us WHERE us.user_id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id) AND us.month=(SELECT CASE WHEN u.plan='free' THEN 'free:' || strftime('%Y-%m','now') ELSE
+  u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local') || ':' ||
+  substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19) END FROM users u WHERE u.id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id))),0)+(NEW.duration/60.0))-COALESCE((SELECT s.processing_minutes FROM plan_entitlement_snapshots s WHERE s.user_id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id) AND s.period_key=(SELECT CASE WHEN u.plan='free' THEN 'free:' || strftime('%Y-%m','now') ELSE
+  u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local') || ':' ||
+  substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19) END FROM users u WHERE u.id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id))),
+  (SELECT CASE u.plan WHEN 'creator' THEN 120.0 WHEN 'growth' THEN 300.0 WHEN 'pro' THEN 600.0
+    WHEN 'mini_pass' THEN 25.0 WHEN 'agency' THEN 1500.0 ELSE 15.0 END FROM users u WHERE u.id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id))))-MAX(0,COALESCE((SELECT us.source_minutes FROM usage us WHERE us.user_id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id) AND us.month=(SELECT CASE WHEN u.plan='free' THEN 'free:' || strftime('%Y-%m','now') ELSE
+  u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local') || ':' ||
+  substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19) END FROM users u WHERE u.id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id))),0)-COALESCE((SELECT s.processing_minutes FROM plan_entitlement_snapshots s WHERE s.user_id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id) AND s.period_key=(SELECT CASE WHEN u.plan='free' THEN 'free:' || strftime('%Y-%m','now') ELSE
+  u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local') || ':' ||
+  substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19) END FROM users u WHERE u.id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id))),
+  (SELECT CASE u.plan WHEN 'creator' THEN 120.0 WHEN 'growth' THEN 300.0 WHEN 'pro' THEN 600.0
+    WHEN 'mini_pass' THEN 25.0 WHEN 'agency' THEN 1500.0 ELSE 15.0 END FROM users u WHERE u.id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id))))),
+    updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+    WHERE user_id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id) AND (MAX(0,(COALESCE((SELECT us.source_minutes FROM usage us WHERE us.user_id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id) AND us.month=(SELECT CASE WHEN u.plan='free' THEN 'free:' || strftime('%Y-%m','now') ELSE
+  u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local') || ':' ||
+  substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19) END FROM users u WHERE u.id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id))),0)+(NEW.duration/60.0))-COALESCE((SELECT s.processing_minutes FROM plan_entitlement_snapshots s WHERE s.user_id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id) AND s.period_key=(SELECT CASE WHEN u.plan='free' THEN 'free:' || strftime('%Y-%m','now') ELSE
+  u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local') || ':' ||
+  substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19) END FROM users u WHERE u.id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id))),
+  (SELECT CASE u.plan WHEN 'creator' THEN 120.0 WHEN 'growth' THEN 300.0 WHEN 'pro' THEN 600.0
+    WHEN 'mini_pass' THEN 25.0 WHEN 'agency' THEN 1500.0 ELSE 15.0 END FROM users u WHERE u.id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id))))-MAX(0,COALESCE((SELECT us.source_minutes FROM usage us WHERE us.user_id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id) AND us.month=(SELECT CASE WHEN u.plan='free' THEN 'free:' || strftime('%Y-%m','now') ELSE
+  u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local') || ':' ||
+  substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19) END FROM users u WHERE u.id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id))),0)-COALESCE((SELECT s.processing_minutes FROM plan_entitlement_snapshots s WHERE s.user_id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id) AND s.period_key=(SELECT CASE WHEN u.plan='free' THEN 'free:' || strftime('%Y-%m','now') ELSE
+  u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local') || ':' ||
+  substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19) END FROM users u WHERE u.id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id))),
+  (SELECT CASE u.plan WHEN 'creator' THEN 120.0 WHEN 'growth' THEN 300.0 WHEN 'pro' THEN 600.0
+    WHEN 'mini_pass' THEN 25.0 WHEN 'agency' THEN 1500.0 ELSE 15.0 END FROM users u WHERE u.id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id)))))>0.0000001;
+  INSERT INTO credit_topup_spends(user_id,kind,resource_id,amount,status,created_at,updated_at)
+    SELECT (SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id),'minutes',NEW.project_id,(MAX(0,(COALESCE((SELECT us.source_minutes FROM usage us WHERE us.user_id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id) AND us.month=(SELECT CASE WHEN u.plan='free' THEN 'free:' || strftime('%Y-%m','now') ELSE
+  u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local') || ':' ||
+  substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19) END FROM users u WHERE u.id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id))),0)+(NEW.duration/60.0))-COALESCE((SELECT s.processing_minutes FROM plan_entitlement_snapshots s WHERE s.user_id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id) AND s.period_key=(SELECT CASE WHEN u.plan='free' THEN 'free:' || strftime('%Y-%m','now') ELSE
+  u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local') || ':' ||
+  substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19) END FROM users u WHERE u.id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id))),
+  (SELECT CASE u.plan WHEN 'creator' THEN 120.0 WHEN 'growth' THEN 300.0 WHEN 'pro' THEN 600.0
+    WHEN 'mini_pass' THEN 25.0 WHEN 'agency' THEN 1500.0 ELSE 15.0 END FROM users u WHERE u.id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id))))-MAX(0,COALESCE((SELECT us.source_minutes FROM usage us WHERE us.user_id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id) AND us.month=(SELECT CASE WHEN u.plan='free' THEN 'free:' || strftime('%Y-%m','now') ELSE
+  u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local') || ':' ||
+  substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19) END FROM users u WHERE u.id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id))),0)-COALESCE((SELECT s.processing_minutes FROM plan_entitlement_snapshots s WHERE s.user_id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id) AND s.period_key=(SELECT CASE WHEN u.plan='free' THEN 'free:' || strftime('%Y-%m','now') ELSE
+  u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local') || ':' ||
+  substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19) END FROM users u WHERE u.id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id))),
+  (SELECT CASE u.plan WHEN 'creator' THEN 120.0 WHEN 'growth' THEN 300.0 WHEN 'pro' THEN 600.0
+    WHEN 'mini_pass' THEN 25.0 WHEN 'agency' THEN 1500.0 ELSE 15.0 END FROM users u WHERE u.id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id))))),'reserved',
+      strftime('%Y-%m-%dT%H:%M:%fZ','now'),strftime('%Y-%m-%dT%H:%M:%fZ','now')
+    WHERE (MAX(0,(COALESCE((SELECT us.source_minutes FROM usage us WHERE us.user_id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id) AND us.month=(SELECT CASE WHEN u.plan='free' THEN 'free:' || strftime('%Y-%m','now') ELSE
+  u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local') || ':' ||
+  substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19) END FROM users u WHERE u.id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id))),0)+(NEW.duration/60.0))-COALESCE((SELECT s.processing_minutes FROM plan_entitlement_snapshots s WHERE s.user_id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id) AND s.period_key=(SELECT CASE WHEN u.plan='free' THEN 'free:' || strftime('%Y-%m','now') ELSE
+  u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local') || ':' ||
+  substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19) END FROM users u WHERE u.id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id))),
+  (SELECT CASE u.plan WHEN 'creator' THEN 120.0 WHEN 'growth' THEN 300.0 WHEN 'pro' THEN 600.0
+    WHEN 'mini_pass' THEN 25.0 WHEN 'agency' THEN 1500.0 ELSE 15.0 END FROM users u WHERE u.id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id))))-MAX(0,COALESCE((SELECT us.source_minutes FROM usage us WHERE us.user_id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id) AND us.month=(SELECT CASE WHEN u.plan='free' THEN 'free:' || strftime('%Y-%m','now') ELSE
+  u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local') || ':' ||
+  substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19) END FROM users u WHERE u.id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id))),0)-COALESCE((SELECT s.processing_minutes FROM plan_entitlement_snapshots s WHERE s.user_id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id) AND s.period_key=(SELECT CASE WHEN u.plan='free' THEN 'free:' || strftime('%Y-%m','now') ELSE
+  u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local') || ':' ||
+  substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19) END FROM users u WHERE u.id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id))),
+  (SELECT CASE u.plan WHEN 'creator' THEN 120.0 WHEN 'growth' THEN 300.0 WHEN 'pro' THEN 600.0
+    WHEN 'mini_pass' THEN 25.0 WHEN 'agency' THEN 1500.0 ELSE 15.0 END FROM users u WHERE u.id=(SELECT p.user_id FROM projects p WHERE p.id=NEW.project_id)))))>0.0000001
+    ON CONFLICT(kind,resource_id) DO UPDATE SET
+      amount=excluded.amount,status='reserved',updated_at=excluded.updated_at
+      WHERE credit_topup_spends.status='released' AND credit_topup_spends.user_id=excluded.user_id;
 
   UPDATE usage SET source_minutes=source_minutes + (NEW.duration / 60.0)
   WHERE user_id=(SELECT user_id FROM projects WHERE id=NEW.project_id)
@@ -527,7 +634,34 @@ BEGIN
     WHERE u.id=NEW.user_id AND s.period_key=(
       u.plan || ':' || COALESCE(NULLIF(u.billing_reference,''),u.id,'local')
       || ':' || substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19))
-  ) THEN RAISE(ABORT,'AI_SHORT_QUOTA_EXCEEDED') END;
+  ) AND COALESCE((SELECT w.shorts_balance FROM credit_topup_wallets w WHERE w.user_id=NEW.user_id),0)<=0
+  THEN RAISE(ABORT,'AI_SHORT_QUOTA_EXCEEDED') END;  UPDATE credit_topup_wallets SET shorts_balance=shorts_balance-1,
+    updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+    WHERE user_id=NEW.user_id AND NOT EXISTS(SELECT 1 FROM short_credit_reservations r WHERE r.user_id=NEW.user_id AND r.clip_id=NEW.clip_id
+      AND r.status='finalized') AND NOT EXISTS(SELECT 1 FROM exports e WHERE e.user_id=NEW.user_id
+      AND e.clip_id=NEW.clip_id AND e.status='ready') AND
+    (SELECT COUNT(*) FROM short_credit_reservations r WHERE r.user_id=NEW.user_id
+      AND r.period_key=(SELECT u.plan||':'||COALESCE(NULLIF(u.billing_reference,''),u.id,'local')||':'||
+        substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19) FROM users u WHERE u.id=NEW.user_id)
+      AND r.status IN ('reserved','finalized')) >=
+    (SELECT s.shorts FROM plan_entitlement_snapshots s JOIN users u ON u.id=s.user_id
+      WHERE u.id=NEW.user_id AND s.period_key=(u.plan||':'||COALESCE(NULLIF(u.billing_reference,''),u.id,'local')||':'||
+        substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19)));
+  INSERT INTO credit_topup_spends(user_id,kind,resource_id,amount,status,created_at,updated_at)
+    SELECT NEW.user_id,'shorts',NEW.id,1,'reserved',
+    strftime('%Y-%m-%dT%H:%M:%fZ','now'),strftime('%Y-%m-%dT%H:%M:%fZ','now')
+    WHERE NOT EXISTS(SELECT 1 FROM short_credit_reservations r WHERE r.user_id=NEW.user_id AND r.clip_id=NEW.clip_id
+      AND r.status='finalized') AND NOT EXISTS(SELECT 1 FROM exports e WHERE e.user_id=NEW.user_id
+      AND e.clip_id=NEW.clip_id AND e.status='ready') AND
+    (SELECT COUNT(*) FROM short_credit_reservations r WHERE r.user_id=NEW.user_id
+      AND r.period_key=(SELECT u.plan||':'||COALESCE(NULLIF(u.billing_reference,''),u.id,'local')||':'||
+        substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19) FROM users u WHERE u.id=NEW.user_id)
+      AND r.status IN ('reserved','finalized')) >=
+    (SELECT s.shorts FROM plan_entitlement_snapshots s JOIN users u ON u.id=s.user_id
+      WHERE u.id=NEW.user_id AND s.period_key=(u.plan||':'||COALESCE(NULLIF(u.billing_reference,''),u.id,'local')||':'||
+        substr(COALESCE(u.plan_started_at,strftime('%Y-%m','now')),1,19)))
+    ON CONFLICT(kind,resource_id) DO UPDATE SET status='reserved',updated_at=excluded.updated_at
+      WHERE credit_topup_spends.status='released' AND credit_topup_spends.user_id=excluded.user_id;
 
   INSERT INTO short_credit_reservations
     (clip_id,user_id,period_key,export_id,status,created_at,updated_at)
@@ -567,6 +701,58 @@ CREATE TRIGGER trg_release_deleted_paid_short BEFORE DELETE ON exports
 BEGIN
   UPDATE short_credit_reservations SET status='released',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
   WHERE user_id=OLD.user_id AND clip_id=OLD.clip_id AND export_id=OLD.id AND status='reserved';
+END;
+
+-- Per-job purchased credit reservations are settled independently of base plan usage.
+CREATE TRIGGER IF NOT EXISTS trg_finalize_purchased_project AFTER UPDATE OF status ON projects
+WHEN NEW.status='ready' AND OLD.status<>'ready'
+BEGIN
+  UPDATE credit_topup_spends SET status='finalized',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+    WHERE resource_id=NEW.id AND status='reserved';
+END;
+CREATE TRIGGER IF NOT EXISTS trg_release_purchased_project AFTER UPDATE OF status ON projects
+WHEN NEW.status='failed' AND OLD.status<>'failed'
+BEGIN
+  UPDATE credit_topup_wallets SET minutes_balance=minutes_balance+COALESCE((SELECT SUM(amount) FROM credit_topup_spends
+      WHERE resource_id=NEW.id AND user_id=credit_topup_wallets.user_id AND kind='minutes' AND status='reserved'),0),
+    shorts_balance=shorts_balance+COALESCE((SELECT SUM(amount) FROM credit_topup_spends
+      WHERE resource_id=NEW.id AND user_id=credit_topup_wallets.user_id AND kind='shorts' AND status='reserved'),0)
+    WHERE user_id=NEW.user_id;
+  UPDATE credit_topup_spends SET status='released',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+    WHERE resource_id=NEW.id AND status='reserved';
+END;
+CREATE TRIGGER IF NOT EXISTS trg_delete_purchased_project BEFORE DELETE ON projects
+BEGIN
+  UPDATE credit_topup_wallets SET minutes_balance=minutes_balance+COALESCE((SELECT SUM(amount) FROM credit_topup_spends
+      WHERE resource_id=OLD.id AND user_id=credit_topup_wallets.user_id AND kind='minutes' AND status='reserved'),0),
+    shorts_balance=shorts_balance+COALESCE((SELECT SUM(amount) FROM credit_topup_spends
+      WHERE resource_id=OLD.id AND user_id=credit_topup_wallets.user_id AND kind='shorts' AND status='reserved'),0)
+    WHERE user_id=OLD.user_id;
+  UPDATE credit_topup_spends SET status='released',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+    WHERE resource_id=OLD.id AND status='reserved';
+END;
+CREATE TRIGGER IF NOT EXISTS trg_finalize_purchased_export AFTER UPDATE OF status ON exports
+WHEN NEW.status='ready' AND OLD.status<>'ready'
+BEGIN
+  UPDATE credit_topup_spends SET status='finalized',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+    WHERE resource_id=NEW.id AND status='reserved';
+END;
+CREATE TRIGGER IF NOT EXISTS trg_release_purchased_export AFTER UPDATE OF status ON exports
+WHEN NEW.status IN ('failed','expired') AND OLD.status<>NEW.status
+BEGIN
+  UPDATE credit_topup_wallets SET shorts_balance=shorts_balance+COALESCE((SELECT SUM(amount) FROM credit_topup_spends
+    WHERE resource_id=NEW.id AND user_id=credit_topup_wallets.user_id AND kind='shorts' AND status='reserved'),0)
+    WHERE user_id=NEW.user_id;
+  UPDATE credit_topup_spends SET status='released',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+    WHERE resource_id=NEW.id AND status='reserved';
+END;
+CREATE TRIGGER IF NOT EXISTS trg_delete_purchased_export BEFORE DELETE ON exports
+BEGIN
+  UPDATE credit_topup_wallets SET shorts_balance=shorts_balance+COALESCE((SELECT SUM(amount) FROM credit_topup_spends
+    WHERE resource_id=OLD.id AND user_id=credit_topup_wallets.user_id AND kind='shorts' AND status='reserved'),0)
+    WHERE user_id=OLD.user_id;
+  UPDATE credit_topup_spends SET status='released',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+    WHERE resource_id=OLD.id AND status='reserved';
 END;
 
 -- Paid plans render and re-render without consuming AI Short creation credits.

@@ -193,6 +193,8 @@ class UsageOut(BaseModel):
     processing_minutes_remaining: float = 0
     source_minutes_per_short: float | None = None
     source_video_limit_minutes: float = 15
+    purchased_minutes_remaining: float = 0
+    purchased_shorts_remaining: int = 0
     short_unit: str = "source_projects"
     plan_price_paise: int = 0
     period_key: str = ""

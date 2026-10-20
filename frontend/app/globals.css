@@ -297,3 +297,33 @@
   .youtube-paste-button{padding-left:10px!important;padding-right:10px!important}
   .source-card--upload .upload-studio--embedded .drop-zone{min-height:230px}
 }
+
+/* Premium credit balance ribbon and calm, dismissible allowance notifications. */
+.ck-credit-ribbon{display:flex;align-items:stretch;gap:12px;margin:0;padding:18px 34px;background:linear-gradient(115deg,#f6faf4,#fff);border-bottom:1px solid #e4eae0}
+.ck-ribbon-title{display:flex;flex-direction:column;justify-content:center;min-width:190px;flex:1}
+.ck-ribbon-kicker{font-size:10px;letter-spacing:.12em;font-weight:900;color:#307958}
+.ck-ribbon-title p{font-size:11px;color:#738177;margin:5px 0 0}
+.ck-balance-card{min-width:240px;max-width:340px;flex:1;display:flex;align-items:center;gap:12px;background:white;border:1px solid #e0e9df;border-radius:17px;padding:12px 13px;box-shadow:0 6px 20px rgba(21,64,35,.045);transition:transform .2s,box-shadow .2s}
+.ck-balance-card:hover{transform:translateY(-2px);box-shadow:0 13px 30px rgba(21,64,35,.09)}
+.ck-credit-icon{height:37px;width:37px;flex-shrink:0;display:grid;place-items:center;border-radius:12px;background:#eaf5e7;color:#176345}
+.ck-balance-shorts .ck-credit-icon{background:#eff6d8;color:#546e16}
+.ck-balance-detail{display:flex;flex-direction:column;min-width:0;gap:3px;flex:1}
+.ck-balance-detail strong{color:#133b2a;font-weight:900;font-size:18px;white-space:nowrap;letter-spacing:-.4px}
+.ck-balance-detail small{font-size:10px;font-weight:600;color:#64796d;letter-spacing:0}
+.ck-balance-detail span{color:#697a6d;font-size:10px;line-height:1.2}
+.ck-balance-card button{display:flex;align-items:center;justify-content:center;gap:3px;min-height:33px;padding:0 12px;border:0;border-radius:9px;font-size:11px;font-weight:900;background:#176043;color:white;transition:background .2s}
+.ck-balance-card button:hover{background:#0d482f}
+.ck-allowance-notice{margin-top:auto;position:relative;padding:15px 13px;border:1px solid #f0d5bb;border-radius:15px;background:linear-gradient(150deg,#fff8eb,#fffaf3);display:flex;flex-direction:column;align-items:flex-start;gap:8px;animation:creditPanel .28s ease-out}
+.ck-allowance-notice strong{max-width:183px;font-size:12px;line-height:1.4;color:#713f25}
+.ck-allowance-notice p{font-size:10px;color:#8a715f;line-height:1.6;margin:0}
+.ck-notice-close{position:absolute;right:8px;top:8px;padding:5px;border:0;background:transparent;border-radius:50%;color:#936e5c;transition:background .2s}
+.ck-notice-close:hover{background:#f8e4d5}
+.ck-notice-action{width:100%;background:#175a40;color:white;font-weight:900;font-size:11px;border:0;border-radius:10px;padding:11px;transition:background .2s}
+.ck-notice-action:hover{background:#0c422c}
+.sidebar .side-footer{margin-top:auto}
+.ck-allowance-notice + .side-footer{margin-top:14px}
+@keyframes creditOverlay{from{opacity:0}to{opacity:1}}
+@keyframes creditPanel{from{opacity:0;transform:translateY(16px) scale(.975)}to{opacity:1;transform:translateY(0) scale(1)}}
+@media(max-width:1200px){.ck-credit-ribbon{flex-wrap:wrap}.ck-ribbon-title{flex-basis:100%}.ck-balance-card{max-width:none}}
+@media(max-width:650px){.ck-credit-ribbon{padding:14px 17px;gap:9px}.ck-ribbon-title{flex-basis:100%}.ck-balance-card{min-width:0;flex-basis:100%}.ck-balance-detail strong{font-size:17px}}
+@media(prefers-reduced-motion:reduce){.ck-balance-card,.ck-allowance-notice{animation:none;transition:none}}

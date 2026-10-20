@@ -19,7 +19,7 @@ const requirements = [
   [project.includes("No Content Pack yet"), "Missing Content Pack must render a normal empty state"],
   [project.includes("YouTube Shorts titles and descriptions"), "Content Pack empty state must explain full output value"],
   [shell.includes("Content Packs"), "Authenticated sidebar must expose Content Packs"],
-  [shell.includes("Karo Minutes left") && shell.includes("AI Shorts left") && shell.includes("source_video_limit_minutes") && shell.includes("unlimited re-exports of finished Shorts"), "Usage card must show separate minute and Short credits with truthful render rights"],
+  [shell.includes("ck-credit-ribbon") && shell.includes("Karo Minutes") && shell.includes("Source projects") && shell.includes("ck-allowance-notice") && shell.includes("CreditTopupDialog"), "Relocated usage cards must offer separate top-ups and a dismissible warning"],
   [upload.includes("No AI Short credits left for new finished Shorts.") && upload.includes("Existing Shorts can still be edited") && upload.includes("No Karo Minutes left for a new source.") && upload.includes("Open projects"), "Upload screen must differentiate Short capacity from source minutes"],
   [pricing.includes('planFeatureMinutes("mini_pass")') && pricing.includes("5 unique finished AI Shorts") && pricing.includes("Existing Mini Pass purchases retain") && pricing.includes("Unlimited re-exports") && pricing.includes("30 days"), "Mini Pass pricing must state 25 total minutes and 5 finished Shorts, honoring legacy purchases"],
   [css.includes(".side-nav{flex:1;min-height:0;overflow-y:auto"), "Sidebar navigation must remain scrollable on short screens"],

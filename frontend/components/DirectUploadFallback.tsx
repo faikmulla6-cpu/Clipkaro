@@ -74,7 +74,11 @@ export function DirectUploadFallback({ embedded = false, disabled = false, onAct
 
   useEffect(() => {
     api<Preflight>("/system/preflight").then(setPreflight).catch(() => setPreflight(null));
-    api<MinuteAllowance>("/usage").then((usage) => { setResolvedPlan(usage.plan); setQuota(usage); }).catch(() => {});
+    const refreshCredits = () => { void api<MinuteAllowance>("/usage").then((usage) => {
+      setResolvedPlan(usage.plan); setQuota(usage);
+    }).catch(() => undefined); };
+    refreshCredits();
+    window.addEventListener("clipkaro:credits-updated",refreshCredits);
     api<AccountSettings>("/settings")
       .then((saved) => {
         setLanguage(saved.default_language);
@@ -85,6 +89,7 @@ export function DirectUploadFallback({ embedded = false, disabled = false, onAct
         setCategory("auto");
       });
     return () => {
+      window.removeEventListener("clipkaro:credits-updated",refreshCredits);
       eventSourceRef.current?.close();
       if (pollTimerRef.current !== null) window.clearInterval(pollTimerRef.current);
     };

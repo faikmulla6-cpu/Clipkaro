@@ -23,6 +23,7 @@ from app.api.secure_upload import router as secure_upload_router
 from app.api.worker_jobs import router as worker_jobs_router
 from app.api.cloud_uploads import init_cloud_uploads, router as cloud_uploads_router
 from app.api.creator_pulse import init_creator_pulse, router as creator_pulse_router
+from app.api.credit_topups import router as credit_topups_router
 from app.api.post_karo import router as post_karo_router
 from app.core.config import get_settings
 from app.core.database import UsageQuotaExceeded, close_database, execute, fetch_all, fetch_one, init_db
@@ -397,6 +398,7 @@ app.include_router(secure_upload_router, prefix=settings.api_prefix)
 app.include_router(worker_jobs_router, prefix=settings.api_prefix)
 app.include_router(cloud_uploads_router, prefix=settings.api_prefix)
 app.include_router(creator_pulse_router, prefix=settings.api_prefix)
+app.include_router(credit_topups_router, prefix=settings.api_prefix)
 app.include_router(post_karo_router, prefix=settings.api_prefix)
 app.include_router(router, prefix=settings.api_prefix)
 app.include_router(settings_router, prefix=settings.api_prefix)

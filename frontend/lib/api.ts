@@ -145,6 +145,8 @@ export type Usage = {
   processing_minutes_remaining: number;
   source_minutes_per_short?: number | null;
   source_video_limit_minutes?: number;
+  purchased_minutes_remaining?: number;
+  purchased_shorts_remaining?: number;
   short_unit?: "source_projects" | "finished_shorts";
   plan_price_paise?: number;
   period_key: string;

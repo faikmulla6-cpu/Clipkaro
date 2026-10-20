@@ -34,6 +34,7 @@ from app.services.billing import (
 )
 from app.services.legal import checkout_allowed, has_current_legal_acceptance
 from app.api.creator_pulse import reconcile_creator_pulse_webhook
+from app.api.credit_topups import reconcile_credit_topup_webhook
 
 router = APIRouter()
 logger = logging.getLogger("clipkaro.billing")
@@ -1372,6 +1373,16 @@ async def razorpay_webhook(request: Request) -> Response:
         # Creator Pulse top-ups share the signed Razorpay webhook but never share
         # subscription/plan entitlement state. If this server-created Order belongs
         # to Pulse, reconcile it idempotently and stop before normal plan billing.
+        credit_result = await reconcile_credit_topup_webhook(event_type, payment, order)
+        if credit_result is not None:
+            await _complete_webhook_event(
+                event_id, user_id=str(credit_result.get("user_id") or "") or None,
+                event_type=event_type, plan=None, amount=int(credit_result.get("amount") or 0),
+                status=str(credit_result.get("status") or "ignored"),
+                payload_json=sanitized_payload_json,
+            )
+            return Response(status_code=204)
+
         pulse_result = await reconcile_creator_pulse_webhook(event_type, payment, order)
         if pulse_result is not None:
             await _complete_webhook_event(
