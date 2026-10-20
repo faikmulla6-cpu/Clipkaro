@@ -196,7 +196,7 @@ def test_modal_app_keeps_api_and_media_as_separate_functions() -> None:
     assert "ffmpeg" in source and "clamav" in source and "libass9" in source
     assert 'modal.Secret.from_name(SECRET_NAME)' in source
     assert 'modal.Secret.from_name(POST_KARO_SECRET_NAME)' in source
-    assert 'secrets=[production_secret, post_karo_secret]' in source
+    assert 'secrets=[production_secret, post_karo_secret, smart_layout_canary_secret]' in source
 
 
 def test_export_mobile_safety_contract_is_single_flight_and_server_authoritative() -> None:

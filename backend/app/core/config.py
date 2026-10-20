@@ -88,9 +88,16 @@ class Settings(BaseSettings):
     elevenlabs_asr_chunk_seconds: int = 300
     elevenlabs_asr_timeout_seconds: float = 120.0
     asr_provider_max_attempts: int = 2
-    asr_api_max_audio_minutes: int = 60
+    # Maximum complete source duration, not per-provider request length.
+    # Growth/Pro/Agency promise up to 90/180/240-minute sources respectively.
+    # ASR still chunks each source into short provider-sized requests, with
+    # an independent bounded chunk count. Never accept paid video minutes and
+    # reject them simply because of the old global 60-minute ASR ceiling.
+    asr_api_max_audio_minutes: int = 240
     asr_api_max_chunk_mb: int = 24
-    asr_api_max_chunks: int = 24
+    # 240-minute Stage-1 candidate at 300s spans with 2s overlap is 49 chunks;
+    # the legacy 600s path requires 25. Both stay safely below this cap.
+    asr_api_max_chunks: int = 64
     asr_chunk_seconds: int = 600
     asr_chunk_overlap_seconds: int = 2
     alignment_backend: str = "native"

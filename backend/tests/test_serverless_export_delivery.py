@@ -23,7 +23,11 @@ def test_creator_caption_position_is_authoritative_in_preview_and_render() -> No
 
     assert "request.caption_position" in worker
     assert "effective_position" not in worker
-    assert 'const positionClass = captionY === null ? "position-" + captionPosition : "caption-custom-position";' in editor
+    # Dual Stack intentionally overrides the user caption location only while
+    # two live panels and the center caption strip are actually displayed.
+    assert 'actualScene?.layout === "dual_stack"' in editor
+    assert '"position-center smart-stack-captions"' in editor
+    assert 'captionY === null ? "position-" + captionPosition : "caption-custom-position"' in editor
     assert "caption_position: captionPosition" in editor
     assert "caption_y: captionY" in editor
     assert "effectiveCaptionPosition" not in editor

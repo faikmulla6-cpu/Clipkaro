@@ -74,7 +74,7 @@ def _seed_ready_project(user_id: str, *, suffix: str = "a") -> tuple[str, str]:
     source_path.parent.mkdir(parents=True, exist_ok=True)
     source_path.write_bytes(b"retained-test-source")
     asyncio.run(execute(
-        "INSERT INTO videos VALUES (?, ?, ?, 90, 720, 1280, 100, ?, 'ready', ?, ?)",
+        "INSERT INTO videos(id,project_id,original_filename,duration,width,height,file_size,file_path,status,created_at,expires_at) VALUES (?, ?, ?, 90, 720, 1280, 100, ?, 'ready', ?, ?)",
         (video_id, project_id, "source.mp4", str(source_path), timestamp, timestamp),
     ))
     return project_id, video_id
@@ -106,7 +106,7 @@ def test_reprocess_is_rejected_while_project_or_export_is_active(client: TestCli
         (clip_id, video_id, timestamp, timestamp),
     ))
     asyncio.run(execute(
-        "INSERT INTO exports VALUES (?, ?, ?, ?, '720p', '9:16', 'clean', 1, 'queued', 0, NULL, ?, ?)",
+        "INSERT INTO exports(id,clip_id,user_id,output_path,resolution,aspect_ratio,caption_style,watermark,status,progress,error,created_at,expires_at) VALUES (?, ?, ?, ?, '720p', '9:16', 'clean', 1, 'queued', 0, NULL, ?, ?)",
         ("export-busy", clip_id, user["id"], str(get_settings().export_dir / "busy.mp4"), timestamp, timestamp),
     ))
 
@@ -136,7 +136,7 @@ def test_reanalysis_preserves_historical_exports_and_hides_superseded_moments(cl
         (disposable_clip, video_id, timestamp, timestamp),
     ))
     asyncio.run(execute(
-        "INSERT INTO exports VALUES (?, ?, ?, ?, '720p', '9:16', 'clean', 1, 'ready', 100, NULL, ?, ?)",
+        "INSERT INTO exports(id,clip_id,user_id,output_path,resolution,aspect_ratio,caption_style,watermark,status,progress,error,created_at,expires_at) VALUES (?, ?, ?, ?, '720p', '9:16', 'clean', 1, 'ready', 100, NULL, ?, ?)",
         ("export-history", exported_clip, user["id"], str(get_settings().export_dir / "history.mp4"), timestamp, timestamp),
     ))
     asyncio.run(execute(

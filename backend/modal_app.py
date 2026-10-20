@@ -148,7 +148,10 @@ def api():
 @app.function(
     image=media_image,
     secrets=[production_secret, post_karo_secret, smart_layout_canary_secret],
-    timeout=3600,
+    # Long paid sources (up to 240 min) require sequential, bounded ASR chunks.
+    # The 1-hour worker timeout used for <=60-minute uploads was insufficient.
+    # Per-FFmpeg and per-provider request limits remain independently bounded.
+    timeout=7200,
     cpu=2.0,
     memory=4096,
     # Modal currently provides a 512 GiB default ephemeral-disk quota. ClipKaro

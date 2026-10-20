@@ -108,10 +108,20 @@ def as_user(row: dict) -> UserOut:
 
 @router.get("/health")
 async def health() -> dict:
+    """API health: local FFmpeg is required only for an in-process worker.
+
+    The no-VPS deployment intentionally installs FFmpeg in its separate Modal
+    media image, not in the public API. A separate production preflight probes
+    media/storage/payment readiness. Do not claim that API-local FFmpeg exists.
+    """
     from app.services.video import ffmpeg_available
-    media_ready = ffmpeg_available()
-    return {"status":"healthy" if media_ready else "degraded","service":"clipkaro-api",
-            "version":APP_VERSION,"ffmpeg":media_ready,"realtime":"sse"}
+    local_ffmpeg = ffmpeg_available()
+    delegated = get_settings().production_serverless_mode
+    media_ready = local_ffmpeg or delegated
+    return {"status": "healthy" if media_ready else "degraded",
+            "service": "clipkaro-api", "version": APP_VERSION,
+            "ffmpeg": local_ffmpeg, "media_processing": "delegated" if delegated else "local",
+            "realtime": "sse"}
 
 
 @router.get("/caption-styles")

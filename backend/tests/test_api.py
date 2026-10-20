@@ -751,7 +751,7 @@ def test_export_slots_are_atomically_reserved_and_refunded(client: TestClient):
         async def reserve(export_id: str) -> bool:
             try:
                 await execute(
-                    "INSERT INTO exports VALUES (?, ?, ?, ?, '720p', '9:16', 'clean', 1, 'queued', 0, NULL, ?, ?)",
+                    "INSERT INTO exports(id,clip_id,user_id,output_path,resolution,aspect_ratio,caption_style,watermark,status,progress,error,created_at,expires_at) VALUES (?, ?, ?, ?, '720p', '9:16', 'clean', 1, 'queued', 0, NULL, ?, ?)",
                     (export_id, clip_id, user_id, f"/tmp/{export_id}.mp4", created, expires),
                 )
                 return True
@@ -775,7 +775,7 @@ def test_export_slots_are_atomically_reserved_and_refunded(client: TestClient):
 
     retry_id = "race-export-retry"
     asyncio.run(execute(
-        "INSERT INTO exports VALUES (?, ?, ?, ?, '720p', '9:16', 'clean', 1, 'queued', 0, NULL, ?, ?)",
+        "INSERT INTO exports(id,clip_id,user_id,output_path,resolution,aspect_ratio,caption_style,watermark,status,progress,error,created_at,expires_at) VALUES (?, ?, ?, ?, '720p', '9:16', 'clean', 1, 'queued', 0, NULL, ?, ?)",
         (retry_id, clip_id, user_id, f"/tmp/{retry_id}.mp4", created, expires),
     ))
     asyncio.run(execute("UPDATE exports SET status='ready' WHERE id=?", (retry_id,)))

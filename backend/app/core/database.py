@@ -163,7 +163,7 @@ CREATE TABLE IF NOT EXISTS videos (
   id TEXT PRIMARY KEY, project_id TEXT NOT NULL, original_filename TEXT NOT NULL,
   duration REAL DEFAULT 0, width INTEGER DEFAULT 0, height INTEGER DEFAULT 0,
   file_size INTEGER DEFAULT 0, file_path TEXT NOT NULL, status TEXT NOT NULL,
-  created_at TEXT NOT NULL, expires_at TEXT NOT NULL,
+  object_generation TEXT, created_at TEXT NOT NULL, expires_at TEXT NOT NULL,
   FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 CREATE TABLE IF NOT EXISTS transcripts (
@@ -196,7 +196,7 @@ CREATE TABLE IF NOT EXISTS exports (
   id TEXT PRIMARY KEY, clip_id TEXT NOT NULL, user_id TEXT NOT NULL, output_path TEXT NOT NULL,
   resolution TEXT NOT NULL, aspect_ratio TEXT NOT NULL DEFAULT '9:16', caption_style TEXT NOT NULL,
   watermark INTEGER NOT NULL, status TEXT NOT NULL, progress INTEGER NOT NULL DEFAULT 0,
-  error TEXT, created_at TEXT NOT NULL, expires_at TEXT NOT NULL,
+  error TEXT, object_generation TEXT, created_at TEXT NOT NULL, expires_at TEXT NOT NULL,
   FOREIGN KEY(clip_id) REFERENCES clips(id) ON DELETE CASCADE,
   FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 );
@@ -852,6 +852,19 @@ async def init_db() -> None:
             for name, statement in migrations.items():
                 if name not in columns:
                     await db.execute(statement)
+            # Source and export object generations were present in PostgreSQL
+            # but omitted from the SQLite schema. Both new and pre-existing
+            # local databases must support the same upload/detail queries.
+            for table in ("videos", "exports"):
+                media_columns = {
+                    row[1] for row in await (
+                        await db.execute(f"PRAGMA table_info({table})")
+                    ).fetchall()
+                }
+                if "object_generation" not in media_columns:
+                    await db.execute(
+                        f"ALTER TABLE {table} ADD COLUMN object_generation TEXT"
+                    )
             # Upgrade a pre-existing SQLite installation without removing
             # any old purchased minutes, prior Razorpay plan IDs or legacy terms.
             await db.execute("""INSERT OR IGNORE INTO billing_plan_versions

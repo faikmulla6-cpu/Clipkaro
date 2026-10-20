@@ -103,13 +103,13 @@ class DualStackCaptionBoardTests(unittest.TestCase):
             output = Path(folder) / "frame.png"
             video_filter = (
                 "drawbox=x=0:y=844:w=1080:h=232:color=0x111827:t=fill,"
-                f"ass=filename='{file}'"
+                "ass=filename=captions.ass"
             )
             result = subprocess.run([
                 ffmpeg, "-nostdin", "-loglevel", "error", "-y",
                 "-f", "lavfi", "-i", "color=c=0x545454:s=1080x1920:r=1:d=1",
                 "-vf", video_filter, "-frames:v", "1", str(output),
-            ], capture_output=True, timeout=45)
+            ], capture_output=True, timeout=45, cwd=folder)
             self.assertEqual(result.returncode, 0,
                              result.stderr.decode("utf-8", "replace")[-600:])
             # Decode a small crop of the render using FFmpeg itself. We do

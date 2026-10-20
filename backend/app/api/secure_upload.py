@@ -73,7 +73,7 @@ async def upload_project(
             (project_id, user["id"], title[:120], language, category, timestamp, timestamp),
         )
         await execute(
-            "INSERT INTO videos VALUES (?, ?, ?, 0, 0, 0, ?, ?, 'uploaded', ?, ?)",
+            "INSERT INTO videos(id,project_id,original_filename,duration,width,height,file_size,file_path,status,created_at,expires_at) VALUES (?, ?, ?, 0, 0, 0, ?, ?, 'uploaded', ?, ?)",
             (video_id, project_id, original_name, size, str(destination), timestamp, expires),
         )
         job_id = await create_job(

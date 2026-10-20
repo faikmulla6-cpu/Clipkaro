@@ -125,7 +125,7 @@ def test_worker_reconstructs_full_export_request_before_render(client: TestClien
         (project_id, user["id"], "Render project", timestamp, timestamp),
     ))
     asyncio.run(execute(
-        "INSERT INTO videos VALUES (?, ?, ?, 60, 1080, 1920, 7, ?, 'ready', ?, ?)",
+        "INSERT INTO videos(id,project_id,original_filename,duration,width,height,file_size,file_path,status,created_at,expires_at) VALUES (?, ?, ?, 60, 1080, 1920, 7, ?, 'ready', ?, ?)",
         (video_id, project_id, "video.mp4", str(video_path), timestamp, timestamp),
     ))
     asyncio.run(execute(
@@ -133,7 +133,7 @@ def test_worker_reconstructs_full_export_request_before_render(client: TestClien
         (clip_id, video_id, "Original hook", "Title", "Reason", "Transcript", timestamp, timestamp),
     ))
     asyncio.run(execute(
-        "INSERT INTO exports VALUES (?, ?, ?, ?, '1080p', '9:16', 'bold', 0, 'queued', 0, NULL, ?, ?)",
+        "INSERT INTO exports(id,clip_id,user_id,output_path,resolution,aspect_ratio,caption_style,watermark,status,progress,error,created_at,expires_at) VALUES (?, ?, ?, ?, '1080p', '9:16', 'bold', 0, 'queued', 0, NULL, ?, ?)",
         (export_id, clip_id, user["id"], str(output_path), timestamp, timestamp),
     ))
     request = ExportRequest(
@@ -207,7 +207,7 @@ def test_smart_layout_cache_uses_private_rows_and_cascades_on_project_deletion(c
         (project_id,user["id"],"V2 private-cache fixture",stamp,stamp),
     ))
     asyncio.run(execute(
-        "INSERT INTO videos VALUES (?,?,?,60,1280,720,2000,?,'ready',?,?)",
+        "INSERT INTO videos(id,project_id,original_filename,duration,width,height,file_size,file_path,status,created_at,expires_at) VALUES (?,?,?,60,1280,720,2000,?,'ready',?,?)",
         (video_id,project_id,"source.mp4","users/owner/source.mp4",stamp,source_expires),
     ))
     asyncio.run(execute(
