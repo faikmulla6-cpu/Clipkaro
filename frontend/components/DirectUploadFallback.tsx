@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AccountSettings, API_URL, api } from "@/lib/api";
 import { allowedUploadMb } from "@/lib/upload-policy";
+import { MinuteAllowance, readLocalVideoDurationSeconds, uploadQuotaWarning } from "@/lib/upload-minutes";
 
 const UPLOAD_URL = `${API_URL}/projects/upload`;
 const DIRECT_GCS_UPLOAD = process.env.NEXT_PUBLIC_UPLOAD_MODE === "direct_gcs";
@@ -59,6 +60,8 @@ export function DirectUploadFallback({ embedded = false, disabled = false, onAct
   const activeSession = useRef<string | null>(null);
   const cancelled = useRef(false);
   const [resolvedPlan, setResolvedPlan] = useState("free");
+  const [quota, setQuota] = useState<MinuteAllowance | null>(null);
+  const [selectedDuration, setSelectedDuration] = useState<number | null>(null);
   // Runtime provider capability protects Hostinger builds missing the optional
   // NEXT_PUBLIC_UPLOAD_MODE variable. Local storage still uses API uploads.
   const directCloud = DIRECT_GCS_UPLOAD ||
@@ -71,7 +74,7 @@ export function DirectUploadFallback({ embedded = false, disabled = false, onAct
 
   useEffect(() => {
     api<Preflight>("/system/preflight").then(setPreflight).catch(() => setPreflight(null));
-    api<{plan: string}>("/usage").then((usage) => setResolvedPlan(usage.plan)).catch(() => {});
+    api<MinuteAllowance>("/usage").then((usage) => { setResolvedPlan(usage.plan); setQuota(usage); }).catch(() => {});
     api<AccountSettings>("/settings")
       .then((saved) => {
         setLanguage(saved.default_language);
@@ -102,9 +105,19 @@ export function DirectUploadFallback({ embedded = false, disabled = false, onAct
       return;
     }
     setFile(next);
+    setSelectedDuration(null);
     setError("");
     setJob(null);
   }
+
+  useEffect(() => {
+    if (!file) return;
+    let isCurrent = true;
+    void readLocalVideoDurationSeconds(file).then((duration) => {
+      if (isCurrent) setSelectedDuration(duration);
+    });
+    return () => { isCurrent = false; };
+  }, [file]);
 
   function stopWatch() {
     eventSourceRef.current?.close();
@@ -231,6 +244,15 @@ export function DirectUploadFallback({ embedded = false, disabled = false, onAct
     activeSession.current = null;
     const title = (document.getElementById("project-title") as HTMLInputElement)?.value || file.name.replace(/\.[^.]+$/, "");
     try {
+      // Verify latest allowance BEFORE transferring source media to storage.
+      // The backend independently checks actual source duration afterwards.
+      const currentQuota = await api<MinuteAllowance>("/usage");
+      setResolvedPlan(currentQuota.plan);
+      setQuota(currentQuota);
+      const duration = selectedDuration ?? await readLocalVideoDurationSeconds(file);
+      const quotaWarning = uploadQuotaWarning(duration, currentQuota);
+      if (quotaWarning) throw new Error(quotaWarning);
+
       if (directCloud) {
         const contentType = file.type || "application/octet-stream";
         const session = await api<UploadSession>("/uploads/init", {
@@ -280,6 +302,7 @@ export function DirectUploadFallback({ embedded = false, disabled = false, onAct
 
   const activeIndex = job ? stages.findIndex((stage) => stage[0] === job.stage) : -1;
   const waitingForAsr = Boolean(job?.asr_state === "queued" && job.queue_position && job.queue_position > 0);
+  const earlyQuotaWarning = file ? uploadQuotaWarning(selectedDuration, quota) : null;
 
   if (job) {
     const diagnostic = job.message || job.error || "Processing failed without a diagnostic. Please try again.";
@@ -308,7 +331,7 @@ export function DirectUploadFallback({ embedded = false, disabled = false, onAct
       {preflight && !preflight.ready && !embedded && <div className="preflight-warning"><AlertCircle size={20}/><div><b>Processing engine is not ready</b>{preflight.problems.map((problem) => <p key={problem}>{problem}</p>)}<small>{preflight.recommendation}</small></div></div>}
       <div className={`drop-zone ${file ? "has-file" : ""} ${disabled ? "is-disabled" : ""}`} onClick={() => !disabled && !file && input.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); choose(event.dataTransfer.files[0]); }}>
         <input ref={input} type="file" disabled={disabled} accept=".mp4,.mov,.webm,.mkv,video/mp4,video/quicktime,video/webm,video/x-matroska,video/matroska,application/x-matroska,application/matroska" hidden onChange={(event) => choose(event.target.files?.[0])}/>
-        {file ? <div className="selected-file"><div className="file-icon"><FileVideo size={27}/></div><div className="file-copy"><b>{file.name}</b><span>{(file.size / 1024 / 1024).toFixed(1)} MB · Ready for AI analysis</span></div><span className="ready-pill"><Check size={14}/> Ready</span><button className="icon-btn" onClick={(event) => { event.stopPropagation(); setFile(null); }}><X size={18}/></button></div> : <><div className="upload-orb"><CloudUpload size={30}/></div><h2>Drop your long video here</h2><p>We&apos;ll find the strongest hooks, lessons and stories.</p><button className="secondary-btn"><Upload size={16}/> Choose video</button><span className="file-help">MP4, MOV, WebM or MKV · Up to {fileLimitMb.toLocaleString()} MB · Private by default</span></>}
+        {file ? <div className="selected-file"><div className="file-icon"><FileVideo size={27}/></div><div className="file-copy"><b>{file.name}</b><span>{(file.size / 1024 / 1024).toFixed(1)} MB · {earlyQuotaWarning ? "Not enough Karo Minutes" : "Ready for AI analysis"}</span></div><span className="ready-pill"><Check size={14}/> Ready</span><button className="icon-btn" onClick={(event) => { event.stopPropagation(); setFile(null); }}><X size={18}/></button></div> : <><div className="upload-orb"><CloudUpload size={30}/></div><h2>Drop your long video here</h2><p>We&apos;ll find the strongest hooks, lessons and stories.</p><button className="secondary-btn"><Upload size={16}/> Choose video</button><span className="file-help">MP4, MOV, WebM or MKV · Up to {fileLimitMb.toLocaleString()} MB · Private by default</span></>}
       </div>
 
       {file && <div className="upload-options">
@@ -317,9 +340,10 @@ export function DirectUploadFallback({ embedded = false, disabled = false, onAct
         <div className="field"><label>Content type</label><select id="category" value={category} onChange={(event) => setCategory(event.target.value as AccountSettings["creator_category"])}><option value="auto">Let AI decide</option><option value="education">Education</option><option value="podcast">Podcast</option><option value="business">Business</option><option value="motivation">Motivation</option><option value="spiritual">Spiritual</option><option value="local-business">Local business</option></select></div>
       </div>}
 
+      {earlyQuotaWarning && <div className="error-banner"><AlertCircle size={18}/><span>{earlyQuotaWarning} <a href="/pricing">View plans</a></span></div>}
       {busy && uploadProgress < 100 && <div className="processing-box"><div><Loader2 className="spin" size={20}/><div><b>Uploading securely</b><span>{uploadProgress}% transferred</span></div><strong>{uploadProgress}%</strong><button type="button" className="secondary-btn" onClick={cancelUpload}>Cancel</button></div><div className="progress large"><span style={{ width: `${uploadProgress}%` }}/></div></div>}
       {error && <div className="error-banner"><AlertCircle size={18}/><span>{error}</span></div>}
-      <div className="studio-actions"><span><Check size={15}/> I own or have permission to use this video.</span><button className="primary-btn" disabled={!file || busy || disabled || preflight?.ready === false} onClick={upload}><Sparkles size={17}/> {preflight?.ready === false ? "Fix processing engine first" : "Find my best moments"} <ChevronRight size={17}/></button></div>
+      <div className="studio-actions"><span><Check size={15}/> I own or have permission to use this video.</span><button className="primary-btn" disabled={!file || busy || disabled || Boolean(earlyQuotaWarning) || preflight?.ready === false} onClick={upload}><Sparkles size={17}/> {preflight?.ready === false ? "Fix processing engine first" : "Find my best moments"} <ChevronRight size={17}/></button></div>
       {!embedded && <div className="how-grid">{[["01", "Upload privately", "Your original stays yours."], ["02", "Watch AI work", "Live stages, no mystery spinner."], ["03", "Choose & polish", "Edit only the moments you want."]].map((item) => <div key={item[0]}><span>{item[0]}</span><div><b>{item[1]}</b><p>{item[2]}</p></div></div>)}</div>}
     </div>
   );
