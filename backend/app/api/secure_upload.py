@@ -16,6 +16,7 @@ from app.services.hinglish_stage1_routing import resolve_stage1_route
 from app.services.media_retention import source_media_expiry
 from app.services.upload_scanner import UploadMalwareDetected, UploadScannerUnavailable, scan_upload
 from app.services.video import save_upload
+from app.services.upload_limits import allowed_upload_mb
 
 
 router = APIRouter()
@@ -49,7 +50,7 @@ async def upload_project(
     destination = settings.upload_dir / f"{video_id}{ext}"
     original_name = Path(file.filename or "video").name
 
-    size = await save_upload(file, destination)
+    size = await save_upload(file, destination, size_limit_mb=allowed_upload_mb(limits.plan, cloud_multipart=False))
     try:
         scan = await scan_upload(destination)
     except UploadMalwareDetected as exc:

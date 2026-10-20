@@ -100,6 +100,19 @@ smart_layout_canary_secret = modal.Secret.from_name(SMART_LAYOUT_CANARY_SECRET_N
 
 @app.function(
     image=api_image,
+    secrets=[production_secret, post_karo_secret, smart_layout_canary_secret],
+    timeout=300,
+    schedule=modal.Period(hours=6),
+)
+def cleanup_expired_uploads() -> int:
+    """Remove expired, unconsumed private uploads without touching live jobs."""
+    from app.services.upload_cleanup import sweep_expired_uploads
+
+    return asyncio.run(sweep_expired_uploads())
+
+
+@app.function(
+    image=api_image,
     secrets=[production_secret],
     timeout=300,
 )

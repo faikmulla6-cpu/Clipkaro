@@ -14,7 +14,7 @@ type Job = {
   status: string; progress: number; stage: string; message: string; error?: string;
   project_id?: string; asr_state?: "queued" | "running"; queue_position?: number;
 };
-type Preflight = { ready: boolean; problems: string[]; recommendation: string };
+type Preflight = { ready: boolean; problems: string[]; recommendation: string; checks?: { storage?: boolean; object_storage_provider?: string } };
 type YouTubeImport = { project_id: string; job_id: string; status: string; youtube_video_id: string };
 
 const STAGES = [
@@ -58,6 +58,8 @@ export function UploadStudio() {
   const pollTimerRef = useRef<number | null>(null);
   const activeJobRef = useRef<string | null>(null);
   const videoId = useMemo(() => youtubeVideoId(youtubeUrl), [youtubeUrl]);
+  const directCloud = DIRECT_GCS_UPLOAD ||
+    (preflight?.checks?.storage === true && preflight.checks.object_storage_provider === "s3");
 
   useEffect(() => {
     api<Preflight>("/system/preflight").then(setPreflight).catch(() => setPreflight(null));
@@ -169,7 +171,7 @@ export function UploadStudio() {
   const creationBlocked = noShortCredits || noKaroMinutes;
   const miniPassSourceCap = usage?.source_video_limit_minutes || usage?.source_minutes_per_short || 15;
   return (
-    <div className="mx-auto w-full max-w-6xl" data-upload-fallback={DIRECT_GCS_UPLOAD ? `${DIRECT_UPLOAD_FALLBACK.init}:${DIRECT_UPLOAD_FALLBACK.completeSuffix}` : "api"}>
+    <div className="mx-auto w-full max-w-6xl" data-upload-fallback={directCloud ? `${DIRECT_UPLOAD_FALLBACK.init}:${DIRECT_UPLOAD_FALLBACK.completeSuffix}` : "api"}>
       {preflight && !preflight.ready && <div className="mb-5 flex gap-3 rounded-2xl border border-amber-300/30 bg-amber-50 p-4 text-sm text-amber-950"><AlertCircle className="shrink-0" size={20}/><div><b>Processing engine needs attention</b>{preflight.problems.map((item) => <p className="mt-1" key={item}>{item}</p>)}<small className="mt-2 block opacity-70">{preflight.recommendation}</small></div></div>}
       {creationBlocked && usage && <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-amber-300/35 bg-amber-50 p-4 text-sm text-amber-950 sm:flex-row sm:items-center"><Clock3 className="shrink-0" size={20}/><div className="flex-1"><b>{miniPassExpired ? "Your Mini Pass creation allowance has ended (Shorts, minutes or time limit)." : noShortCredits ? "No AI Short credits left for new finished Shorts." : "No Karo Minutes left for a new source."}</b><p className="mt-1">{miniPassExpired ? "Buy another ₹59 Mini Pass to create more Shorts. Your existing 5 Shorts can still be edited, exported and re-exported." : noShortCredits ? "Your finished Short allowance is used. Existing Shorts can still be edited and re-exported without another paid credit." : "Processing another source needs more Karo Minutes. Existing Shorts can still be edited, exported and re-exported."}</p></div><Link href={miniPassExpired?"/pricing":"/projects"} className="shrink-0 rounded-xl bg-[#165f43] px-4 py-2.5 text-xs font-black text-white">{miniPassExpired?"Buy another pass":"Open projects"}</Link></div>}
 
@@ -183,7 +185,7 @@ export function UploadStudio() {
               {usage && <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#165f43]/10 bg-[#f5f8f3] px-2.5 py-1 text-[10px] font-bold text-[#52685f]"><Clock3 size={12}/>{perShortPlan ? `${resolvedShortsRemaining} AI Shorts · ${minutesLeft} Karo Minutes · max ${miniPassSourceCap} min/video` : `${resolvedShortsRemaining} AI Shorts · ${minutesLeft} min`}</span>}
             </div>
             <div className="source-card-notice source-card-notice--success mb-4 flex items-start gap-2.5 rounded-2xl p-3 text-xs leading-5 text-[#365443]"><Check className="mt-0.5 shrink-0 text-[#165f43]" size={15}/><span><b>Best compatibility.</b> Uploading a supported video file does not depend on YouTube link access or video permissions.</span></div>
-            <DirectUploadFallback embedded disabled={busy || creationBlocked} onActivityChange={setFileUploadActive} />
+            <DirectUploadFallback embedded plan={usage?.plan} disabled={busy || creationBlocked} onActivityChange={setFileUploadActive} />
           </div>
 
           <div className="source-card source-card--youtube rounded-[28px] p-4 backdrop-blur-xl sm:p-5">
@@ -203,7 +205,7 @@ export function UploadStudio() {
             {fileUploadActive && <div className="mt-4 flex gap-2 rounded-xl border border-[#dfff57]/20 bg-[#dfff57]/10 p-3 text-xs leading-5 text-[#efffb2]"><Loader2 className="mt-0.5 shrink-0 animate-spin" size={15}/> File upload is active. YouTube import is temporarily paused to prevent duplicate processing.</div>}
             {error && <div className="mt-4 flex gap-2 rounded-xl border border-rose-300/20 bg-rose-400/10 p-3 text-xs leading-5 text-rose-50"><AlertCircle className="shrink-0" size={16}/>{error}</div>}
             <button type="button" disabled={!videoId || !rightsConfirmed || busy || fileUploadActive || noKaroMinutes || preflight?.ready === false} onClick={startImport} className="source-cta source-cta--youtube mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-5 py-4 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0">{busy ? <Loader2 className="animate-spin" size={17}/> : <Sparkles size={17}/>} {busy ? "Starting secure import…" : "Find my best moments"} {!busy && <ChevronRight size={17}/>}</button>
-            <div className="source-meta mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1 text-[10px] font-semibold"><span>500 MB source cap</span><span>{perShortPlan ? `Up to ${miniPassSourceCap} min per source video` : "Plan minute limits apply"}</span><span>Private processing</span></div>
+            <div className="source-meta mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1 text-[10px] font-semibold"><span>500 MB YouTube-import cap</span><span>{perShortPlan ? `Up to ${miniPassSourceCap} min per source video` : "Plan minute limits apply"}</span><span>Private processing</span></div>
           </div>
         </div>
       </section>

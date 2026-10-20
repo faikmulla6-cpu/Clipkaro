@@ -52,11 +52,13 @@ def upload_type_supported(filename: str | None, content_type: str | None) -> boo
     return mime.startswith("video/")
 
 
-async def save_upload(file: UploadFile, destination: Path) -> int:
+async def save_upload(file: UploadFile, destination: Path, *,
+                      size_limit_mb: int | None = None) -> int:
     settings = get_settings()
     if not upload_type_supported(file.filename, file.content_type):
         raise HTTPException(415, "Only MP4, MOV, WebM, and MKV videos are supported.")
-    max_bytes = settings.max_upload_mb * 1024 * 1024
+    limit_mb = int(size_limit_mb or min(settings.max_upload_mb, 500))
+    max_bytes = limit_mb * 1024 * 1024
     total = 0
     destination.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -64,7 +66,7 @@ async def save_upload(file: UploadFile, destination: Path) -> int:
             while chunk := await file.read(1024 * 1024):
                 total += len(chunk)
                 if total > max_bytes:
-                    raise HTTPException(413, f"Video exceeds the {settings.max_upload_mb} MB plan limit.")
+                    raise HTTPException(413, f"Video exceeds the {limit_mb} MB upload limit.")
                 output.write(chunk)
     except Exception:
         destination.unlink(missing_ok=True)

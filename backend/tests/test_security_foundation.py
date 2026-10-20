@@ -209,9 +209,11 @@ def test_local_clamscan_timeout_scales_with_bounded_upload_size(tmp_path):
         assert _local_scan_timeout_seconds(path) >= 138
         with path.open("wb") as handle:
             handle.truncate(500 * 1024 * 1024)
-        assert _local_scan_timeout_seconds(path) == 600
-        settings.clamav_timeout_seconds = 900
-        assert _local_scan_timeout_seconds(path) == 900
+        # Existing upload sizes retain the original 2s/MB scaling, while
+        # the former 600s cap is raised for larger paid sources.
+        assert _local_scan_timeout_seconds(path) == 1030
+        settings.clamav_timeout_seconds = 1200
+        assert _local_scan_timeout_seconds(path) == 1200
     finally:
         settings.clamav_timeout_seconds = original_timeout
 

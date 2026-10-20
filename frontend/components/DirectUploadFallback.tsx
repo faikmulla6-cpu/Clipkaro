@@ -4,6 +4,7 @@ import { AlertCircle, Check, ChevronRight, CloudUpload, FileVideo, Loader2, Lock
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AccountSettings, API_URL, api } from "@/lib/api";
+import { allowedUploadMb } from "@/lib/upload-policy";
 
 const UPLOAD_URL = `${API_URL}/projects/upload`;
 const DIRECT_GCS_UPLOAD = process.env.NEXT_PUBLIC_UPLOAD_MODE === "direct_gcs";
@@ -26,12 +27,14 @@ type Job = {
 
 type Preflight = {
   ready: boolean;
-  checks: { ffmpeg: boolean; whisper: boolean; storage: boolean; model: string };
+  checks: { ffmpeg: boolean; whisper: boolean; storage: boolean; model: string; object_storage_provider?: string };
   problems: string[];
   recommendation: string;
 };
 
-type UploadSession = { upload_session_id: string; method: "PUT"; upload_url: string; headers: Record<string, string>; expires_at: string };
+type UploadSession =
+  | { upload_session_id: string; method: "PUT"; upload_url: string; headers: Record<string, string>; expires_at: string }
+  | { upload_session_id: string; method: "MULTIPART"; part_size: number; parts: { part_number: number; upload_url: string }[]; expires_at: string };
 type UploadCompletion = { project_id: string; job_id: string; status: string };
 
 const stages = [
@@ -42,7 +45,7 @@ const stages = [
   ["finishing", "Build previews"],
 ];
 
-export function DirectUploadFallback({ embedded = false, disabled = false, onActivityChange }: { embedded?: boolean; disabled?: boolean; onActivityChange?: (active: boolean) => void } = {}) {
+export function DirectUploadFallback({ embedded = false, disabled = false, onActivityChange, plan }: { embedded?: boolean; disabled?: boolean; onActivityChange?: (active: boolean) => void; plan?: string } = {}) {
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -52,7 +55,15 @@ export function DirectUploadFallback({ embedded = false, disabled = false, onAct
   const [language, setLanguage] = useState<AccountSettings["default_language"]>("auto");
   const [category, setCategory] = useState<AccountSettings["creator_category"]>("auto");
   const input = useRef<HTMLInputElement>(null);
-  const activeUpload = useRef<XMLHttpRequest | null>(null);
+  const activeUploads = useRef<Set<XMLHttpRequest>>(new Set());
+  const activeSession = useRef<string | null>(null);
+  const cancelled = useRef(false);
+  const [resolvedPlan, setResolvedPlan] = useState("free");
+  // Runtime provider capability protects Hostinger builds missing the optional
+  // NEXT_PUBLIC_UPLOAD_MODE variable. Local storage still uses API uploads.
+  const directCloud = DIRECT_GCS_UPLOAD ||
+    (preflight?.checks.storage === true && preflight.checks.object_storage_provider === "s3");
+  const fileLimitMb = allowedUploadMb(plan || resolvedPlan, directCloud);
   const eventSourceRef = useRef<EventSource | null>(null);
   const pollTimerRef = useRef<number | null>(null);
   const activeJobRef = useRef<string | null>(null);
@@ -60,6 +71,7 @@ export function DirectUploadFallback({ embedded = false, disabled = false, onAct
 
   useEffect(() => {
     api<Preflight>("/system/preflight").then(setPreflight).catch(() => setPreflight(null));
+    api<{plan: string}>("/usage").then((usage) => setResolvedPlan(usage.plan)).catch(() => {});
     api<AccountSettings>("/settings")
       .then((saved) => {
         setLanguage(saved.default_language);
@@ -85,8 +97,8 @@ export function DirectUploadFallback({ embedded = false, disabled = false, onAct
       setError("Choose an MP4, MOV, WebM or MKV video.");
       return;
     }
-    if (next.size > 500 * 1024 * 1024) {
-      setError("This file is above the 500 MB upload limit.");
+    if (next.size > fileLimitMb * 1024 * 1024) {
+      setError(`This file is above your plan's ${fileLimitMb.toLocaleString()} MB upload limit.`);
       return;
     }
     setFile(next);
@@ -133,17 +145,80 @@ export function DirectUploadFallback({ embedded = false, disabled = false, onAct
     };
   }
 
-  function send(xhr: XMLHttpRequest, body: XMLHttpRequestBodyInit): Promise<XMLHttpRequest> {
-    activeUpload.current = xhr;
+  function send(xhr: XMLHttpRequest, body: XMLHttpRequestBodyInit,
+                onBytes?: (bytes: number) => void): Promise<XMLHttpRequest> {
+    activeUploads.current.add(xhr);
     return new Promise<XMLHttpRequest>((resolve, reject) => {
       xhr.upload.onprogress = (event) => {
-        if (event.lengthComputable) setUploadProgress(Math.round((event.loaded / event.total) * 100));
+        if (!event.lengthComputable) return;
+        if (onBytes) onBytes(event.loaded);
+        else setUploadProgress(Math.round((event.loaded / event.total) * 100));
       };
-      xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve(xhr) : reject(new Error(xhr.responseText || "Upload failed."));
+      xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve(xhr) : reject(new Error(xhr.responseText || `Upload failed (HTTP ${xhr.status}).`));
       xhr.onerror = () => reject(new Error("Could not reach private media storage."));
       xhr.onabort = () => reject(new Error("Upload cancelled."));
       xhr.send(body);
-    }).finally(() => { activeUpload.current = null; });
+    }).finally(() => { activeUploads.current.delete(xhr); });
+  }
+
+  function cancelUpload() {
+    cancelled.current = true;
+    for (const xhr of activeUploads.current) xhr.abort();
+    if (activeSession.current) {
+      void api(`/uploads/${activeSession.current}/abort`, { method: "POST" }).catch(() => {});
+    }
+  }
+
+  async function sendMultipart(file: File, session: Extract<UploadSession, { method: "MULTIPART" }>): Promise<void> {
+    if (session.part_size < 5 * 1024 * 1024 || session.parts.length !== Math.ceil(file.size / session.part_size)) {
+      throw new Error("Upload service returned an invalid chunk plan.");
+    }
+    const activeBytes = new Map<number, number>();
+    let completedBytes = 0;
+    let index = 0;
+    let failed: Error | null = null;
+    const progress = () => setUploadProgress(Math.min(99,
+      Math.round(100 * (completedBytes + [...activeBytes.values()].reduce((a, b) => a + b, 0)) / file.size)));
+
+    async function worker() {
+      while (!cancelled.current && !failed) {
+        const i = index++;
+        if (i >= session.parts.length) return;
+        const part = session.parts[i];
+        if (part.part_number !== i + 1) { failed = new Error("Invalid upload part ordering."); return; }
+        const offset = i * session.part_size;
+        const blob = file.slice(offset, Math.min(file.size, offset + session.part_size));
+        let succeeded = false;
+        for (let attempt = 0; attempt < 3 && !cancelled.current; attempt++) {
+          const xhr = new XMLHttpRequest();
+          xhr.open("PUT", part.upload_url);
+          xhr.setRequestHeader("Content-Type", "application/octet-stream");
+          try {
+            await send(xhr, blob, (bytes) => { activeBytes.set(part.part_number, bytes); progress(); });
+            succeeded = true;
+            break;
+          } catch (cause) {
+            activeBytes.delete(part.part_number);
+            if (attempt >= 2 || cancelled.current) {
+              failed = cause instanceof Error ? cause : new Error("Upload chunk failed.");
+              break;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 650 * (attempt + 1)));
+          }
+        }
+        if (failed || cancelled.current) return;
+        if (succeeded) {
+          completedBytes += blob.size;
+          activeBytes.delete(part.part_number);
+          progress();
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(3, session.parts.length) }, () => worker()));
+    if (cancelled.current) throw new Error("Upload cancelled.");
+    if (failed) throw failed;
+    if (completedBytes !== file.size) throw new Error("Upload did not transfer every chunk.");
+    setUploadProgress(100);
   }
 
   async function upload() {
@@ -152,19 +227,28 @@ export function DirectUploadFallback({ embedded = false, disabled = false, onAct
     onActivityChange?.(true);
     setError("");
     setUploadProgress(0);
+    cancelled.current = false;
+    activeSession.current = null;
     const title = (document.getElementById("project-title") as HTMLInputElement)?.value || file.name.replace(/\.[^.]+$/, "");
     try {
-      if (DIRECT_GCS_UPLOAD) {
+      if (directCloud) {
         const contentType = file.type || "application/octet-stream";
         const session = await api<UploadSession>("/uploads/init", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ filename: file.name, content_type: contentType, size: file.size, title, language, category }),
         });
-        const xhr = new XMLHttpRequest();
-        xhr.open(session.method, session.upload_url);
-        Object.entries(session.headers).forEach(([name, value]) => xhr.setRequestHeader(name, value));
-        await send(xhr, file);
+        activeSession.current = session.upload_session_id;
+        if (session.method === "MULTIPART") {
+          await sendMultipart(file, session);
+        } else {
+          const xhr = new XMLHttpRequest();
+          xhr.open("PUT", session.upload_url);
+          Object.entries(session.headers).forEach(([name, value]) => xhr.setRequestHeader(name, value));
+          await send(xhr, file);
+        }
+        if (cancelled.current) throw new Error("Upload cancelled.");
         const completed = await api<UploadCompletion>(`/uploads/${session.upload_session_id}/complete`, { method: "POST" });
+        activeSession.current = null;
         setJob({ status: "queued", progress: 0, stage: "queued", message: "Your video is in the processing queue", project_id: completed.project_id });
         watch(completed.job_id, completed.project_id);
       } else {
@@ -180,6 +264,12 @@ export function DirectUploadFallback({ embedded = false, disabled = false, onAct
         watch(project.job_id, project.id);
       }
     } catch (cause) {
+      for (const xhr of activeUploads.current) xhr.abort();
+      if (activeSession.current) {
+        try { await api(`/uploads/${activeSession.current}/abort`, { method: "POST" }); }
+        catch { /* best-effort cleanup; signed URLs expire automatically */ }
+        activeSession.current = null;
+      }
       let message = cause instanceof Error ? cause.message : "Upload failed. Please try again.";
       try { message = JSON.parse(message).detail || message; } catch { /* plain network diagnostic */ }
       setError(message);
@@ -218,7 +308,7 @@ export function DirectUploadFallback({ embedded = false, disabled = false, onAct
       {preflight && !preflight.ready && !embedded && <div className="preflight-warning"><AlertCircle size={20}/><div><b>Processing engine is not ready</b>{preflight.problems.map((problem) => <p key={problem}>{problem}</p>)}<small>{preflight.recommendation}</small></div></div>}
       <div className={`drop-zone ${file ? "has-file" : ""} ${disabled ? "is-disabled" : ""}`} onClick={() => !disabled && !file && input.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); choose(event.dataTransfer.files[0]); }}>
         <input ref={input} type="file" disabled={disabled} accept=".mp4,.mov,.webm,.mkv,video/mp4,video/quicktime,video/webm,video/x-matroska,video/matroska,application/x-matroska,application/matroska" hidden onChange={(event) => choose(event.target.files?.[0])}/>
-        {file ? <div className="selected-file"><div className="file-icon"><FileVideo size={27}/></div><div className="file-copy"><b>{file.name}</b><span>{(file.size / 1024 / 1024).toFixed(1)} MB · Ready for AI analysis</span></div><span className="ready-pill"><Check size={14}/> Ready</span><button className="icon-btn" onClick={(event) => { event.stopPropagation(); setFile(null); }}><X size={18}/></button></div> : <><div className="upload-orb"><CloudUpload size={30}/></div><h2>Drop your long video here</h2><p>We&apos;ll find the strongest hooks, lessons and stories.</p><button className="secondary-btn"><Upload size={16}/> Choose video</button><span className="file-help">MP4, MOV, WebM or MKV · Up to 500 MB · Private by default</span></>}
+        {file ? <div className="selected-file"><div className="file-icon"><FileVideo size={27}/></div><div className="file-copy"><b>{file.name}</b><span>{(file.size / 1024 / 1024).toFixed(1)} MB · Ready for AI analysis</span></div><span className="ready-pill"><Check size={14}/> Ready</span><button className="icon-btn" onClick={(event) => { event.stopPropagation(); setFile(null); }}><X size={18}/></button></div> : <><div className="upload-orb"><CloudUpload size={30}/></div><h2>Drop your long video here</h2><p>We&apos;ll find the strongest hooks, lessons and stories.</p><button className="secondary-btn"><Upload size={16}/> Choose video</button><span className="file-help">MP4, MOV, WebM or MKV · Up to {fileLimitMb.toLocaleString()} MB · Private by default</span></>}
       </div>
 
       {file && <div className="upload-options">
@@ -227,7 +317,7 @@ export function DirectUploadFallback({ embedded = false, disabled = false, onAct
         <div className="field"><label>Content type</label><select id="category" value={category} onChange={(event) => setCategory(event.target.value as AccountSettings["creator_category"])}><option value="auto">Let AI decide</option><option value="education">Education</option><option value="podcast">Podcast</option><option value="business">Business</option><option value="motivation">Motivation</option><option value="spiritual">Spiritual</option><option value="local-business">Local business</option></select></div>
       </div>}
 
-      {busy && uploadProgress < 100 && <div className="processing-box"><div><Loader2 className="spin" size={20}/><div><b>Uploading securely</b><span>{uploadProgress}% transferred</span></div><strong>{uploadProgress}%</strong><button type="button" className="secondary-btn" onClick={() => activeUpload.current?.abort()}>Cancel</button></div><div className="progress large"><span style={{ width: `${uploadProgress}%` }}/></div></div>}
+      {busy && uploadProgress < 100 && <div className="processing-box"><div><Loader2 className="spin" size={20}/><div><b>Uploading securely</b><span>{uploadProgress}% transferred</span></div><strong>{uploadProgress}%</strong><button type="button" className="secondary-btn" onClick={cancelUpload}>Cancel</button></div><div className="progress large"><span style={{ width: `${uploadProgress}%` }}/></div></div>}
       {error && <div className="error-banner"><AlertCircle size={18}/><span>{error}</span></div>}
       <div className="studio-actions"><span><Check size={15}/> I own or have permission to use this video.</span><button className="primary-btn" disabled={!file || busy || disabled || preflight?.ready === false} onClick={upload}><Sparkles size={17}/> {preflight?.ready === false ? "Fix processing engine first" : "Find my best moments"} <ChevronRight size={17}/></button></div>
       {!embedded && <div className="how-grid">{[["01", "Upload privately", "Your original stays yours."], ["02", "Watch AI work", "Live stages, no mystery spinner."], ["03", "Choose & polish", "Edit only the moments you want."]].map((item) => <div key={item[0]}><span>{item[0]}</span><div><b>{item[1]}</b><p>{item[2]}</p></div></div>)}</div>}

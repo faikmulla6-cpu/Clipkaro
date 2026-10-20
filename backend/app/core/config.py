@@ -34,7 +34,10 @@ class Settings(BaseSettings):
     gcs_upload_url_ttl_seconds: int = 900
     gcs_download_url_ttl_seconds: int = 300
     gcs_signing_service_account: str = ""
-    max_upload_mb: int = 500
+    # Global upper bound; effective quota depends on plan and direct S3 multipart.
+    max_upload_mb: int = 4096
+    # 3 hours to sign, transfer, and finalize large multipart sources.
+    multipart_upload_ttl_seconds: int = 10800
     max_video_minutes: int = 15
     file_expiry_hours: int = 24
     whisper_model: str = "medium"

@@ -400,6 +400,81 @@ class S3StorageProvider:
             HttpMethod="PUT",
         )
 
+    async def start_multipart(self, key: str, *, content_type: str) -> str:
+        safe_key = validate_object_key(key, expected_prefix="quarantine")
+        result = await asyncio.to_thread(
+            self.client.create_multipart_upload,
+            Bucket=self.bucket, Key=safe_key, ContentType=content_type,
+        )
+        return str(result["UploadId"])
+
+    async def signed_part_url(self, key: str, upload_id: str, part_number: int, *,
+                              ttl_seconds: int) -> str:
+        safe_key = validate_object_key(key, expected_prefix="quarantine")
+        if not upload_id or not 1 <= int(part_number) <= 10000:
+            raise ValueError("Invalid multipart part number.")
+        return await asyncio.to_thread(
+            self.client.generate_presigned_url,
+            "upload_part",
+            Params={"Bucket": self.bucket, "Key": safe_key,
+                    "UploadId": upload_id, "PartNumber": int(part_number)},
+            ExpiresIn=max(60, min(int(ttl_seconds), 10800)),
+            HttpMethod="PUT",
+        )
+
+    async def finish_multipart(self, key: str, upload_id: str, *,
+                               expected_size: int, part_size: int) -> ObjectMetadata:
+        """Verify provider-reported part sizes, then compose the authorized object.
+
+        Never trust client-provided ETags or byte counts. Incomplete chunks do
+        not create a processing job or consume Karo Minutes.
+        """
+        safe_key = validate_object_key(key, expected_prefix="quarantine")
+        if expected_size <= 0 or part_size < 5 * 1024 * 1024:
+            raise ValueError("Invalid multipart upload dimensions.")
+        expected_count = (expected_size + part_size - 1) // part_size
+        if expected_count < 1 or expected_count > 10000:
+            raise ValueError("Too many multipart chunks.")
+        parts: list[dict] = []
+        marker = 0
+        while True:
+            kwargs = {"Bucket": self.bucket, "Key": safe_key, "UploadId": upload_id}
+            if marker:
+                kwargs["PartNumberMarker"] = marker
+            page = await asyncio.to_thread(self.client.list_parts, **kwargs)
+            for item in page.get("Parts", []):
+                number = int(item["PartNumber"])
+                expected_bytes = (part_size if number < expected_count
+                                  else expected_size - part_size * (expected_count - 1))
+                if number != len(parts) + 1 or int(item["Size"]) != expected_bytes:
+                    raise ValueError("Multipart upload has a missing or incomplete chunk.")
+                parts.append({"PartNumber": number, "ETag": str(item["ETag"])})
+            if not page.get("IsTruncated"):
+                break
+            next_marker = int(page.get("NextPartNumberMarker") or 0)
+            if next_marker <= marker or not parts:
+                raise ValueError("Invalid multipart listing pagination.")
+            marker = next_marker
+        if len(parts) != expected_count:
+            raise ValueError("Multipart upload is incomplete.")
+        await asyncio.to_thread(
+            self.client.complete_multipart_upload,
+            Bucket=self.bucket, Key=safe_key, UploadId=upload_id,
+            MultipartUpload={"Parts": parts},
+        )
+        verified = await self.stat(safe_key)
+        if verified is None or verified.size != expected_size:
+            raise RuntimeError("Completed object size is not the expected size.")
+        return verified
+
+    async def abort_multipart(self, key: str, upload_id: str) -> None:
+        await asyncio.to_thread(
+            self.client.abort_multipart_upload,
+            Bucket=self.bucket,
+            Key=validate_object_key(key, expected_prefix="quarantine"),
+            UploadId=upload_id,
+        )
+
     async def signed_download_url(self, key: str, *, filename: str, ttl_seconds: int) -> str:
         safe_key = validate_object_key(key)
         safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", filename)[:120] or "clipkaro-short.mp4"

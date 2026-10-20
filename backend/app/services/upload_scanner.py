@@ -96,11 +96,9 @@ def _local_scan_timeout_seconds(path: Path) -> float:
         size_mb = max(0, path.stat().st_size) / (1024 * 1024)
     except OSError:
         return configured
-    # Production allows uploads up to 500 MB. A fixed 30-second subprocess
-    # timeout is too tight even for clean ~50 MB MP4s on a cold/contended CPU.
-    # Keep the configured floor, scale with bytes, and bound the automatic
-    # extension so malformed inputs cannot hold a worker indefinitely.
-    adaptive = min(600.0, 30.0 + size_mb * 2.0)
+    # Allow 4 GiB direct S3 multipart sources on Pro/Agency. Keep an upper
+    # bound of 40 minutes inside the worker's 2-hour media job budget.
+    adaptive = min(2400.0, 30.0 + size_mb * 2.0)
     return max(configured, adaptive)
 
 
