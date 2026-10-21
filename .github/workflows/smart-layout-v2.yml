@@ -45,6 +45,20 @@ jobs:
     name: Karo top-up payment and legal acceptance tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: clipkaro
+          POSTGRES_PASSWORD: clipkaro_ci_only
+          POSTGRES_DB: clipkaro_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U clipkaro -d clipkaro_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
     steps:
       - name: Checkout source without saved credentials
         uses: actions/checkout@v4
@@ -67,4 +81,5 @@ jobs:
           APP_ENV: test
           TRANSCRIPTION_BACKEND: fixture
           PYTHONPATH: .
-        run: pytest -q tests/test_credit_topup_payments.py
+          POSTGRES_TEST_URL: postgresql://clipkaro:clipkaro_ci_only@127.0.0.1:5432/clipkaro_test
+        run: pytest -q tests/test_credit_topup_payments.py tests/test_credit_topup_postgres_exact_once.py

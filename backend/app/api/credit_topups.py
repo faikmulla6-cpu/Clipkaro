@@ -72,26 +72,37 @@ async def credit_checkout(checkout_id: str, payment_id: str | None = None) -> tu
         checkout = dict(row)
         user_id = str(checkout["user_id"])
         now = utc_now().isoformat()
-        await db.execute(
-            """INSERT INTO credit_topup_wallets(user_id,minutes_balance,shorts_balance,updated_at)
-               VALUES (?,0,0,?) ON CONFLICT(user_id) DO NOTHING""", (user_id, now)
+        # The conditional UPDATE is the settlement's database-level claim.
+        # A plain SELECT followed by a wallet increment is unsafe in PostgreSQL:
+        # two webhook/callback transactions may both read 'created' before either
+        # obtains the wallet row lock. PostgreSQL rechecks this UPDATE predicate
+        # after waiting for the checkout row lock; only one caller wins.
+        #
+        # Claim and wallet mutation are in the SAME transaction: a failed wallet
+        # update also rolls the checkout back to its previous status.
+        cur = await db.execute(
+            """UPDATE credit_topup_checkouts
+               SET status='verified', payment_id=COALESCE(?,payment_id), verified_at=?
+               WHERE id=? AND status!='verified'
+               RETURNING id""",
+            (payment_id, now, checkout_id),
         )
-        # Transaction + unique checkout reference means at-most-once credit.
-        if checkout["status"] != "verified":
+        claimed = await cur.fetchone() is not None
+        if claimed:
+            await db.execute(
+                """INSERT INTO credit_topup_wallets(user_id,minutes_balance,shorts_balance,updated_at)
+                   VALUES (?,0,0,?) ON CONFLICT(user_id) DO NOTHING""", (user_id, now)
+            )
             await db.execute(
                 """UPDATE credit_topup_wallets
                    SET minutes_balance=minutes_balance+?,shorts_balance=shorts_balance+?,updated_at=?
                    WHERE user_id=?""",
                 (float(checkout["minutes"]), int(checkout["shorts"]), now, user_id),
             )
-            await db.execute(
-                """UPDATE credit_topup_checkouts
-                   SET status='verified', payment_id=COALESCE(?,payment_id),verified_at=? WHERE id=?""",
-                (payment_id, now, checkout_id),
-            )
         cur = await db.execute("SELECT minutes_balance,shorts_balance FROM credit_topup_wallets WHERE user_id=?", (user_id,))
-        wallet = dict(await cur.fetchone())
-        return checkout["status"] != "verified", float(wallet["minutes_balance"]), int(wallet["shorts_balance"])
+        wallet_row = await cur.fetchone()
+        wallet = dict(wallet_row) if wallet_row else {"minutes_balance": 0.0, "shorts_balance": 0}
+        return claimed, float(wallet["minutes_balance"]), int(wallet["shorts_balance"])
 
     return await run_in_transaction(transaction, mode="IMMEDIATE", operation_name="settle captured allowance purchase")
 

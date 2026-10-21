@@ -11,6 +11,8 @@ for(const [needle, source] of [
   ["MINUTES_PAISE = 300",backend],["SHORT_PAISE = 200",backend],
   ["minutes == 0 and shorts == 0",backend],["verify_order_signature",backend],
   ["payment_matches(payment, row, payment_id)",backend],
+  ["WHERE id=? AND status!='verified'",backend],["RETURNING id",backend],
+  ["claimed = await cur.fetchone() is not None",backend],
   ["async with distributed_advisory_lock",backend],["credit_checkout",backend],
   ["credit_topup_wallets",migration],["credit_topup_spends",migration],
   ["KARO_MINUTES_QUOTA_EXCEEDED",migration],
@@ -45,4 +47,9 @@ assert.ok(purchaseStart >= 0 && purchaseStart < consentPost && consentPost < che
 assert.ok(dialog.indexOf('postJSON<LegalAcceptance>("/legal/accept"') === dialog.lastIndexOf('postJSON<LegalAcceptance>("/legal/accept"'),
   "Legal consent must not be recorded by background effects or repeated call sites");
 assert.ok(!dialog.includes("/billing/checkout"), "Top-ups must never create or modify subscriptions");
-console.log("Credit top-up pricing, legal consent, and captured-payment source contracts passed.");
+const claimPosition = backend.indexOf("WHERE id=? AND status!='verified'");
+const walletIncrementPosition = backend.indexOf("SET minutes_balance=minutes_balance+?");
+assert.ok(claimPosition > 0 && walletIncrementPosition > claimPosition,
+  "The checkout row must be atomically claimed before the wallet is credited");
+assert.ok(backend.includes("return claimed,"), "Settlement must report the atomic claim result");
+console.log("Credit top-up pricing, legal consent, and atomic captured-payment contracts passed.");

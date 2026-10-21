@@ -55,6 +55,24 @@ def test_checkout_credits_once_despite_browser_and_webhook_retries(client):
         assert run(topups.reconcile_credit_topup_webhook("payment.captured",{**p,"amount":9999},{}))["status"]=="ignored"
         assert run(topups.balance_for(uid))==(10.0,2)
 
+def test_credit_checkout_retries_without_external_lock_never_duplicate_allowances(client):
+    """The checkout row, not an advisory lock, is the source of idempotency."""
+    uid = buy(client, "creator", "atomic-credit-claim@example.com")
+    run(topups.execute(
+        """INSERT INTO credit_topup_checkouts
+           (id,user_id,provider_reference,minutes,shorts,amount_paise,status,created_at)
+           VALUES (?,?,?,?,?,?,?,?)""",
+        ("claim-once", uid, "order_claim_once", 10, 2, 3400, "created", "2026-10-21T00:00:00Z"),
+    ))
+    first = run(topups.credit_checkout("claim-once", "pay_claim_once"))
+    second = run(topups.credit_checkout("claim-once", "pay_claim_once"))
+    assert first == (True, 10.0, 2)
+    assert second == (False, 10.0, 2)
+    assert run(topups.balance_for(uid)) == (10.0, 2)
+    row = run(topups.fetch_one("SELECT status,payment_id FROM credit_topup_checkouts WHERE id=?", ("claim-once",)))
+    assert row["status"] == "verified" and row["payment_id"] == "pay_claim_once"
+
+
 def test_missing_legal_acceptance_blocks_topup_before_razorpay(client):
     uid = buy(client, "creator", "unaccepted-topup@example.com")
     run(topups.execute("DELETE FROM legal_acceptances WHERE user_id=?", (uid,)))
