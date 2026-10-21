@@ -40,3 +40,31 @@ jobs:
         run: node frontend/scripts/check-smart-layout-v2.mjs
       - name: Verify top-up consent and captured-payment source contracts
         run: node frontend/scripts/check-credit-topups.mjs
+
+  topup-payment-regression:
+    name: Karo top-up payment and legal acceptance tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout source without saved credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+      - name: Install isolated backend test dependencies
+        working-directory: backend
+        run: |
+          python -m pip install -r requirements-dev.txt
+          python -m pip check
+      - name: Verify legal consent and exact-once Karo credit payments
+        working-directory: backend
+        env:
+          APP_ENV: test
+          TRANSCRIPTION_BACKEND: fixture
+          PYTHONPATH: .
+        run: pytest -q tests/test_credit_topup_payments.py
