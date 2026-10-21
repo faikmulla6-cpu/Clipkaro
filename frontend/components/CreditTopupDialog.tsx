@@ -4,12 +4,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, CreditCard, Loader2, Minus, Plus, ShieldCheck, Sparkles, X } from "lucide-react";
 import Link from "next/link";
 import { api, postJSON } from "@/lib/api";
+import { LEGAL_VERSION, type LegalStatus } from "@/lib/legal";
 
 type Kind = "minutes" | "shorts";
 type Quote = { eligible: boolean; minutes_max: number; shorts_max: number; minutes_min: number; minutes_paise: number; short_paise: number; purchased_minutes_left: number; purchased_shorts_left: number };
 type Checkout = { key_id: string; order_id: string; amount: number; currency: string; name: string; description: string; prefill?: { name: string; email: string } };
 type Payment = { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string };
 type Verification = { verified: boolean; pending?: boolean };
+type LegalAcceptance = { accepted: boolean; version: string; accepted_at?: string | null };
 type RazorpayInstance = { open: () => void; on?: (event: string, handler: (value: { error?: { description?: string } }) => void) => void };
 type RazorpayWindow = Window & { Razorpay?: new (options: Record<string, unknown>) => RazorpayInstance };
 
@@ -55,6 +57,8 @@ function Quantity({ label, helper, value, min, max, step, onChange }: { label: s
 
 export function CreditTopupDialog({ initial, isLegacy, onClose, onSuccess }: { initial: Kind; isLegacy: boolean; onClose: () => void; onSuccess: () => void }) {
   const [quote,setQuote] = useState<Quote|null>(null);
+  const [legalStatus,setLegalStatus] = useState<LegalStatus|null>(null);
+  const [legalChecked,setLegalChecked] = useState(false);
   const [minutes,setMinutes] = useState(initial==="minutes"?10:0);
   const [shorts,setShorts] = useState(initial==="shorts"?1:0);
   const [loading,setLoading] = useState(true);
@@ -75,18 +79,31 @@ export function CreditTopupDialog({ initial, isLegacy, onClose, onSuccess }: { i
   }, [submitting,onClose]);
   useEffect(() => {
     let live = true;
-    api<Quote>("/credits/quote").then(q=>{ if(live) { setQuote(q); setMinutes(v=>Math.min(v,q.minutes_max));setShorts(v=>Math.min(v,q.shorts_max)); } })
-      .catch(e=>{if(live)setError(e instanceof Error?e.message:"Could not load your purchase limits.");})
+    Promise.all([api<Quote>("/credits/quote"), api<LegalStatus>("/legal/status")])
+      .then(([q, legal])=>{ if(live) { setQuote(q); setLegalStatus(legal); setMinutes(v=>Math.min(v,q.minutes_max));setShorts(v=>Math.min(v,q.shorts_max)); } })
+      .catch(e=>{if(live)setError(e instanceof Error?e.message:"Could not load your purchase limits or legal checkout status.");})
       .finally(()=>{if(live)setLoading(false);});
     return ()=>{live=false;};
   },[]);
   const total = useMemo(()=>minutes*3 + shorts*2,[minutes,shorts]);
   const eligible = quote?.eligible && total>0 && (!minutes||(minutes>=10&&minutes<=quote.minutes_max)) && shorts<=quote.shorts_max;
+  const legalReady = Boolean(legalStatus && legalStatus.version === LEGAL_VERSION && legalStatus.checkout_allowed && (legalStatus.accepted || legalChecked));
 
   async function purchase() {
-    if(!eligible || submitting) return;
+    if(!eligible || submitting || !legalReady) return;
     setSubmitting(true);setError("");setMessage("");
     try {
+      if (!legalStatus) throw new Error("Could not verify the current legal documents. Refresh and try again.");
+      if (!legalStatus.accepted) {
+        if (!legalChecked) throw new Error("Review and agree to the current legal documents before checkout.");
+        // Record only an explicit, informed user choice. The server authenticates
+        // this call and rejects old document versions; never skip its checkout gate.
+        const acceptance = await postJSON<LegalAcceptance>("/legal/accept", { accepted: true, version: LEGAL_VERSION });
+        if (!acceptance.accepted || acceptance.version !== LEGAL_VERSION) {
+          throw new Error("Legal acceptance could not be confirmed. Refresh and try again.");
+        }
+        setLegalStatus({ ...legalStatus, accepted: true, accepted_at: acceptance.accepted_at || null });
+      }
       await loadCheckout();
       const order = await postJSON<Checkout>("/credits/checkout",{minutes,shorts});
       if(order.currency!=="INR" || order.amount!==total*100 || !order.order_id || !order.key_id) {
@@ -131,9 +148,18 @@ export function CreditTopupDialog({ initial, isLegacy, onClose, onSuccess }: { i
       <div className="mt-5 rounded-2xl bg-[#153e2b] px-4 py-4 text-white">
         <div className="flex items-center justify-between gap-3"><div><p className="text-[11px] text-[#bdd4c3]">One-time payment</p><p className="mt-1 text-[10px] text-[#bdd4c3]">{minutes} minutes + {shorts} {isLegacy?"project slots":"AI Shorts"}</p></div><div className="text-[31px] font-black tracking-[-1px] tabular-nums">₹{total.toLocaleString("en-IN")}</div></div>
       </div>
+      {legalStatus && legalStatus.version !== LEGAL_VERSION && <p role="alert" className="mt-3 rounded-xl border border-[#f1c9bf] bg-[#fff1ec] p-3 text-[12px] text-[#a13b30]">The legal documents have changed. Refresh this page and review the latest policies before purchasing.</p>}
+      {legalStatus && legalStatus.version === LEGAL_VERSION && !legalStatus.checkout_allowed && <p role="alert" className="mt-3 rounded-xl border border-[#f1c9bf] bg-[#fff1ec] p-3 text-[12px] text-[#a13b30]">{legalStatus.checkout_reason || "Credit purchases are temporarily unavailable."}</p>}
+      {legalStatus && legalStatus.version === LEGAL_VERSION && !legalStatus.accepted && <div className="mt-4 flex items-start gap-3 rounded-2xl border border-[#d6e3d6] bg-white p-4 text-[12px] leading-5 text-[#284d3a]">
+        <input id="ck-credit-legal-consent" type="checkbox" checked={legalChecked} disabled={submitting} onChange={e=>setLegalChecked(e.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-[#176044]" />
+        <div>
+          <label htmlFor="ck-credit-legal-consent" className="cursor-pointer font-semibold">I agree to the current Terms, Privacy Notice and Refund Policy.</label>
+          <p className="mt-1 text-[11px] text-[#60756a]">Review <Link href="/terms" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">Terms</Link>, <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">Privacy Notice</Link> and <Link href="/refund-policy" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">Refund Policy</Link> before purchasing. Acceptance is saved to your account when you continue to secure checkout.</p>
+        </div>
+      </div>}
       {error&&<p role="alert" className="mt-3 rounded-xl border border-[#f1c9bf] bg-[#fff1ec] p-3 text-[12px] text-[#a13b30]">{error}</p>}
       {message&&<p role="status" className="mt-3 rounded-xl border border-[#badfcc] bg-[#f0f9f1] p-3 text-[12px] text-[#215b3d]">{message}</p>}
-      <button onClick={()=>void purchase()} disabled={!eligible || loading || submitting} className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#dfff57] text-[13px] font-black text-[#133a2a] shadow-[0_10px_26px_rgba(63,143,51,.12)] transition hover:-translate-y-0.5 hover:bg-[#d3f64d] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:translate-y-0">
+      <button onClick={()=>void purchase()} disabled={!eligible || loading || submitting || !legalReady} className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#dfff57] text-[13px] font-black text-[#133a2a] shadow-[0_10px_26px_rgba(63,143,51,.12)] transition hover:-translate-y-0.5 hover:bg-[#d3f64d] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:translate-y-0">
         {submitting?<><Loader2 size={16} className="animate-spin"/> Secure checkout…</>:<><CreditCard size={16}/> Pay ₹{total.toLocaleString("en-IN")} securely <ArrowRight size={16}/></>}
       </button>
       <div className="mt-4 flex items-start justify-center gap-1.5 text-[10px] leading-4 text-[#758478]"><ShieldCheck size={15} className="shrink-0 text-[#2d8051]"/><span>Razorpay protected · Credits added only after confirmed payment · Unused purchased credits carry forward</span></div>

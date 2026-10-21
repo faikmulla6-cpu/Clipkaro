@@ -55,6 +55,18 @@ def test_checkout_credits_once_despite_browser_and_webhook_retries(client):
         assert run(topups.reconcile_credit_topup_webhook("payment.captured",{**p,"amount":9999},{}))["status"]=="ignored"
         assert run(topups.balance_for(uid))==(10.0,2)
 
+def test_missing_legal_acceptance_blocks_topup_before_razorpay(client):
+    uid = buy(client, "creator", "unaccepted-topup@example.com")
+    run(topups.execute("DELETE FROM legal_acceptances WHERE user_id=?", (uid,)))
+    # An existing subscription is not consent for a new credit purchase.
+    with patch("app.api.credit_topups.razorpay_request", new_callable=AsyncMock) as provider:
+        response = client.post("/api/v1/credits/checkout", json={"minutes": 10, "shorts": 0})
+    assert response.status_code == 403, response.text
+    assert "Terms" in response.json()["detail"]
+    provider.assert_not_awaited()
+    assert run(topups.fetch_one("SELECT id FROM credit_topup_checkouts WHERE user_id=?", (uid,))) is None
+
+
 # Wallet accounting must be tested separately from payment callbacks. These
 # tests protect user balances through success, quota rejection and failure.
 from app.core.database import execute, fetch_one, UsageQuotaExceeded

@@ -38,3 +38,5 @@ jobs:
           node-version: '24'
       - name: Verify browser geometry without dependencies or media access
         run: node frontend/scripts/check-smart-layout-v2.mjs
+      - name: Verify top-up consent and captured-payment source contracts
+        run: node frontend/scripts/check-credit-topups.mjs
