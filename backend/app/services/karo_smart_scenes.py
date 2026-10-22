@@ -76,6 +76,28 @@ def scene_boundaries(visuals: list, pairs: list, singles: list) -> list[int]:
                 old_size = statistics.median(paired_sizes)
                 new_size = statistics.median(s[2]*s[3] for s in solo)
                 is_cut = new_size > max(.006, old_size * 1.6)
+        # Some camera cuts retain the same dark studio backdrop. A sustained
+        # switch from two small simultaneous faces to one significantly larger
+        # close-up is a camera change even when the thumbnail barely moves.
+        # Requiring 4/5 observations avoids treating a blink or occlusion
+        # as a cut and prevents an old two-face median cropping a bookshelf.
+        if not is_cut and i >= 5 and i + 5 <= n:
+            before_pairs = [p for p in pairs[i-5:i] if p is not None]
+            after_pairs = [p for p in pairs[i:i+5] if p is not None]
+            before_solo = [s for s in singles[i-5:i] if s is not None]
+            after_solo = [s for s in singles[i:i+5] if s is not None]
+            if len(before_pairs) >= 4 and len(after_pairs) <= 1 and len(after_solo) >= 4:
+                old_area = max(p[0][2]*p[0][3] for p in before_pairs)
+                old_area = max(old_area, max(p[1][2]*p[1][3] for p in before_pairs))
+                new_areas = sorted(s[2]*s[3] for s in after_solo)
+                if new_areas[len(new_areas)//2] > old_area * 1.8:
+                    is_cut = True
+            elif len(before_pairs) <= 1 and len(after_pairs) >= 4 and len(before_solo) >= 4:
+                previous_areas = sorted(s[2]*s[3] for s in before_solo)
+                new_area = max(p[0][2]*p[0][3] for p in after_pairs)
+                new_area = max(new_area, max(p[1][2]*p[1][3] for p in after_pairs))
+                if previous_areas[len(previous_areas)//2] > new_area * 1.8:
+                    is_cut = True
         if is_cut and i - boundaries[-1] >= 2:
             boundaries.append(i)
     if len(boundaries) > 1 and n - boundaries[-1] < 2:
@@ -242,9 +264,10 @@ def _decisions_for_scene(
     # Both detected panes must show actual live activity. Never promote a
     # stationary background portrait/poster into a second speaker.
     if (len(matched) >= max(3, math.ceil(count * .55))
-            and both_live and _pair_covers_scene(pairs, start_i, end_i)):
-        first = tuple(float(np.median([p[0][k] for p in matched])) for k in (0, 1))
-        second = tuple(float(np.median([p[1][k] for p in matched])) for k in (0, 1))
+            and both_live and anchor and _pair_covers_scene(pairs, start_i, end_i)):
+        # Only crop the verified same-scene pair, not a median of faces from
+        # unrelated angles that slipped through a subtle background cut.
+        first, second = anchor
         if second[0] - first[0] >= .16:
             activity = _normalize_activity(scores[start_i:end_i])
             votes = []
