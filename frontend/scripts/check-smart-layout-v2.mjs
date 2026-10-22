@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import {
   parseSmartLayoutPlan, findScene, focusRectAt, paintSmartLayoutFrame, dualStackCoverageSeconds,
+  dualStackCropsAt,
 } from "../lib/smart-layout-timeline.ts";
 
 const fixture = {
@@ -59,7 +60,23 @@ for (const kind of ["single", "wide"]) {
 }
 {
   const p = cloned(); p.scenes[0].switches = [[2, 2]];
-  assert.equal(parseSmartLayoutPlan(p), null, "speaker switching is forbidden in split mode");
+  assert.equal(parseSmartLayoutPlan(p), null, "a nonexistent third speaker is forbidden");
+}
+
+{
+  const p = cloned();
+  p.scenes[0].switches = [[0, 0], [1.5, 1]];
+  const switching = parseSmartLayoutPlan(p);
+  assert.ok(switching, "verified Dual Stack switches are valid");
+  assert.deepEqual(dualStackCropsAt(switching.scenes[0], 1), p.scenes[0].crops);
+  assert.deepEqual(dualStackCropsAt(switching.scenes[0], 2), [
+    p.scenes[0].crops[1], p.scenes[0].crops[0],
+  ], "active speaker goes above the listener");
+  const { ctx, commands } = fakeCanvas();
+  assert.equal(paintSmartLayoutFrame(ctx, video, switching, 525.46), true);
+  const draws = commands.filter(c => c[0] === "draw");
+  assert.deepEqual(draws[0].slice(1, 5), p.scenes[0].crops[1]);
+  assert.deepEqual(draws[1].slice(1, 5), p.scenes[0].crops[0]);
 }
 
 const focusScene = {
