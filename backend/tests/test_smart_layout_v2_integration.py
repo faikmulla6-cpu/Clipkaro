@@ -23,10 +23,10 @@ def timeline():
 
 
 class SmartV2UnitTests(unittest.TestCase):
-    def test_auto_split_votes_do_not_invalidate_valid_split(self):
+    def test_split_preserves_speaker_turns_for_active_top_panel(self):
         bundle=timeline()
-        self.assertEqual(bundle["auto"]["scenes"][0]["switches"],[])
-        self.assertEqual(bundle["dual_stack"]["scenes"][0]["switches"],[])
+        self.assertEqual(bundle["auto"]["scenes"][0]["switches"],[[0.,0],[1.,1]])
+        self.assertEqual(bundle["dual_stack"]["scenes"][0]["switches"],[[0.,0],[1.,1]])
         self.assertEqual(bundle["speaker_focus"]["scenes"][0]["switches"],[[0.,0],[1.,1]])
         for mode in bundle:
             validate_serialized_plan(bundle[mode])
@@ -37,7 +37,7 @@ class SmartV2UnitTests(unittest.TestCase):
         for coord in plan["scenes"][0]["crops"]:
             x,y,w,h=coord
             self.assertIn(f"crop={w}:{h}:{x}:{y}",graph)
-        self.assertIn("concat=n=2",graph)
+        self.assertIn("concat=n=3",graph)
         self.assertIn("setsar=1",graph)
         self.assertIn("[band0]",graph)
 
