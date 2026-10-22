@@ -105,6 +105,46 @@ class SmartV2UnitTests(unittest.TestCase):
             out.unlink(missing_ok=True)
 
 
+    def test_confirmed_speaker_change_swaps_top_and_bottom_in_real_mp4(self):
+        ffmpeg = shutil.which("ffmpeg")
+        if not ffmpeg:
+            self.skipTest("FFmpeg unavailable")
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "red-blue-podcast.mp4"
+            subprocess.run([
+                ffmpeg, "-nostdin", "-v", "error", "-y",
+                "-f", "lavfi", "-i", "color=c=red:s=320x360:r=30:d=3",
+                "-f", "lavfi", "-i", "color=c=blue:s=320x360:r=30:d=3",
+                "-filter_complex", "[0:v][1:v]hstack=inputs=2[v]",
+                "-map", "[v]", "-c:v", "libx264", "-threads", "2",
+                "-preset", "ultrafast", str(source),
+            ], check=True, capture_output=True, timeout=35)
+            evidence = LayoutPlan("auto", 640, 360, ((.25, .34), (.75, .34)),
+                segments=(Scene(0., 3., "dual_stack", ((.25, .34), (.75, .34)),
+                                ((0., 0), (1.5, 1))),))
+            plan = all_layout_variants(evidence, source_start=0, duration=3)["dual_stack"]
+            self.assertEqual(plan["scenes"][0]["switches"], [[0., 0], [1.5, 1]])
+            out, actual = precompose_v2(
+                source, Path(tmp) / "final.mp4", plan, ffmpeg, 360, 640, 90)
+            self.assertEqual(actual, "dual_stack")
+            def pixel(timestamp, y):
+                result = subprocess.run([
+                    ffmpeg, "-nostdin", "-v", "error", "-ss", str(timestamp),
+                    "-i", str(out), "-frames:v", "1",
+                    "-vf", f"crop=2:2:180:{y},format=rgb24",
+                    "-f", "rawvideo", "-",
+                ], check=True, capture_output=True, timeout=20)
+                return result.stdout[:3]
+            before_top, before_bottom = pixel(.5, 140), pixel(.5, 500)
+            after_top, after_bottom = pixel(2., 140), pixel(2., 500)
+            self.assertGreater(before_top[0], before_top[2])
+            self.assertGreater(before_bottom[2], before_bottom[0])
+            self.assertGreater(after_top[2], after_top[0],
+                "active right speaker must be placed in the upper panel")
+            self.assertGreater(after_bottom[0], after_bottom[2],
+                "left speaker must stay visible and moving below")
+            out.unlink(missing_ok=True)
+
     def test_both_live_panels_advance_through_same_original_timeline(self):
         ffmpeg = shutil.which("ffmpeg")
         if not ffmpeg:
