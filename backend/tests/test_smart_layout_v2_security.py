@@ -47,6 +47,25 @@ class SmartLayoutSecurityTests(unittest.IsolatedAsyncioTestCase):
                 await api._owned(clip,user)
             self.assertEqual(exc.exception.status_code,409)
 
+    async def test_updated_live_face_model_invalidates_prior_cached_plans(self):
+        from app.services.smart_layout_cache import (
+            AnalysisIdentity, MODEL_VERSION, private_plan_key,
+        )
+        import hashlib
+        uid,pid,cid,vid=user_ids()
+        original = AnalysisIdentity(uid,pid,cid,vid,"etag:source-unchanged",0.,10.)
+        self.assertIn("live-face-v4", MODEL_VERSION)
+        new_key = private_plan_key(original)
+        # A new analyzer revision must never return the v3 cached crops,
+        # even when user, video generation, and clip times did not change.
+        previous = AnalysisIdentity(uid,pid,cid,vid,"etag:source-unchanged",0.,10.)
+        self.assertEqual(private_plan_key(previous),new_key)
+        import app.services.smart_layout_cache as cache
+        from unittest.mock import patch as mock_patch
+        with mock_patch.object(cache,"MODEL_VERSION","opencv-scene-20261019-live-wide-v3"):
+            previous_key = private_plan_key(original)
+        self.assertNotEqual(new_key,previous_key)
+
     async def test_malformed_database_cache_never_returned_or_marked_ready(self):
         uid,pid,cid,vid=user_ids()
         identity=AnalysisIdentity(uid,pid,cid,vid,"etag:xyz",0.,2.)
