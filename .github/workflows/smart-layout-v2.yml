@@ -60,6 +60,10 @@ jobs:
         env:
           PYTHONPATH: backend
         run: python -m unittest discover -s backend/tests -p test_karo_smart_layouts.py -v
+      - name: Verify real FFmpeg and cached-preview export geometry
+        env:
+          PYTHONPATH: backend
+        run: python -m unittest discover -s backend/tests -p test_smart_layout_v2_integration.py -v
 
   topup-payment-regression:
     name: Karo top-up payment and legal acceptance tests
@@ -103,3 +107,9 @@ jobs:
           PYTHONPATH: .
           POSTGRES_TEST_URL: postgresql://clipkaro:clipkaro_ci_only@127.0.0.1:5432/clipkaro_test
         run: pytest -q tests/test_credit_topup_payments.py tests/test_credit_topup_postgres_exact_once.py
+      - name: Verify Smart Layout private cache and ownership security
+        working-directory: backend
+        env:
+          APP_ENV: test
+          PYTHONPATH: .
+        run: pytest -q tests/test_smart_layout_v2_security.py
