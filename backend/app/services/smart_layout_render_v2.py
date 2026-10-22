@@ -87,6 +87,45 @@ def _verify_export_plan(plan: dict[str, Any], source_start: float, duration: flo
         raise UnsafeLayoutPlan("Smart Layout scene timeline does not cover export")
 
 
+def _split_dual_speaker_turns(scenes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Divide a split shot only at verified turn changes.
+
+    This is the same scene-relative ordering used by the editor canvas.
+    Each partition reads BOTH moving speakers from one source timestamp.
+    Encoding partitions sequentially avoids heavyweight per-frame overlays
+    and the multi-shot FFmpeg allocator crashes seen on small workers.
+    """
+    parts: list[dict[str, Any]] = []
+    for scene in scenes:
+        if scene["layout"] != "dual_stack" or not scene["switches"]:
+            parts.append(scene)
+            continue
+        begin = float(scene["start"])
+        end = float(scene["end"])
+        boundaries = [(begin, 0)]
+        for t, who in scene["switches"]:
+            at = round(begin + float(t), 3)
+            if at <= begin + .03:
+                boundaries[0] = (begin, int(who))
+            elif at < end - .03 and at - boundaries[-1][0] >= .03:
+                boundaries.append((at, int(who)))
+        for i, (at, top_speaker) in enumerate(boundaries):
+            finish = boundaries[i+1][0] if i+1 < len(boundaries) else end
+            crops = scene["crops"]
+            parts.append({
+                **scene,
+                "start": at,
+                "end": finish,
+                "crops": list(reversed(crops)) if top_speaker == 1 else crops,
+                "switches": [],
+            })
+    # Bounded work per user export; malformed or pathological timelines
+    # fail closed instead of spawning hundreds of encoders.
+    if len(parts) > 96:
+        raise UnsafeLayoutPlan("Too many speaker changes for a safe Smart Layout export")
+    return parts
+
+
 def compose_v2_filter(plan: dict[str, Any], duration: float,
                       output_width: int, output_height: int) -> str:
     """Generate a filtergraph using only the canonical cached source-pixel crop.
@@ -97,7 +136,7 @@ def compose_v2_filter(plan: dict[str, Any], duration: float,
     _verify_export_plan(plan, float(plan["source_start"]), duration)
     if output_width % 2 or output_height % 2 or output_width < 240 or output_height < 400:
         raise UnsafeLayoutPlan("Unsupported output dimensions")
-    sections = plan["scenes"]
+    sections = _split_dual_speaker_turns(plan["scenes"])
     fragments = [
         f"[0:v]fps=30,format=yuv420p,split={len(sections)}"
         + "".join(f"[src{i}]" for i in range(len(sections)))
@@ -190,7 +229,7 @@ def precompose_v2(source, output, plan: dict[str, Any], ffmpeg: str,
         with tempfile.TemporaryDirectory(prefix="smart-v2-scenes-", dir=temp.parent) as workspace:
             root = Path(workspace)
             scene_files = []
-            for i, scene in enumerate(plan["scenes"]):
+            for i, scene in enumerate(_split_dual_speaker_turns(plan["scenes"])):
                 # FFmpeg consumes exactly the face crops the canvas displays,
                 # but processes ONE shot per subprocess to avoid multi-shot
                 # graph heap corruption at 1080p.
