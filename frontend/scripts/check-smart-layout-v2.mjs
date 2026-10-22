@@ -73,7 +73,7 @@ for (const kind of ["single", "wide"]) {
     p.scenes[0].crops[1], p.scenes[0].crops[0],
   ], "active speaker goes above the listener");
   const { ctx, commands } = fakeCanvas();
-  assert.equal(paintSmartLayoutFrame(ctx, video, switching, 525.46), true);
+  assert.equal(paintSmartLayoutFrame(ctx, { readyState: 4 }, switching, 525.46), true);
   const draws = commands.filter(c => c[0] === "draw");
   assert.deepEqual(draws[0].slice(1, 5), p.scenes[0].crops[1]);
   assert.deepEqual(draws[1].slice(1, 5), p.scenes[0].crops[0]);
