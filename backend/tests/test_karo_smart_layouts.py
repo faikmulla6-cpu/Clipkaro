@@ -103,6 +103,76 @@ if __name__ == "__main__":
 
 
 class SceneAwareTests(unittest.TestCase):
+    def test_static_poster_does_not_qualify_as_second_speaker(self):
+        from app.services.karo_smart_scenes import _decisions_for_scene
+        from app.services.smart_layout_variants import all_layout_variants
+        fake = (.24, .33, .085, .12)
+        moving = (.77, .37, .17, .25)
+        frames = 20
+        pair = (fake, moving)
+        # Haar sees two face-like rectangles every frame, but the poster is
+        # perfectly stationary while the real guest speaks.
+        evidence = [pair] * frames
+        movement = [(0., 8.)] * frames
+        scene = _decisions_for_scene(
+            0, frames, evidence, [moving]*frames,
+            [(0., 8.)]*frames, [1.]*frames, "auto",
+            0., 8., .4, evidence, movement,
+        )
+        self.assertEqual(scene.mode, "single")
+        self.assertAlmostEqual(scene.centers[0][0], moving[0])
+        self.assertEqual(scene.pair_centers, ())
+        plan = LayoutPlan("auto", 1280, 720, ((.25,.35),(.75,.35)),
+                          segments=(scene,))
+        plans = all_layout_variants(plan, source_start=0, duration=8)
+        for mode in plans:
+            self.assertEqual(plans[mode]["scenes"][0]["layout"], "single",
+                             "Explicit Dual Stack must fail safe too")
+
+    def test_live_pair_keeps_genuine_split(self):
+        from app.services.karo_smart_scenes import _decisions_for_scene
+        one = (.25, .3, .09, .12)
+        two = (.76, .32, .09, .12)
+        pair = (one, two)
+        samples = 15
+        scene = _decisions_for_scene(
+            0, samples, [pair]*samples, [one]*samples,
+            [(4.,7.)]*samples, [1.]*samples, "dual_stack",
+            0., 6., .4, [pair]*samples, [(4.,7.)]*samples,
+        )
+        self.assertEqual(scene.mode, "dual_stack")
+        self.assertEqual(len(scene.centers), 2)
+
+    def test_temporal_motion_detects_static_artwork(self):
+        import numpy as np
+        import cv2
+        from app.services.karo_smart_scenes import _pair_temporal_activity
+        face_a = (.25, .4, .16, .25)
+        face_b = (.75, .4, .16, .25)
+        pair = (face_a, face_b)
+        base = np.full((240,480), 90, dtype="uint8")
+        rng = np.random.default_rng(7)
+        a, prev = _pair_temporal_activity(base, pair, None)
+        self.assertEqual(a, (0.,0.))
+        other = base.copy()
+        other[64:128, 320:400] = rng.integers(0,255,size=(64,80),dtype="uint8")
+        result, _ = _pair_temporal_activity(other, pair, prev)
+        self.assertLess(result[0], 0.01)
+        self.assertGreater(result[1], 2.2)
+
+    def test_medium_visual_cut_with_face_change_creates_independent_shot(self):
+        import numpy as np
+        from app.services.karo_smart_scenes import scene_boundaries
+        first = np.full((12,20),.23,dtype="float32")
+        second = np.full((12,20),.36,dtype="float32")
+        pair = ((.25,.34,.09,.12),(.74,.34,.09,.12))
+        boundaries = scene_boundaries(
+            [first]*9+[second]*9,
+            [pair]*9+[None]*9,
+            [pair[0]]*9+[(.75,.34,.19,.25)]*9,
+        )
+        self.assertEqual(boundaries, [0,9])
+
     def test_intermittent_two_face_evidence_enables_only_explicit_live_dual(self):
         from app.services.karo_smart_scenes import _decisions_for_scene
         from app.services.smart_layout_variants import all_layout_variants

@@ -49,7 +49,17 @@ def scene_boundaries(visuals: list, pairs: list, singles: list) -> list[int]:
         location_jump = bool(a and b and abs(a[0] - b[0]) > .25)
         # A hard edit is more than an ordinary head movement. Prevent one
         # accidental detection or lighting flicker from creating tiny scenes.
-        is_cut = jump > .27 or (jump > .18 and (pair_flip or location_jump))
+        # Hard edits often preserve a similar dark podcast backdrop; requiring
+        # a 27% whole-frame change leaves two different camera angles grouped
+        # together and reuses a crop from the previous speaker. Require
+        # supporting face geometry for smaller, genuine visual jumps.
+        a_size = a[2] * a[3] if a else 0.
+        b_size = b[2] * b[3] if b else 0.
+        face_scale_jump = bool(min(a_size, b_size) > 0 and
+                               max(a_size, b_size) / min(a_size, b_size) > 2.5)
+        is_cut = (jump > .27
+                  or (jump > .105 and (pair_flip or location_jump or face_scale_jump))
+                  or (jump > .155 and (a is None) != (b is None)))
         if is_cut and i - boundaries[-1] >= 2:
             boundaries.append(i)
     if len(boundaries) > 1 and n - boundaries[-1] < 2:
@@ -76,8 +86,76 @@ def _wider_pair(faces: list) -> tuple | None:
     return (left, right) if right[0] - left[0] >= .18 else None
 
 
+def _appearance_patch(grey, face):
+    """Extract stable face-sized pixels; a static poster must NOT be a speaker.
+
+    The detector's bounding box is evidence of facial shape, not of a live
+    person. Compare crops only within approximately the same tracked face,
+    and do not use optical-flow guesses to invent a second camera.
+    """
+    import cv2
+
+    cx, cy, fw, fh = face
+    width, height = grey.shape[1], grey.shape[0]
+    left = max(0, int((cx - fw * .48) * width))
+    right = min(width, int((cx + fw * .48) * width))
+    top = max(0, int((cy - fh * .48) * height))
+    bottom = min(height, int((cy + fh * .48) * height))
+    if right-left < 12 or bottom-top < 12:
+        return None
+    return cv2.resize(grey[top:bottom, left:right], (48, 48)).astype("float32")
+
+
+def _pair_temporal_activity(grey, pair, previous):
+    """Return per-person pixel motion and a tracker for the next sample.
+
+    This is a liveness *quality gate*, never identity or biometric inference.
+    It rejects persistent unchanging artwork that Haar can mislabel as a face.
+    Brief detector dropouts retain the previous patches so the next matched
+    observation can still be compared. A changed position invalidates history.
+    """
+    import numpy as np
+
+    if pair is None:
+        return (0., 0.), previous
+    patches = tuple(_appearance_patch(grey, face) for face in pair)
+    movement = [0., 0.]
+    if previous is not None:
+        old_faces, old_patches = previous
+        for index, (face, current, old_face, old_patch) in enumerate(
+                zip(pair, patches, old_faces, old_patches)):
+            if (current is not None and old_patch is not None
+                    and abs(face[0]-old_face[0]) <= .09
+                    and abs(face[1]-old_face[1]) <= .12):
+                movement[index] = float(np.mean(np.abs(current-old_patch)))
+    return tuple(movement), (pair, patches)
+
+
+def _pair_has_live_motion(candidates, movement, start_i: int, end_i: int) -> bool:
+    """Both proposed speakers must change across multiple sampled frames.
+
+    A bookshelf/portrait may produce a stable, confident face rectangle for
+    many frames. That is precisely when positional stability alone is unsafe.
+    Fail closed to a single face or full-frame shot if either pane is static.
+    """
+    if movement is None:
+        # Older synthetic callers do not provide frame motion; live analysis
+        # always supplies it. This preserves pure geometry fixture semantics.
+        return True
+    observed = [i for i in range(start_i, end_i)
+                if candidates[i] is not None]
+    if len(observed) < 3:
+        return False
+    needed = max(2, math.ceil(len(observed) * .18))
+    return all(
+        sum(bool(movement[i][person] >= 2.2) for i in observed) >= needed
+        for person in (0, 1)
+    )
+
+
 def _stable_wide_pair(candidates: list, singles: list,
-                      start_i: int, end_i: int) -> tuple[tuple[float, float], ...]:
+                      start_i: int, end_i: int,
+                      pair_motion: list | None = None) -> tuple[tuple[float, float], ...]:
     """Anchor two *simultaneous* live crops despite intermittent detections.
 
     A small number of front-facing frames is enough for an unchanged wide
@@ -89,7 +167,8 @@ def _stable_wide_pair(candidates: list, singles: list,
     found = [(i - start_i, candidates[i]) for i in range(start_i, end_i)
              if candidates[i] is not None]
     minimum = max(3, math.ceil(count * .12))
-    if len(found) < minimum:
+    if len(found) < minimum or not _pair_has_live_motion(
+            candidates, pair_motion, start_i, end_i):
         return ()
     if count >= 8 and found[-1][0] - found[0][0] < (count - 1) * .55:
         return ()
@@ -115,15 +194,20 @@ def _decisions_for_scene(
     start_seconds: float, end_seconds: float,
     window: float,
     candidates: list | None = None,
+    pair_motion: list | None = None,
 ) -> Scene:
     import numpy as np
     from .karo_smart_layouts import _normalize_activity, smooth_turns
     count = max(1, end_i - start_i)
     matched = [p for p in pairs[start_i:end_i] if p is not None]
     available = [f for f in singles[start_i:end_i] if f is not None]
-    anchor = _stable_wide_pair(candidates, singles, start_i, end_i) if candidates is not None else ()
-    # One person taking a close-up must never be duplicated into split panels.
-    if len(matched) >= max(3, math.ceil(count * .55)):
+    anchor = (_stable_wide_pair(candidates, singles, start_i, end_i, pair_motion)
+              if candidates is not None else ())
+    paired = candidates if candidates is not None else pairs
+    both_live = _pair_has_live_motion(paired, pair_motion, start_i, end_i)
+    # Both detected panes must show actual live activity. Never promote a
+    # stationary background portrait/poster into a second speaker.
+    if len(matched) >= max(3, math.ceil(count * .55)) and both_live:
         first = tuple(float(np.median([p[0][k] for p in matched])) for k in (0, 1))
         second = tuple(float(np.median([p[1][k] for p in matched])) for k in (0, 1))
         if second[0] - first[0] >= .16:
@@ -151,6 +235,25 @@ def _decisions_for_scene(
                 mode = "speaker_focus"
             return Scene(start_seconds, end_seconds, mode, (first, second), changes,
                          anchor or (first, second))
+    if matched and pair_motion is not None and not both_live:
+        # In a repeated false two-face detection, prefer the face that MOVES
+        # instead of the static poster. This also keeps the original camera
+        # timestamp and avoids showing a blank pane.
+        votes = [
+            sum(1 for i in range(start_i, end_i)
+                if paired[i] is not None and pair_motion[i][person] >= 2.2)
+            for person in (0, 1)
+        ]
+        best = 0 if votes[0] > votes[1] else 1
+        if votes[best] >= 2:
+            live_centers = [
+                (float(p[best][0]), float(p[best][1]))
+                for p in pairs[start_i:end_i] if p is not None
+            ]
+            if live_centers:
+                face = tuple(float(np.median([point[k] for point in live_centers]))
+                             for k in (0, 1))
+                return Scene(start_seconds, end_seconds, "single", (face,))
     if len(available) >= max(2, math.ceil(count * .22)):
         # Face position in a close-up is independent of the last wide shot.
         face = tuple(float(np.median([f[k] for f in available])) for k in (0, 1))
@@ -178,6 +281,8 @@ def analyze_scenes(source: Path, start: float, duration: float, mode: str, ffmpe
         if detector.empty():
             return None
         visuals, pairs, singles, motion, candidate_pairs = [], [], [], [], []
+        candidate_motion = []
+        previous_pair_appearance = None
         mouth_before = [None, None]
         for i in range(count):
             t = start + min(duration - .001, (i + .5) * interval)
@@ -188,6 +293,7 @@ def analyze_scenes(source: Path, start: float, duration: float, mode: str, ffmpe
                 pairs.append(None)
                 singles.append(None)
                 candidate_pairs.append(None)
+                candidate_motion.append((0., 0.))
                 motion.append((0., 0.))
                 continue
             height, width = frame.shape[:2]
@@ -223,6 +329,9 @@ def analyze_scenes(source: Path, start: float, duration: float, mode: str, ffmpe
                               for x, y, fw, fh in extra]
                 wider = _wider_pair(more_faces)
             candidate_pairs.append(wider)
+            live_delta, previous_pair_appearance = _pair_temporal_activity(
+                grey, wider, previous_pair_appearance)
+            candidate_motion.append(live_delta)
             scores = []
             for j in (0, 1):
                 face = pair[j] if pair else None
@@ -251,9 +360,10 @@ def analyze_scenes(source: Path, start: float, duration: float, mode: str, ffmpe
         boundaries.append(count)
         # In pathological jump-cut videos do not make 100s of filter chains.
         if len(boundaries) - 1 > MAX_SEGMENTS:
-            # Group samples evenly; still use independent faces for each group.
-            stride = math.ceil(count / MAX_SEGMENTS)
-            boundaries = list(range(0, count, stride)) + [count]
+            # Merging unrelated shots to meet a limit reintroduces stale
+            # cross-cut speaker crops. Prefer safe Classic to false Dual Stack.
+            logger.warning("Smart Layout has more than %d camera shots; decline unsafe plan", MAX_SEGMENTS)
+            return None
         scenes = []
         for i, j in zip(boundaries[:-1], boundaries[1:]):
             a = i * interval
@@ -263,6 +373,7 @@ def analyze_scenes(source: Path, start: float, duration: float, mode: str, ffmpe
             scenes.append(_decisions_for_scene(
                 i, j, pairs, singles, motion, loudness, mode,
                 round(a, 3), round(b, 3), interval, candidate_pairs,
+                candidate_motion,
             ))
         if not scenes:
             return None
