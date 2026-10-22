@@ -86,13 +86,17 @@ def scene_boundaries(visuals: list, pairs: list, singles: list) -> list[int]:
             after_pairs = [p for p in pairs[i:i+5] if p is not None]
             before_solo = [s for s in singles[i-5:i] if s is not None]
             after_solo = [s for s in singles[i:i+5] if s is not None]
-            if len(before_pairs) >= 4 and len(after_pairs) <= 1 and len(after_solo) >= 4:
+            if (pairs[i-1] is not None and pairs[i] is None
+                    and len(before_pairs) >= 4 and len(after_pairs) <= 1
+                    and len(after_solo) >= 4):
                 old_area = max(p[0][2]*p[0][3] for p in before_pairs)
                 old_area = max(old_area, max(p[1][2]*p[1][3] for p in before_pairs))
                 new_areas = sorted(s[2]*s[3] for s in after_solo)
                 if new_areas[len(new_areas)//2] > old_area * 1.8:
                     is_cut = True
-            elif len(before_pairs) <= 1 and len(after_pairs) >= 4 and len(before_solo) >= 4:
+            elif (pairs[i-1] is None and pairs[i] is not None
+                  and len(before_pairs) <= 1 and len(after_pairs) >= 4
+                  and len(before_solo) >= 4):
                 previous_areas = sorted(s[2]*s[3] for s in before_solo)
                 new_area = max(p[0][2]*p[0][3] for p in after_pairs)
                 new_area = max(new_area, max(p[1][2]*p[1][3] for p in after_pairs))
@@ -264,10 +268,17 @@ def _decisions_for_scene(
     # Both detected panes must show actual live activity. Never promote a
     # stationary background portrait/poster into a second speaker.
     if (len(matched) >= max(3, math.ceil(count * .55))
-            and both_live and anchor and _pair_covers_scene(pairs, start_i, end_i)):
+            and both_live and (anchor or candidates is None)
+            and _pair_covers_scene(pairs, start_i, end_i)):
         # Only crop the verified same-scene pair, not a median of faces from
         # unrelated angles that slipped through a subtle background cut.
-        first, second = anchor
+        if anchor:
+            first, second = anchor
+        else:
+            # Geometry-only legacy test callers cannot provide live anchors;
+            # production always supplies candidate pairs and motion.
+            first = tuple(float(np.median([p[0][k] for p in matched])) for k in (0, 1))
+            second = tuple(float(np.median([p[1][k] for p in matched])) for k in (0, 1))
         if second[0] - first[0] >= .16:
             activity = _normalize_activity(scores[start_i:end_i])
             votes = []
