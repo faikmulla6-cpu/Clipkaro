@@ -69,7 +69,7 @@ export function parseSmartLayoutPlan(input: unknown): SmartLayoutPlan | null {
       if (x < 0 || y < 0 || w < 2 || h < 2 || x + w > width || y + h > height) return null;
     }
     if (raw.layout === "dual_stack" && JSON.stringify(raw.crops[0]) === JSON.stringify(raw.crops[1])) return null;
-    if (raw.layout !== "speaker_focus" && raw.switches.length) return null;
+    if (raw.layout !== "speaker_focus" && raw.layout !== "dual_stack" && raw.switches.length) return null;
     let lastTime = -1;
     for (const change of raw.switches) {
       if (!Array.isArray(change) || change.length !== 2
@@ -127,6 +127,20 @@ export function focusRectAt(scene: SmartLayoutScene, sceneRelativeTime: number):
   return [x, first[1], first[2], first[3]];
 }
 
+/** Return the two independent source crops in the order rendered by FFmpeg.
+ * Switches are scene-local timestamps and apply only after confirmed turns.
+ */
+export function dualStackCropsAt(scene: SmartLayoutScene, sceneRelativeTime: number): [Rect, Rect] {
+  const first = scene.crops[0];
+  const second = scene.crops[1];
+  let top = 0;
+  for (const [time, speaker] of scene.switches) {
+    if (sceneRelativeTime + 0.0001 < time) break;
+    top = speaker;
+  }
+  return top === 1 ? [second, first] : [first, second];
+}
+
 /** Paint only layout pixels. Existing editor captions stay in React above canvas.
  * A SecurityError means private media is not CORS-enabled: fail visibly in the
  * caller; NEVER broaden B2 bucket CORS or disclose a signed URL as a workaround.
@@ -150,10 +164,12 @@ export function paintSmartLayoutFrame(
     if (scene.layout === "dual_stack") {
       const band = (640 * .12 | 0) & ~1;
       const half = (640 - band) / 2;
-      draw(scene.crops[0], 0, 0, w, half / 640 * h);
+      const relative = sourceTime - plan.source_start - scene.start;
+      const [top, bottom] = dualStackCropsAt(scene, relative);
+      draw(top, 0, 0, w, half / 640 * h);
       ctx.fillStyle = "#111827";
       ctx.fillRect(0, half / 640 * h, w, band / 640 * h);
-      draw(scene.crops[1], 0, (half + band) / 640 * h, w, half / 640 * h);
+      draw(bottom, 0, (half + band) / 640 * h, w, half / 640 * h);
     } else if (scene.layout === "wide") {
       const sourceAspect = plan.source_width / plan.source_height;
       const outputAspect = w / h;
