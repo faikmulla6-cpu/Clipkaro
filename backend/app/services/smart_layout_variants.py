@@ -38,14 +38,16 @@ def all_layout_variants(auto_plan: Any, *, source_start: float,
             wide_pair = tuple(getattr(scene, "pair_centers", ()))
             if choice == "dual_stack" and (pair or len(wide_pair) == 2):
                 centers = scene.centers if pair else wide_pair
-                derived = replace(scene, mode="dual_stack", centers=centers, switches=())
+                # The detector already recorded confident turns. Preserve
+                # these for top=active-speaker ordering in both preview/export.
+                derived = replace(scene, mode="dual_stack", centers=centers,
+                                  switches=scene.switches if pair else ())
             elif pair and choice == "speaker_focus":
                 derived = replace(scene, mode="speaker_focus")
             elif getattr(scene, "mode", None) == "dual_stack":
-                # Auto Director may choose Dual Stack while still recording
-                # mouth-motion votes. Those votes cannot be applied to split
-                # scenes; they belong only in Speaker Focus.
-                derived = replace(scene, switches=())
+                # Auto Director's split can also prioritize the talking
+                # speaker; both crops still come from the same source frame.
+                derived = scene
             else:
                 derived = scene
             scenes.append(derived)
