@@ -142,6 +142,18 @@ class SceneAwareTests(unittest.TestCase):
         singles = [a]*n + [bigger]*8
         self.assertEqual(scene_boundaries(visuals,pairs,singles),[0,20])
 
+    def test_closeup_cut_with_unchanged_backdrop_does_not_keep_old_pair(self):
+        import numpy as np
+        from app.services.karo_smart_scenes import scene_boundaries
+        same = [np.full((12, 20), .25, dtype="float32")] * 30
+        pair = ((.25, .33, .08, .12), (.75, .33, .08, .12))
+        solo = (.76, .33, .22, .27)
+        # Background nearly identical before/after edit. Sustained geometry
+        # is sufficient evidence that old two-person crops are now unsafe.
+        cuts = scene_boundaries(same, [pair]*16+[None]*14,
+                                [pair[0]]*16+[solo]*14)
+        self.assertEqual(cuts, [0, 16])
+
     def test_single_missed_face_does_not_fragment_dual_stack(self):
         import numpy as np
         from app.services.karo_smart_scenes import scene_boundaries
