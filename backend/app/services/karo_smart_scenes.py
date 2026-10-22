@@ -60,6 +60,22 @@ def scene_boundaries(visuals: list, pairs: list, singles: list) -> list[int]:
         is_cut = (jump > .27
                   or (jump > .105 and (pair_flip or location_jump or face_scale_jump))
                   or (jump > .155 and (a is None) != (b is None)))
+        # A two-person shot that changes to a close-up may retain a very
+        # similar bookshelf backdrop. Require sustained evidence of a
+        # genuine camera change instead of trusting one missing Haar frame.
+        if not is_cut and jump > .065 and i >= 5 and i + 4 <= n:
+            previous = pairs[i-5:i]
+            following = pairs[i:i+4]
+            before_paired = sum(p is not None for p in previous) >= 4
+            after_solo = sum(p is not None for p in following) <= 1
+            solo = [s for s in singles[i:i+4] if s is not None]
+            paired_sizes = [max(p[0][2]*p[0][3], p[1][2]*p[1][3])
+                            for p in previous if p is not None]
+            if before_paired and after_solo and len(solo) >= 3 and paired_sizes:
+                import statistics
+                old_size = statistics.median(paired_sizes)
+                new_size = statistics.median(s[2]*s[3] for s in solo)
+                is_cut = new_size > max(.006, old_size * 1.6)
         if is_cut and i - boundaries[-1] >= 2:
             boundaries.append(i)
     if len(boundaries) > 1 and n - boundaries[-1] < 2:
@@ -131,6 +147,23 @@ def _pair_temporal_activity(grey, pair, previous):
     return tuple(movement), (pair, patches)
 
 
+def _pair_covers_scene(candidates, start_i: int, end_i: int) -> bool:
+    """A reliable two-person crop must cover BOTH ends of its shot.
+
+    If both faces are seen for 25 seconds and one disappears for the final
+    eight, taking the median of early evidence would leave a fixed empty
+    panel over those last seconds. Short detector dropouts remain tolerated.
+    """
+    count = end_i - start_i
+    if count < 10:
+        return True
+    margin = max(3, math.ceil(count * .2))
+    return (
+        any(candidates[i] is not None for i in range(start_i, start_i + margin))
+        and any(candidates[i] is not None for i in range(end_i - margin, end_i))
+    )
+
+
 def _pair_has_live_motion(candidates, movement, start_i: int, end_i: int) -> bool:
     """Both proposed speakers must change across multiple sampled frames.
 
@@ -167,8 +200,9 @@ def _stable_wide_pair(candidates: list, singles: list,
     found = [(i - start_i, candidates[i]) for i in range(start_i, end_i)
              if candidates[i] is not None]
     minimum = max(3, math.ceil(count * .12))
-    if len(found) < minimum or not _pair_has_live_motion(
-            candidates, pair_motion, start_i, end_i):
+    if (len(found) < minimum
+            or not _pair_covers_scene(candidates, start_i, end_i)
+            or not _pair_has_live_motion(candidates, pair_motion, start_i, end_i)):
         return ()
     if count >= 8 and found[-1][0] - found[0][0] < (count - 1) * .55:
         return ()
@@ -207,7 +241,8 @@ def _decisions_for_scene(
     both_live = _pair_has_live_motion(paired, pair_motion, start_i, end_i)
     # Both detected panes must show actual live activity. Never promote a
     # stationary background portrait/poster into a second speaker.
-    if len(matched) >= max(3, math.ceil(count * .55)) and both_live:
+    if (len(matched) >= max(3, math.ceil(count * .55))
+            and both_live and _pair_covers_scene(pairs, start_i, end_i)):
         first = tuple(float(np.median([p[0][k] for p in matched])) for k in (0, 1))
         second = tuple(float(np.median([p[1][k] for p in matched])) for k in (0, 1))
         if second[0] - first[0] >= .16:

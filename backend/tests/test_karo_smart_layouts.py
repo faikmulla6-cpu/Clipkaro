@@ -103,6 +103,57 @@ if __name__ == "__main__":
 
 
 class SceneAwareTests(unittest.TestCase):
+    def test_good_initial_pair_cannot_leave_empty_panel_at_end(self):
+        from app.services.karo_smart_scenes import _decisions_for_scene
+        from app.services.smart_layout_variants import all_layout_variants
+        first = (.25,.35,.085,.13)
+        second = (.77,.35,.085,.13)
+        solo = (.77,.35,.20,.26)
+        # This is the regression observed in the 67-second customer export:
+        # a long valid two-person shot, then several seconds with only one
+        # speaker. The existing majority rule would incorrectly keep split.
+        n = 35
+        paired = [(first, second)] * 27 + [None] * 8
+        singles = [first] * 27 + [solo] * 8
+        movement = [(6., 7.)] * 27 + [(0., 0.)] * 8
+        scene = _decisions_for_scene(
+            0,n,paired,singles,[(6.,7.)]*n,[1.]*n,
+            "auto",0.,14.,.4,paired,movement,
+        )
+        self.assertNotEqual(scene.mode, "dual_stack")
+        self.assertEqual(scene.pair_centers, ())
+        variants = all_layout_variants(
+            LayoutPlan("auto",1280,720,((.25,.35),(.75,.35)),
+                       segments=(scene,)),
+            source_start=0,duration=14,
+        )
+        self.assertNotEqual(variants["dual_stack"]["scenes"][0]["layout"],"dual_stack")
+
+    def test_sustained_closeup_after_two_person_shot_creates_boundary(self):
+        import numpy as np
+        from app.services.karo_smart_scenes import scene_boundaries
+        first = np.full((12,20),.25,dtype="float32")
+        second = np.full((12,20),.34,dtype="float32")
+        a,b = (.25,.32,.08,.12),(.75,.32,.08,.12)
+        bigger = (.76,.35,.20,.28)
+        n = 20
+        visuals = [first]*n + [second]*8
+        pairs = [(a,b)]*n + [None]*8
+        singles = [a]*n + [bigger]*8
+        self.assertEqual(scene_boundaries(visuals,pairs,singles),[0,20])
+
+    def test_single_missed_face_does_not_fragment_dual_stack(self):
+        import numpy as np
+        from app.services.karo_smart_scenes import scene_boundaries
+        a,b=(.25,.32,.08,.12),(.75,.32,.08,.12)
+        one=(.75,.32,.20,.25)
+        pair=[(a,b)]*24
+        pair[12]=None
+        singles=[a]*24
+        singles[12]=one
+        same=[np.full((12,20),.26,dtype="float32")]*24
+        self.assertEqual(scene_boundaries(same,pair,singles),[0])
+
     def test_static_poster_does_not_qualify_as_second_speaker(self):
         from app.services.karo_smart_scenes import _decisions_for_scene
         from app.services.smart_layout_variants import all_layout_variants
