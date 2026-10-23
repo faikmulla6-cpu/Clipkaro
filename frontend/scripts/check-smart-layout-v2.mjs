@@ -91,6 +91,24 @@ assert.ok(focusRectAt(focusScene, 2)[0] > 400 && focusRectAt(focusScene, 2)[0] <
           "speaker focus must ease across the actual face centers");
 assert.equal(focusRectAt(focusScene, 2.4)[0], 860);
 
+const elevatedFocus = {
+  ...focusScene,
+  crops: [[0, 0, 404, 700], [860, 18, 404, 700]],
+};
+assert.deepEqual(focusRectAt(elevatedFocus, 1), [0, 0, 404, 700]);
+const halfway = focusRectAt(elevatedFocus, 2);
+assert.ok(halfway[0] > 400 && halfway[0] < 500);
+assert.ok(halfway[1] > 8 && halfway[1] < 10,
+          "Speaker Focus must animate x and y identically to FFmpeg");
+assert.deepEqual(focusRectAt(elevatedFocus, 2.4), [860, 18, 404, 700]);
+const lateFirstSwitch = {
+  ...elevatedFocus,
+  switches: [[1.5, 1]],
+};
+assert.deepEqual(focusRectAt(lateFirstSwitch, .5), [0, 0, 404, 700],
+  "No confirmed speaker change must preserve the initial frame, not jump to a future speaker");
+assert.deepEqual(focusRectAt(lateFirstSwitch, 2.0), [860, 18, 404, 700]);
+
 function fakeCanvas() {
   const commands = [];
   const ctx = {
