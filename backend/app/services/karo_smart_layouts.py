@@ -31,6 +31,26 @@ def _clamp(value: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, value))
 
 
+def _credible_pair_geometry(left: tuple, right: tuple, min_gap: float) -> bool:
+    """Reject an off-row, much smaller background object as a second face.
+
+    The customer's original podcast has a stationary book cover that Haar
+    detects as a face at y=.10 while the only human is at y=.33. Both are
+    separated horizontally, so horizontal distance alone produces a false
+    Dual Stack. This conservative joint test still permits unequal-height
+    speakers of similar size; liveness validation remains mandatory.
+    """
+    if right[0] - left[0] < min_gap:
+        return False
+    areas = (left[2] * left[3], right[2] * right[3])
+    if max(areas) <= 0:
+        return False
+    if (abs(left[1] - right[1]) > .18
+            and min(areas) / max(areas) < .50):
+        return False
+    return True
+
+
 def _pair(faces: list[tuple[float, float, float, float]]) -> tuple | None:
     """Keep two significant, horizontally separated faces, ordered left/right."""
     valid = sorted((f for f in faces if f[2] >= .045 and f[3] >= .06),
@@ -38,7 +58,7 @@ def _pair(faces: list[tuple[float, float, float, float]]) -> tuple | None:
     if len(valid) < 2:
         return None
     pair = sorted(valid[:2], key=lambda f: f[0])
-    if pair[1][0] - pair[0][0] < .16:
+    if not _credible_pair_geometry(pair[0], pair[1], .16):
         return None
     return pair[0], pair[1]
 
