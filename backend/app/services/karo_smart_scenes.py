@@ -77,8 +77,8 @@ def scene_boundaries(visuals: list, pairs: list, singles: list) -> list[int]:
                 new_size = statistics.median(s[2]*s[3] for s in solo)
                 is_cut = new_size > max(.006, old_size * 1.6)
         # Some camera cuts retain the same dark studio backdrop. A sustained
-        # switch from two small simultaneous faces to one significantly larger
-        # close-up is a camera change even when the thumbnail barely moves.
+        # switch between two visible faces and a single visible face is a
+        # camera change even when the thumbnail and face scale barely move.
         # Requiring 4/5 observations avoids treating a blink or occlusion
         # as a cut and prevents an old two-face median cropping a bookshelf.
         if not is_cut and i >= 5 and i + 5 <= n:
@@ -89,9 +89,6 @@ def scene_boundaries(visuals: list, pairs: list, singles: list) -> list[int]:
             if (pairs[i-1] is not None and pairs[i] is None
                     and len(before_pairs) >= 4 and len(after_pairs) <= 1
                     and len(after_solo) >= 4):
-                old_area = max(p[0][2]*p[0][3] for p in before_pairs)
-                old_area = max(old_area, max(p[1][2]*p[1][3] for p in before_pairs))
-                new_areas = sorted(s[2]*s[3] for s in after_solo)
                 # Sustained 4/5 paired -> solo observations establish
                 # an actual visibility transition even when both shots have
                 # similar-sized faces and a nearly identical backdrop. A
@@ -100,9 +97,6 @@ def scene_boundaries(visuals: list, pairs: list, singles: list) -> list[int]:
             elif (pairs[i-1] is None and pairs[i] is not None
                   and len(before_pairs) <= 1 and len(after_pairs) >= 4
                   and len(before_solo) >= 4):
-                previous_areas = sorted(s[2]*s[3] for s in before_solo)
-                new_area = max(p[0][2]*p[0][3] for p in after_pairs)
-                new_area = max(new_area, max(p[1][2]*p[1][3] for p in after_pairs))
                 # Reverse transition: a solo camera returns to a genuine
                 # co-visible two-person shot. Never preserve the old solo
                 # crop after this cut or manufacture a second person.
