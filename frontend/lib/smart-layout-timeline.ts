@@ -103,28 +103,35 @@ const smoothstep = (value: number): number => {
 
 export function focusRectAt(scene: SmartLayoutScene, sceneRelativeTime: number): Rect {
   const first = scene.crops[0];
-  if (scene.layout !== "speaker_focus" || scene.crops.length < 2 || !scene.switches.length) return first;
-  // FFmpeg's focus expression interpolates only x; y and crop size remain
-  // those of the scene's first speaker. Transition lasts up to 0.4 seconds.
-  let currentIndex = scene.switches[0][1];
-  let previousChange = scene.switches[0][0];
-  let x = scene.crops[currentIndex][0];
-  for (let j = 1; j < scene.switches.length; j += 1) {
-    const [nextTime, nextIndex] = scene.switches[j];
-    const begin = Math.max(previousChange, nextTime - .2);
-    const end = nextTime + .2;
+  if (scene.layout !== "speaker_focus" || scene.crops.length < 2) return first;
+  // Match the FFmpeg per-frame x/y easing, including an initial period with
+  // no confirmed speaker. A higher/lower guest must never have their head cut
+  // off by the first speaker's fixed vertical crop.
+  const changes: SpeakerChange[] = [[0, 0]];
+  for (const [at, who] of scene.switches) {
+    if (at <= .03) changes[0] = [0, who];
+    else if (at > changes[changes.length - 1][0]) changes.push([at, who]);
+  }
+  let previousTime = changes[0][0];
+  let current = scene.crops[changes[0][1]];
+  for (let i = 1; i < changes.length; i += 1) {
+    const [at, who] = changes[i];
+    const next = scene.crops[who];
+    const begin = Math.max(previousTime, at - .2);
+    const end = at + .2;
     if (sceneRelativeTime < begin) break;
-    const nextX = scene.crops[nextIndex][0];
     if (sceneRelativeTime < end) {
       const eased = smoothstep((sceneRelativeTime - begin) / Math.max(.05, end - begin));
-      x += (nextX - x) * eased;
-      break;
+      return [
+        current[0] + (next[0] - current[0]) * eased,
+        current[1] + (next[1] - current[1]) * eased,
+        first[2], first[3],
+      ];
     }
-    x = nextX;
-    currentIndex = nextIndex;
-    previousChange = nextTime;
+    current = next;
+    previousTime = at;
   }
-  return [x, first[1], first[2], first[3]];
+  return [current[0], current[1], first[2], first[3]];
 }
 
 /** Return the two independent source crops in the order rendered by FFmpeg.
