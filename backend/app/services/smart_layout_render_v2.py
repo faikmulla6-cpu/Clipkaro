@@ -17,21 +17,31 @@ def _even(value: float) -> int:
     return n if n % 2 == 0 else n - 1
 
 
-def _filter_focus(scene: dict[str, Any], crop: list[int]) -> str:
-    transitions = scene["switches"]
-    positions = [int(point[0]) for point in scene["crops"]]
-    if not transitions:
-        return str(positions[0])
-    start = float(scene["start"])
-    expr = str(positions[int(transitions[-1][1])])
-    # Easing must use scene-local timestamps (trim resets PTS).
-    for j in range(len(transitions)-1, 0, -1):
-        time, who = transitions[j]
-        previous = int(transitions[j-1][1])
-        initial = positions[previous]
-        following = positions[int(who)]
-        begin = max(float(transitions[j-1][0]), float(time) - .2)
-        end = float(time) + .2
+def _filter_focus(scene: dict[str, Any], axis: int = 0) -> str:
+    """Match browser interpolation for both x and y in Speaker Focus.
+
+    Some studio shots place the host and guest at different heights. Moving
+    only the x crop made the server export disagree with its editor preview.
+    Unspecified initial speakers default to the first verified face until an
+    explicit switch, never to the last reported speaker from frame zero.
+    """
+    positions = [int(point[axis]) for point in scene["crops"]]
+    changes: list[tuple[float, int]] = [(0., 0)]
+    for timestamp, person in scene["switches"]:
+        at = float(timestamp)
+        who = int(person)
+        if at <= .03:
+            changes[0] = (0., who)
+        elif at > changes[-1][0]:
+            changes.append((at, who))
+    expr = str(positions[changes[-1][1]])
+    for j in range(len(changes) - 1, 0, -1):
+        time, who = changes[j]
+        previous_time, previous_who = changes[j-1]
+        initial = positions[previous_who]
+        following = positions[who]
+        begin = max(previous_time, time - .2)
+        end = time + .2
         u = f"min(1,max(0,(t-{begin:.3f})/{max(.05,end-begin):.3f}))"
         easing = f"({u}*{u}*(3-2*{u}))"
         expr = (f"if(lt(t,{begin:.3f}),{initial},"
@@ -163,8 +173,9 @@ def compose_v2_filter(plan: dict[str, Any], duration: float,
             fragments.append(f"[top{i}][band{i}][bottom{i}]vstack=inputs=3,setsar=1,format=yuv420p[out{i}]")
         elif mode in {"single","speaker_focus"}:
             x,y,w,h = scene["crops"][0]
-            focus = _filter_focus(scene,scene["crops"][0]) if mode=="speaker_focus" else str(x)
-            fragments.append(f"[shot{i}]crop={w}:{h}:x='{focus}':y={y},"
+            focus_x = _filter_focus(scene, 0) if mode=="speaker_focus" else str(x)
+            focus_y = _filter_focus(scene, 1) if mode=="speaker_focus" else str(y)
+            fragments.append(f"[shot{i}]crop={w}:{h}:x='{focus_x}':y='{focus_y}',"
                              f"scale={output_width}:{output_height},setsar=1,format=yuv420p[out{i}]")
         else:
             fragments.append(f"[shot{i}]split=2[bg{i}][fg{i}]")
