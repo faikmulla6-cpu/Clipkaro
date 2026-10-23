@@ -124,8 +124,9 @@ def _wider_pair(faces: list) -> tuple | None:
     )[:2]
     if len(candidates) != 2:
         return None
+    from .karo_smart_layouts import _credible_pair_geometry
     left, right = sorted(candidates, key=lambda f: f[0])
-    return (left, right) if right[0] - left[0] >= .18 else None
+    return (left, right) if _credible_pair_geometry(left, right, .18) else None
 
 
 def _appearance_patch(grey, face):
