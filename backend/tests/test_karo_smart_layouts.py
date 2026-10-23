@@ -18,6 +18,22 @@ class LayoutTests(unittest.TestCase):
         self.assertIsNone(_pair([(0.25, .3, .1, .2), (0.31, .3, .1, .2)]))
         self.assertIsNotNone(_pair([(0.25, .3, .1, .2), (0.74, .3, .1, .2)]))
 
+    def test_studio_book_is_not_a_second_live_person(self):
+        from app.services.karo_smart_scenes import _wider_pair
+        # Normalized detections reproduced from the source file.
+        book = (.287, .104, .102, .181)
+        presenter = (.512, .324, .189, .336)
+        self.assertIsNone(_pair([book, presenter]))
+        self.assertIsNone(_wider_pair([book, presenter]))
+        # Real simultaneous speakers remain eligible for split layout.
+        left = (.264, .372, .200, .356)
+        right = (.688, .383, .203, .361)
+        self.assertIsNotNone(_pair([left, right]))
+        self.assertIsNotNone(_wider_pair([left, right]))
+        # A legitimate change in elevation alone must not be rejected.
+        self.assertIsNotNone(_pair([
+            (.22, .12, .17, .24), (.73, .40, .17, .24)]))
+
     def test_rapid_interjection_cannot_steal_frame(self):
         turns = smooth_turns([0] * 7 + [1] + [0] * 7)
         self.assertEqual(turns, ((0., 0),))
