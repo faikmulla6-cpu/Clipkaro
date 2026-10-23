@@ -92,16 +92,21 @@ def scene_boundaries(visuals: list, pairs: list, singles: list) -> list[int]:
                 old_area = max(p[0][2]*p[0][3] for p in before_pairs)
                 old_area = max(old_area, max(p[1][2]*p[1][3] for p in before_pairs))
                 new_areas = sorted(s[2]*s[3] for s in after_solo)
-                if new_areas[len(new_areas)//2] > old_area * 1.8:
-                    is_cut = True
+                # Sustained 4/5 paired -> solo observations establish
+                # an actual visibility transition even when both shots have
+                # similar-sized faces and a nearly identical backdrop. A
+                # single missed Haar detection cannot satisfy this gate.
+                is_cut = True
             elif (pairs[i-1] is None and pairs[i] is not None
                   and len(before_pairs) <= 1 and len(after_pairs) >= 4
                   and len(before_solo) >= 4):
                 previous_areas = sorted(s[2]*s[3] for s in before_solo)
                 new_area = max(p[0][2]*p[0][3] for p in after_pairs)
                 new_area = max(new_area, max(p[1][2]*p[1][3] for p in after_pairs))
-                if previous_areas[len(previous_areas)//2] > new_area * 1.8:
-                    is_cut = True
+                # Reverse transition: a solo camera returns to a genuine
+                # co-visible two-person shot. Never preserve the old solo
+                # crop after this cut or manufacture a second person.
+                is_cut = True
         if is_cut and i - boundaries[-1] >= 2:
             boundaries.append(i)
     if len(boundaries) > 1 and n - boundaries[-1] < 2:
