@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timezone
 from pathlib import Path
 
 from app.core.database import fetch_one
@@ -175,34 +174,9 @@ async def run_smart_layout_analysis(job: dict, scratch: Path, storage) -> None:
     fresh = await _owned(clip_id, user_id)
     if _identity(fresh, user_id) != identity:
         raise RuntimeError("The clip or source changed during Smart Layout analysis.")
-    # A saved verified plan and its paid credit MUST commit together. If
-    # settlement fails, the reusable cache insertion is rolled back too.
-    # The failed job hook then releases the unfinalized reservation.
-    from app.services.smart_layout_repository import store_plan
-    from app.services.smart_layout_credits import analysis_fingerprint
-    from app.core.database import run_in_transaction
-
-    async def _commit_verified_plan(db) -> None:
-        paid = await (await db.execute(
-            """SELECT status FROM smart_layout_credit_reservations
-               WHERE job_id=? AND user_id=? AND fingerprint=?""",
-            (str(job["id"]),user_id,analysis_fingerprint(identity)),
-        )).fetchone()
-        if not paid or paid["status"] not in ("reserved", "finalized"):
-            raise RuntimeError("Smart Layout credit reservation is missing or released.")
-        await store_plan(
-            identity, record, source_expires_at=row.get("expires_at"),
-            transaction_db=db,
-        )
-        if paid["status"] == "reserved":
-            await db.execute(
-                """UPDATE smart_layout_credit_reservations
-                   SET status='finalized',updated_at=?
-                   WHERE job_id=? AND user_id=? AND status='reserved'""",
-                (datetime.now(timezone.utc).isoformat(),str(job["id"]),user_id),
-            )
-
-    await run_in_transaction(
-        _commit_verified_plan, operation_name="atomically save paid Smart Layout plan",
+    from app.services.smart_layout_credits import finalize_verified_plan
+    await finalize_verified_plan(
+        str(job["id"]), user_id, identity, record,
+        source_expires_at=row.get("expires_at"),
     )
     await update_job(job["id"], 100, "ready", "Smart Layout analysis ready", "completed")
