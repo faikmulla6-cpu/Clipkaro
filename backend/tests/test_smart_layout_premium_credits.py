@@ -148,6 +148,20 @@ class PremiumSmartLayoutCreditTests(unittest.IsolatedAsyncioTestCase):
         await quota.settle_analysis_job(second,succeeded=True)
         self.assertEqual(self.used(),1)
 
+    async def test_terminal_failed_worker_is_reconciled_without_double_refund(self):
+        job,_ = await quota.reserve_analysis(self.uid,self.identity())
+        self.assertEqual(self.used(),1)
+        # Model a crash after the job was marked failed but before the
+        # best-effort refund callback reached the separate ledger transaction.
+        self.conn.execute("UPDATE jobs SET status='failed' WHERE id=?",(job,))
+        first=await quota.entitlement_status({"id":self.uid},rollout=True)
+        second=await quota.entitlement_status({"id":self.uid},rollout=True)
+        self.assertEqual((first["remaining"],second["remaining"]),(12,12))
+        self.assertEqual(self.used(),0)
+        self.assertEqual(
+            self.conn.execute("SELECT status FROM smart_layout_credit_reservations").fetchone()[0],
+            "released")
+
     async def test_rolling_daily_limit_blocks_fifth_creator_credit(self):
         for i in range(4):
             job,_ = await quota.reserve_analysis(self.uid,self.identity(i*60.,(i+1)*60.))
