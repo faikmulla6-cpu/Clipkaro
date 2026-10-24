@@ -338,6 +338,41 @@ async def reserve_analysis(user_id: str, identity: AnalysisIdentity) -> tuple[st
     return await run_in_transaction(reserve, operation_name="reserve Smart Layout credits and job")
 
 
+async def finalize_verified_plan(job_id: str, user_id: str,
+                                 identity: AnalysisIdentity, record: dict,
+                                 *, source_expires_at: str | None) -> None:
+    """Atomically publish validated preview geometry AND finalize its charge.
+
+    Avoid a reusable cached plan with unbilled reserved/released credits if
+    media workers crash, DB writes fail, or a forged job ID is presented.
+    Validation and source ownership are performed by the calling worker.
+    """
+    identity = identity.validated()
+    if user_id != identity.user_id:
+        raise SmartLayoutQuotaError("SMART_LAYOUT_OWNER", "Paid analysis source owner changed.")
+    from app.services.smart_layout_repository import store_plan
+
+    async def publish(db):
+        paid = await (await db.execute(
+            """SELECT status FROM smart_layout_credit_reservations
+               WHERE job_id=? AND user_id=? AND fingerprint=?""",
+            (job_id,user_id,analysis_fingerprint(identity)),
+        )).fetchone()
+        if not paid or paid["status"] not in ("reserved", "finalized"):
+            raise SmartLayoutQuotaError(
+                "SMART_LAYOUT_RESERVATION", "Verified analysis cannot be published without paid entitlement.")
+        await store_plan(identity, record, source_expires_at=source_expires_at,
+                         transaction_db=db)
+        if paid["status"] == "reserved":
+            await db.execute(
+                """UPDATE smart_layout_credit_reservations
+                   SET status='finalized',updated_at=?
+                   WHERE job_id=? AND user_id=? AND status='reserved'""",
+                (_now().isoformat(),job_id,user_id),
+            )
+    await run_in_transaction(publish, operation_name="publish and settle Smart Layout analysis")
+
+
 async def settle_analysis_job(job_id: str, *, succeeded: bool) -> None:
     """Idempotent settlement; caller marks success only AFTER private plan save."""
     timestamp = _now().isoformat()
