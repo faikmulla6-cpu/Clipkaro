@@ -23,8 +23,8 @@ from app.services.auth import current_user
 from app.services.distributed_rate_limit import consume_rate_limit
 from app.services.jobs import dispatch_job, update_job
 from app.services.smart_layout_credits import (
-    SmartLayoutQuotaError, entitlement_status, reserve_analysis,
-    settle_analysis_job,
+    SmartLayoutQuotaError, entitlement_status, previously_paid,
+    reserve_analysis, settle_analysis_job,
 )
 from app.services.smart_layout_cache import AnalysisIdentity, MODEL_VERSION, private_plan_key
 from app.services.smart_layout_variants import all_variants_match_source
@@ -198,7 +198,9 @@ async def analysis_status(clip_id: str, user: dict = Depends(current_user)) -> d
     if ready:
         return ready
     active = await _active_job(clip_id, str(user["id"]), private_plan_key(identity))
-    return active or {"status": "not_started"}
+    if active:
+        return active
+    return {"status": "not_started", "reanalysis_free": await previously_paid(identity)}
 
 
 @router.post("/clips/{clip_id}/smart-layout-v2", status_code=202)
