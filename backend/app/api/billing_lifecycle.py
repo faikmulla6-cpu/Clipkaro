@@ -275,6 +275,13 @@ async def _migrate_usage_and_activate(
                 (export_limit, user["id"], new_key),
             )
 
+        # A same-billing-cycle upgrade expands the allowance but carries all
+        # already spent and in-flight Smart Layout credits. Never mint a new
+        # 12/40/120/300-credit bucket on top of the previous purchased usage.
+        from app.services.smart_layout_credits import migrate_smart_layout_period
+        await migrate_smart_layout_period(
+            db, str(user["id"]), old_key, new_key, target_plan,
+        )
         await db.execute(
             """UPDATE users SET plan=?,billing_reference=?,plan_started_at=?,plan_expires_at=?,
                cancel_at_period_end=0,updated_at=? WHERE id=?""",
