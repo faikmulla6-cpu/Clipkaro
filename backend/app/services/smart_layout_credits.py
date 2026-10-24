@@ -147,6 +147,21 @@ async def entitlement_status(user: dict, *, rollout: bool) -> dict:
     }
 
 
+async def previously_paid(identity: AnalysisIdentity) -> bool:
+    """An authenticated exact source/range may be reanalyzed free after TTL.
+
+    Ownership is verified by the calling API's _owned() source query.
+    No model revision or cache expiration can mint a duplicate charge.
+    """
+    item = identity.validated()
+    row = await fetch_one(
+        """SELECT 1 AS paid FROM smart_layout_credit_reservations
+           WHERE user_id=? AND fingerprint=? AND status='finalized'""",
+        (item.user_id, analysis_fingerprint(item)),
+    )
+    return bool(row)
+
+
 async def reserve_analysis(user_id: str, identity: AnalysisIdentity) -> tuple[str, str]:
     """Atomically reserve credits and create one durable job+payload.
 
