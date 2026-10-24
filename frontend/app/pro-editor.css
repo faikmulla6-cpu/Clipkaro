@@ -692,3 +692,30 @@ radial-gradient(circle at 50% 12%,rgba(255,255,255,.9),rgba(242,245,240,.5) 45%,
   line-height: 1.5;
   pointer-events: none;
 }
+
+
+/* Real Smart Layout — isolated premium quota card. No global style overrides. */
+.smart-quota-card { margin-top: 12px; padding: 15px; border: 1px solid rgba(15,128,98,.26); border-radius: 16px; background: linear-gradient(145deg,#effcf5 0%,#f9fcfb 62%,#f4f8ff 100%); box-shadow: 0 5px 24px rgba(17,72,54,.055); color: #173b32; }
+.smart-quota-head { display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:10px; letter-spacing:.065em; font-weight:800; }
+.smart-quota-head span { display:flex; align-items:center; gap:6px; color:#126e57; }
+.smart-quota-head b { background:rgba(11,110,76,.085); padding:5px 8px; border-radius:99px; font-size:9px; }
+.smart-quota-numbers { display:flex; align-items:baseline; justify-content:space-between; gap:10px; margin-top:14px; }
+.smart-quota-numbers strong {font-size:30px; line-height:1.1; font-variant-numeric:tabular-nums; letter-spacing:-.05em; color:#12392b;}
+.smart-quota-numbers strong small {font-size:12px;font-weight:700;letter-spacing:0;color:#407266;}
+.smart-quota-numbers > span {font-size:10px;color:#51756d;text-align:right;}
+.smart-quota-track {height:7px;margin-top:11px;overflow:hidden;background:#dcece6;border-radius:99px;}
+.smart-quota-track > div {height:100%;background:linear-gradient(90deg,#057856,#2bb38c);border-radius:99px;transition:width .3s ease;}
+.smart-quota-meta {margin:10px 0 0;font-size:11px;line-height:1.5;color:#56766c;}
+.smart-quota-meta b {color:#194e3d;font-variant-numeric:tabular-nums;}
+.smart-quota-date {display:block;margin-top:4px;font-size:10px;color:#557e70;}
+.smart-quota-action {width:100%;margin-top:13px;padding:11px 12px;display:flex;align-items:center;justify-content:center;gap:7px;border:0;border-radius:10px;background:#087653;color:white;font-weight:750;font-size:12px;cursor:pointer;transition:background .15s,transform .15s;}
+.smart-quota-action:not(:disabled):hover {background:#065d42;transform:translateY(-1px);}
+.smart-quota-action:disabled {background:#b6c7be;color:#496b5a;cursor:not-allowed;}
+.smart-quota-action:focus-visible,.smart-quota-locked a:focus-visible {outline:3px solid #4b96ff;outline-offset:3px;}
+.smart-quota-warning {margin:9px 0 0;color:#8d5329;font-size:11px;line-height:1.5;}
+.smart-quota-reused {display:flex;align-items:center;gap:6px;margin:10px 0 0;color:#146b4c;font-size:11px;font-weight:700;}
+.smart-quota-locked {margin-top:12px;font-size:12px;line-height:1.5;}
+.smart-quota-locked > b {font-size:13px;color:#255041;}
+.smart-quota-locked p {margin:5px 0;color:#52796c;}
+.smart-quota-locked a {color:#077052;font-weight:800;text-underline-offset:3px;}
+@media (prefers-reduced-motion:reduce){.smart-quota-track>div,.smart-quota-action{transition:none;}}
