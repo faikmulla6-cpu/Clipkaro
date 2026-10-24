@@ -42,7 +42,7 @@ type PostKaroStatus = { plan_eligible: boolean; ready: boolean };
 // Preview capability is discovered from the authenticated production backend.
  // No fragile Hostinger build-time NEXT_PUBLIC switch is required.
 type SmartPlanModes = "auto" | "dual_stack" | "speaker_focus";
-type LayoutAnalysisResponse = { status: string; job_id?: string; plans?: Record<SmartPlanModes, unknown> };
+type LayoutAnalysisResponse = { status: string; job_id?: string; plans?: Record<SmartPlanModes, unknown>; reanalysis_free?: boolean };
 type SmartQuotaStatus = { available: boolean; reason?: "rollout" | "ready" | "upgrade"; plan?: string;
   allowance?: number; used?: number; remaining?: number; daily_cap?: number;
   daily_used?: number; daily_remaining?: number; period_end?: string | null; };
@@ -189,6 +189,7 @@ export default function Editor() {
   const [layoutAnalysis, setLayoutAnalysis] = useState<"idle" | "analyzing" | "ready" | "error">("idle");
   const [layoutAnalysisError, setLayoutAnalysisError] = useState("");
   const [analysisConfirmed, setAnalysisConfirmed] = useState(false);
+  const [freeReanalysis, setFreeReanalysis] = useState(false);
   const [smartQuota, setSmartQuota] = useState<SmartQuotaStatus | null>(null);
   const smartClipCost = clip ? Math.max(1, Math.ceil(((clip.end_time - clip.start_time) - .00000001) / 60)) : 1;
   const [smartCapability, setSmartCapability] = useState<"checking" | "ready" | "unavailable">("checking");
@@ -283,7 +284,7 @@ export default function Editor() {
     };
   }, [previewDual, project?.id]);
 
-  useEffect(() => { setAnalysisConfirmed(false); }, [clip?.id, clip?.start_time, clip?.end_time]);
+  useEffect(() => { setAnalysisConfirmed(false); setFreeReanalysis(false); }, [clip?.id, clip?.start_time, clip?.end_time]);
 
   useEffect(() => {
     if (!SMART_LAYOUT_V2_ENABLED || !clip?.id || !smartRequested || verifiedLayoutPlans || layoutAnalysis === "error") return;
@@ -297,8 +298,10 @@ export default function Editor() {
       try {
         let status = await api<LayoutAnalysisResponse>(`/clips/${clip.id}/smart-layout-v2`);
         if (status.status === "not_started" && !requested) {
-          // A paid analysis is started only after an explicit user action.
-          if (!analysisConfirmed) return;
+          // An earlier paid analysis is free to refresh even when the cache
+          // expired. The server owns this flag; frontend never invents it.
+          if (!disposed) setFreeReanalysis(!!status.reanalysis_free);
+          if (!analysisConfirmed || disposed) return;
           requested = true;
           status = await postJSON<LayoutAnalysisResponse>(`/clips/${clip.id}/smart-layout-v2`, {});
         }
@@ -1509,14 +1512,14 @@ export default function Editor() {
                     <div className="smart-quota-track" role="progressbar" aria-label="Smart Layout plan credits remaining" aria-valuemin={0} aria-valuemax={smartQuota.allowance || 1} aria-valuenow={smartQuota.remaining || 0}>
                       <div style={{ width: String(Math.min(100, (smartQuota.remaining || 0) / Math.max(1, smartQuota.allowance || 1) * 100)) + "%" }}/>
                     </div>
-                    <p className="smart-quota-meta">Last 24h: <b>{smartQuota.daily_remaining ?? 0} of {smartQuota.daily_cap ?? 0}</b> available · This clip: <b>{smartClipCost} {smartClipCost === 1 ? "credit" : "credits"}</b></p>
+                    <p className="smart-quota-meta">Last 24h: <b>{smartQuota.daily_remaining ?? 0} of {smartQuota.daily_cap ?? 0}</b> available · This clip: <b>{freeReanalysis ? "Free refresh" : smartClipCost + (smartClipCost === 1 ? " credit" : " credits")}</b></p>
                     {smartQuota.period_end && <small className="smart-quota-date">Plan period ends {new Date(smartQuota.period_end).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}.</small>}
                     {!realPlan && layoutAnalysis !== "analyzing" && !analysisConfirmed && <button className="smart-quota-action" type="button"
-                      disabled={(smartQuota.remaining ?? 0) < smartClipCost || (smartQuota.daily_remaining ?? 0) < smartClipCost}
+                      disabled={!freeReanalysis && ((smartQuota.remaining ?? 0) < smartClipCost || (smartQuota.daily_remaining ?? 0) < smartClipCost)}
                       onClick={() => setAnalysisConfirmed(true)}>
-                      <Sparkles size={14}/> Analyze securely · {smartClipCost} {smartClipCost === 1 ? "credit" : "credits"}
+                      <Sparkles size={14}/> {freeReanalysis ? "Refresh previous analysis · Free" : "Analyze securely · " + smartClipCost + (smartClipCost === 1 ? " credit" : " credits")}
                     </button>}
-                    {!realPlan && ((smartQuota.remaining ?? 0) < smartClipCost || (smartQuota.daily_remaining ?? 0) < smartClipCost) &&
+                    {!realPlan && !freeReanalysis && ((smartQuota.remaining ?? 0) < smartClipCost || (smartQuota.daily_remaining ?? 0) < smartClipCost) &&
                       <p className="smart-quota-warning" role="status">Not enough {((smartQuota.remaining ?? 0) < smartClipCost) ? "plan" : "daily"} credits for a new analysis. Previously analyzed clips stay reusable.</p>}
                     {realPlan && <p className="smart-quota-reused"><Check size={13}/> Saved analysis reused · no new charge</p>}
                   </> : <div className="smart-quota-locked"><b>{smartQuota?.reason === "upgrade" ? "Unlock with a paid plan" : "Controlled beta access"}</b>
@@ -1583,7 +1586,7 @@ export default function Editor() {
                 {smartCapability === "checking" ? "Checking secure Smart Layout availability…" : smartQuota?.reason === "upgrade" ? "Real Smart Layout is premium. Open Frame to compare plans. Classic is still available." : "Real Smart Layout is currently limited to approved beta accounts. No simulated split is shown."}
               </div>}
             {smartRequested && SMART_LAYOUT_V2_ENABLED && !realPlan && <div className="smart-layout-v2-status" role="status">
-              {layoutAnalysis === "error" ? <><span>Smart Layout preview unavailable: {layoutAnalysisError}</span><button type="button" onClick={() => { setLayoutPlans(null); setAnalysisConfirmed(false); setLayoutAnalysis("idle"); setLayoutAnalysisError(""); }}>Review and retry</button></> : analysisConfirmed ? "Analyzing real speaker positions…" : ((smartQuota?.remaining ?? 0) < smartClipCost || (smartQuota?.daily_remaining ?? 0) < smartClipCost) ? "Not enough credits for a new analysis. Open Frame for your balance." : "Review the credit cost in Frame, then choose Analyze securely."}
+              {layoutAnalysis === "error" ? <><span>Smart Layout preview unavailable: {layoutAnalysisError}</span><button type="button" onClick={() => { setLayoutPlans(null); setAnalysisConfirmed(false); setLayoutAnalysis("idle"); setLayoutAnalysisError(""); }}>Review and retry</button></> : analysisConfirmed ? "Analyzing real speaker positions…" : (!freeReanalysis && ((smartQuota?.remaining ?? 0) < smartClipCost || (smartQuota?.daily_remaining ?? 0) < smartClipCost)) ? "Not enough credits for a new analysis. Open Frame for your balance." : "Review the credit cost in Frame, then choose Analyze securely."}
             </div>}
             {previewDual && <>
               <div className="smart-preview-band" aria-hidden="true" />
