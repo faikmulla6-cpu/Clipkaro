@@ -39,7 +39,20 @@ jobs:
         run: python -m pip install --upgrade pip && pip install -r requirements-dev.txt
       - name: Audit Python dependencies
         working-directory: backend
-        run: python -m pip_audit
+        run: |
+          # The PyPI vulnerability API can be slow from the self-hosted runner.
+          # Never treat a failed audit as success, including detected vulnerabilities.
+          for attempt in 1 2 3; do
+            if python -m pip_audit --timeout 60; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "::warning::Python dependency audit attempt $attempt failed; retrying."
+              sleep 5
+            fi
+          done
+          echo "::error::Python dependency audit failed all three attempts."
+          exit 1
 
       - name: Run backend tests
         working-directory: backend
