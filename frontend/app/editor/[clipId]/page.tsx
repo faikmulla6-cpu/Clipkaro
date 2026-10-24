@@ -1580,10 +1580,10 @@ export default function Editor() {
               width={360} height={640} aria-label="Analyzed Smart Layout preview"/>}
             {ratio === "9:16" && layoutMode !== "classic" && smartCapability !== "ready" &&
               <div className="smart-layout-v2-status" role="status">
-                {smartCapability === "checking" ? "Checking secure Smart Layout availability…" : "Real Smart Layout preview is not active for this account. No simulated split is shown."}
+                {smartCapability === "checking" ? "Checking secure Smart Layout availability…" : smartQuota?.reason === "upgrade" ? "Real Smart Layout is premium. Open Frame to compare plans. Classic is still available." : "Real Smart Layout is currently limited to approved beta accounts. No simulated split is shown."}
               </div>}
-            {smartRequested && !realPlan && <div className="smart-layout-v2-status" role="status">
-              {layoutAnalysis === "error" ? <><span>Smart Layout preview unavailable: {layoutAnalysisError}</span><button type="button" onClick={() => { setLayoutPlans(null); setAnalysisConfirmed(false); setLayoutAnalysis("idle"); setLayoutAnalysisError(""); }}>Review and retry</button></> : analysisConfirmed ? "Analyzing real speaker positions…" : "Review the credit cost in Frame, then choose Analyze securely."}
+            {smartRequested && SMART_LAYOUT_V2_ENABLED && !realPlan && <div className="smart-layout-v2-status" role="status">
+              {layoutAnalysis === "error" ? <><span>Smart Layout preview unavailable: {layoutAnalysisError}</span><button type="button" onClick={() => { setLayoutPlans(null); setAnalysisConfirmed(false); setLayoutAnalysis("idle"); setLayoutAnalysisError(""); }}>Review and retry</button></> : analysisConfirmed ? "Analyzing real speaker positions…" : ((smartQuota?.remaining ?? 0) < smartClipCost || (smartQuota?.daily_remaining ?? 0) < smartClipCost) ? "Not enough credits for a new analysis. Open Frame for your balance." : "Review the credit cost in Frame, then choose Analyze securely."}
             </div>}
             {previewDual && <>
               <div className="smart-preview-band" aria-hidden="true" />
