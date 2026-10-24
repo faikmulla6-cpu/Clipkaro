@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 
 from app.core.config import get_settings
 from app.core.database import fetch_one, run_in_transaction
-from app.services.billing import usage_period_key
+from app.services.billing import entitlement_for, mini_pass_is_exhausted, usage_period_key
 from app.services.smart_layout_cache import AnalysisIdentity
 
 POLICY_VERSION = "smart-layout-balanced-v1"
@@ -100,6 +100,44 @@ async def init_smart_layout_credits() -> None:
     await run_in_transaction(setup, operation_name="init Smart Layout credits")
 
 
+async def _mini_pass_exhausted_locked(db, user: dict) -> bool:
+    """Enforce the original purchased Mini Pass rights under its user lock.
+
+    A Smart Layout credit cannot extend the one-time pass beyond its source
+    minute pool or its Short creation allowance. entitlement_for() prepares
+    the immutable purchased snapshot BEFORE this transaction, so the check
+    reads the same grants as ClipKaro's media and Short billing triggers.
+    """
+    if str(user.get("plan") or "") != "mini_pass":
+        return False
+    uid = str(user["id"])
+    period = usage_period_key(user)
+    snapshot = await (await db.execute(
+        """SELECT shorts,processing_minutes,short_mode FROM plan_entitlement_snapshots
+           WHERE user_id=? AND period_key=?""", (uid,period))).fetchone()
+    if not snapshot:
+        # Never assume an unverified paid grant exists.
+        raise SmartLayoutQuotaError(
+            "SMART_LAYOUT_PASS_UNVERIFIED", "Mini Pass entitlement is not ready. Please retry.")
+    if str(snapshot["short_mode"]) == "finished_shorts":
+        counted = await (await db.execute(
+            """SELECT COUNT(*) AS n FROM short_credit_reservations
+               WHERE user_id=? AND period_key=? AND status IN ('reserved','finalized')""",
+            (uid,period))).fetchone()
+    else:
+        counted = await (await db.execute(
+            """SELECT COUNT(DISTINCT resource_id) AS n FROM usage_reservations
+               WHERE user_id=? AND period_key=? AND kind='minutes'
+                 AND status IN ('reserved','finalized')""", (uid,period))).fetchone()
+    minutes = await (await db.execute(
+        "SELECT source_minutes FROM usage WHERE user_id=? AND month=?",
+        (uid,period))).fetchone()
+    used_shorts = int(counted["n"] if counted else 0)
+    used_minutes = float(minutes["source_minutes"] if minutes else 0)
+    return (used_shorts >= int(snapshot["shorts"])
+            or used_minutes >= float(snapshot["processing_minutes"]) - .001)
+
+
 async def _release_terminal_failures(db, uid: str, now: datetime) -> None:
     """Repair interrupted refunds, but never release active/requeued work."""
     await db.execute(
@@ -138,6 +176,7 @@ async def entitlement_status(user: dict, *, rollout: bool) -> dict:
     if not current:
         raise SmartLayoutQuotaError("SMART_LAYOUT_AUTH", "Account unavailable.")
     plan = _active_plan(current, now)
+    mini_exhausted = plan == "mini_pass" and await mini_pass_is_exhausted(current)
     allowance, daily = LIMITS[plan]
     period = usage_period_key(current)
     async def check(db):
@@ -153,7 +192,8 @@ async def entitlement_status(user: dict, *, rollout: bool) -> dict:
         return await _balance(db, uid, period, effective_allowance, effective_daily, now)
     balance = await run_in_transaction(check, operation_name="read Smart Layout balance")
     return {
-        **balance, "plan": plan, "enabled": bool(rollout and allowance),
+        **balance, "plan": plan, "enabled": bool(rollout and allowance and not mini_exhausted),
+        "pass_exhausted": bool(mini_exhausted),
         "rollout_enabled": bool(rollout), "policy_version": POLICY_VERSION,
         "period_end": _period_end(current) if plan != "free" else None,
     }
@@ -189,6 +229,12 @@ async def reserve_analysis(user_id: str, identity: AnalysisIdentity) -> tuple[st
     timestamp = now.isoformat()
     fingerprint = analysis_fingerprint(identity)
     cost = credit_cost(identity.end - identity.start)
+    # Initialize the purchased pass snapshot outside the reservation lock.
+    # The authoritative exhaustion check then runs inside the same lock
+    # and transaction as the Smart Layout credit reservation.
+    preflight = await fetch_one("SELECT * FROM users WHERE id=?", (uid,))
+    if preflight and str(preflight.get("plan") or "") == "mini_pass":
+        await entitlement_for(preflight)
     from app.services.smart_layout_cache import private_plan_key
     import json
 
@@ -203,6 +249,9 @@ async def reserve_analysis(user_id: str, identity: AnalysisIdentity) -> tuple[st
         cap, daily = LIMITS[plan]
         if not cap:
             raise SmartLayoutQuotaError("SMART_LAYOUT_UPGRADE", "Real Smart Layout requires an active premium plan.")
+        if plan == "mini_pass" and await _mini_pass_exhausted_locked(db, owned):
+            raise SmartLayoutQuotaError(
+                "SMART_LAYOUT_PASS_EXHAUSTED", "This Mini Pass has reached its existing creation or minute allowance.")
         period = usage_period_key(owned)
         await _release_terminal_failures(db, uid, now)
         snapshot = await (await db.execute(
