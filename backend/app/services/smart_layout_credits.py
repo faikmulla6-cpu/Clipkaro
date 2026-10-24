@@ -163,11 +163,12 @@ async def reserve_analysis(user_id: str, identity: AnalysisIdentity) -> tuple[st
             "SELECT * FROM users WHERE id=?" + locking, (uid,))).fetchone()
         if not user:
             raise SmartLayoutQuotaError("SMART_LAYOUT_AUTH", "Account unavailable.")
-        plan = _active_plan(user, now)
+        owned = dict(user)
+        plan = _active_plan(owned, now)
         cap, daily = LIMITS[plan]
         if not cap:
             raise SmartLayoutQuotaError("SMART_LAYOUT_UPGRADE", "Real Smart Layout requires an active premium plan.")
-        period = usage_period_key(user)
+        period = usage_period_key(owned)
         existing = await (await db.execute(
             """SELECT status,job_id FROM smart_layout_credit_reservations
                WHERE user_id=? AND fingerprint=?""", (uid,fingerprint))).fetchone()
@@ -206,7 +207,7 @@ async def reserve_analysis(user_id: str, identity: AnalysisIdentity) -> tuple[st
             """INSERT INTO smart_layout_credit_periods(
                user_id,period_key,plan_key,allowance,daily_cap,policy_version,period_end,created_at
                ) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(user_id,period_key) DO NOTHING""",
-            (uid,period,plan,cap,daily,POLICY_VERSION,_period_end(user),timestamp))
+            (uid,period,plan,cap,daily,POLICY_VERSION,_period_end(owned),timestamp))
         job_id = str(uuid.uuid4())
         payload = json.dumps({"clip_id":identity.clip_id,
                               "cache_key":private_plan_key(identity)},separators=(",",":"))
@@ -219,13 +220,20 @@ async def reserve_analysis(user_id: str, identity: AnalysisIdentity) -> tuple[st
         await db.execute(
             """INSERT INTO job_payloads(job_id,payload_json,created_at,updated_at)
                VALUES (?,?,?,?)""", (job_id,payload,timestamp,timestamp))
-        if existing:
+        if free_recompute:
+            # Preserve the ORIGINAL paid period, timestamp and finalized
+            # credit. A cache miss cannot consume a later billing cycle.
+            await db.execute(
+                """UPDATE smart_layout_credit_reservations
+                   SET job_id=?,updated_at=?
+                   WHERE user_id=? AND fingerprint=? AND status='finalized'""",
+                (job_id,timestamp,uid,fingerprint))
+        elif existing:
             await db.execute(
                 """UPDATE smart_layout_credit_reservations SET period_key=?,
-                   credits=?,status=?,job_id=?,reserved_at=?,updated_at=?
-                   WHERE user_id=? AND fingerprint=?""",
-                (period,cost,"finalized" if free_recompute else "reserved",
-                 job_id,timestamp,timestamp,uid,fingerprint))
+                   credits=?,status='reserved',job_id=?,reserved_at=?,updated_at=?
+                   WHERE user_id=? AND fingerprint=? AND status='released'""",
+                (period,cost,job_id,timestamp,timestamp,uid,fingerprint))
         else:
             await db.execute(
                 """INSERT INTO smart_layout_credit_reservations(
