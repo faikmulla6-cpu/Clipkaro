@@ -43,7 +43,7 @@ type PostKaroStatus = { plan_eligible: boolean; ready: boolean };
  // No fragile Hostinger build-time NEXT_PUBLIC switch is required.
 type SmartPlanModes = "auto" | "dual_stack" | "speaker_focus";
 type LayoutAnalysisResponse = { status: string; job_id?: string; plans?: Record<SmartPlanModes, unknown>; reanalysis_free?: boolean };
-type SmartQuotaStatus = { available: boolean; reason?: "rollout" | "ready" | "upgrade"; plan?: string;
+type SmartQuotaStatus = { available: boolean; reason?: "rollout" | "ready" | "upgrade" | "pass_exhausted"; plan?: string;
   allowance?: number; used?: number; remaining?: number; daily_cap?: number;
   daily_used?: number; daily_remaining?: number; period_end?: string | null; };
 const styles = [
@@ -1502,8 +1502,8 @@ export default function Editor() {
                 </select>
                 <p className="field-note">{smartCapability === "ready"
                   ? "One secure analysis powers Auto Director, Dual Stack and Speaker Focus. Switching modes or re-exporting uses saved results for free."
-                  : smartQuota?.reason === "upgrade"
-                    ? "Real Smart Layout requires a premium plan. Classic framing remains available."
+                  : (smartQuota?.reason === "upgrade" || smartQuota?.reason === "pass_exhausted")
+                    ? smartQuota?.reason === "pass_exhausted" ? "Mini Pass has reached its Short or processing-minute allowance. Classic framing remains available." : "Real Smart Layout requires a premium plan. Classic framing remains available."
                     : "Real Smart Layout is in controlled beta. No simulated split will be shown."}</p>
                 {ratio === "9:16" && layoutMode !== "classic" && <section className="smart-quota-card" aria-label="Real Smart Layout credits">
                   <div className="smart-quota-head"><span><Sparkles size={15}/> REAL SMART LAYOUT</span><b>{smartQuota?.plan ? smartQuota.plan.replace("_", " ").toUpperCase() : "PRIVATE BETA"}</b></div>
@@ -1522,9 +1522,9 @@ export default function Editor() {
                     {!realPlan && !freeReanalysis && ((smartQuota.remaining ?? 0) < smartClipCost || (smartQuota.daily_remaining ?? 0) < smartClipCost) &&
                       <p className="smart-quota-warning" role="status">Not enough {((smartQuota.remaining ?? 0) < smartClipCost) ? "plan" : "daily"} credits for a new analysis. Previously analyzed clips stay reusable.</p>}
                     {realPlan && <p className="smart-quota-reused"><Check size={13}/> Saved analysis reused · no new charge</p>}
-                  </> : <div className="smart-quota-locked"><b>{smartQuota?.reason === "upgrade" ? "Unlock with a paid plan" : "Controlled beta access"}</b>
-                    <p>{smartQuota?.reason === "upgrade" ? "Premium plans include secure face-aware analysis credits." : "Real analysis will become available after your account joins the approved rollout."}</p>
-                    {smartQuota?.reason === "upgrade" && <a href="/pricing">Compare plans →</a>}
+                  </> : <div className="smart-quota-locked"><b>{smartQuota?.reason === "pass_exhausted" ? "Mini Pass completed" : smartQuota?.reason === "upgrade" ? "Unlock with a paid plan" : "Controlled beta access"}</b>
+                    <p>{smartQuota?.reason === "pass_exhausted" ? "Your existing Mini Pass Short or minute quota is exhausted. A new pass or subscription is required for further analysis." : smartQuota?.reason === "upgrade" ? "Premium plans include secure face-aware analysis credits." : "Real analysis will become available after your account joins the approved rollout."}</p>
+                    {(smartQuota?.reason === "upgrade" || smartQuota?.reason === "pass_exhausted") && <a href="/pricing">Compare plans →</a>}
                   </div>}
                 </section>
                 {layoutMode === "dual_stack" && dualStackCoverage !== null &&
@@ -1583,7 +1583,7 @@ export default function Editor() {
               width={360} height={640} aria-label="Analyzed Smart Layout preview"/>}
             {ratio === "9:16" && layoutMode !== "classic" && smartCapability !== "ready" &&
               <div className="smart-layout-v2-status" role="status">
-                {smartCapability === "checking" ? "Checking secure Smart Layout availability…" : smartQuota?.reason === "upgrade" ? "Real Smart Layout is premium. Open Frame to compare plans. Classic is still available." : "Real Smart Layout is currently limited to approved beta accounts. No simulated split is shown."}
+                {smartCapability === "checking" ? "Checking secure Smart Layout availability…" : smartQuota?.reason === "pass_exhausted" ? "Mini Pass creation or minute allowance reached. Open Frame to compare plans." : smartQuota?.reason === "upgrade" ? "Real Smart Layout is premium. Open Frame to compare plans. Classic is still available." : "Real Smart Layout is currently limited to approved beta accounts. No simulated split is shown."}
               </div>}
             {smartRequested && SMART_LAYOUT_V2_ENABLED && !realPlan && <div className="smart-layout-v2-status" role="status">
               {layoutAnalysis === "error" ? <><span>Smart Layout preview unavailable: {layoutAnalysisError}</span><button type="button" onClick={() => { setLayoutPlans(null); setAnalysisConfirmed(false); setLayoutAnalysis("idle"); setLayoutAnalysisError(""); }}>Review and retry</button></> : analysisConfirmed ? "Analyzing real speaker positions…" : (!freeReanalysis && ((smartQuota?.remaining ?? 0) < smartClipCost || (smartQuota?.daily_remaining ?? 0) < smartClipCost)) ? "Not enough credits for a new analysis. Open Frame for your balance." : "Review the credit cost in Frame, then choose Analyze securely."}
