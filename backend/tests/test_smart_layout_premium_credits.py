@@ -65,6 +65,11 @@ class PremiumSmartLayoutCreditTests(unittest.IsolatedAsyncioTestCase):
             CREATE TABLE usage(
                 user_id TEXT,month TEXT,source_minutes REAL
             );
+            CREATE TABLE smart_layout_plans(
+                cache_key TEXT PRIMARY KEY, user_id TEXT, project_id TEXT,
+                clip_id TEXT, source_generation TEXT, plan_json TEXT,
+                created_at TEXT, expires_at TEXT
+            );
             CREATE TABLE smart_layout_credit_periods(
                 user_id TEXT, period_key TEXT, plan_key TEXT,
                 allowance INTEGER, daily_cap INTEGER, policy_version TEXT,
@@ -232,6 +237,57 @@ class PremiumSmartLayoutCreditTests(unittest.IsolatedAsyncioTestCase):
         await quota.settle_analysis_job(second,succeeded=True)
         new_balance=await quota.entitlement_status({"id":self.uid},rollout=True)
         self.assertEqual(new_balance["remaining"],12)
+
+    async def test_verified_plan_and_credit_commit_atomically(self):
+        from app.services.smart_layout_repository import read_plan
+        identity=self.identity()
+        job,_=await quota.reserve_analysis(self.uid,identity)
+        record={"version":2,"plans":{"auto":"dummy-test-geometry"}}
+        await quota.finalize_verified_plan(
+            job,self.uid,identity,record,source_expires_at=None)
+        self.assertEqual(self.used(),1)
+        self.assertEqual(
+            self.conn.execute(
+                "SELECT status FROM smart_layout_credit_reservations WHERE job_id=?",
+                (job,)).fetchone()[0],"finalized")
+        # Publish and settle are idempotent for a duplicate worker result.
+        await quota.finalize_verified_plan(
+            job,self.uid,identity,record,source_expires_at=None)
+        self.assertEqual(self.used(),1)
+        self.assertEqual(
+            self.conn.execute("SELECT COUNT(*) FROM smart_layout_plans").fetchone()[0],1)
+
+    async def test_failed_plan_publication_rolls_back_credit_and_private_cache(self):
+        from app.services import smart_layout_repository as repository
+        identity=self.identity()
+        job,_=await quota.reserve_analysis(self.uid,identity)
+        record={"version":2,"plans":{}}
+        original=repository.store_plan
+        async def fail_after_cache_insert(*args,**kwargs):
+            await original(*args,**kwargs)
+            raise RuntimeError("Injected post-cache failure")
+        with patch.object(repository,"store_plan",side_effect=fail_after_cache_insert):
+            with self.assertRaises(RuntimeError):
+                await quota.finalize_verified_plan(
+                    job,self.uid,identity,record,source_expires_at=None)
+        self.assertEqual(
+            self.conn.execute("SELECT COUNT(*) FROM smart_layout_plans").fetchone()[0],0)
+        self.assertEqual(
+            self.conn.execute(
+                "SELECT status FROM smart_layout_credit_reservations WHERE job_id=?",
+                (job,)).fetchone()[0],"reserved")
+        await quota.settle_analysis_job(job,succeeded=False)
+        self.assertEqual(self.used(),0)
+
+    async def test_forged_job_cannot_publish_free_private_plan(self):
+        identity=self.identity()
+        with self.assertRaises(quota.SmartLayoutQuotaError) as error:
+            await quota.finalize_verified_plan(
+                str(uuid.uuid4()),self.uid,identity,{"version":2},
+                source_expires_at=None)
+        self.assertEqual(error.exception.code,"SMART_LAYOUT_RESERVATION")
+        self.assertEqual(
+            self.conn.execute("SELECT COUNT(*) FROM smart_layout_plans").fetchone()[0],0)
 
     async def test_mini_pass_exhaustion_checks_existing_shorts_and_minutes(self):
         self.conn.execute("UPDATE users SET plan='mini_pass' WHERE id=?",(self.uid,))
