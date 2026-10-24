@@ -149,8 +149,8 @@ class PremiumSmartLayoutCreditTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.used(),1)
 
     async def test_rolling_daily_limit_blocks_fifth_creator_credit(self):
-        for _ in range(4):
-            job,_ = await quota.reserve_analysis(self.uid,self.identity())
+        for i in range(4):
+            job,_ = await quota.reserve_analysis(self.uid,self.identity(i*60.,(i+1)*60.))
             await quota.settle_analysis_job(job,succeeded=True)
         self.assertEqual(self.used(),4)
         with self.assertRaises(quota.SmartLayoutQuotaError) as error:
