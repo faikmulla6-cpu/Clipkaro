@@ -157,7 +157,7 @@ class PremiumSmartLayoutCreditTests(unittest.IsolatedAsyncioTestCase):
             self.conn.execute("UPDATE jobs SET status='completed' WHERE id=?",(job,))
         self.assertEqual(self.used(),4)
         with self.assertRaises(quota.SmartLayoutQuotaError) as error:
-            await quota.reserve_analysis(self.uid,self.identity())
+            await quota.reserve_analysis(self.uid,self.identity(240.,300.))
         self.assertEqual(error.exception.code,"SMART_LAYOUT_DAILY")
         self.assertEqual(self.used(),4)
 
