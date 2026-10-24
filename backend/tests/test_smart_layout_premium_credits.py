@@ -5,7 +5,7 @@ import unittest
 import uuid
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from app.services import smart_layout_credits as quota
 from app.services.billing import usage_period_key
@@ -50,6 +50,20 @@ class PremiumSmartLayoutCreditTests(unittest.IsolatedAsyncioTestCase):
             CREATE TABLE job_payloads(
                 job_id TEXT PRIMARY KEY, payload_json TEXT,
                 created_at TEXT, updated_at TEXT
+            );
+            CREATE TABLE plan_entitlement_snapshots(
+                user_id TEXT,period_key TEXT,plan_key TEXT,
+                shorts INTEGER,processing_minutes REAL,short_mode TEXT,
+                PRIMARY KEY(user_id,period_key)
+            );
+            CREATE TABLE short_credit_reservations(
+                user_id TEXT,period_key TEXT,status TEXT
+            );
+            CREATE TABLE usage_reservations(
+                user_id TEXT,period_key TEXT,kind TEXT,resource_id TEXT,status TEXT
+            );
+            CREATE TABLE usage(
+                user_id TEXT,month TEXT,source_minutes REAL
             );
             CREATE TABLE smart_layout_credit_periods(
                 user_id TEXT, period_key TEXT, plan_key TEXT,
@@ -218,6 +232,56 @@ class PremiumSmartLayoutCreditTests(unittest.IsolatedAsyncioTestCase):
         await quota.settle_analysis_job(second,succeeded=True)
         new_balance=await quota.entitlement_status({"id":self.uid},rollout=True)
         self.assertEqual(new_balance["remaining"],12)
+
+    async def test_mini_pass_exhaustion_checks_existing_shorts_and_minutes(self):
+        self.conn.execute("UPDATE users SET plan='mini_pass' WHERE id=?",(self.uid,))
+        current=dict(self.conn.execute("SELECT * FROM users WHERE id=?",(self.uid,)).fetchone())
+        period=usage_period_key(current)
+        self.conn.execute(
+            "INSERT INTO plan_entitlement_snapshots VALUES (?,?,?,?,?,?)",
+            (self.uid,period,"mini_pass",5,25.,"finished_shorts"))
+        self.conn.execute("INSERT INTO usage VALUES (?,?,?)",(self.uid,period,12.))
+        for _ in range(4):
+            self.conn.execute(
+                "INSERT INTO short_credit_reservations VALUES (?,?,?)",
+                (self.uid,period,"finalized"))
+        with patch.object(quota,"entitlement_for",new_callable=AsyncMock):
+            job,_=await quota.reserve_analysis(self.uid,self.identity())
+            self.assertEqual(self.used(),1)
+            await quota.settle_analysis_job(job,succeeded=True)
+            self.conn.execute("UPDATE jobs SET status='completed' WHERE id=?",(job,))
+            self.conn.execute(
+                "INSERT INTO short_credit_reservations VALUES (?,?,?)",
+                (self.uid,period,"finalized"))
+            with self.assertRaises(quota.SmartLayoutQuotaError) as error:
+                await quota.reserve_analysis(self.uid,self.identity(60.,120.))
+            self.assertEqual(error.exception.code,"SMART_LAYOUT_PASS_EXHAUSTED")
+            self.conn.execute(
+                "DELETE FROM short_credit_reservations WHERE rowid IN "
+                "(SELECT rowid FROM short_credit_reservations LIMIT 1)")
+            self.conn.execute(
+                "UPDATE usage SET source_minutes=25 WHERE user_id=?",(self.uid,))
+            with self.assertRaises(quota.SmartLayoutQuotaError) as error:
+                await quota.reserve_analysis(self.uid,self.identity(120.,180.))
+            self.assertEqual(error.exception.code,"SMART_LAYOUT_PASS_EXHAUSTED")
+            self.assertEqual(self.used(),1)
+
+    async def test_mini_pass_prevents_legacy_source_project_exhaustion(self):
+        self.conn.execute("UPDATE users SET plan='mini_pass' WHERE id=?",(self.uid,))
+        current=dict(self.conn.execute("SELECT * FROM users WHERE id=?",(self.uid,)).fetchone())
+        period=usage_period_key(current)
+        self.conn.execute(
+            "INSERT INTO plan_entitlement_snapshots VALUES (?,?,?,?,?,?)",
+            (self.uid,period,"mini_pass",5,125.,"source_projects"))
+        for i in range(5):
+            self.conn.execute(
+                "INSERT INTO usage_reservations VALUES (?,?,?,?,?)",
+                (self.uid,period,"minutes",str(i),"finalized"))
+        with patch.object(quota,"entitlement_for",new_callable=AsyncMock):
+            with self.assertRaises(quota.SmartLayoutQuotaError) as error:
+                await quota.reserve_analysis(self.uid,self.identity())
+        self.assertEqual(error.exception.code,"SMART_LAYOUT_PASS_EXHAUSTED")
+        self.assertEqual(self.used(),0)
 
     async def test_free_is_denied_without_side_effects(self):
         self.conn.execute("UPDATE users SET plan='free',plan_expires_at=NULL WHERE id=?",(self.uid,))
