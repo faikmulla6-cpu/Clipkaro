@@ -121,4 +121,4 @@ jobs:
         env:
           APP_ENV: test
           PYTHONPATH: .
-        run: pytest -q tests/test_smart_layout_v2_security.py tests/test_smart_layout_premium_credits.py
+        run: pytest -q tests/test_smart_layout_v2_security.py tests/test_smart_layout_premium_credits.py tests/test_smart_layout_premium_postgres.py
