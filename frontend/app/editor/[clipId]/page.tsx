@@ -1497,7 +1497,33 @@ export default function Editor() {
                   <option value="speaker_focus">Speaker Focus · Follow the person speaking</option>
                   <option value="classic">Classic · Single-person crop</option>
                 </select>
-                <p className="field-note">{smartCapability === "ready" ? "Frames are analyzed privately using the source video. Two live panels require two faces in the same shot. Preview analysis uses no export credit." : "Real, face-aware preview becomes available when your secure video-analysis worker is enabled. Clipkaro does not fake two-speaker previews."}</p>
+                <p className="field-note">{smartCapability === "ready"
+                  ? "One secure analysis powers Auto Director, Dual Stack and Speaker Focus. Switching modes or re-exporting uses saved results for free."
+                  : smartQuota?.reason === "upgrade"
+                    ? "Real Smart Layout requires a premium plan. Classic framing remains available."
+                    : "Real Smart Layout is in controlled beta. No simulated split will be shown."}</p>
+                {ratio === "9:16" && layoutMode !== "classic" && <section className="smart-quota-card" aria-label="Real Smart Layout credits">
+                  <div className="smart-quota-head"><span><Sparkles size={15}/> REAL SMART LAYOUT</span><b>{smartQuota?.plan ? smartQuota.plan.replace("_", " ").toUpperCase() : "PRIVATE BETA"}</b></div>
+                  {smartQuota?.available ? <>
+                    <div className="smart-quota-numbers"><strong>{smartQuota.remaining ?? 0}<small> / {smartQuota.allowance ?? 0} credits left</small></strong><span>Renews with your paid plan</span></div>
+                    <div className="smart-quota-track" role="progressbar" aria-label="Smart Layout plan credits remaining" aria-valuemin={0} aria-valuemax={smartQuota.allowance || 1} aria-valuenow={smartQuota.remaining || 0}>
+                      <div style={{ width: String(Math.min(100, (smartQuota.remaining || 0) / Math.max(1, smartQuota.allowance || 1) * 100)) + "%" }}/>
+                    </div>
+                    <p className="smart-quota-meta">Last 24h: <b>{smartQuota.daily_remaining ?? 0} of {smartQuota.daily_cap ?? 0}</b> available · This clip: <b>{smartClipCost} {smartClipCost === 1 ? "credit" : "credits"}</b></p>
+                    {smartQuota.period_end && <small className="smart-quota-date">Plan period ends {new Date(smartQuota.period_end).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}.</small>}
+                    {!realPlan && layoutAnalysis !== "analyzing" && !analysisConfirmed && <button className="smart-quota-action" type="button"
+                      disabled={(smartQuota.remaining ?? 0) < smartClipCost || (smartQuota.daily_remaining ?? 0) < smartClipCost}
+                      onClick={() => setAnalysisConfirmed(true)}>
+                      <Sparkles size={14}/> Analyze securely · {smartClipCost} {smartClipCost === 1 ? "credit" : "credits"}
+                    </button>}
+                    {!realPlan && ((smartQuota.remaining ?? 0) < smartClipCost || (smartQuota.daily_remaining ?? 0) < smartClipCost) &&
+                      <p className="smart-quota-warning" role="status">Not enough {((smartQuota.remaining ?? 0) < smartClipCost) ? "plan" : "daily"} credits for a new analysis. Previously analyzed clips stay reusable.</p>}
+                    {realPlan && <p className="smart-quota-reused"><Check size={13}/> Saved analysis reused · no new charge</p>}
+                  </> : <div className="smart-quota-locked"><b>{smartQuota?.reason === "upgrade" ? "Unlock with a paid plan" : "Controlled beta access"}</b>
+                    <p>{smartQuota?.reason === "upgrade" ? "Premium plans include secure face-aware analysis credits." : "Real analysis will become available after your account joins the approved rollout."}</p>
+                    {smartQuota?.reason === "upgrade" && <a href="/pricing">Compare plans →</a>}
+                  </div>}
+                </section>
                 {layoutMode === "dual_stack" && dualStackCoverage !== null &&
                   <p className="field-note" role="status">
                     {dualStackCoverage > 0
@@ -1557,7 +1583,7 @@ export default function Editor() {
                 {smartCapability === "checking" ? "Checking secure Smart Layout availability…" : "Real Smart Layout preview is not active for this account. No simulated split is shown."}
               </div>}
             {smartRequested && !realPlan && <div className="smart-layout-v2-status" role="status">
-              {layoutAnalysis === "error" ? <><span>Smart Layout preview unavailable: {layoutAnalysisError}</span><button type="button" onClick={() => { setLayoutPlans(null); setLayoutAnalysis("idle"); setLayoutAnalysisError(""); }}>Retry analysis</button></> : "Analyzing real speaker positions…"}
+              {layoutAnalysis === "error" ? <><span>Smart Layout preview unavailable: {layoutAnalysisError}</span><button type="button" onClick={() => { setLayoutPlans(null); setAnalysisConfirmed(false); setLayoutAnalysis("idle"); setLayoutAnalysisError(""); }}>Review and retry</button></> : analysisConfirmed ? "Analyzing real speaker positions…" : "Review the credit cost in Frame, then choose Analyze securely."}
             </div>}
             {previewDual && <>
               <div className="smart-preview-band" aria-hidden="true" />
