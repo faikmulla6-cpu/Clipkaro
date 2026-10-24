@@ -482,23 +482,36 @@ async def export_clip(
         # BEFORE inserting an exports row. Never reserve a Free export for
         # a preview that has not completed, or quietly use a different crop.
         if body.layout_mode != "classic":
-            from app.api.smart_layout_v2 import enabled_for_user as smart_v2_enabled
-            if smart_v2_enabled(str(user["id"])):
-                from app.api.smart_layout_v2 import _cached, _identity
-                versioned_clip = {
-                    **video, "clip_id": clip_id, "video_id": clip["video_id"],
-                    "project_id": clip["project_id"],
-                    "start_time": clip["start_time"], "end_time": clip["end_time"],
-                }
-                identity = _identity(versioned_clip, str(user["id"]))
-                analyzed = await _cached(versioned_clip, identity)
-                if not analyzed:
-                    raise HTTPException(
-                        409,
-                        "Analyze the selected Smart Layout in the editor before exporting. No export allowance was consumed.",
-                    )
-                if body.layout_mode not in analyzed["plans"]:
-                    raise HTTPException(409, "The selected Smart Layout has no matching analysis.")
+            from app.api.smart_layout_v2 import (
+                enabled_for_user as smart_v2_enabled, _cached, _identity,
+            )
+            from app.services.smart_layout_credits import entitlement_status
+            # Reject ALL legacy simulated Smart Layout rendering. A forged
+            # export request must never bypass rollout, plan or analysis
+            # authorization simply because the real preview is unavailable.
+            if not smart_v2_enabled(str(user["id"])):
+                raise HTTPException(
+                    403, "Real Smart Layout is not enabled for this account. Use Classic framing.",
+                )
+            premium = await entitlement_status(user, rollout=True)
+            if not premium["enabled"]:
+                raise HTTPException(
+                    403, "Real Smart Layout requires an active premium plan.",
+                )
+            versioned_clip = {
+                **video, "clip_id": clip_id, "video_id": clip["video_id"],
+                "project_id": clip["project_id"],
+                "start_time": clip["start_time"], "end_time": clip["end_time"],
+            }
+            identity = _identity(versioned_clip, str(user["id"]))
+            analyzed = await _cached(versioned_clip, identity)
+            if not analyzed:
+                raise HTTPException(
+                    409,
+                    "Analyze the selected Smart Layout before exporting. No export allowance was consumed.",
+                )
+            if body.layout_mode not in analyzed["plans"]:
+                raise HTTPException(409, "The selected Smart Layout has no verified analysis.")
 
         brand = None
         if effective_body.brand_kit_id:
