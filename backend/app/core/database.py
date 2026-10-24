@@ -1103,6 +1103,10 @@ async def init_db() -> None:
             await _close_connection(db)
 
     await _run_with_lock_retry(_initialize, operation_name="database initialization")
+    # Quota tables must exist even when the private preview rollout is OFF:
+    # normal subscription upgrades also migrate the isolated credit period.
+    from app.services.smart_layout_credits import init_smart_layout_credits
+    await init_smart_layout_credits()
 
 
 async def run_in_transaction(
