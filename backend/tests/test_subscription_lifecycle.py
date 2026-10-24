@@ -235,7 +235,10 @@ def test_scheduled_downgrade_applies_when_provider_moves_to_next_cycle(client: T
     with patch("app.api.billing_lifecycle.razorpay_request", new=mocked_provider), \
          patch("app.services.billing.razorpay_request", new=mocked_provider):
         response = client.post("/api/v1/billing/sync", json={})
-    mocked_provider.assert_awaited_once_with("GET", "/subscriptions/sub_cycle")
+    # The sync endpoint refreshes the provider subscription and then builds
+    # a status payload that refreshes it again. Both calls must remain mocked.
+    assert mocked_provider.await_count == 2
+    mocked_provider.assert_any_await("GET", "/subscriptions/sub_cycle")
 
     assert response.status_code == 200
     assert response.json()["plan"] == "growth"
