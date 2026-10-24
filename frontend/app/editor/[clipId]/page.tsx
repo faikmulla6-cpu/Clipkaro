@@ -1526,7 +1526,7 @@ export default function Editor() {
                     <p>{smartQuota?.reason === "pass_exhausted" ? "Your existing Mini Pass Short or minute quota is exhausted. A new pass or subscription is required for further analysis." : smartQuota?.reason === "upgrade" ? "Premium plans include secure face-aware analysis credits." : "Real analysis will become available after your account joins the approved rollout."}</p>
                     {(smartQuota?.reason === "upgrade" || smartQuota?.reason === "pass_exhausted") && <a href="/pricing">Compare plans →</a>}
                   </div>}
-                </section>
+                </section>}
                 {layoutMode === "dual_stack" && dualStackCoverage !== null &&
                   <p className="field-note" role="status">
                     {dualStackCoverage > 0
