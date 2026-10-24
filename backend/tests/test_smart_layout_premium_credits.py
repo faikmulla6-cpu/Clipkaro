@@ -152,6 +152,9 @@ class PremiumSmartLayoutCreditTests(unittest.IsolatedAsyncioTestCase):
         for i in range(4):
             job,_ = await quota.reserve_analysis(self.uid,self.identity(i*60.,(i+1)*60.))
             await quota.settle_analysis_job(job,succeeded=True)
+            # Completing the isolated worker also changes job status.
+            # Settlement is a separate ledger state, not a worker claim.
+            self.conn.execute("UPDATE jobs SET status='completed' WHERE id=?",(job,))
         self.assertEqual(self.used(),4)
         with self.assertRaises(quota.SmartLayoutQuotaError) as error:
             await quota.reserve_analysis(self.uid,self.identity())
