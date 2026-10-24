@@ -43,6 +43,9 @@ type PostKaroStatus = { plan_eligible: boolean; ready: boolean };
  // No fragile Hostinger build-time NEXT_PUBLIC switch is required.
 type SmartPlanModes = "auto" | "dual_stack" | "speaker_focus";
 type LayoutAnalysisResponse = { status: string; job_id?: string; plans?: Record<SmartPlanModes, unknown> };
+type SmartQuotaStatus = { available: boolean; reason?: "rollout" | "ready" | "upgrade"; plan?: string;
+  allowance?: number; used?: number; remaining?: number; daily_cap?: number;
+  daily_used?: number; daily_remaining?: number; period_end?: string | null; };
 const styles = [
   ["kinetic", "Kinetic", "Punchy highlighted words"],
   ["clean", "Clean", "Readable creator standard"],
@@ -185,6 +188,9 @@ export default function Editor() {
   const [layoutPlans, setLayoutPlans] = useState<Record<SmartPlanModes, SmartLayoutPlan> | null>(null);
   const [layoutAnalysis, setLayoutAnalysis] = useState<"idle" | "analyzing" | "ready" | "error">("idle");
   const [layoutAnalysisError, setLayoutAnalysisError] = useState("");
+  const [analysisConfirmed, setAnalysisConfirmed] = useState(false);
+  const [smartQuota, setSmartQuota] = useState<SmartQuotaStatus | null>(null);
+  const smartClipCost = clip ? Math.max(1, Math.ceil(((clip.end_time - clip.start_time) - .00000001) / 60)) : 1;
   const [smartCapability, setSmartCapability] = useState<"checking" | "ready" | "unavailable">("checking");
   const SMART_LAYOUT_V2_ENABLED = smartCapability === "ready";
   const [focusX, setFocusX] = useState(50);
@@ -243,8 +249,8 @@ export default function Editor() {
 
   useEffect(() => {
     let active = true;
-    api<{available: boolean; model_version?: string | null}>("/smart-layout-v2/capabilities")
-      .then(value => { if (active) setSmartCapability(value.available ? "ready" : "unavailable"); })
+    api<SmartQuotaStatus>("/smart-layout-v2/capabilities")
+      .then(value => { if (active) { setSmartQuota(value); setSmartCapability(value.available ? "ready" : "unavailable"); } })
       .catch(() => { if (active) setSmartCapability("unavailable"); });
     return () => { active = false; };
   }, []);
@@ -277,18 +283,22 @@ export default function Editor() {
     };
   }, [previewDual, project?.id]);
 
+  useEffect(() => { setAnalysisConfirmed(false); }, [clip?.id, clip?.start_time, clip?.end_time]);
+
   useEffect(() => {
     if (!SMART_LAYOUT_V2_ENABLED || !clip?.id || !smartRequested || verifiedLayoutPlans || layoutAnalysis === "error") return;
     let disposed = false;
     let poll: number | null = null;
     let requested = false;
     let attempts = 0;
-    setLayoutAnalysis("analyzing");
+    if (analysisConfirmed) setLayoutAnalysis("analyzing");
     setLayoutAnalysisError("");
     const check = async (): Promise<void> => {
       try {
         let status = await api<LayoutAnalysisResponse>(`/clips/${clip.id}/smart-layout-v2`);
         if (status.status === "not_started" && !requested) {
+          // A paid analysis is started only after an explicit user action.
+          if (!analysisConfirmed) return;
           requested = true;
           status = await postJSON<LayoutAnalysisResponse>(`/clips/${clip.id}/smart-layout-v2`, {});
         }
@@ -306,6 +316,9 @@ export default function Editor() {
           }
           setLayoutPlans(next);
           setLayoutAnalysis("ready");
+          void api<SmartQuotaStatus>("/smart-layout-v2/capabilities")
+            .then(balance => { if (!disposed) setSmartQuota(balance); })
+            .catch(() => {});
           return;
         }
         if ((status.status === "queued" || status.status === "processing") && ++attempts <= 120) {
@@ -322,7 +335,7 @@ export default function Editor() {
     };
     void check();
     return () => { disposed = true; if (poll !== null) window.clearTimeout(poll); };
-  }, [clip?.id, clip?.start_time, clip?.end_time, smartRequested, verifiedLayoutPlans, layoutAnalysis]);
+  }, [clip?.id, clip?.start_time, clip?.end_time, smartRequested, verifiedLayoutPlans, layoutAnalysis, analysisConfirmed]);
 
   useEffect(() => {
     if (!realPlan) return;
