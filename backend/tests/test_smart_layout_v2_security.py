@@ -98,7 +98,7 @@ class SmartLayoutSecurityTests(unittest.IsolatedAsyncioTestCase):
                "headers":[(b"range",b"bytes=2-9")]}
         req=Request(scope)
         owned={"original_filename":"a.mp4","file_path":key,"object_generation":"etag:abc"}
-        with patch.object(api,"enabled_for_user",return_value=True), \
+        with patch.object(api,"_require_paid_feature",new_callable=AsyncMock,return_value={"enabled":True}), \
              patch.object(api,"_owned",new_callable=AsyncMock,return_value=owned), \
              patch.object(api,"get_storage_provider",return_value=fake), \
              patch.object(api,"S3StorageProvider",FakeS3), \
@@ -121,7 +121,7 @@ class SmartLayoutSecurityTests(unittest.IsolatedAsyncioTestCase):
             async def stat(self,k):return SimpleNamespace(size=777,generation="etag:new")
         row={"original_filename":"a.mp4","file_path":key,"object_generation":"etag:old"}
         req=Request({"type":"http","method":"GET","path":"/v1/test","headers":[]})
-        with patch.object(api,"enabled_for_user",return_value=True), \
+        with patch.object(api,"_require_paid_feature",new_callable=AsyncMock,return_value={"enabled":True}), \
              patch.object(api,"_owned",new_callable=AsyncMock,return_value=row), \
              patch.object(api,"get_storage_provider",return_value=FakeS3()), \
              patch.object(api,"S3StorageProvider",FakeS3), \
@@ -152,7 +152,7 @@ class PrivateSourceRaceTests(unittest.IsolatedAsyncioTestCase):
         row={"original_filename":"original.mp4","file_path":key,"object_generation":"etag:approved"}
         req=Request({"type":"http","method":"GET",
                      "path":"/api/v1/source","headers":[(b"range",b"bytes=0-99")]})
-        with patch.object(api,"enabled_for_user",return_value=True), \
+        with patch.object(api,"_require_paid_feature",new_callable=AsyncMock,return_value={"enabled":True}), \
              patch.object(api,"_owned",new_callable=AsyncMock,return_value=row), \
              patch.object(api,"get_storage_provider",return_value=obj), \
              patch.object(api,"S3StorageProvider",FakeS3), \
@@ -226,7 +226,9 @@ class SmartLayoutCanaryGateTests(unittest.IsolatedAsyncioTestCase):
                                      "KARO_REAL_PREVIEW_CANARY_USERS":owner}):
             self.assertTrue(api.enabled_for_user(owner))
             self.assertFalse(api.enabled_for_user(stranger))
-            self.assertTrue((await api.preview_capabilities({"id":owner}))["available"])
+            with patch.object(api, "entitlement_status", new_callable=AsyncMock,
+                              return_value={"enabled":True, "plan":"creator", "remaining":12}):
+                self.assertTrue((await api.preview_capabilities({"id":owner}))["available"])
             self.assertFalse((await api.preview_capabilities({"id":stranger}))["available"])
         with patch.dict(os.environ, {"KARO_REAL_PREVIEW_ENABLED":"false",
                                      "KARO_REAL_PREVIEW_CANARY_USERS":"*"}):
