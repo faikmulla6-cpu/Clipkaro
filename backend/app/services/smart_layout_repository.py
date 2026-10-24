@@ -18,6 +18,8 @@ CACHE_TTL = timedelta(days=14)
 
 
 async def init_smart_layout_repository() -> None:
+    from app.services.smart_layout_credits import init_smart_layout_credits
+    await init_smart_layout_credits()
     await execute("""
        CREATE TABLE IF NOT EXISTS smart_layout_plans (
          cache_key TEXT PRIMARY KEY,
