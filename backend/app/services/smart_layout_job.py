@@ -163,4 +163,8 @@ async def run_smart_layout_analysis(job: dict, scratch: Path, storage) -> None:
         raise RuntimeError("The clip or source changed during Smart Layout analysis.")
     from app.services.smart_layout_repository import store_plan
     await store_plan(identity, record, source_expires_at=row.get("expires_at"))
+    # Settlement follows verified private storage. A failed job is instead
+    # released by update_job's isolated Smart Layout failure hook.
+    from app.services.smart_layout_credits import settle_analysis_job
+    await settle_analysis_job(str(job["id"]), succeeded=True)
     await update_job(job["id"], 100, "ready", "Smart Layout analysis ready", "completed")
