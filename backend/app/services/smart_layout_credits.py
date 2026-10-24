@@ -130,7 +130,15 @@ async def entitlement_status(user: dict, *, rollout: bool) -> dict:
     allowance, daily = LIMITS[plan]
     period = usage_period_key(current)
     async def check(db):
-        return await _balance(db, uid, period, allowance, daily, now)
+        snapshot = await (await db.execute(
+            """SELECT plan_key,allowance,daily_cap
+               FROM smart_layout_credit_periods WHERE user_id=? AND period_key=?""",
+            (uid,period))).fetchone()
+        effective_allowance, effective_daily = allowance, daily
+        if snapshot and snapshot["plan_key"] == plan:
+            effective_allowance = int(snapshot["allowance"])
+            effective_daily = int(snapshot["daily_cap"])
+        return await _balance(db, uid, period, effective_allowance, effective_daily, now)
     balance = await run_in_transaction(check, operation_name="read Smart Layout balance")
     return {
         **balance, "plan": plan, "enabled": bool(rollout and allowance),
@@ -169,6 +177,14 @@ async def reserve_analysis(user_id: str, identity: AnalysisIdentity) -> tuple[st
         if not cap:
             raise SmartLayoutQuotaError("SMART_LAYOUT_UPGRADE", "Real Smart Layout requires an active premium plan.")
         period = usage_period_key(owned)
+        snapshot = await (await db.execute(
+            """SELECT plan_key,allowance,daily_cap
+               FROM smart_layout_credit_periods WHERE user_id=? AND period_key=?""",
+            (uid,period))).fetchone()
+        if snapshot and snapshot["plan_key"] == plan:
+            # Honor the original purchased period policy. A future increase
+            # or reduction cannot rewrite previously granted credits.
+            cap,daily = int(snapshot["allowance"]),int(snapshot["daily_cap"])
         existing = await (await db.execute(
             """SELECT status,job_id FROM smart_layout_credit_reservations
                WHERE user_id=? AND fingerprint=?""", (uid,fingerprint))).fetchone()
