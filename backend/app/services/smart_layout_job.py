@@ -119,6 +119,11 @@ async def run_smart_layout_analysis(job: dict, scratch: Path, storage) -> None:
     # Check existing cache via the same strict validator as the API. For an
     # invalid object, overwrite with a newly verified plan; never claim ready.
     if await _cached({"source_width": row["source_width"], "source_height": row["source_height"]}, identity):
+        # A second request may finish while this job is still queued. Its
+        # private verified result is reusable and must also finalize the
+        # reservation exactly once, rather than leaving credits locked.
+        from app.services.smart_layout_credits import settle_analysis_job
+        await settle_analysis_job(str(job["id"]), succeeded=True)
         await update_job(job["id"], 100, "ready", "Smart Layout analysis cached", "completed")
         return
 
