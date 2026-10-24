@@ -100,6 +100,17 @@ async def init_smart_layout_credits() -> None:
     await run_in_transaction(setup, operation_name="init Smart Layout credits")
 
 
+async def _release_terminal_failures(db, uid: str, now: datetime) -> None:
+    """Repair interrupted refunds, but never release active/requeued work."""
+    await db.execute(
+        """UPDATE smart_layout_credit_reservations
+           SET status='released',updated_at=?
+           WHERE user_id=? AND status='reserved' AND job_id IN
+             (SELECT id FROM jobs WHERE user_id=?
+                AND kind='smart_layout_analysis' AND status='failed')""",
+        (now.isoformat(),uid,uid))
+
+
 async def _balance(db, uid: str, period: str, cap: int, daily: int, now: datetime) -> dict:
     row = await (await db.execute(
         """SELECT COALESCE(SUM(credits),0) used FROM smart_layout_credit_reservations
@@ -120,7 +131,7 @@ async def _balance(db, uid: str, period: str, cap: int, daily: int, now: datetim
 
 
 async def entitlement_status(user: dict, *, rollout: bool) -> dict:
-    """Read-only customer-safe balance. Does not create a purchased grant."""
+    """Customer-safe balance. Reconciles only verified terminal failed jobs."""
     now = _now()
     uid = str(user["id"])
     current = await fetch_one("SELECT * FROM users WHERE id=?", (uid,))
@@ -130,6 +141,7 @@ async def entitlement_status(user: dict, *, rollout: bool) -> dict:
     allowance, daily = LIMITS[plan]
     period = usage_period_key(current)
     async def check(db):
+        await _release_terminal_failures(db, uid, now)
         snapshot = await (await db.execute(
             """SELECT plan_key,allowance,daily_cap
                FROM smart_layout_credit_periods WHERE user_id=? AND period_key=?""",
@@ -192,6 +204,7 @@ async def reserve_analysis(user_id: str, identity: AnalysisIdentity) -> tuple[st
         if not cap:
             raise SmartLayoutQuotaError("SMART_LAYOUT_UPGRADE", "Real Smart Layout requires an active premium plan.")
         period = usage_period_key(owned)
+        await _release_terminal_failures(db, uid, now)
         snapshot = await (await db.execute(
             """SELECT plan_key,allowance,daily_cap
                FROM smart_layout_credit_periods WHERE user_id=? AND period_key=?""",
