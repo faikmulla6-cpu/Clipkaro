@@ -143,6 +143,14 @@ async def run_smart_layout_analysis(job: dict, scratch: Path, storage) -> None:
     base = await asyncio.to_thread(_detect, source, start, end - start, ffmpeg, "auto")
     if base is None:
         raise RuntimeError("This footage cannot be analyzed reliably; Classic remains available.")
+    if not any(
+        scene.mode in {"dual_stack", "single", "speaker_focus"}
+        or len(getattr(scene, "pair_centers", ())) == 2
+        for scene in getattr(base, "segments", ())
+    ):
+        # Full-frame-only fallback is Classic, not a premium face analysis.
+        # Fail before persisting/settling so the reserved credits are refunded.
+        raise RuntimeError("No reliable live-person framing was found; Classic remains available.")
     plans = all_layout_variants(base, source_start=start, duration=end-start)
     if not all_variants_match_source(plans):
         raise RuntimeError("Smart Layout scene analysis is inconsistent.")
