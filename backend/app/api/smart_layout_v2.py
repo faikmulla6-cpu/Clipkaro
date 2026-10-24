@@ -60,10 +60,14 @@ async def _require_paid_feature(user: dict) -> dict:
     _require_feature(str(user["id"]))
     state = await entitlement_status(user, rollout=True)
     if not state["enabled"]:
+        exhausted = bool(state.get("pass_exhausted"))
         raise HTTPException(
             status_code=403, detail={
-                "code": "SMART_LAYOUT_UPGRADE",
-                "message": "Real Smart Layout is available with an active premium plan.",
+                "code": "SMART_LAYOUT_PASS_EXHAUSTED" if exhausted else "SMART_LAYOUT_UPGRADE",
+                "message": (
+                    "This Mini Pass has reached its existing Short or processing-minute allowance."
+                    if exhausted else "Real Smart Layout is available with an active premium plan."
+                ),
             },
         )
     return state
@@ -78,7 +82,8 @@ async def preview_capabilities(user: dict = Depends(current_user)) -> dict:
     state = await entitlement_status(user, rollout=True)
     return {
         **state, "available": state["enabled"],
-        "reason": "ready" if state["enabled"] else "upgrade",
+        "reason": ("ready" if state["enabled"] else
+                   "pass_exhausted" if state.get("pass_exhausted") else "upgrade"),
         "model_version": MODEL_VERSION if state["enabled"] else None,
     }
 
