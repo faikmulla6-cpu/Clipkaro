@@ -21,3 +21,19 @@ export function planFeatureMinutes(plan: PricingPlanId): string {
     ? `${p.minutes} total Karo Minutes per pass · up to ${p.maxVideo} min/video`
     : `${p.minutes} total Karo Minutes/month · up to ${p.maxVideo} min/video`;
 }
+
+/** Premium face-aware analysis has its own credits, independent of clipping. */
+export const SMART_LAYOUT_PREMIUM = {
+  free: { credits: 0, daily: 0 },
+  mini_pass: { credits: 1, daily: 1 },
+  creator: { credits: 12, daily: 4 },
+  growth: { credits: 40, daily: 10 },
+  pro: { credits: 120, daily: 25 },
+  agency: { credits: 300, daily: 60 },
+} as const satisfies Record<PricingPlanId, { credits: number; daily: number }>;
+
+export function smartLayoutFeature(plan: PricingPlanId): string {
+  const { credits, daily } = SMART_LAYOUT_PREMIUM[plan];
+  if (!credits) return "Real Smart Layout not included · Classic framing available";
+  return `Real Smart Layout beta: ${credits} analysis ${credits === 1 ? "credit" : "credits"} ${plan === "mini_pass" ? "per pass" : "/month"} · up to ${daily}/24h`;
+}

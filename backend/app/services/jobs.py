@@ -137,6 +137,13 @@ async def update_job(job_id: str, progress: int, stage: str, message: str, statu
     else:
         await execute("UPDATE jobs SET progress=?,stage=?,message=?,status=?,error=?,updated_at=? WHERE id=?",
                       (max(0, min(progress, 100)), stage, message, status, error, timestamp, job_id))
+    if status == "failed":
+        # Only the Smart Layout ledger is affected; existing media/export
+        # reservations keep their independent trigger-driven settlement.
+        kind = await fetch_one("SELECT kind FROM jobs WHERE id=?", (job_id,))
+        if kind and kind.get("kind") == "smart_layout_analysis":
+            from app.services.smart_layout_credits import settle_analysis_job
+            await settle_analysis_job(job_id, succeeded=False)
 
 
 def isolated_worker_enabled() -> bool:

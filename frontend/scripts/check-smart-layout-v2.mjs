@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import {
   parseSmartLayoutPlan, findScene, focusRectAt, paintSmartLayoutFrame, dualStackCoverageSeconds,
+  dualStackCropsAt,
 } from "../lib/smart-layout-timeline.ts";
 
 const fixture = {
@@ -59,7 +60,23 @@ for (const kind of ["single", "wide"]) {
 }
 {
   const p = cloned(); p.scenes[0].switches = [[2, 2]];
-  assert.equal(parseSmartLayoutPlan(p), null, "speaker switching is forbidden in split mode");
+  assert.equal(parseSmartLayoutPlan(p), null, "a nonexistent third speaker is forbidden");
+}
+
+{
+  const p = cloned();
+  p.scenes[0].switches = [[0, 0], [1.5, 1]];
+  const switching = parseSmartLayoutPlan(p);
+  assert.ok(switching, "verified Dual Stack switches are valid");
+  assert.deepEqual(dualStackCropsAt(switching.scenes[0], 1), p.scenes[0].crops);
+  assert.deepEqual(dualStackCropsAt(switching.scenes[0], 2), [
+    p.scenes[0].crops[1], p.scenes[0].crops[0],
+  ], "active speaker goes above the listener");
+  const { ctx, commands } = fakeCanvas();
+  assert.equal(paintSmartLayoutFrame(ctx, { readyState: 4 }, switching, 525.46), true);
+  const draws = commands.filter(c => c[0] === "draw");
+  assert.deepEqual(draws[0].slice(1, 5), p.scenes[0].crops[1]);
+  assert.deepEqual(draws[1].slice(1, 5), p.scenes[0].crops[0]);
 }
 
 const focusScene = {
@@ -73,6 +90,24 @@ assert.equal(focusRectAt(focusScene, 1.5)[0], 0);
 assert.ok(focusRectAt(focusScene, 2)[0] > 400 && focusRectAt(focusScene, 2)[0] < 500,
           "speaker focus must ease across the actual face centers");
 assert.equal(focusRectAt(focusScene, 2.4)[0], 860);
+
+const elevatedFocus = {
+  ...focusScene,
+  crops: [[0, 0, 404, 700], [860, 18, 404, 700]],
+};
+assert.deepEqual(focusRectAt(elevatedFocus, 1), [0, 0, 404, 700]);
+const halfway = focusRectAt(elevatedFocus, 2);
+assert.ok(halfway[0] > 400 && halfway[0] < 500);
+assert.ok(halfway[1] > 8 && halfway[1] < 10,
+          "Speaker Focus must animate x and y identically to FFmpeg");
+assert.deepEqual(focusRectAt(elevatedFocus, 2.4), [860, 18, 404, 700]);
+const lateFirstSwitch = {
+  ...elevatedFocus,
+  switches: [[1.5, 1]],
+};
+assert.deepEqual(focusRectAt(lateFirstSwitch, .5), [0, 0, 404, 700],
+  "No confirmed speaker change must preserve the initial frame, not jump to a future speaker");
+assert.deepEqual(focusRectAt(lateFirstSwitch, 2.0), [860, 18, 404, 700]);
 
 function fakeCanvas() {
   const commands = [];

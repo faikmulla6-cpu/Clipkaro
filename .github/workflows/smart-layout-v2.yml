@@ -7,6 +7,7 @@ on:
   pull_request:
     branches:
       - feature/creator-pulse-next-move
+      - work/secure-smart-layout-v2-20261018
 
 permissions:
   contents: read
@@ -40,6 +41,8 @@ jobs:
         run: node frontend/scripts/check-smart-layout-v2.mjs
       - name: Verify top-up consent and captured-payment source contracts
         run: node frontend/scripts/check-credit-topups.mjs
+      - name: Verify premium Smart Layout pricing parity and explicit consent
+        run: node frontend/scripts/check-smart-layout-premium-contract.mjs
 
   layout-quality-regression:
     name: Smart Layout live-speaker and camera-cut tests
@@ -118,4 +121,4 @@ jobs:
         env:
           APP_ENV: test
           PYTHONPATH: .
-        run: pytest -q tests/test_smart_layout_v2_security.py
+        run: pytest -q tests/test_smart_layout_v2_security.py tests/test_smart_layout_premium_credits.py tests/test_smart_layout_premium_postgres.py

@@ -21,7 +21,11 @@ from app.core.config import get_settings
 from app.core.database import distributed_advisory_lock, fetch_all, fetch_one
 from app.services.auth import current_user
 from app.services.distributed_rate_limit import consume_rate_limit
-from app.services.jobs import create_job, dispatch_job, update_job
+from app.services.jobs import dispatch_job, update_job
+from app.services.smart_layout_credits import (
+    SmartLayoutQuotaError, entitlement_status, previously_paid,
+    reserve_analysis, settle_analysis_job,
+)
 from app.services.smart_layout_cache import AnalysisIdentity, MODEL_VERSION, private_plan_key
 from app.services.smart_layout_variants import all_variants_match_source
 from app.services.storage import S3StorageProvider, get_storage_provider, validate_object_key
@@ -52,16 +56,36 @@ def _require_feature(user_id: str) -> None:
         raise HTTPException(404, "This preview is not available.")
 
 
+async def _require_paid_feature(user: dict) -> dict:
+    _require_feature(str(user["id"]))
+    state = await entitlement_status(user, rollout=True)
+    if not state["enabled"]:
+        exhausted = bool(state.get("pass_exhausted"))
+        raise HTTPException(
+            status_code=403, detail={
+                "code": "SMART_LAYOUT_PASS_EXHAUSTED" if exhausted else "SMART_LAYOUT_UPGRADE",
+                "message": (
+                    "This Mini Pass has reached its existing Short or processing-minute allowance."
+                    if exhausted else "Real Smart Layout is available with an active premium plan."
+                ),
+            },
+        )
+    return state
+
+
 @router.get("/smart-layout-v2/capabilities")
 async def preview_capabilities(user: dict = Depends(current_user)) -> dict:
-    """Allow the browser to discover the backend version at runtime.
-
-    No build-time NEXT_PUBLIC flag, bucket key, customer identifier or
-    pricing/entitlement is returned. The old editor never has to guess
-    whether this backend version can analyze actual faces.
-    """
-    return {"available": enabled_for_user(str(user["id"])),
-            "model_version": MODEL_VERSION if enabled_for_user(str(user["id"])) else None}
+    """Safe runtime capability discovery with authoritative prepaid balance."""
+    rollout = enabled_for_user(str(user["id"]))
+    if not rollout:
+        return {"available": False, "reason": "rollout", "model_version": None}
+    state = await entitlement_status(user, rollout=True)
+    return {
+        **state, "available": state["enabled"],
+        "reason": ("ready" if state["enabled"] else
+                   "pass_exhausted" if state.get("pass_exhausted") else "upgrade"),
+        "model_version": MODEL_VERSION if state["enabled"] else None,
+    }
 
 
 async def _owned(clip_id: str, user_id: str) -> dict:
@@ -172,21 +196,23 @@ async def _active_job(clip_id: str, uid: str, key: str) -> dict | None:
 
 @router.get("/clips/{clip_id}/smart-layout-v2")
 async def analysis_status(clip_id: str, user: dict = Depends(current_user)) -> dict:
-    _require_feature(str(user["id"]))
+    await _require_paid_feature(user)
     row = await _owned(clip_id, str(user["id"]))
     identity = _identity(row, str(user["id"]))
     ready = await _cached(row, identity)
     if ready:
         return ready
     active = await _active_job(clip_id, str(user["id"]), private_plan_key(identity))
-    return active or {"status": "not_started"}
+    if active:
+        return active
+    return {"status": "not_started", "reanalysis_free": await previously_paid(identity)}
 
 
 @router.post("/clips/{clip_id}/smart-layout-v2", status_code=202)
 async def request_analysis(
     clip_id: str, tasks: BackgroundTasks, user: dict = Depends(current_user),
 ) -> dict:
-    _require_feature(str(user["id"]))
+    await _require_paid_feature(user)
     uid = str(user["id"])
     row = await _owned(clip_id, uid)
     identity = _identity(row, uid)
@@ -194,8 +220,9 @@ async def request_analysis(
     if ready:
         return ready
     key = private_plan_key(identity)
-    if not await consume_rate_limit(uid, group="smart_layout_preview", limit=8, window_seconds=86400):
-        raise HTTPException(429, "Too many preview analysis requests today. Please retry later.")
+    if not await consume_rate_limit(uid, group="smart_layout_request", limit=60, window_seconds=3600):
+        raise HTTPException(429, detail={
+            "code": "SMART_LAYOUT_RATE", "message": "Too many requests. Try again later."})
     async with distributed_advisory_lock("smart-layout-v2:"+uid+":"+clip_id):
         cached = await _cached(row, identity)
         if cached:
@@ -203,24 +230,21 @@ async def request_analysis(
         existing = await _active_job(clip_id, uid, key)
         if existing:
             return existing
-        pending = await fetch_one(
-            """SELECT COUNT(*) n FROM jobs
-               WHERE user_id=? AND kind='smart_layout_analysis'
-                 AND status IN ('queued','processing')""", (uid,),
-        )
-        if int((pending or {}).get("n") or 0) >= 2:
-            raise HTTPException(429, "Two previews are already being analyzed.")
-        # Free preview compute is globally budgeted separately from billing.
-        # A burst of analysis requests must not exhaust media-worker capacity.
+        # Capacity throttling is independent of paid credits and never grants
+        # entitlement. Keep a global budget for expensive media analysis.
         if not await consume_rate_limit(
             "global", group="smart_layout_preview_global", limit=80, window_seconds=3600
         ):
-            raise HTTPException(429, "Smart Layout analysis is busy. Please try later.")
-        job_id = await create_job(
-            uid, "smart_layout_analysis",
-            project_id=identity.project_id,
-            payload={"clip_id": clip_id, "cache_key": key},
-        )
+            raise HTTPException(429, detail={
+                "code": "SMART_LAYOUT_BUSY", "message": "Smart Layout is busy. No credits were charged."})
+        try:
+            job_id, action = await reserve_analysis(uid, identity)
+        except SmartLayoutQuotaError as exc:
+            code = 402 if exc.code in ("SMART_LAYOUT_UPGRADE", "SMART_LAYOUT_CREDITS") else 429
+            raise HTTPException(status_code=code, detail={
+                "code": exc.code, "message": str(exc)}) from exc
+        if action == "existing":
+            return {"status": "queued", "job_id": job_id}
     try:
         async def _local_worker(jid: str) -> None:
             from app.media_job import run_job
@@ -228,7 +252,8 @@ async def request_analysis(
         await dispatch_job(tasks, _local_worker, job_id)
     except Exception as exc:
         await update_job(job_id, 0, "failed", "Could not start private preview", "failed", "PREVIEW_LAUNCH_FAILED")
-        raise HTTPException(503, "Smart Layout analysis is temporarily unavailable.") from exc
+        await settle_analysis_job(job_id, succeeded=False)
+        raise HTTPException(503, "Smart Layout analysis is temporarily unavailable. No credits were charged.") from exc
     return {"status": "queued", "job_id": job_id}
 
 
@@ -241,7 +266,7 @@ async def original_canvas_video(
     DO NOT redirect to B2: cross-origin signed video can taint browser Canvas.
     The request cannot supply a B2 key or access another user's source.
     """
-    _require_feature(str(user["id"]))
+    await _require_paid_feature(user)
     uid = str(user["id"])
     row = await _owned(clip_id, uid)
     if Path(str(row["original_filename"])).suffix.lower() != ".mp4":

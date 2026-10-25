@@ -22,7 +22,7 @@ T = TypeVar("T")
 logger = logging.getLogger("clipkaro.database")
 _LOCK_MESSAGES = ("database is locked", "database table is locked", "database schema is locked")
 _LOCK_PRIMARY_CODES = {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}
-POSTGRES_SCHEMA_REVISION = "20261021_11"
+POSTGRES_SCHEMA_REVISION = "20261024_12"
 _postgres_pool: Any = None
 
 
@@ -1103,6 +1103,10 @@ async def init_db() -> None:
             await _close_connection(db)
 
     await _run_with_lock_retry(_initialize, operation_name="database initialization")
+    # Quota tables must exist even when the private preview rollout is OFF:
+    # normal subscription upgrades also migrate the isolated credit period.
+    from app.services.smart_layout_credits import init_smart_layout_credits
+    await init_smart_layout_credits()
 
 
 async def run_in_transaction(

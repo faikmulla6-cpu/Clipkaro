@@ -17,21 +17,31 @@ def _even(value: float) -> int:
     return n if n % 2 == 0 else n - 1
 
 
-def _filter_focus(scene: dict[str, Any], crop: list[int]) -> str:
-    transitions = scene["switches"]
-    positions = [int(point[0]) for point in scene["crops"]]
-    if not transitions:
-        return str(positions[0])
-    start = float(scene["start"])
-    expr = str(positions[int(transitions[-1][1])])
-    # Easing must use scene-local timestamps (trim resets PTS).
-    for j in range(len(transitions)-1, 0, -1):
-        time, who = transitions[j]
-        previous = int(transitions[j-1][1])
-        initial = positions[previous]
-        following = positions[int(who)]
-        begin = max(float(transitions[j-1][0]), float(time) - .2)
-        end = float(time) + .2
+def _filter_focus(scene: dict[str, Any], axis: int = 0) -> str:
+    """Match browser interpolation for both x and y in Speaker Focus.
+
+    Some studio shots place the host and guest at different heights. Moving
+    only the x crop made the server export disagree with its editor preview.
+    Unspecified initial speakers default to the first verified face until an
+    explicit switch, never to the last reported speaker from frame zero.
+    """
+    positions = [int(point[axis]) for point in scene["crops"]]
+    changes: list[tuple[float, int]] = [(0., 0)]
+    for timestamp, person in scene["switches"]:
+        at = float(timestamp)
+        who = int(person)
+        if at <= .03:
+            changes[0] = (0., who)
+        elif at > changes[-1][0]:
+            changes.append((at, who))
+    expr = str(positions[changes[-1][1]])
+    for j in range(len(changes) - 1, 0, -1):
+        time, who = changes[j]
+        previous_time, previous_who = changes[j-1]
+        initial = positions[previous_who]
+        following = positions[who]
+        begin = max(previous_time, time - .2)
+        end = time + .2
         u = f"min(1,max(0,(t-{begin:.3f})/{max(.05,end-begin):.3f}))"
         easing = f"({u}*{u}*(3-2*{u}))"
         expr = (f"if(lt(t,{begin:.3f}),{initial},"
@@ -87,6 +97,45 @@ def _verify_export_plan(plan: dict[str, Any], source_start: float, duration: flo
         raise UnsafeLayoutPlan("Smart Layout scene timeline does not cover export")
 
 
+def _split_dual_speaker_turns(scenes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Divide a split shot only at verified turn changes.
+
+    This is the same scene-relative ordering used by the editor canvas.
+    Each partition reads BOTH moving speakers from one source timestamp.
+    Encoding partitions sequentially avoids heavyweight per-frame overlays
+    and the multi-shot FFmpeg allocator crashes seen on small workers.
+    """
+    parts: list[dict[str, Any]] = []
+    for scene in scenes:
+        if scene["layout"] != "dual_stack" or not scene["switches"]:
+            parts.append(scene)
+            continue
+        begin = float(scene["start"])
+        end = float(scene["end"])
+        boundaries = [(begin, 0)]
+        for t, who in scene["switches"]:
+            at = round(begin + float(t), 3)
+            if at <= begin + .03:
+                boundaries[0] = (begin, int(who))
+            elif at < end - .03 and at - boundaries[-1][0] >= .03:
+                boundaries.append((at, int(who)))
+        for i, (at, top_speaker) in enumerate(boundaries):
+            finish = boundaries[i+1][0] if i+1 < len(boundaries) else end
+            crops = scene["crops"]
+            parts.append({
+                **scene,
+                "start": at,
+                "end": finish,
+                "crops": list(reversed(crops)) if top_speaker == 1 else crops,
+                "switches": [],
+            })
+    # Bounded work per user export; malformed or pathological timelines
+    # fail closed instead of spawning hundreds of encoders.
+    if len(parts) > 96:
+        raise UnsafeLayoutPlan("Too many speaker changes for a safe Smart Layout export")
+    return parts
+
+
 def compose_v2_filter(plan: dict[str, Any], duration: float,
                       output_width: int, output_height: int) -> str:
     """Generate a filtergraph using only the canonical cached source-pixel crop.
@@ -97,7 +146,7 @@ def compose_v2_filter(plan: dict[str, Any], duration: float,
     _verify_export_plan(plan, float(plan["source_start"]), duration)
     if output_width % 2 or output_height % 2 or output_width < 240 or output_height < 400:
         raise UnsafeLayoutPlan("Unsupported output dimensions")
-    sections = plan["scenes"]
+    sections = _split_dual_speaker_turns(plan["scenes"])
     fragments = [
         f"[0:v]fps=30,format=yuv420p,split={len(sections)}"
         + "".join(f"[src{i}]" for i in range(len(sections)))
@@ -124,8 +173,9 @@ def compose_v2_filter(plan: dict[str, Any], duration: float,
             fragments.append(f"[top{i}][band{i}][bottom{i}]vstack=inputs=3,setsar=1,format=yuv420p[out{i}]")
         elif mode in {"single","speaker_focus"}:
             x,y,w,h = scene["crops"][0]
-            focus = _filter_focus(scene,scene["crops"][0]) if mode=="speaker_focus" else str(x)
-            fragments.append(f"[shot{i}]crop={w}:{h}:x='{focus}':y={y},"
+            focus_x = _filter_focus(scene, 0) if mode=="speaker_focus" else str(x)
+            focus_y = _filter_focus(scene, 1) if mode=="speaker_focus" else str(y)
+            fragments.append(f"[shot{i}]crop={w}:{h}:x='{focus_x}':y='{focus_y}',"
                              f"scale={output_width}:{output_height},setsar=1,format=yuv420p[out{i}]")
         else:
             fragments.append(f"[shot{i}]split=2[bg{i}][fg{i}]")
@@ -190,7 +240,7 @@ def precompose_v2(source, output, plan: dict[str, Any], ffmpeg: str,
         with tempfile.TemporaryDirectory(prefix="smart-v2-scenes-", dir=temp.parent) as workspace:
             root = Path(workspace)
             scene_files = []
-            for i, scene in enumerate(plan["scenes"]):
+            for i, scene in enumerate(_split_dual_speaker_turns(plan["scenes"])):
                 # FFmpeg consumes exactly the face crops the canvas displays,
                 # but processes ONE shot per subprocess to avoid multi-shot
                 # graph heap corruption at 1080p.

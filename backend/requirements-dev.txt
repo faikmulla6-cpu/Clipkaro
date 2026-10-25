@@ -3,3 +3,8 @@ pytest==9.0.3
 pytest-asyncio==1.4.0
 pip-audit==2.10.1
 PyYAML==6.0.3
+# CPU-only scene-aware layout tests need image arrays and OpenCV; the minimal
+# production API runtime deliberately does not carry these media dependencies.
+# Both are pinned to a compatible NumPy 2.x Python 3.12 wheel set.
+numpy==2.2.6
+opencv-python-headless==4.11.0.86

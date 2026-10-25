@@ -33,6 +33,8 @@ MANDATORY_CHECKS = (
     "email_verification",
     "security_foundation",
     "legal_privacy",
+    "search_discovery",
+    "caption_composition",
     "behavioral_learning",
     "landscape_reframe",
     "release_identity_postinstall",

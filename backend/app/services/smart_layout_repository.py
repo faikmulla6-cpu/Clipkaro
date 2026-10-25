@@ -18,6 +18,8 @@ CACHE_TTL = timedelta(days=14)
 
 
 async def init_smart_layout_repository() -> None:
+    from app.services.smart_layout_credits import init_smart_layout_credits
+    await init_smart_layout_credits()
     await execute("""
        CREATE TABLE IF NOT EXISTS smart_layout_plans (
          cache_key TEXT PRIMARY KEY,
@@ -76,13 +78,13 @@ async def read_plan(identity: AnalysisIdentity) -> dict[str, Any] | None:
 
 
 async def store_plan(identity: AnalysisIdentity, record: dict[str, Any],
-                     *, source_expires_at: str | None) -> None:
+                     *, source_expires_at: str | None, transaction_db: Any = None) -> None:
     identity = identity.validated()
     encoded = json.dumps(record,separators=(",",":"),ensure_ascii=False,allow_nan=False)
     if len(encoded.encode("utf-8")) > MAX_PLAN_BYTES:
         raise ValueError("Private Smart Layout plan exceeds safe storage limits")
     expires_at = _expiry(source_expires_at)
-    await execute(
+    await (transaction_db.execute if transaction_db is not None else execute)(
         """INSERT INTO smart_layout_plans(
               cache_key,user_id,project_id,clip_id,source_generation,
               plan_json,created_at,expires_at

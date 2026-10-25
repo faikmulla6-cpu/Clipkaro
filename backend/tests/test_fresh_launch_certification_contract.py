@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 from pathlib import Path
 
 
@@ -139,5 +140,9 @@ def test_fresh_launch_workflow_supplies_every_mandatory_check_and_artifact() -> 
     assert "docker-images.json" in workflow
     assert "launch-qa/QA_REPORT.md" in workflow
     assert "generate_launch_qa_report.py enforce" in workflow
+    # Every reported outcome must be certified; reject newly added workflow gates
+    # that were accidentally omitted from the mandatory-evidence contract.
+    supplied = set(re.findall(r'--check ([a-z_]+)=', workflow))
+    assert supplied == set(module.MANDATORY_CHECKS)
     for name in module.MANDATORY_CHECKS:
         assert f"--check {name}=" in workflow, name

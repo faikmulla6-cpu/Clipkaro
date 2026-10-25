@@ -227,8 +227,22 @@ def test_scheduled_downgrade_applies_when_provider_moves_to_next_cycle(client: T
         assert method == "GET" and path == "/subscriptions/sub_cycle"
         return entity("sub_cycle", "plan_growth", start=END_EPOCH, end=NEXT_END_EPOCH)
 
-    with patch("app.api.billing_lifecycle.razorpay_request", new=AsyncMock(side_effect=provider)):
+    # /billing/sync invokes the shared billing service's subscription
+    # refresher, not only the API module's payment helper. Mock BOTH
+    # boundaries so this deterministic test cannot contact Razorpay when
+    # CI runs under faketime (which can invalidate legitimate TLS certs).
+    mocked_provider = AsyncMock(side_effect=provider)
+    with patch("app.api.billing_lifecycle.razorpay_request", new=mocked_provider), \
+         patch("app.services.billing.razorpay_request", new=mocked_provider):
         response = client.post("/api/v1/billing/sync", json={})
+    # The API and shared billing service can each refresh this subscription,
+    # depending on the surrounding test state. Assert that every call was the
+    # expected mocked GET; never rely on an exact refresh count or live TLS.
+    mocked_provider.assert_awaited()
+    assert all(
+        call.args == ("GET", "/subscriptions/sub_cycle") and not call.kwargs
+        for call in mocked_provider.await_args_list
+    )
 
     assert response.status_code == 200
     assert response.json()["plan"] == "growth"

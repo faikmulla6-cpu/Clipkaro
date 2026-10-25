@@ -76,6 +76,31 @@ def scene_boundaries(visuals: list, pairs: list, singles: list) -> list[int]:
                 old_size = statistics.median(paired_sizes)
                 new_size = statistics.median(s[2]*s[3] for s in solo)
                 is_cut = new_size > max(.006, old_size * 1.6)
+        # Some camera cuts retain the same dark studio backdrop. A sustained
+        # switch between two visible faces and a single visible face is a
+        # camera change even when the thumbnail and face scale barely move.
+        # Requiring 4/5 observations avoids treating a blink or occlusion
+        # as a cut and prevents an old two-face median cropping a bookshelf.
+        if not is_cut and i >= 5 and i + 5 <= n:
+            before_pairs = [p for p in pairs[i-5:i] if p is not None]
+            after_pairs = [p for p in pairs[i:i+5] if p is not None]
+            before_solo = [s for s in singles[i-5:i] if s is not None]
+            after_solo = [s for s in singles[i:i+5] if s is not None]
+            if (pairs[i-1] is not None and pairs[i] is None
+                    and len(before_pairs) >= 4 and len(after_pairs) <= 1
+                    and len(after_solo) >= 4):
+                # Sustained 4/5 paired -> solo observations establish
+                # an actual visibility transition even when both shots have
+                # similar-sized faces and a nearly identical backdrop. A
+                # single missed Haar detection cannot satisfy this gate.
+                is_cut = True
+            elif (pairs[i-1] is None and pairs[i] is not None
+                  and len(before_pairs) <= 1 and len(after_pairs) >= 4
+                  and len(before_solo) >= 4):
+                # Reverse transition: a solo camera returns to a genuine
+                # co-visible two-person shot. Never preserve the old solo
+                # crop after this cut or manufacture a second person.
+                is_cut = True
         if is_cut and i - boundaries[-1] >= 2:
             boundaries.append(i)
     if len(boundaries) > 1 and n - boundaries[-1] < 2:
@@ -98,8 +123,9 @@ def _wider_pair(faces: list) -> tuple | None:
     )[:2]
     if len(candidates) != 2:
         return None
+    from .karo_smart_layouts import _credible_pair_geometry
     left, right = sorted(candidates, key=lambda f: f[0])
-    return (left, right) if right[0] - left[0] >= .18 else None
+    return (left, right) if _credible_pair_geometry(left, right, .18) else None
 
 
 def _appearance_patch(grey, face):
@@ -242,9 +268,17 @@ def _decisions_for_scene(
     # Both detected panes must show actual live activity. Never promote a
     # stationary background portrait/poster into a second speaker.
     if (len(matched) >= max(3, math.ceil(count * .55))
-            and both_live and _pair_covers_scene(pairs, start_i, end_i)):
-        first = tuple(float(np.median([p[0][k] for p in matched])) for k in (0, 1))
-        second = tuple(float(np.median([p[1][k] for p in matched])) for k in (0, 1))
+            and both_live and (anchor or candidates is None)
+            and _pair_covers_scene(pairs, start_i, end_i)):
+        # Only crop the verified same-scene pair, not a median of faces from
+        # unrelated angles that slipped through a subtle background cut.
+        if anchor:
+            first, second = anchor
+        else:
+            # Geometry-only legacy test callers cannot provide live anchors;
+            # production always supplies candidate pairs and motion.
+            first = tuple(float(np.median([p[0][k] for p in matched])) for k in (0, 1))
+            second = tuple(float(np.median([p[1][k] for p in matched])) for k in (0, 1))
         if second[0] - first[0] >= .16:
             activity = _normalize_activity(scores[start_i:end_i])
             votes = []

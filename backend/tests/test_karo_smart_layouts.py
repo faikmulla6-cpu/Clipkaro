@@ -18,6 +18,22 @@ class LayoutTests(unittest.TestCase):
         self.assertIsNone(_pair([(0.25, .3, .1, .2), (0.31, .3, .1, .2)]))
         self.assertIsNotNone(_pair([(0.25, .3, .1, .2), (0.74, .3, .1, .2)]))
 
+    def test_studio_book_is_not_a_second_live_person(self):
+        from app.services.karo_smart_scenes import _wider_pair
+        # Normalized detections reproduced from the source file.
+        book = (.287, .104, .102, .181)
+        presenter = (.512, .324, .189, .336)
+        self.assertIsNone(_pair([book, presenter]))
+        self.assertIsNone(_wider_pair([book, presenter]))
+        # Real simultaneous speakers remain eligible for split layout.
+        left = (.264, .372, .200, .356)
+        right = (.688, .383, .203, .361)
+        self.assertIsNotNone(_pair([left, right]))
+        self.assertIsNotNone(_wider_pair([left, right]))
+        # A legitimate change in elevation alone must not be rejected.
+        self.assertIsNotNone(_pair([
+            (.22, .12, .17, .24), (.73, .40, .17, .24)]))
+
     def test_rapid_interjection_cannot_steal_frame(self):
         turns = smooth_turns([0] * 7 + [1] + [0] * 7)
         self.assertEqual(turns, ((0., 0),))
@@ -141,6 +157,62 @@ class SceneAwareTests(unittest.TestCase):
         pairs = [(a,b)]*n + [None]*8
         singles = [a]*n + [bigger]*8
         self.assertEqual(scene_boundaries(visuals,pairs,singles),[0,20])
+
+    def test_two_people_to_one_to_two_without_visual_background_change(self):
+        import numpy as np
+        from app.services.karo_smart_scenes import scene_boundaries, _decisions_for_scene
+        from app.services.smart_layout_variants import all_layout_variants
+        a, b = (.23,.34,.12,.20), (.77,.35,.12,.20)
+        both = (a, b)
+        # Both heads can occupy essentially the same position and have the
+        # same size across adjacent camera shots. Scene decisions must follow
+        # sustained co-visibility, NOT depend on an arbitrary scale jump.
+        pairs = [both]*15 + [None]*12 + [both]*15
+        singles = [a]*15 + [b]*12 + [a]*15
+        visuals = [np.full((12,20), .24, dtype="float32")]*42
+        cuts = scene_boundaries(visuals, pairs, singles)
+        self.assertEqual(cuts, [0,15,27],
+                         "A+B -> B only -> A+B must become three independent shots")
+        scores = ([(9.,1.)]*7 + [(1.,9.)]*8 + [(0.,0.)]*12
+                  + [(9.,1.)]*7 + [(1.,9.)]*8)
+        movements = [(6.,7.)]*15 + [(0.,0.)]*12 + [(6.,7.)]*15
+        segments = []
+        for i, j in zip(cuts, cuts[1:]+[42]):
+            segments.append(_decisions_for_scene(
+                i,j,pairs,singles,scores,[1.]*42,"auto",
+                i*.4,j*.4,.4,pairs,movements))
+        self.assertEqual([s.mode for s in segments],
+                         ["dual_stack","single","dual_stack"])
+        result = all_layout_variants(
+            LayoutPlan("auto",1280,720,((.23,.34),(.77,.35)),
+                       segments=tuple(segments)),
+            source_start=120.,duration=16.8)
+        self.assertEqual(
+            [s["layout"] for s in result["auto"]["scenes"]],
+            ["dual_stack","single","dual_stack"])
+        self.assertEqual(
+            [s["layout"] for s in result["dual_stack"]["scenes"]],
+            ["dual_stack","single","dual_stack"])
+        self.assertEqual(
+            [s["layout"] for s in result["speaker_focus"]["scenes"]],
+            ["speaker_focus","single","speaker_focus"])
+        for mode, payload in result.items():
+            self.assertEqual(payload["scenes"][1]["caption_zone"],"bottom",mode)
+            self.assertEqual(len(payload["scenes"][1]["crops"]),1,mode)
+            self.assertEqual(payload["source_start"],120.,mode)
+            self.assertEqual(payload["duration"],16.8,mode)
+
+    def test_closeup_cut_with_unchanged_backdrop_does_not_keep_old_pair(self):
+        import numpy as np
+        from app.services.karo_smart_scenes import scene_boundaries
+        same = [np.full((12, 20), .25, dtype="float32")] * 30
+        pair = ((.25, .33, .08, .12), (.75, .33, .08, .12))
+        solo = (.76, .33, .22, .27)
+        # Background nearly identical before/after edit. Sustained geometry
+        # is sufficient evidence that old two-person crops are now unsafe.
+        cuts = scene_boundaries(same, [pair]*16+[None]*14,
+                                [pair[0]]*16+[solo]*14)
+        self.assertEqual(cuts, [0, 16])
 
     def test_single_missed_face_does_not_fragment_dual_stack(self):
         import numpy as np

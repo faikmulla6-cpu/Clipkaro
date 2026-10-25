@@ -161,8 +161,8 @@ def from_media_plan(plan: Any, *, source_start: float,
         else:
             panels = [[0, 0, w, h]]
         transitions = _transitions(getattr(entry, "switches", ()), b - a, len(panels))
-        if kind != "speaker_focus" and transitions:
-            raise UnsafeLayoutPlan("Speaker transitions are only valid for focus scenes")
+        if kind not in ("speaker_focus", "dual_stack") and transitions:
+            raise UnsafeLayoutPlan("Speaker transitions require two verified faces")
         output.append({
             "start": round(a, 3),
             "end": round(b, 3),
@@ -240,7 +240,7 @@ def validate_serialized_plan(raw: Any) -> dict[str, Any]:
             raise UnsafeLayoutPlan("Captions disagree with scene geometry")
         raw_switches = scene.get("switches")
         _transitions(raw_switches, b-a, count)
-        if kind != "speaker_focus" and raw_switches:
+        if kind not in ("speaker_focus", "dual_stack") and raw_switches:
             raise UnsafeLayoutPlan("Invalid speaking transitions for this scene")
         last = b
     if abs(last-duration) > .065:

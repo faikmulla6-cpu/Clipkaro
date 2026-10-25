@@ -119,6 +119,11 @@ async def run_smart_layout_analysis(job: dict, scratch: Path, storage) -> None:
     # Check existing cache via the same strict validator as the API. For an
     # invalid object, overwrite with a newly verified plan; never claim ready.
     if await _cached({"source_width": row["source_width"], "source_height": row["source_height"]}, identity):
+        # A second request may finish while this job is still queued. Its
+        # private verified result is reusable and must also finalize the
+        # reservation exactly once, rather than leaving credits locked.
+        from app.services.smart_layout_credits import settle_analysis_job
+        await settle_analysis_job(str(job["id"]), succeeded=True)
         await update_job(job["id"], 100, "ready", "Smart Layout analysis cached", "completed")
         return
 
@@ -143,6 +148,14 @@ async def run_smart_layout_analysis(job: dict, scratch: Path, storage) -> None:
     base = await asyncio.to_thread(_detect, source, start, end - start, ffmpeg, "auto")
     if base is None:
         raise RuntimeError("This footage cannot be analyzed reliably; Classic remains available.")
+    if not any(
+        scene.mode in {"dual_stack", "single", "speaker_focus"}
+        or len(getattr(scene, "pair_centers", ())) == 2
+        for scene in getattr(base, "segments", ())
+    ):
+        # Full-frame-only fallback is Classic, not a premium face analysis.
+        # Fail before persisting/settling so the reserved credits are refunded.
+        raise RuntimeError("No reliable live-person framing was found; Classic remains available.")
     plans = all_layout_variants(base, source_start=start, duration=end-start)
     if not all_variants_match_source(plans):
         raise RuntimeError("Smart Layout scene analysis is inconsistent.")
@@ -161,6 +174,9 @@ async def run_smart_layout_analysis(job: dict, scratch: Path, storage) -> None:
     fresh = await _owned(clip_id, user_id)
     if _identity(fresh, user_id) != identity:
         raise RuntimeError("The clip or source changed during Smart Layout analysis.")
-    from app.services.smart_layout_repository import store_plan
-    await store_plan(identity, record, source_expires_at=row.get("expires_at"))
+    from app.services.smart_layout_credits import finalize_verified_plan
+    await finalize_verified_plan(
+        str(job["id"]), user_id, identity, record,
+        source_expires_at=row.get("expires_at"),
+    )
     await update_job(job["id"], 100, "ready", "Smart Layout analysis ready", "completed")
