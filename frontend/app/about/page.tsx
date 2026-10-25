@@ -4,13 +4,13 @@ import { PublicSiteNav } from "@/components/PublicSiteNav";
 import { AboutExperience } from "./AboutExperience";
 import unified from "./unified.module.css";
 
-const title = "About ClipKaro AI — Affordable AI Video Clipping, Creator Studio & Post Karo";
-const description = "Learn how ClipKaro combines long-video-to-Shorts AI, creator-controlled editing, ₹1 Creator Pulse intelligence and unlimited Post Karo publishing access in an affordable India-first workflow.";
+const title = "About ClipKaro AI — Smart Layout, AI Video Clipping & Creator Studio";
+const description = "Meet ClipKaro AI: long-video-to-Shorts intelligence, premium speaker-aware Smart Layout framing, Creator Studio editing and creator-controlled publishing for India.";
 
 export const metadata: Metadata = {
   title,
   description,
-  keywords: ["ClipKaro AI", "YouTube URL to Shorts", "paste YouTube link to Shorts", "YouTube video clipper", "upload video to Shorts", "AI video clipping", "YouTube creator intelligence", "YouTube channel analysis", "Creator Pulse", "Indian creator AI"],
+  keywords: ["ClipKaro AI", "Smart Layout", "Auto Director", "Dual Stack", "Speaker Focus", "YouTube URL to Shorts", "paste YouTube link to Shorts", "YouTube video clipper", "upload video to Shorts", "AI video clipping", "YouTube creator intelligence", "YouTube channel analysis", "Creator Pulse", "Indian creator AI"],
   alternates: { canonical: "/about" },
   openGraph: { type: "website", url: "/about", siteName: "ClipKaro AI", title, description, images: [{ url: "/assets/clipkaro-icon.png", width: 1024, height: 1024, alt: "ClipKaro AI" }] },
   twitter: { card: "summary_large_image", title, description, images: ["/assets/clipkaro-icon.png"] },
@@ -41,6 +41,7 @@ const aboutStructuredData = {
         "YouTube URL import for supported videos, Shorts and live replays",
         "Original-file upload fallback when direct URL acquisition is unavailable",
         "AI clip detection and ranking",
+        "Premium Smart Layout with Auto Director, Dual Stack and Speaker Focus",
         "Smart Transcript Review",
         "Hindi, Hinglish and Indian-English creator workflows",
         "Caption-safe vertical rendering",
@@ -59,7 +60,7 @@ const aboutStructuredData = {
       about: { "@id": "https://clipkaro.pro/#software" },
       publisher: { "@id": "https://clipkaro.pro/#organization" },
       inLanguage: "en-IN",
-      dateModified: "2026-09-23",
+      dateModified: "2026-10-26",
     },
     {
       "@type": "BreadcrumbList",

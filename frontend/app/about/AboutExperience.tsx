@@ -12,6 +12,7 @@ import {
   Instagram,
   Languages,
   Link2,
+  Layers3,
   LockKeyhole,
   Play,
   Scissors,
@@ -24,6 +25,7 @@ import {
   Zap,
 } from "lucide-react";
 import { AboutCreatorPulse } from "@/components/AboutCreatorPulse";
+import { SmartLayoutSpotlight } from "@/components/SmartLayoutSpotlight";
 import { Logo } from "@/components/Logo";
 import { TransitionLink } from "@/components/TransitionLink";
 import styles from "./about.module.css";
@@ -141,6 +143,11 @@ const futureSignals = [
 
 const productSurfaces = [
   {
+    icon: Layers3,
+    title: "Premium Smart Layout",
+    text: "Auto Director, Dual Stack and Speaker Focus offer speaker-aware portrait composition. Creators review the preview, see the analysis-credit cost and approve the result before export.",
+  },
+  {
     icon: Link2,
     title: "YouTube URL intake + file fallback",
     text: "Paste a supported YouTube video, Shorts or live-replay URL. If the source cannot be acquired directly, ClipKaro surfaces original-file upload instead of leaving the creator at a dead end.",
@@ -243,6 +250,7 @@ export function AboutExperience() {
           <a href="#mission">Mission</a>
           <a href="#technology">Technology</a>
           <a href="#product">Product</a>
+          <a href="#smart-layout">Smart Layout</a>
           <a href="#creator-pulse-story">Creator Pulse</a>
           <a href="#principles">Principles</a>
           <a href="#founder">Founder</a>
@@ -508,6 +516,8 @@ export function AboutExperience() {
           </div>
         </div>
       </section>
+
+      <SmartLayoutSpotlight context="about" />
 
       <AboutCreatorPulse />
 

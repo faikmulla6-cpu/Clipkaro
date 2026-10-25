@@ -4,9 +4,13 @@ import { LEGAL_LINKS, TRUST_PROFILE } from "@/lib/legal";
 
 export const metadata: Metadata = {
   title: { absolute: "ClipKaro AI — Long Video to Shorts + Unlimited Post Karo" },
-  description: "Turn long videos into Shorts with AI-ranked moments, Creator Studio editing and unlimited Post Karo publishing access to Instagram Reels + YouTube Shorts. Start free.",
+  description: "Turn long videos into Shorts with AI-ranked moments, speaker-aware Smart Layout framing, Creator Studio editing and unlimited Post Karo publishing access. Start free.",
   keywords: [
     "AI video clipper",
+    "Smart Layout podcast video framing",
+    "Dual Stack speaker layout",
+    "Auto Director Shorts",
+    "Speaker Focus portrait video",
     "YouTube URL to Shorts",
     "paste YouTube link to Shorts",
     "YouTube link video clipper",
@@ -48,7 +52,7 @@ export const metadata: Metadata = {
     url: "/",
     siteName: "ClipKaro AI",
     title: "ClipKaro AI — Long Video to Shorts + Unlimited Post Karo",
-    description: "Turn long videos into Shorts, refine them in Creator Studio and publish with unlimited Post Karo access on every plan.",
+    description: "Turn long videos into Shorts with AI-ranked clips, speaker-aware Smart Layout modes, Creator Studio editing and unlimited Post Karo access.",
     images: [{ url: "/assets/clipkaro-icon.png", width: 1024, height: 1024, alt: "ClipKaro AI creator workflow platform" }],
   },
   twitter: {
@@ -109,7 +113,7 @@ const homePageStructuredData = {
   about: { "@id": "https://clipkaro.pro/#software" },
   publisher: { "@id": "https://clipkaro.pro/#organization" },
   inLanguage: "en-IN",
-  dateModified: "2026-09-24",
+  dateModified: "2026-10-26",
 };
 
 const softwareStructuredData = {
@@ -141,6 +145,7 @@ const softwareStructuredData = {
     "YouTube URL import for supported videos, Shorts and live replays",
     "Original-file upload fallback when direct URL acquisition is unavailable",
     "AI clip detection and ranking",
+    "Premium Smart Layout with Auto Director, Dual Stack and Speaker Focus portrait framing",
     "Smart Transcript Review with inline corrections",
     "India Quality Mode for Hindi, Hinglish and Indian-English creator workflows",
     "Roman Hinglish caption support",
