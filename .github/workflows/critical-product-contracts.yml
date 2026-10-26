@@ -61,7 +61,7 @@ jobs:
           tests/test_main_protection_contract.py
           tests/test_legal_privacy.py
           tests/test_production_alignment.py
-          tests/test_self_hosted_runner_contract.py
+          tests/test_github_hosted_runner_contract.py
           tests/test_asr_qualification_contract.py
           tests/test_landscape_qualification_contract.py
           tests/test_fresh_launch_certification_contract.py
