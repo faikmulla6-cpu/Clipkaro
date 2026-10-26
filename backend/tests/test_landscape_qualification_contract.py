@@ -134,9 +134,10 @@ def test_runner_supports_real_media_cache_without_weakening_locked_matrix() -> N
     assert "threshold_contract_sha256()" in script
 
 
-def test_workflow_uses_exact_sha_self_hosted_runner_and_immutable_evidence() -> None:
+def test_workflow_uses_exact_sha_github_hosted_runner_and_immutable_evidence() -> None:
     workflow = (ROOT / ".github" / "workflows" / "landscape-export-qa.yml").read_text(encoding="utf-8")
-    assert "runs-on: [self-hosted, linux, x64, clipkaro-qa]" in workflow
+    assert "runs-on: ubuntu-24.04" in workflow
+    assert "check-github-hosted-runner.sh --profile landscape" in workflow
     assert "TESTED_SHA:" in workflow
     assert "Checkout exact candidate SHA" in workflow
     assert 'test "$(git rev-parse HEAD)" = "$TESTED_SHA"' in workflow
