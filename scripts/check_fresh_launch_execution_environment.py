@@ -107,7 +107,7 @@ def main() -> int:
     if not linux_x64:
         blockers.append("Fresh Launch QA host must be Linux x64")
     if not non_root:
-        blockers.append("self-hosted launch runner must use an unprivileged account")
+        blockers.append("launch QA runner must use an unprivileged account")
     for name in ("git", "python3.12", "node", "npm", "ffmpeg", "ffprobe", "docker"):
         if not commands[name]["available"]:
             blockers.append(f"required command missing: {name}")

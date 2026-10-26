@@ -52,7 +52,7 @@ def test_launch_thresholds_remain_the_locked_values() -> None:
 def test_real_asr_workflow_is_exact_sha_threshold_locked_and_evidence_driven() -> None:
     workflow = _read(".github/workflows/asr-stress.yml")
     required = (
-        "runs-on: [self-hosted, linux, x64, clipkaro-qa]",
+        "runs-on: ubuntu-24.04",
         "TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}",
         "ref: ${{ github.event.pull_request.head.sha || github.sha }}",
         'test "$(git rev-parse HEAD)" = "$TESTED_SHA"',

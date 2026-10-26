@@ -1,3 +1,5 @@
+> **Historical reference only.** Active main CI uses GitHub-hosted Ubuntu. See [GITHUB_HOSTED_RUNNERS.md](GITHUB_HOSTED_RUNNERS.md).
+
 # ClipKaro zero-cost self-hosted GitHub Actions runner
 
 ## Purpose
