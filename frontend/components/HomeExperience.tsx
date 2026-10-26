@@ -24,6 +24,7 @@ import {
 import { PublicMotionShell } from "@/components/PublicMotionShell";
 import { PublicSiteFooter } from "@/components/PublicSiteFooter";
 import { PublicSiteNav } from "@/components/PublicSiteNav";
+import { SmartLayoutSpotlight } from "@/components/SmartLayoutSpotlight";
 import { TransitionLink } from "@/components/TransitionLink";
 import FeatureSection from "@/components/ui/feature-section";
 import { TRUST_PROFILE } from "@/lib/legal";
@@ -68,6 +69,8 @@ const questions = [
   ["Can I paste a YouTube URL?", "Yes. Paste a supported YouTube video, Shorts or live-replay URL. If direct acquisition is unavailable for that source, ClipKaro lets you upload the original file instead and continue the same creator workflow."],
   ["What happens if a YouTube link cannot be imported?", "Use the original-file upload fallback. ClipKaro then continues with the same transcript, clip-finding, editing and export workflow."],
   ["Will the clips be 9:16?", "Creator Studio supports vertical short-form framing and gives you controls to review framing before export."],
+  ["What is Smart Layout?", "Smart Layout adds premium speaker-aware portrait framing in Auto Director, Dual Stack and Speaker Focus modes. Preview the result and review camera choices before export; results depend on the source footage."],
+  ["Does Smart Layout use credits?", "Yes. Real Smart Layout analysis uses a separate plan-based credit balance. ClipKaro shows the cost before you authorise analysis, and you can continue using Classic framing without premium analysis."],
   ["Does ClipKaro choose clips automatically?", "ClipKaro suggests and ranks promising moments, but you decide which clips to keep, edit and export."],
   ["Can ClipKaro publish my finished Shorts directly?", "Yes. Post Karo lets signed-in users publish finished Shorts to connected Instagram Reels and YouTube Shorts accounts. You review and confirm the post; ClipKaro does not publish without your action."],
   ["Is Post Karo unlimited?", "ClipKaro does not apply a per-post Post Karo quota. Unlimited publishing access is included on every plan, including Free. You still review and confirm each post, creation limits still apply, and Instagram or YouTube provider rules may apply."],
@@ -98,6 +101,11 @@ export function HomeExperience() {
                   <span><ShieldCheck size={14}/> You keep creative control</span>
                   <span><Youtube size={14}/> Unlimited Post Karo on every plan</span>
                 </div>
+                <a href="#smart-layout" className="mt-5 inline-flex max-w-full items-center gap-2 rounded-full border border-[#badbb9] bg-[#f1f8e9] px-4 py-2.5 text-left text-[11px] font-bold text-[#28583c] transition-colors hover:bg-[#e2f4d1] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#16653f]">
+                  <Sparkles size={15} className="shrink-0" aria-hidden="true" />
+                  <span><strong>New: Smart Layout</strong> · Speaker-aware vertical framing</span>
+                  <ArrowRight size={14} className="shrink-0" aria-hidden="true" />
+                </a>
               </div>
 
               <div className={styles.workspaceWrap} data-public-reveal="scale">
@@ -142,6 +150,8 @@ export function HomeExperience() {
               <TransitionLink href="/youtube-channel-analyzer"><Activity size={19}/><span><b>Creator Pulse</b><small>₹1 channel intelligence</small></span></TransitionLink>
             </div>
           </section>
+
+          <SmartLayoutSpotlight context="home" />
 
           <section className={styles.urlFeature} id="youtube-url-to-shorts">
             <div className={styles.urlGlow} aria-hidden="true" />
