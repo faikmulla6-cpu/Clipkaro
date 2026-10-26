@@ -17,15 +17,23 @@ jobs:
   backend-critical:
     name: Critical Backend Invariants
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, linux, x64, clipkaro-qa]
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
           clean: true
-      - name: Verify trusted self-hosted backend runner
-        run: bash scripts/check-self-hosted-runner.sh --profile critical-backend
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install hosted Linux test tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq faketime ffmpeg time
+      - name: Verify GitHub-hosted backend runner
+        run: bash scripts/check-github-hosted-runner.sh --profile critical-backend
       - name: Create isolated backend virtualenv
         working-directory: backend
         run: |
@@ -64,15 +72,23 @@ jobs:
   frontend-critical:
     name: Critical Frontend Contracts
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, linux, x64, clipkaro-qa]
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
           clean: true
-      - name: Verify trusted self-hosted frontend runner
-        run: bash scripts/check-self-hosted-runner.sh --profile critical-frontend
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Verify GitHub-hosted frontend runner
+        run: bash scripts/check-github-hosted-runner.sh --profile critical-frontend
       - name: Install locked frontend dependencies
         working-directory: frontend
         run: npm ci --no-audit --no-fund
