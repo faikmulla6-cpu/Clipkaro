@@ -15,16 +15,16 @@ concurrency:
 jobs:
   governance:
     name: PR Governance
-    # pull_request_target runs trusted base code only. Fork PRs are rejected
-    # explicitly before checkout so the required governance check fails closed.
-    runs-on: [self-hosted, linux, x64, clipkaro-qa]
+    # GitHub pull_request_target sources this workflow from default main.
+    # Fork PRs are rejected before checkout; no untrusted PR code is executed.
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Reject fork PRs on the persistent runner
+      - name: Reject fork PRs before checkout
         if: github.event.pull_request.head.repo.full_name != github.repository
         run: |
-          echo "Fork pull requests are not executed on ClipKaro's persistent self-hosted runner."
-          echo "Move the change to a reviewed same-repository branch or use an isolated ephemeral runner."
+          echo "Fork PRs do not run this privileged governance workflow."
+          echo "Move the change to a reviewed same-repository branch."
           exit 1
       - name: Checkout trusted base governance code
         if: github.event.pull_request.head.repo.full_name == github.repository
@@ -33,9 +33,18 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
           clean: true
-      - name: Verify trusted self-hosted governance runner
+      - name: Set up Python 3.12
         if: github.event.pull_request.head.repo.full_name == github.repository
-        run: bash scripts/check-self-hosted-runner.sh --profile governance
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify GitHub-hosted governance runner
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          test "$RUNNER_OS" = "Linux"
+          test "$RUNNER_ARCH" = "X64"
+          test "$RUNNER_ENVIRONMENT" = "github-hosted"
+          python3.12 --version
       - name: Validate issue linkage, branch naming and PR evidence sections
         if: github.event.pull_request.head.repo.full_name == github.repository
         env:
