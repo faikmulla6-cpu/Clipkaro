@@ -55,7 +55,13 @@ export TESTED_SHA="${TESTED_SHA:-$(git rev-parse HEAD)}"
 cd "$BACKEND"
 python3 scripts/check_asr_execution_environment.py --output asr-execution-preflight.json || true
 cd "$ROOT"
-bash scripts/check-self-hosted-runner.sh --profile asr
+if [[ "${RUNNER_ENVIRONMENT:-}" == "github-hosted" ]]; then
+  bash scripts/check-github-hosted-runner.sh --profile asr
+else
+  # Optional manual qualification outside GitHub Actions retains the original
+  # production-class prerequisites; no active CI workflow uses this path.
+  bash scripts/check-self-hosted-runner.sh --profile asr
+fi
 
 cd "$BACKEND"
 rm -rf .venv-ci

@@ -4,7 +4,6 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
-      - ".github/workflows/landscape-export-qa.yml"
       - "backend/landscape-threshold-lock.json"
       - "backend/app/services/landscape_export_qa.py"
       - "backend/app/services/landscape_qualification.py"
@@ -28,7 +27,7 @@ concurrency:
 jobs:
   landscape-export-qa:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, linux, x64, clipkaro-qa]
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
       TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -49,14 +48,22 @@ jobs:
           persist-credentials: false
           clean: true
 
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install hosted Linux media tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg time
       - name: Verify exact clean candidate
         run: |
           test "$(git rev-parse HEAD)" = "$TESTED_SHA"
           git diff --exit-code
           git diff --cached --exit-code
 
-      - name: Verify trusted landscape QA runner
-        run: bash scripts/check-self-hosted-runner.sh --profile landscape
+      - name: Verify GitHub-hosted landscape QA prerequisites
+        run: bash scripts/check-github-hosted-runner.sh --profile landscape
 
       - name: Create isolated backend virtualenv
         working-directory: backend
