@@ -1,3 +1,5 @@
+> **Historical reference only (2026-10-26).** ClipKaro has migrated its active CI jobs to GitHub-hosted runners. See [GITHUB_HOSTED_RUNNERS.md](GITHUB_HOSTED_RUNNERS.md). Do not register a self-hosted runner for current CI.
+
 # ClipKaro zero-cost self-hosted GitHub Actions runner
 
 ## Purpose

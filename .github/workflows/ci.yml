@@ -17,15 +17,23 @@ jobs:
   backend:
     name: Backend CI
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, linux, x64, clipkaro-qa]
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
           clean: true
-      - name: Verify trusted self-hosted backend runner
-        run: bash scripts/check-self-hosted-runner.sh --profile ci-backend
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install hosted Linux test tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq faketime ffmpeg time
+      - name: Verify GitHub-hosted backend tools
+        run: bash scripts/check-github-hosted-runner.sh --profile ci-backend
       - name: Verify deterministic-clock tool
         run: command -v faketime >/dev/null
       - name: Create isolated backend virtualenv
@@ -62,7 +70,6 @@ jobs:
           PYTHONPATH: .
         run: >-
           faketime '2026-08-31 12:00:00' pytest -q
-          --ignore=tests/test_self_hosted_runner_contract.py
           --ignore=tests/test_fresh_launch_certification_contract.py
       - name: Clean backend job workspace
         if: always()
@@ -71,7 +78,7 @@ jobs:
   frontend:
     name: Frontend CI
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, linux, x64, clipkaro-qa]
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
       BACKEND_URL: https://clipkaro-ci.invalid
@@ -80,8 +87,16 @@ jobs:
         with:
           persist-credentials: false
           clean: true
-      - name: Verify trusted self-hosted frontend runner
-        run: bash scripts/check-self-hosted-runner.sh --profile ci-frontend
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Verify GitHub-hosted frontend tools
+        run: bash scripts/check-github-hosted-runner.sh --profile ci-frontend
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci --no-audit --no-fund
