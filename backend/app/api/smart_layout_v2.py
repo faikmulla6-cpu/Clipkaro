@@ -201,10 +201,12 @@ async def analysis_status(clip_id: str, user: dict = Depends(current_user)) -> d
     identity = _identity(row, str(user["id"]))
     ready = await _cached(row, identity)
     if ready:
-        return ready
+        # This GET reused a saved result; it did not reserve or finalize a new credit.
+        return {**ready, "billing_action": "cached_reuse"}
     active = await _active_job(clip_id, str(user["id"]), private_plan_key(identity))
     if active:
-        return active
+        # Opening another editor/tab must not imply that this request charged a credit.
+        return {**active, "billing_action": "existing_job"}
     return {"status": "not_started", "reanalysis_free": await previously_paid(identity)}
 
 
@@ -218,7 +220,7 @@ async def request_analysis(
     identity = _identity(row, uid)
     ready = await _cached(row, identity)
     if ready:
-        return ready
+        return {**ready, "billing_action": "cached_reuse"}
     key = private_plan_key(identity)
     if not await consume_rate_limit(uid, group="smart_layout_request", limit=60, window_seconds=3600):
         raise HTTPException(429, detail={
@@ -226,10 +228,10 @@ async def request_analysis(
     async with distributed_advisory_lock("smart-layout-v2:"+uid+":"+clip_id):
         cached = await _cached(row, identity)
         if cached:
-            return cached
+            return {**cached, "billing_action": "cached_reuse"}
         existing = await _active_job(clip_id, uid, key)
         if existing:
-            return existing
+            return {**existing, "billing_action": "existing_job"}
         # Capacity throttling is independent of paid credits and never grants
         # entitlement. Keep a global budget for expensive media analysis.
         if not await consume_rate_limit(
@@ -244,7 +246,7 @@ async def request_analysis(
             raise HTTPException(status_code=code, detail={
                 "code": exc.code, "message": str(exc)}) from exc
         if action == "existing":
-            return {"status": "queued", "job_id": job_id}
+            return {"status": "queued", "job_id": job_id, "billing_action": "existing_job"}
     try:
         async def _local_worker(jid: str) -> None:
             from app.media_job import run_job
@@ -254,7 +256,7 @@ async def request_analysis(
         await update_job(job_id, 0, "failed", "Could not start private preview", "failed", "PREVIEW_LAUNCH_FAILED")
         await settle_analysis_job(job_id, succeeded=False)
         raise HTTPException(503, "Smart Layout analysis is temporarily unavailable. No credits were charged.") from exc
-    return {"status": "queued", "job_id": job_id}
+    return {"status": "queued", "job_id": job_id, "billing_action": action}
 
 
 @router.get("/clips/{clip_id}/smart-layout-v2/media")

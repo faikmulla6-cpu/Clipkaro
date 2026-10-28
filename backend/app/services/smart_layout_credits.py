@@ -217,7 +217,7 @@ async def previously_paid(identity: AnalysisIdentity) -> bool:
 async def reserve_analysis(user_id: str, identity: AnalysisIdentity) -> tuple[str, str]:
     """Atomically reserve credits and create one durable job+payload.
 
-    Return (job_id, action), where action is 'queued' or 'existing'.
+    Return (job_id, action): 'new_charge', 'free_refresh', or 'existing'.
     Uses PostgreSQL user-row FOR UPDATE to serialize DIFFERENT clip requests,
     while the unique fingerprint serializes identical requests and retries.
     """
@@ -333,7 +333,7 @@ async def reserve_analysis(user_id: str, identity: AnalysisIdentity) -> tuple[st
                   id,user_id,fingerprint,period_key,credits,status,job_id,reserved_at,updated_at)
                   VALUES(?,?,?,?,?,'reserved',?,?,?)""",
                 (str(uuid.uuid4()),uid,fingerprint,period,cost,job_id,timestamp,timestamp))
-        return job_id, "queued"
+        return job_id, "free_refresh" if free_recompute else "new_charge"
 
     return await run_in_transaction(reserve, operation_name="reserve Smart Layout credits and job")
 

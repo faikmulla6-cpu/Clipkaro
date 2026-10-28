@@ -7,7 +7,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from fastapi import HTTPException
+from fastapi import BackgroundTasks, HTTPException
 from starlette.requests import Request
 from app.api import smart_layout_v2 as api
 from app.services.smart_layout_cache import AnalysisIdentity, private_plan_key
@@ -68,6 +68,33 @@ class SmartLayoutSecurityTests(unittest.IsolatedAsyncioTestCase):
             with mock_patch.object(cache, "MODEL_VERSION", prior):
                 previous_key = private_plan_key(original)
             self.assertNotEqual(new_key, previous_key)
+
+    async def test_cached_analysis_status_and_post_report_reuse_without_new_charge(self):
+        uid, pid, cid, vid = user_ids()
+        identity = AnalysisIdentity(uid, pid, cid, vid, "etag:billing", 0.0, 10.0)
+        cached = {"status": "ready", "plans": {}}
+        with patch.object(api, "_require_paid_feature", new_callable=AsyncMock), \
+             patch.object(api, "_owned", new_callable=AsyncMock, return_value={}), \
+             patch.object(api, "_identity", return_value=identity), \
+             patch.object(api, "_cached", new_callable=AsyncMock, return_value=cached):
+            status = await api.analysis_status(cid, {"id": uid})
+            requested = await api.request_analysis(cid, BackgroundTasks(), {"id": uid})
+        self.assertEqual(status["billing_action"], "cached_reuse")
+        self.assertEqual(requested["billing_action"], "cached_reuse")
+        self.assertEqual(status["plans"], requested["plans"])
+
+    async def test_existing_analysis_job_is_not_reported_as_a_new_charge(self):
+        uid, pid, cid, vid = user_ids()
+        identity = AnalysisIdentity(uid, pid, cid, vid, "etag:billing", 0.0, 10.0)
+        active = {"status": "processing", "job_id": str(uuid.uuid4())}
+        with patch.object(api, "_require_paid_feature", new_callable=AsyncMock), \
+             patch.object(api, "_owned", new_callable=AsyncMock, return_value={}), \
+             patch.object(api, "_identity", return_value=identity), \
+             patch.object(api, "_cached", new_callable=AsyncMock, return_value=None), \
+             patch.object(api, "_active_job", new_callable=AsyncMock, return_value=active):
+            status = await api.analysis_status(cid, {"id": uid})
+        self.assertEqual(status["billing_action"], "existing_job")
+        self.assertEqual(status["job_id"], active["job_id"])
 
     async def test_malformed_database_cache_never_returned_or_marked_ready(self):
         uid,pid,cid,vid=user_ids()

@@ -147,7 +147,7 @@ class PremiumSmartLayoutCreditTests(unittest.IsolatedAsyncioTestCase):
             quota.reserve_analysis(self.uid,identity),
             quota.reserve_analysis(self.uid,identity))
         self.assertEqual(a[0],b[0])
-        self.assertEqual({a[1],b[1]},{"queued","existing"})
+        self.assertEqual({a[1],b[1]},{"new_charge","existing"})
         self.assertEqual(self.used(),1)
         self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0],1)
         await quota.settle_analysis_job(a[0],succeeded=True)
@@ -155,13 +155,29 @@ class PremiumSmartLayoutCreditTests(unittest.IsolatedAsyncioTestCase):
         state = await quota.entitlement_status({"id":self.uid},rollout=True)
         self.assertEqual((state["remaining"],state["daily_remaining"]),(11,3))
 
+    async def test_billing_action_distinguishes_new_charge_existing_job_and_free_refresh(self):
+        identity = self.identity()
+        first, first_action = await quota.reserve_analysis(self.uid, identity)
+        self.assertEqual(first_action, "new_charge")
+        duplicate, duplicate_action = await quota.reserve_analysis(self.uid, identity)
+        self.assertEqual(duplicate, first)
+        self.assertEqual(duplicate_action, "existing")
+        await quota.settle_analysis_job(first, succeeded=True)
+        self.conn.execute("UPDATE jobs SET status='completed' WHERE id=?", (first,))
+        refreshed, refresh_action = await quota.reserve_analysis(self.uid, identity)
+        self.assertNotEqual(refreshed, first)
+        self.assertEqual(refresh_action, "free_refresh")
+        self.assertEqual(self.used(), 1, "refreshing a previously paid source/range must not reserve another credit")
+
     async def test_failure_refunds_once_and_retry_reserves_once(self):
         identity=self.identity()
-        first,_ = await quota.reserve_analysis(self.uid,identity)
+        first,first_action = await quota.reserve_analysis(self.uid,identity)
+        self.assertEqual(first_action,"new_charge")
         await quota.settle_analysis_job(first,succeeded=False)
         await quota.settle_analysis_job(first,succeeded=False)
         self.assertEqual(self.used(),0)
-        second,_ = await quota.reserve_analysis(self.uid,identity)
+        second,second_action = await quota.reserve_analysis(self.uid,identity)
+        self.assertEqual(second_action,"new_charge")
         self.assertNotEqual(first,second)
         self.assertEqual(self.used(),1)
         await quota.settle_analysis_job(second,succeeded=True)
@@ -226,7 +242,7 @@ class PremiumSmartLayoutCreditTests(unittest.IsolatedAsyncioTestCase):
             "UPDATE users SET plan_started_at='2026-11-20T00:00:00+00:00' WHERE id=?",
             (self.uid,))
         second,status=await quota.reserve_analysis(self.uid,identity)
-        self.assertEqual(status,"queued")
+        self.assertEqual(status,"free_refresh")
         self.assertNotEqual(first,second)
         self.assertEqual(self.used(),1)
         credit=self.conn.execute(
