@@ -98,7 +98,7 @@ def test_parallel_postgres_credit_reservations_are_exact_once_and_capped():
                     quota.reserve_analysis(uid,target) for _ in range(8)
                 ]), timeout=30)
                 assert len({v[0] for v in attempts}) == 1
-                assert sorted([v[1] for v in attempts]) == ["existing"]*7+["queued"]
+                assert sorted([v[1] for v in attempts]) == ["existing"]*7+["new_charge"]
                 assert await admin.fetchval(
                     "SELECT COALESCE(SUM(credits),0) FROM smart_layout_credit_reservations "
                     "WHERE status IN ('reserved','finalized')") == 1
