@@ -26,5 +26,8 @@ assert.match(editor, /smartQuota\.daily_remaining/, "rolling daily credit visibi
 assert.match(editor, /smartClipCost/, "selected clip cost visibility");
 assert.match(backend, /return job_id, "free_refresh" if free_recompute else "new_charge"/, "backend distinguishes free refresh from a new credit reservation");
 assert.match(api, /"billing_action": "cached_reuse"/, "API marks cached results as reused");
+assert.match(api, /"billing_action": "existing_job"/, "API marks an already-running job as no additional reservation");
 assert.match(api, /"billing_action": action/, "API returns the authoritative reservation action");
+assert.match(editor, /currentBillingAction === "free_refresh".*Saved analysis refreshed/s, "free refresh is not shown as a fresh paid analysis");
+assert.match(editor, /currentBillingAction === "existing_job".*Existing analysis reused/s, "an existing job is not shown as a fresh paid analysis");
 console.log("Premium Smart Layout: pricing parity, clip-scoped consent, and billing-status contracts passed");
