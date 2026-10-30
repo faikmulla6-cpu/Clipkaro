@@ -119,6 +119,76 @@ if __name__ == "__main__":
 
 
 class SceneAwareTests(unittest.TestCase):
+    def test_short_pair_to_solo_cut_does_not_stack_a_bookshelf(self):
+        import numpy as np
+        from app.services.karo_smart_scenes import scene_boundaries, _decisions_for_scene
+        from app.services.smart_layout_variants import all_layout_variants
+
+        left = (.25, .34, .09, .13)
+        right = (.75, .34, .09, .13)
+        solo = (.75, .34, .21, .29)
+        # Seven 400-ms samples: a real pair for 1.6s, followed by a close-up
+        # for 1.2s with the SAME bookshelf/background. The old short-scene
+        # exemption allowed an obsolete left crop to stay on screen.
+        pairs = [(left, right)] * 4 + [None] * 3
+        singles = [left] * 4 + [solo] * 3
+        visuals = [np.full((12, 20), .28, dtype="float32")] * 7
+        self.assertEqual(scene_boundaries(visuals, pairs, singles), [0, 4])
+        movement = [(0., 0.)] + [(7., 8.)] * 3 + [(0., 0.)] * 3
+        mixed = _decisions_for_scene(
+            0, 7, pairs, singles, [(7., 8.)] * 7, [1.] * 7,
+            "auto", 0., 2.8, .4, pairs, movement,
+        )
+        self.assertEqual(mixed.pair_centers, (),
+                         "weak cross-cut evidence must never seed a split")
+        variants = all_layout_variants(
+            LayoutPlan("auto", 1280, 720, ((.25, .34), (.75, .34)),
+                       segments=(mixed,)),
+            source_start=0., duration=2.8,
+        )
+        self.assertNotEqual(variants["dual_stack"]["scenes"][0]["layout"], "dual_stack")
+        # The actual shot-aware plan can still show both real speakers BEFORE
+        # the cut, while reverting to a full-height solo crop immediately after.
+        cuts = [0, 4, 7]
+        shots = tuple(_decisions_for_scene(
+            i, j, pairs, singles, [(7., 8.)] * 7, [1.] * 7,
+            "auto", i * .4, j * .4, .4, pairs, movement,
+        ) for i, j in zip(cuts[:-1], cuts[1:]))
+        result = all_layout_variants(
+            LayoutPlan("auto", 1280, 720, ((.25, .34), (.75, .34)),
+                       segments=shots),
+            source_start=0., duration=2.8,
+        )
+        self.assertEqual(
+            [s["layout"] for s in result["dual_stack"]["scenes"]],
+            ["dual_stack", "single"],
+        )
+        self.assertEqual(result["dual_stack"]["scenes"][1]["caption_zone"], "bottom")
+
+    def test_short_solo_to_pair_cut_is_detected_with_unchanged_backdrop(self):
+        import numpy as np
+        from app.services.karo_smart_scenes import scene_boundaries
+        left, right = (.25, .34, .09, .13), (.75, .34, .09, .13)
+        solo = (.75, .34, .21, .29)
+        frames = [np.full((12, 20), .28, dtype="float32")] * 7
+        pairs = [None] * 4 + [(left, right)] * 3
+        singles = [solo] * 4 + [left] * 3
+        self.assertEqual(scene_boundaries(frames, pairs, singles), [0, 4])
+
+    def test_long_detection_gap_cannot_keep_two_stale_panels(self):
+        from app.services.karo_smart_scenes import _stable_wide_pair
+        left = (.25, .34, .09, .13)
+        right = (.75, .34, .09, .13)
+        pair = (left, right)
+        candidates = [pair] * 8 + [None] * 11 + [pair] * 9
+        motion = [(7., 8.) if p is not None else (0., 0.)
+                  for p in candidates]
+        self.assertEqual(
+            _stable_wide_pair(candidates, [left] * len(candidates),
+                              0, len(candidates), motion),
+            (), "two distant appearances cannot bridge a solo camera cut",
+        )
+
     def test_good_initial_pair_cannot_leave_empty_panel_at_end(self):
         from app.services.karo_smart_scenes import _decisions_for_scene
         from app.services.smart_layout_variants import all_layout_variants
