@@ -60,6 +60,28 @@ def scene_boundaries(visuals: list, pairs: list, singles: list) -> list[int]:
         is_cut = (jump > .27
                   or (jump > .105 and (pair_flip or location_jump or face_scale_jump))
                   or (jump > .155 and (a is None) != (b is None)))
+        # Detect brief but definite pair -> solo camera cuts before the
+        # five-sample sustained gates can activate. The same bookshelf can
+        # remain in the background, making thumbnail jump almost zero. A
+        # three-frame visibility change AND a larger close-up face provide
+        # stronger evidence than a single missed Haar detection.
+        if not is_cut and i >= 3 and i + 3 <= n:
+            before = pairs[i-3:i]
+            after = pairs[i:i+3]
+            if (all(p is not None for p in before)
+                    and all(p is None for p in after)
+                    and all(s is not None for s in singles[i:i+3])):
+                pair_areas = sorted(max(p[0][2]*p[0][3], p[1][2]*p[1][3])
+                                    for p in before)
+                solo_areas = sorted(s[2]*s[3] for s in singles[i:i+3])
+                is_cut = solo_areas[1] > max(.006, pair_areas[1] * 1.65)
+            elif (all(p is None for p in before)
+                  and all(p is not None for p in after)
+                  and all(s is not None for s in singles[i-3:i])):
+                solo_areas = sorted(s[2]*s[3] for s in singles[i-3:i])
+                pair_areas = sorted(max(p[0][2]*p[0][3], p[1][2]*p[1][3])
+                                    for p in after)
+                is_cut = solo_areas[1] > max(.006, pair_areas[1] * 1.65)
         # A two-person shot that changes to a close-up may retain a very
         # similar bookshelf backdrop. Require sustained evidence of a
         # genuine camera change instead of trusting one missing Haar frame.
@@ -174,20 +196,37 @@ def _pair_temporal_activity(grey, pair, previous):
 
 
 def _pair_covers_scene(candidates, start_i: int, end_i: int) -> bool:
-    """A reliable two-person crop must cover BOTH ends of its shot.
+    """Require a real pair near BOTH ends, including short camera shots.
 
-    If both faces are seen for 25 seconds and one disappears for the final
-    eight, taking the median of early evidence would leave a fixed empty
-    panel over those last seconds. Short detector dropouts remain tolerated.
+    Previously every shot shorter than four seconds skipped this guard.
+    A two-person camera could cut to one speaker after a few samples and
+    leave an empty/bookshelf panel for the rest of the short shot.
     """
     count = end_i - start_i
-    if count < 10:
-        return True
-    margin = max(3, math.ceil(count * .2))
+    if count < 4:
+        # Too little evidence for a trustworthy split; use solo/Classic.
+        return False
+    margin = min(count, max(2, math.ceil(count * .2)))
     return (
         any(candidates[i] is not None for i in range(start_i, start_i + margin))
         and any(candidates[i] is not None for i in range(end_i - margin, end_i))
     )
+
+
+def _pair_has_no_long_gap(candidates, start_i: int, end_i: int) -> bool:
+    """A long uninterrupted solo interval cannot inherit a two-face crop.
+
+    Haar may see small faces only every few samples in a real wide shot, so
+    tolerate short dropouts while rejecting a sustained camera cut.
+    """
+    count = end_i - start_i
+    max_dropout = max(4, min(6, math.ceil(count * .16)))
+    missing = 0
+    for index in range(start_i, end_i):
+        missing = missing + 1 if candidates[index] is None else 0
+        if missing > max_dropout:
+            return False
+    return True
 
 
 def _pair_has_live_motion(candidates, movement, start_i: int, end_i: int) -> bool:
@@ -228,6 +267,7 @@ def _stable_wide_pair(candidates: list, singles: list,
     minimum = max(3, math.ceil(count * .12))
     if (len(found) < minimum
             or not _pair_covers_scene(candidates, start_i, end_i)
+            or not _pair_has_no_long_gap(candidates, start_i, end_i)
             or not _pair_has_live_motion(candidates, pair_motion, start_i, end_i)):
         return ()
     if count >= 8 and found[-1][0] - found[0][0] < (count - 1) * .55:
