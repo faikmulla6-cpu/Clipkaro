@@ -241,17 +241,13 @@ def _apply_security_headers(response, request_id: str):
 
 
 def _rate_limit_client_key(request: Request) -> str:
-    """Return a stable per-client key without trusting arbitrary proxy headers.
+    """Use only the ASGI client address for IP-based rate limiting.
 
-    Production traffic reaches the API only through the private Caddy service in
-    docker-compose. Caddy overwrites ``X-ClipKaro-Client-IP`` with
-    ``{remote_host}``, so the value cannot be supplied by an Internet client.
-    Development/test traffic connects directly and therefore uses the ASGI peer.
+    Modal exposes the client address through request.client.host. The public
+    Modal URL is reachable without Hostinger/Caddy, so accepting a caller-set
+    X-ClipKaro-Client-IP, X-Forwarded-For, or similar header here would let an
+    attacker rotate the distributed and in-process rate-limit buckets.
     """
-    if settings.app_env == "production":
-        edge_client = (request.headers.get("X-ClipKaro-Client-IP") or "").strip()
-        if edge_client:
-            return edge_client[:128]
     return (request.client.host if request.client else "unknown")[:128]
 
 
