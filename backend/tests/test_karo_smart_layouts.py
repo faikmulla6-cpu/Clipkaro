@@ -515,3 +515,112 @@ class SceneAwareTests(unittest.TestCase):
         self.assertIn("trim=start=6.000:duration=2.000",graph)
         self.assertIn("setsar=1,format=yuv420p[out0]",graph)
         self.assertEqual(graph.count("vstack=inputs=3"),1)
+
+
+class FrameExactCutTests(unittest.TestCase):
+    """A five-frame camera shot must not inherit the preceding camera crop."""
+
+    def test_exact_scene_ranges_preserve_five_frame_intermediate_shot(self):
+        from app.services.karo_smart_scenes import _scene_time_ranges, _decisions_for_scene
+        ranges = _scene_time_ranges(
+            count=9, interval=.4, duration=3.6,
+            coarse_boundaries=[0, 4], hard_cuts=(1.2, 1.366667),
+        )
+        self.assertEqual(len(ranges), 3)
+        self.assertAlmostEqual(ranges[1][0], 1.2)
+        self.assertAlmostEqual(ranges[1][1], 1.366667)
+        self.assertEqual(ranges[1][2:], (3, 3))
+        # With no sample inside this 167-ms camera shot, display the entire
+        # source frame instead of guessing a stale speaker or pair location.
+        cutaway = _decisions_for_scene(
+            3, 3, [None] * 9, [None] * 9, [(0., 0.)] * 9,
+            [0.] * 9, "auto", 1.2, 1.366667, .4,
+        )
+        self.assertEqual(cutaway.mode, "wide")
+
+    def test_coarse_cut_cannot_switch_crop_five_frames_too_early(self):
+        from app.services.karo_smart_scenes import _scene_time_ranges
+        # Verified original: both speakers remain visible at 13.20–13.33,
+        # and the solo camera begins at 13.36. The old 400-ms cut at
+        # 13.20 caused five frames of an incorrect center crop.
+        ranges = _scene_time_ranges(
+            count=50, interval=.4, duration=20.,
+            coarse_boundaries=[0, 33], hard_cuts=(13.36,),
+        )
+        self.assertEqual(
+            [(a, b) for a, b, _, _ in ranges],
+            [(0., 13.36), (13.36, 20.)],
+        )
+        self.assertEqual(ranges[0][3], 33)
+
+    def test_ffmpeg_finds_both_edges_of_a_five_frame_camera_shot(self):
+        import shutil
+        from app.services.karo_smart_scenes import _frame_scene_cuts
+        ffmpeg = shutil.which("ffmpeg")
+        if not ffmpeg:
+            self.skipTest("FFmpeg unavailable")
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "five-frame-camera.mp4"
+            cmd = [
+                ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+                "-f", "lavfi", "-i", "color=c=red:s=640x360:r=30:d=1.2",
+                "-f", "lavfi", "-i", "color=c=green:s=640x360:r=30:d=0.166667",
+                "-f", "lavfi", "-i", "color=c=blue:s=640x360:r=30:d=1.2",
+                "-filter_complex", "[0:v][1:v][2:v]concat=n=3:v=1:a=0[out]",
+                "-map", "[out]", "-c:v", "libx264", "-preset", "ultrafast",
+                str(src),
+            ]
+            subprocess.run(cmd, check=True, timeout=90)
+            cuts = _frame_scene_cuts(src, 0., 2.566667, ffmpeg)
+            self.assertIsNotNone(cuts)
+            self.assertEqual(len(cuts), 2, cuts)
+            self.assertAlmostEqual(cuts[0], 1.2, delta=.035)
+            self.assertAlmostEqual(cuts[1], 1.366667, delta=.035)
+            # Source seek times must stay clip-relative, not global PTS.
+            offset = _frame_scene_cuts(src, .5, 1.8, ffmpeg)
+            self.assertEqual(len(offset), 2, offset)
+            self.assertAlmostEqual(offset[0], .7, delta=.035)
+            self.assertAlmostEqual(offset[1], .866667, delta=.035)
+            self.assertIsNone(_frame_scene_cuts(src, 0., 2.5, "missing-ffmpeg-binary"))
+
+    def test_five_frame_camera_shot_survives_actual_scene_render(self):
+        """Do not lose or borrow even one frame at exact scene boundaries."""
+        import shutil
+        from app.services.karo_smart_scenes import (
+            Scene, compose_scene_filter, _frame_scene_cuts,
+        )
+        ffmpeg = shutil.which("ffmpeg")
+        if not ffmpeg:
+            self.skipTest("FFmpeg unavailable")
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "three-shots.mp4"
+            make = [
+                ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+                "-f", "lavfi", "-i", "color=c=red:s=640x360:r=30:d=1.2",
+                "-f", "lavfi", "-i", "color=c=green:s=640x360:r=30:d=0.166667",
+                "-f", "lavfi", "-i", "color=c=blue:s=640x360:r=30:d=1.2",
+                "-filter_complex", "[0:v][1:v][2:v]concat=n=3:v=1:a=0[out]",
+                "-map", "[out]", "-c:v", "libx264", "-preset", "ultrafast", str(src),
+            ]
+            subprocess.run(make, check=True, timeout=90)
+            cuts = _frame_scene_cuts(src, 0., 77/30, ffmpeg)
+            self.assertEqual(len(cuts), 2, cuts)
+            plan = LayoutPlan("dual_stack", 640, 360, ((.25, .3), (.75, .3)),
+                segments=(Scene(0., cuts[0], "wide"),
+                          Scene(cuts[0], cuts[1], "wide"),
+                          Scene(cuts[1], 77/30, "wide")))
+            graph = compose_scene_filter(plan, 77/30, 90, 160)
+            cmd = [ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error",
+                   "-i", str(src), "-filter_complex", graph, "-map", "[vout]",
+                   "-an", "-fps_mode", "passthrough",
+                   "-pix_fmt", "rgb24", "-f", "rawvideo", "-"]
+            out = subprocess.run(cmd, capture_output=True, timeout=90)
+            self.assertEqual(out.returncode, 0, out.stderr[-700:])
+            frame_size = 90 * 160 * 3
+            self.assertEqual(len(out.stdout) % frame_size, 0)
+            colors = []
+            for pos in range(0, len(out.stdout), frame_size):
+                p = pos + (80 * 90 + 45) * 3
+                rgb = out.stdout[p:p+3]
+                colors.append("RGB"[max(range(3), key=lambda i: rgb[i])])
+            self.assertEqual(colors, ["R"] * 36 + ["G"] * 5 + ["B"] * 36)

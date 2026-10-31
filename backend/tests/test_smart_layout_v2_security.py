@@ -54,7 +54,7 @@ class SmartLayoutSecurityTests(unittest.IsolatedAsyncioTestCase):
         import hashlib
         uid,pid,cid,vid=user_ids()
         original = AnalysisIdentity(uid,pid,cid,vid,"etag:source-unchanged",0.,10.)
-        self.assertIn("cutguard-v7", MODEL_VERSION)
+        self.assertIn("frame-exact-v8", MODEL_VERSION)
         new_key = private_plan_key(original)
         # A new analyzer revision must never return older cached crops,
         # even when user, video generation, and clip times did not change.
@@ -65,7 +65,8 @@ class SmartLayoutSecurityTests(unittest.IsolatedAsyncioTestCase):
         for prior in ("opencv-scene-20261019-live-wide-v3",
                       "opencv-scene-20261022-live-face-v4",
                       "opencv-scene-20261022-active-top-v5",
-                      "opencv-scene-20261023-pairguard-v6"):
+                      "opencv-scene-20261023-pairguard-v6",
+                      "opencv-scene-20261030-cutguard-v7"):
             with mock_patch.object(cache, "MODEL_VERSION", prior):
                 previous_key = private_plan_key(original)
             self.assertNotEqual(new_key, previous_key)

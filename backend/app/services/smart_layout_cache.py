@@ -12,7 +12,7 @@ import uuid
 from dataclasses import dataclass
 
 ANALYSIS_SCHEMA = "v2"
-MODEL_VERSION = "opencv-scene-20261030-cutguard-v7"
+MODEL_VERSION = "opencv-scene-20261031-frame-exact-v8"
 
 
 def _uuid(value: str, name: str) -> str:

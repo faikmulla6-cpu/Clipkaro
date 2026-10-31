@@ -282,6 +282,9 @@ def precompose_v2(source, output, plan: dict[str, Any], ffmpeg: str,
                 ffmpeg, "-nostdin", "-v", "error", "-y",
                 "-f", "concat", "-safe", "0", "-i", str(manifest),
                 "-map", "0:v:0", "-c:v", "copy", "-an",
+                # Separately encoded 30-fps shots can round up by one frame.
+                # Cap the joined *video* before restoring full source audio.
+                "-frames:v", str(round(duration * 30)),
                 "-movflags", "+faststart", str(joined),
             ], "video_join", joined)
 

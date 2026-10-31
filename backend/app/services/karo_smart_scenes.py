@@ -7,8 +7,11 @@ one real face, or fit the uncropped source against a subtle blurred backing.
 """
 from __future__ import annotations
 
+import bisect
 import logging
 import math
+import re
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -28,6 +31,80 @@ class Scene:
     # Independent, stable same-frame two-face evidence for the explicitly
     # selected Dual Stack layout. Auto Director's existing decision is intact.
     pair_centers: tuple[tuple[float, float], ...] = ()
+
+
+def _frame_scene_cuts(source: Path, start: float, duration: float,
+                      ffmpeg: str) -> tuple[float, ...] | None:
+    """Find hard cuts at native frame rate, including five-frame camera shots.
+
+    Face inference stays sparse and CPU-bounded. A separate FFmpeg pass finds
+    abrupt visual cuts *before* the sampled face geometry is grouped. If the
+    pass fails, decline the unsafe plan instead of reusing old-camera crops.
+    """
+    cmd = [
+        ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "info",
+        "-ss", str(start), "-t", str(duration), "-i", str(source),
+        "-an", "-vf", r"format=rgb24,select=gt(scene\,0.23),showinfo",
+        "-f", "null", "-",
+    ]
+    try:
+        result = subprocess.run(
+            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+            text=True, encoding="utf-8", errors="replace",
+            check=False, timeout=min(420, max(30, int(duration * 3))),
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        logger.warning("Frame-exact scene scan unavailable (%s)", type(exc).__name__)
+        return None
+    if result.returncode:
+        logger.warning("Frame-exact scene scan failed: %s", result.stderr[-450:])
+        return None
+    # -ss before -i gives local (clip-relative) PTS. FFmpeg showinfo records
+    # exact selected frame timestamps; there is no 400-ms rounding here.
+    times = [
+        float(value) for value in re.findall(
+            r"\bpts_time:([0-9]+(?:\.[0-9]+)?)", result.stderr
+        )
+    ]
+    return tuple(t for t in times if .05 <= t <= duration - .05)
+
+
+def _scene_time_ranges(
+    count: int, interval: float, duration: float,
+    coarse_boundaries: list[int], hard_cuts: tuple[float, ...],
+) -> list[tuple[float, float, int, int]]:
+    """Preserve exact hard shots while assigning only in-shot face samples.
+
+    A sub-sampling-length shot has no trustworthy face observations. Its empty
+    sample range deliberately becomes a safe full-frame blurred fit.
+    """
+    if count <= 0 or duration <= 0:
+        return []
+    mids = [min(duration - .001, (i + .5) * interval)
+            for i in range(count)]
+    dense = sorted(set(round(t, 6) for t in hard_cuts
+                       if .05 <= t <= duration - .05))
+    coarse = [min(duration, i * interval) for i in coarse_boundaries
+              if 0 < i < count]
+    # Prefer exact FFmpeg boundaries over nearby 400-ms approximations; both
+    # would otherwise create artificial tiny scenes near the same camera cut.
+    coarse = [t for t in coarse
+              if all(abs(t - h) >= interval for h in dense)]
+    cuts = sorted(dense + coarse)
+    fused = []
+    for t in cuts:
+        if .05 <= t <= duration - .05 and (
+                not fused or t - fused[-1] >= .05):
+            fused.append(t)
+    ranges = []
+    beginning = 0.
+    sample_start = 0
+    for ending in [*fused, duration]:
+        sample_end = bisect.bisect_left(mids, ending - 1e-7)
+        ranges.append((round(beginning, 6), round(ending, 6),
+                       sample_start, sample_end))
+        beginning, sample_start = ending, sample_end
+    return ranges
 
 
 def scene_boundaries(visuals: list, pairs: list, singles: list) -> list[int]:
@@ -376,6 +453,13 @@ def analyze_scenes(source: Path, start: float, duration: float, mode: str, ffmpe
     import numpy as np
     from .karo_smart_layouts import LayoutPlan, _audio_energy, _pair
 
+    # A 167-ms cut can fall entirely between our 400-ms face samples.
+    # Detect its real frame timestamp first; a failed scan declines Smart
+    # Layout safely instead of letting the old camera geometry leak through.
+    hard_cuts = _frame_scene_cuts(source, start, duration, ffmpeg)
+    if hard_cuts is None:
+        return None
+
     capture = cv2.VideoCapture(str(source))
     if not capture.isOpened():
         return None
@@ -465,24 +549,22 @@ def analyze_scenes(source: Path, start: float, duration: float, mode: str, ffmpe
             motion.append(tuple(scores))
 
         loudness = _audio_energy(source, start, duration, count, interval, ffmpeg)
-        boundaries = scene_boundaries(visuals, pairs, singles)
-        boundaries.append(count)
-        # In pathological jump-cut videos do not make 100s of filter chains.
-        if len(boundaries) - 1 > MAX_SEGMENTS:
-            # Merging unrelated shots to meet a limit reintroduces stale
-            # cross-cut speaker crops. Prefer safe Classic to false Dual Stack.
+        coarse_boundaries = scene_boundaries(visuals, pairs, singles)
+        ranges = _scene_time_ranges(
+            count, interval, duration, coarse_boundaries, hard_cuts,
+        )
+        # In pathological jump-cut videos do not make hundreds of filter
+        # chains or merge unrelated camera angles. Decline unsafe plans.
+        if len(ranges) > MAX_SEGMENTS:
             logger.warning("Smart Layout has more than %d camera shots; decline unsafe plan", MAX_SEGMENTS)
             return None
         scenes = []
-        for i, j in zip(boundaries[:-1], boundaries[1:]):
-            a = i * interval
-            b = min(duration, j * interval)
+        for a, b, i, j in ranges:
             if b - a < .04:
                 continue
             scenes.append(_decisions_for_scene(
                 i, j, pairs, singles, motion, loudness, mode,
-                round(a, 3), round(b, 3), interval, candidate_pairs,
-                candidate_motion,
+                a, b, interval, candidate_pairs, candidate_motion,
             ))
         if not scenes:
             return None
