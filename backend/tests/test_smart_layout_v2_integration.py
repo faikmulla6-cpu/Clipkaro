@@ -221,6 +221,48 @@ class SmartV2UnitTests(unittest.TestCase):
                                    f"{label} panel must show moving video, never a frozen face")
             result.unlink(missing_ok=True)
 
+    def test_scene_joins_do_not_add_a_terminal_frame_at_25_to_30fps(self):
+        """Verified three-shot podcast lost duration fidelity by one frame."""
+        ffmpeg = shutil.which("ffmpeg")
+        ffprobe = shutil.which("ffprobe")
+        if not ffmpeg or not ffprobe:
+            self.skipTest("FFmpeg unavailable")
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "podcast-25fps.mp4"
+            duration = 4.133333
+            subprocess.run([
+                ffmpeg, "-nostdin", "-v", "error", "-y",
+                "-f", "lavfi", "-i", "color=c=red:s=320x360:r=25:d=4.2",
+                "-f", "lavfi", "-i", "color=c=blue:s=320x360:r=25:d=4.2",
+                "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100:duration=4.2",
+                "-filter_complex", "[0:v][1:v]hstack=inputs=2[v]",
+                "-map", "[v]", "-map", "2:a", "-c:v", "libx264",
+                "-threads", "2", "-preset", "ultrafast", "-c:a", "aac",
+                str(source),
+            ], capture_output=True, check=True, timeout=30)
+            base = LayoutPlan("auto", 640, 360, ((.25,.33),(.75,.33)),
+                segments=(
+                    Scene(0., 1.36, "dual_stack",
+                          ((.25,.33),(.75,.33)), ((0.,0),(.4,1))),
+                    Scene(1.36, 2.76, "single", ((.75,.33),)),
+                    Scene(2.76, duration, "dual_stack",
+                          ((.25,.33),(.75,.33)), ((0.,0),(.5,1),(1.,0))),
+                ))
+            plan = all_layout_variants(
+                base, source_start=0., duration=duration)["dual_stack"]
+            output, _ = precompose_v2(
+                source, Path(tmp)/"result.mp4", plan, ffmpeg, 360, 640, 90)
+            probe = subprocess.run([
+                ffprobe, "-v", "error", "-count_frames",
+                "-show_entries", "stream=codec_type,nb_read_frames,duration",
+                "-of", "json", str(output),
+            ], capture_output=True, check=True, timeout=20)
+            streams = json.loads(probe.stdout)["streams"]
+            video = next(s for s in streams if s["codec_type"] == "video")
+            audio = next(s for s in streams if s["codec_type"] == "audio")
+            self.assertEqual(int(video["nb_read_frames"]), round(duration * 30))
+            self.assertAlmostEqual(float(audio["duration"]), duration, delta=.04)
+
 
 if __name__=="__main__":
     unittest.main()
