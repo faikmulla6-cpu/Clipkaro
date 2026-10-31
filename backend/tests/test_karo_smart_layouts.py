@@ -538,6 +538,21 @@ class FrameExactCutTests(unittest.TestCase):
         )
         self.assertEqual(cutaway.mode, "wide")
 
+    def test_coarse_cut_cannot_switch_crop_five_frames_too_early(self):
+        from app.services.karo_smart_scenes import _scene_time_ranges
+        # Verified original: both speakers remain visible at 13.20–13.33,
+        # and the solo camera begins at 13.36. The old 400-ms cut at
+        # 13.20 caused five frames of an incorrect center crop.
+        ranges = _scene_time_ranges(
+            count=50, interval=.4, duration=20.,
+            coarse_boundaries=[0, 33], hard_cuts=(13.36,),
+        )
+        self.assertEqual(
+            [(a, b) for a, b, _, _ in ranges],
+            [(0., 13.36), (13.36, 20.)],
+        )
+        self.assertEqual(ranges[0][3], 33)
+
     def test_ffmpeg_finds_both_edges_of_a_five_frame_camera_shot(self):
         import shutil
         from app.services.karo_smart_scenes import _frame_scene_cuts
