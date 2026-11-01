@@ -4,7 +4,7 @@ import { PricingExperience } from "./PricingExperience";
 import { PUBLIC_PRICING, planFeatureMinutes, planPriceLabel, smartLayoutFeature } from "@/lib/pricing-contract";
 
 const title = "ClipKaro Pricing — AI Shorts with Unlimited Paid Exports";
-const description = "Affordable AI video clipping for creators: start free, get a ₹59 Mini Pass with 5 AI Shorts, or choose a monthly plan. Every paid plan includes unlimited exports and re-exports.";
+const description = "Affordable AI clipping: start free, try a ₹59 Mini Pass or subscribe. Eligible monthly plans offer optional top-ups at ₹3 per Karo Minute (10-minute minimum) and ₹2 per extra AI Short.";
 
 export const metadata: Metadata = {
   title,
