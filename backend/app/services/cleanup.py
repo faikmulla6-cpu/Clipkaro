@@ -50,7 +50,16 @@ async def cleanup_expired() -> int:
                     key = validate_object_key(raw_key, expected_prefix="quarantine/")
                 else:
                     raise ValueError("Expired source is outside an authorized cloud retention namespace.")
-                removed += int(await storage.delete(key))
+                try:
+                    deleted = int(await storage.delete(key))
+                except Exception as exc:
+                    # Only provider failures are isolated. DB errors still stop the sweep.
+                    logger.error(
+                        "Expired source cleanup will retry video_id=%s error_type=%s",
+                        item.get("id"), type(exc).__name__,
+                    )
+                    continue
+                removed += deleted
                 await execute("UPDATE videos SET status='expired' WHERE id=?", (item["id"],))
                 continue
             path = confined_upload_path(item.get("file_path"))
@@ -72,7 +81,15 @@ async def cleanup_expired() -> int:
         try:
             if cloud:
                 key = validate_object_key(str(item.get("output_path") or ""), expected_prefix="users/")
-                removed += int(await storage.delete(key))
+                try:
+                    deleted = int(await storage.delete(key))
+                except Exception as exc:
+                    logger.error(
+                        "Expired export cleanup will retry export_id=%s error_type=%s",
+                        item.get("id"), type(exc).__name__,
+                    )
+                    continue
+                removed += deleted
                 await execute("UPDATE exports SET status='expired' WHERE id=?", (item["id"],))
                 continue
             path = confined_export_path(item.get("output_path"))
@@ -94,7 +111,15 @@ async def cleanup_expired() -> int:
             key = validate_object_key(
                 str(item.get("object_key") or ""), expected_prefix="quarantine/"
             )
-            removed += int(await storage.delete(key))
+            try:
+                deleted = int(await storage.delete(key))
+            except Exception as exc:
+                logger.error(
+                    "Expired upload-session cleanup will retry upload_session_id=%s error_type=%s",
+                    item.get("id"), type(exc).__name__,
+                )
+                continue
+            removed += deleted
             await execute(
                 "UPDATE upload_sessions SET status='expired' WHERE id=? AND status IN ('initiated','rejected')",
                 (item["id"],),
