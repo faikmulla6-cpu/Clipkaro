@@ -5,6 +5,8 @@ const backend = fs.readFileSync(new URL("../../backend/app/api/credit_topups.py"
 const migration = fs.readFileSync(new URL("../../backend/migrations/versions/20261021_11_credit_topups.py",import.meta.url),"utf8");
 const app = read("components/AppShell.tsx");
 const dialog = read("components/CreditTopupDialog.tsx");
+const publicPricing = read("components/PublicPricingView.tsx");
+const signedInPricing = read("app/pricing/PricingExperience.tsx");
 const legal = read("lib/legal.ts");
 const legalBackend = fs.readFileSync(new URL("../../backend/app/services/legal.py",import.meta.url),"utf8");
 for(const [needle, source] of [
@@ -21,6 +23,18 @@ for(const [needle, source] of [
   ["₹3 per minute",dialog],["₹2 each",dialog],
   ["/credits/verify",dialog],["onSuccess()",dialog],
 ]) assert.ok(source.includes(needle), `Credit checkout contract missing: ${needle}`);
+// Public and signed-in pricing must disclose the same backend-authoritative
+// one-time credit rates and must not mislabel legacy project credits.
+for (const [needle, source] of [
+  ["₹3", publicPricing],
+  ["10 minutes (₹30)", publicPricing],
+  ["₹2", publicPricing],
+  ["Creator, Growth, Pro and Agency", publicPricing],
+  ["legacy accounts", publicPricing],
+  ["₹3/minute", signedInPricing],
+  ["₹2 each", signedInPricing],
+  ['usage?.short_unit === "source_projects"', signedInPricing],
+]) assert.ok(source.includes(needle), `Top-up marketing contract missing: ${needle}`);
 assert.ok(!dialog.includes("/billing/verify"),"Allowances must never use plan billing verification");
 // Top-up checkout must never record consent without a deliberate checkbox action.
 const version = legal.match(/export const LEGAL_VERSION = "([^"]+)"/)?.[1];
