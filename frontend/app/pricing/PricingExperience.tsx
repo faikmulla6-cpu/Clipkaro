@@ -545,6 +545,15 @@ export function PricingExperience({ publicFallback }: { publicFallback?: React.R
       })}
     </div>
 
+
+    <div className="billing-manage">
+      <div>
+        <b>Need more creation credits? Top up without changing plans.</b>
+        <span>Creator, Growth, Pro and Agency subscribers can add Karo Minutes for ₹3/minute (10-minute minimum, ₹30) or extra {usage?.short_unit === "source_projects" ? "source-project credits" : "AI Shorts"} for ₹2 each. One-time top-ups are separate from the subscription; unused purchased credits carry forward. Maximum quantities depend on your plan.</span>
+      </div>
+      {currentIsRecurring && <Link href="/dashboard" className="secondary-btn">Open studio balance <ArrowRight size={14}/></Link>}
+    </div>
+
     {currentIsRecurring && <div className="billing-manage">
       <div><b>Manage subscription</b><span>{status?.cancel_at_period_end ? "Cancellation is already scheduled and your paid access remains active until the cycle ends." : "Upgrades apply immediately. Downgrades and cancellation apply at the end of your paid cycle."}</span></div>
       <button className="secondary-btn" disabled={!!busy || !!status?.cancel_at_period_end} onClick={cancelSubscription}>{busy === "cancel" ? <Loader2 className="spin" size={14}/> : status?.cancel_at_period_end ? "Cancellation scheduled" : "Downgrade to Free at cycle end"}</button>
