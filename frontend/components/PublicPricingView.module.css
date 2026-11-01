@@ -7,3 +7,20 @@
   .primary,.secondary,.pulseCard>a{min-height:48px}.planGrid li,.pulseCard p,.trustGrid p{overflow-wrap:anywhere}.pulseCard{width:calc(100% - 32px);padding:22px}.pulseCard h2{font-size:24px}
   .trust{width:calc(100% - 32px);padding:20px}.trustLinks{display:grid;grid-template-columns:1fr}.trustLinks a{min-height:44px;display:flex;align-items:center}
 }
+
+/* Optional credit purchases, kept separate from base subscription limits. */
+.topupSection{width:min(1132px,calc(100% - 48px));margin:0 auto 32px;padding:33px;border-radius:24px;background:linear-gradient(135deg,#edf8ed,#f9fbf5);border:1px solid #d7e8d7;color:#173828}
+.topupHeading>span{display:inline-flex;align-items:center;gap:7px;color:#276d47;font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}
+.topupHeading h2{margin:12px 0 9px;font:800 clamp(27px,3.2vw,39px)/1.1 'Manrope',sans-serif;letter-spacing:-1.25px}
+.topupHeading h2 em{color:#26774c;font-style:normal}
+.topupHeading>p{margin:0;color:#5c7264;font-size:13px;line-height:1.6}
+.topupGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:23px}
+.topupGrid article{padding:25px;border:1px solid #d6e5d6;border-radius:17px;background:#fff;box-shadow:0 10px 22px rgba(22,59,35,.04)}
+.topupGrid article>span{display:block;color:#315d45;font-size:12px;font-weight:900}
+.topupGrid strong{display:block;margin:9px 0 11px;font:800 39px/1 'Manrope',sans-serif;letter-spacing:-1.5px}
+.topupGrid strong small{color:#63766a;font:700 13px 'DM Sans',sans-serif;letter-spacing:0}
+.topupGrid p{margin:0;color:#617368;font-size:12px;line-height:1.6}
+.topupFooter{display:flex;justify-content:space-between;align-items:center;gap:18px;margin-top:20px}
+.topupFooter p{max-width:740px;margin:0;color:#607467;font-size:11px;line-height:1.6}
+.topupFooter>a{display:inline-flex;flex:0 0 auto;align-items:center;justify-content:center;gap:8px;min-height:43px;padding:0 16px;border-radius:11px;background:#165f43;color:#fff;font-size:11px;font-weight:900}
+@media(max-width:740px){.topupSection{width:calc(100% - 32px);padding:23px}.topupGrid{grid-template-columns:1fr}.topupGrid article{padding:21px}.topupFooter{align-items:stretch;flex-direction:column}.topupFooter>a{min-height:48px}}
