@@ -5,6 +5,7 @@ import mimetypes
 import os
 import re
 import shutil
+import tempfile
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
@@ -337,6 +338,56 @@ class S3StorageProvider:
     async def download(self, key: str, destination: Path, *, generation: str | None = None) -> None:
         safe_key = validate_object_key(key)
         destination.parent.mkdir(parents=True, exist_ok=True)
+        if generation and generation.startswith("etag:"):
+            # R2 commonly identifies objects by ETag rather than S3 VersionId.
+            # boto3 download_file cannot forward IfMatch as an ExtraArg, so use
+            # a conditional GetObject and publish only a verified complete file.
+            etag = generation.removeprefix("etag:")
+            if not etag or any(char in etag for char in ('"', "\r", "\n")):
+                raise ValueError("Invalid source ETag generation.")
+
+            def copy_verified_etag() -> None:
+                response = self.client.get_object(
+                    Bucket=self.bucket, Key=safe_key, IfMatch=f'"{etag}"',
+                )
+                body = response["Body"]
+                pending: Path | None = None
+                try:
+                    if self._generation(response) != generation:
+                        raise RuntimeError("Source ETag changed during download.")
+                    content_length = response.get("ContentLength")
+                    if content_length is None or int(content_length) < 0:
+                        raise RuntimeError("Source download length is unavailable.")
+                    expected_bytes = int(content_length)
+                    received_bytes = 0
+                    with tempfile.NamedTemporaryFile(
+                        mode="wb", dir=destination.parent,
+                        prefix=f".{destination.name}.", suffix=".part",
+                        delete=False,
+                    ) as output:
+                        pending = Path(output.name)
+                        while True:
+                            chunk = body.read(1024 * 1024)
+                            if not chunk:
+                                break
+                            received_bytes += len(chunk)
+                            if received_bytes > expected_bytes:
+                                raise RuntimeError("Source download exceeded verified length.")
+                            output.write(chunk)
+                    if received_bytes != expected_bytes:
+                        raise RuntimeError("Source download was incomplete.")
+                    os.replace(pending, destination)
+                    pending = None
+                finally:
+                    body.close()
+                    if pending is not None:
+                        pending.unlink(missing_ok=True)
+
+            await asyncio.to_thread(copy_verified_etag)
+            return
+
+        if generation and not generation.startswith("version:"):
+            raise ValueError("Unsupported source object generation.")
         extra = (
             {"VersionId": generation.removeprefix("version:")}
             if generation and generation.startswith("version:")
