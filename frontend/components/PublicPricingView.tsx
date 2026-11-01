@@ -49,6 +49,31 @@ export function PublicPricingView({ plans }: { plans: PublicPlanView[] }) {
             </div>
           </section>
 
+
+          <section className={styles.topupSection} data-public-reveal aria-labelledby="topup-heading">
+            <div className={styles.topupHeading}>
+              <span><Sparkles size={14}/> Flexible add-ons for paid subscribers</span>
+              <h2 id="topup-heading">Need a little more room? <em>Top up, keep creating.</em></h2>
+              <p>Creator, Growth, Pro and Agency subscribers can buy extra creation capacity without switching plans.</p>
+            </div>
+            <div className={styles.topupGrid}>
+              <article>
+                <span>Karo Minutes</span>
+                <strong>₹3<small> / minute</small></strong>
+                <p>Add source-processing time as needed. Minimum purchase: 10 minutes (₹30); maximum depends on your plan.</p>
+              </article>
+              <article>
+                <span>Additional AI Shorts</span>
+                <strong>₹2<small> / extra Short</small></strong>
+                <p>Buy extra finished-Short credits. Existing legacy accounts may receive source-project credits instead.</p>
+              </article>
+            </div>
+            <div className={styles.topupFooter}>
+              <p>Top-ups are one-time payments, separate from your subscription. Unused purchased credits carry forward. Available only to eligible paid subscribers after sign-in and secure checkout; not included with Free or Mini Pass.</p>
+              <TransitionLink href="/signup?plan=creator">Explore Creator <ArrowRight size={15}/></TransitionLink>
+            </div>
+          </section>
+
           <section className={styles.pulseCard} data-public-reveal>
             <div><span><Sparkles size={13}/> Separate from clipping plans</span><h2>Creator Pulse stays simple: ₹1 per successful channel analysis.</h2><p>Creator Pulse uses its own wallet balance and does not consume Karo Minutes or Short-export quota. Use the recommendation to plan the next video, then bring the finished recording back into ClipKaro for clipping, editing and Post Karo publishing.</p></div>
             <TransitionLink href="/youtube-channel-analyzer">Explore Creator Pulse <ArrowRight size={15}/></TransitionLink>
