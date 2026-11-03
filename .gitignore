@@ -16,7 +16,9 @@ __pycache__/
 .pytest_cache/
 *.py[cod]
 .venv/
+.venv*/
 backend/.venv/
+backend/.venv*/
 node_modules/
 .npm-cache/
 .next/
@@ -63,7 +65,9 @@ backend/.env
 launch-qa/
 launch-qa-attempt/
 backend/pytest-report.xml
+backend/test-tmp/
 frontend/npm-audit-production.json
+frontend/tsconfig.tsbuildinfo
 # Local/private backend environment copies must never enter release artifacts.
 backend.env
 backend/.env.*

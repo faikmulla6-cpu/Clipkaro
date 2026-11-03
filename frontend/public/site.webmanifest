@@ -1,0 +1,17 @@
+{
+  "name": "ClipKaro AI",
+  "short_name": "ClipKaro",
+  "description": "AI-assisted short-form video creation for creators.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#07110d",
+  "theme_color": "#07110d",
+  "icons": [
+    {
+      "src": "/assets/clipkaro-icon.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

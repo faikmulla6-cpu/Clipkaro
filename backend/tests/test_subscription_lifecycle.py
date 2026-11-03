@@ -4,7 +4,6 @@ import asyncio
 import hashlib
 import hmac
 import json
-from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -48,11 +47,8 @@ def client(tmp_path):
     settings.razorpay_webhook_secret = "webhook-secret"
     _requests.clear()
     _auth_requests.clear()
-    fixed_now = datetime(2026, 8, 15, 12, 0, tzinfo=timezone.utc)
     try:
-        with patch("app.services.billing.utc_now", return_value=fixed_now), \
-             patch("app.api.billing_lifecycle.utc_now", return_value=fixed_now), \
-             TestClient(app) as test_client:
+        with TestClient(app) as test_client:
             yield test_client
     finally:
         _requests.clear()

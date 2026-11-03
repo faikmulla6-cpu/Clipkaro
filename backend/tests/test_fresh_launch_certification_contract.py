@@ -31,10 +31,10 @@ def _green_inputs(module):
     docker = {
         "images": {
             name: {"image_id": f"sha256:{name}", "repo_digest_or_id": f"sha256:{name}", "os": "linux", "architecture": "amd64"}
-            for name in ("api", "worker", "frontend")
+            for name in ("api", "worker", "youtube_ingestion", "frontend")
         }
     }
-    workflow = {"run_id": "123", "repository": "faikmulla/ClipkaroAI"}
+    workflow = {"run_id": "123", "repository": "faikmulla6-cpu/Clipkaro"}
     return checks, identity, preflight, pytest_data, npm_data, docker, workflow
 
 
@@ -133,6 +133,7 @@ def test_fresh_launch_workflow_supplies_every_mandatory_check_and_artifact() -> 
     module = _load_module()
     workflow = (ROOT / ".github" / "workflows" / "fresh-launch-qa.yml").read_text(encoding="utf-8")
     assert "runs-on: [self-hosted, linux, x64, clipkaro-qa]" in workflow
+    assert "runs-on: ubuntu-latest" not in workflow
     assert "check_fresh_launch_execution_environment.py" in workflow
     assert "test -z \"$(git status --porcelain)\"" in workflow
     assert "docker-images.json" in workflow

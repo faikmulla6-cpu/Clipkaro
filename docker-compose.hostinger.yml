@@ -298,3 +298,4 @@ volumes:
   clipkaro_storage:
   caddy_data:
   caddy_config:
+# LEGACY / OPTIONAL VPS DEPLOYMENT. The recommended production path is docs/NO_VPS_DEPLOYMENT_GUIDE.md.

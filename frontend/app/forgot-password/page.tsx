@@ -1,5 +1,6 @@
 "use client";
 
+import { Logo } from "@/components/Logo";
 import { postJSON } from "@/lib/api";
 import { ArrowLeft, Loader2, Mail, ShieldCheck } from "lucide-react";
 import Link from "next/link";
@@ -28,7 +29,7 @@ export default function ForgotPasswordPage() {
   return (
     <div className="auth-page">
       <div className="auth-visual">
-        <Link href="/" className="auth-brand">✦ ClipKaro AI</Link>
+        <div className="auth-brand"><Logo light /></div>
         <div className="auth-story">
           <span className="eyebrow dark">ACCOUNT RECOVERY</span>
           <h1>Recover access.<br/><em>Keep every device safe.</em></h1>
@@ -43,7 +44,7 @@ export default function ForgotPasswordPage() {
 
       <div className="auth-panel">
         <div className="auth-card">
-          <Link href="/" className="auth-mobile-logo">✦ ClipKaro AI</Link>
+          <div className="auth-mobile-logo"><Logo /></div>
           <span className="auth-kicker">PASSWORD RESET</span>
           <h2>{sent ? "Check your email" : "Forgot your password?"}</h2>
           <p>
@@ -53,13 +54,13 @@ export default function ForgotPasswordPage() {
           </p>
 
           {!sent && (
-            <form onSubmit={submit}>
+            <form onSubmit={submit} autoComplete="on">
               <label>
                 <span>Email address</span>
-                <div className="input-icon"><Mail size={16}/><input name="email" type="email" placeholder="you@example.com" required/></div>
+                <div className="input-icon"><Mail size={16}/><input name="email" type="email" inputMode="email" autoComplete="email" placeholder="you@example.com" required/></div>
               </label>
-              {error && <div className="form-error">{error}</div>}
-              <button className="primary-btn auth-submit" disabled={busy}>
+              {error && <div className="form-error" role="alert">{error}</div>}
+              <button type="submit" className="primary-btn auth-submit" disabled={busy}>
                 {busy ? <><Loader2 className="spin" size={17}/> Sending…</> : "Send reset link"}
               </button>
             </form>

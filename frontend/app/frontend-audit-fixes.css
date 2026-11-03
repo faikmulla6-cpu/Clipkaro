@@ -1,0 +1,57 @@
+/* Frontend audit fixes: mobile workspace actions and mobile homepage readability. */
+
+/* Keep the original public image assets and visual composition untouched.
+ * The homepage CSS-module owns the intended creator-demo/use-case PNG artwork.
+ */
+
+/* AppShell used to hide the entire action area on phones, which also hid
+ * page-level actions such as Upload video, New project, New video and Refresh.
+ * Keep the useful page action while removing non-essential status chrome.
+ */
+@media (max-width: 900px) {
+  .app-header .header-actions {
+    display: flex !important;
+    margin-left: auto;
+    flex: 0 0 auto;
+  }
+
+  .app-header .header-actions > .header-icon,
+  .app-header .header-actions > .status-live {
+    display: none !important;
+  }
+
+  .app-header .header-actions > .primary-btn,
+  .app-header .header-actions > .secondary-btn,
+  .app-header .header-actions > button,
+  .app-header .header-actions > a {
+    min-height: 40px;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 680px) {
+  /* Scope the mobile headline adjustment to the marketing homepage. */
+  body:has([aria-label="Illustrative ClipKaro creator workspace"]) main > section:first-child h1 {
+    font-size: clamp(42px, 12vw, 56px) !important;
+    line-height: .96 !important;
+    letter-spacing: -3px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .app-header .header-actions > .primary-btn,
+  .app-header .header-actions > .secondary-btn,
+  .app-header .header-actions > button,
+  .app-header .header-actions > a {
+    padding: 8px 10px !important;
+    font-size: 10px !important;
+  }
+
+  .app-header h1 {
+    font-size: 18px;
+  }
+
+  .app-header p {
+    display: none;
+  }
+}

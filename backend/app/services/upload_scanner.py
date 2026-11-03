@@ -4,6 +4,8 @@ import asyncio
 import logging
 import socket
 import struct
+import shutil
+import subprocess
 from pathlib import Path
 
 from app.core.config import get_settings
@@ -87,6 +89,25 @@ def _clamd_scan(path: Path) -> str:
     raise UploadScannerUnavailable(f"ClamAV returned an unexpected response: {text[:240] or 'empty response'}")
 
 
+def _local_clamscan(path: Path) -> str:
+    executable = shutil.which("clamscan")
+    if not executable:
+        raise UploadScannerUnavailable("Local ClamAV executable is unavailable.")
+    try:
+        result = subprocess.run(
+            [executable, "--no-summary", "--infected", str(path)],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False,
+            timeout=max(2.0, float(get_settings().clamav_timeout_seconds)),
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise UploadScannerUnavailable("Local ClamAV scan failed.") from exc
+    if result.returncode == 0:
+        return "local: OK"
+    if result.returncode == 1:
+        raise UploadMalwareDetected("clamav-detected")
+    raise UploadScannerUnavailable("Local ClamAV returned an operational failure.")
+
+
 def _clamd_ping(host: str, port: int, timeout: float) -> bool:
     """Use clamd's side-effect-free PING command; never expose its address."""
     try:
@@ -142,7 +163,8 @@ async def scan_upload(path: Path) -> dict[str, str]:
         return {"status": "skipped", "engine": "clamav"}
 
     try:
-        result = await asyncio.to_thread(_clamd_scan, path)
+        scanner = _local_clamscan if settings.clamav_host.strip().lower() == "local" else _clamd_scan
+        result = await asyncio.to_thread(scanner, path)
         return {"status": "clean", "engine": "clamav", "detail": result}
     except UploadMalwareDetected:
         raise

@@ -10,6 +10,20 @@ export const LEGAL_LINKS = [
   ["Legal notice", "/legal-notice"],
 ] as const;
 
+export const TRUST_PROFILE = {
+  serviceName: "ClipKaro AI",
+  website: "https://clipkaro.pro",
+  founderName: "Faik Hameed Mulla",
+  founderTitle: "Founder and Owner",
+  supportEmail: "support@clipkaro.pro",
+  privacyEmail: "privacy@clipkaro.pro",
+  legalEmail: "legal@clipkaro.pro",
+  grievanceEmail: "grievance@clipkaro.pro",
+  supportExpectation: "Support and billing questions are normally acknowledged within 48 hours. Consumer grievances are targeted for resolution within one month, subject to the information and payment-provider investigation needed.",
+  mediaRetention: "Private source videos and rendered export files expire automatically after the configured media-retention window, currently 24 hours by default. Project records, derived transcripts, clip suggestions, billing records and security logs may be retained for account history, support, legal, fraud, security and product-quality reasons.",
+  deletionSummary: "Creators can delete projects in the product. Account or personal-data deletion can be requested through the privacy or grievance contacts, subject to records ClipKaro must keep for billing, tax, fraud, security, dispute or legal reasons.",
+} as const;
+
 export type LegalConfig = {
   service_name: string;
   website: string;

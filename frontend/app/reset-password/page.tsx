@@ -1,5 +1,6 @@
 "use client";
 
+import { Logo } from "@/components/Logo";
 import { postJSON } from "@/lib/api";
 import { CheckCircle2, Eye, EyeOff, Loader2, LockKeyhole, ShieldCheck } from "lucide-react";
 import Link from "next/link";
@@ -16,8 +17,6 @@ export default function ResetPasswordPage() {
   useEffect(() => {
     const fragment = new URLSearchParams(window.location.hash.replace(/^#/, ""));
     const raw = fragment.get("token") || "";
-    // Remove the raw reset secret before the user starts typing a password so it
-    // never remains in browser history or gets copied with the page URL.
     window.history.replaceState(null, "", "/reset-password");
     setToken(raw);
     setReady(true);
@@ -49,7 +48,7 @@ export default function ResetPasswordPage() {
   return (
     <div className="auth-page">
       <div className="auth-visual">
-        <Link href="/" className="auth-brand">✦ ClipKaro AI</Link>
+        <div className="auth-brand"><Logo light /></div>
         <div className="auth-story">
           <span className="eyebrow dark">SECURE RECOVERY</span>
           <h1>New password.<br/><em>Fresh sessions.</em></h1>
@@ -64,13 +63,13 @@ export default function ResetPasswordPage() {
 
       <div className="auth-panel">
         <div className="auth-card">
-          <Link href="/" className="auth-mobile-logo">✦ ClipKaro AI</Link>
+          <div className="auth-mobile-logo"><Logo /></div>
           <span className="auth-kicker">PASSWORD RESET</span>
 
           {!ready ? (
             <>
               <h2>Checking reset link</h2>
-              <button className="primary-btn auth-submit" disabled><Loader2 className="spin" size={17}/> Loading…</button>
+              <button type="button" className="primary-btn auth-submit" disabled><Loader2 className="spin" size={17}/> Loading…</button>
             </>
           ) : complete ? (
             <>
@@ -89,21 +88,21 @@ export default function ResetPasswordPage() {
             <>
               <h2>Choose a new password</h2>
               <p>Use at least 8 characters with an uppercase letter and a number.</p>
-              <form onSubmit={submit}>
+              <form onSubmit={submit} autoComplete="on">
                 <label>
                   <span>New password</span>
                   <div className="input-icon">
                     <LockKeyhole size={16}/>
                     <input name="password" type={show ? "text" : "password"} minLength={8} required autoComplete="new-password"/>
-                    <button type="button" onClick={() => setShow(!show)}>{show ? <EyeOff size={16}/> : <Eye size={16}/>}</button>
+                    <button type="button" aria-label={show ? "Hide password" : "Show password"} onClick={() => setShow(!show)}>{show ? <EyeOff size={16}/> : <Eye size={16}/>}</button>
                   </div>
                 </label>
                 <label>
                   <span>Confirm password</span>
                   <div className="input-icon"><LockKeyhole size={16}/><input name="confirm" type={show ? "text" : "password"} minLength={8} required autoComplete="new-password"/></div>
                 </label>
-                {error && <div className="form-error">{error}</div>}
-                <button className="primary-btn auth-submit" disabled={busy}>
+                {error && <div className="form-error" role="alert">{error}</div>}
+                <button type="submit" className="primary-btn auth-submit" disabled={busy}>
                   {busy ? <><Loader2 className="spin" size={17}/> Resetting…</> : "Reset password"}
                 </button>
               </form>

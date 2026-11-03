@@ -1,5 +1,6 @@
 import { LegalList, LegalPage, LegalSection } from "@/components/LegalPage";
 import { LegalOperatorCard } from "@/components/LegalOperatorCard";
+import { TRUST_PROFILE } from "@/lib/legal";
 
 export default function RefundPolicyPage() {
   return <LegalPage title="Refund & Cancellation Policy" summary="How ClipKaro handles Mini Pass purchases, monthly subscriptions, cancellation, duplicate charges, failed entitlements and refund requests.">
@@ -42,7 +43,7 @@ export default function RefundPolicyPage() {
 
     <LegalSection title="6. How to request a refund">
       <p>Contact customer care using the details above and include the account email, plan, approximate payment date, Razorpay/payment reference if available, and a short explanation. Never send your card number, UPI PIN, OTP or banking password.</p>
-      <p>ClipKaro aims to acknowledge consumer grievances within 48 hours and to resolve them within one month, subject to the information required to investigate and any payment-provider/bank processing time.</p>
+      <p>{TRUST_PROFILE.supportExpectation}</p>
     </LegalSection>
 
     <LegalSection title="7. Refund method and timing">

@@ -1,7 +1,9 @@
 "use client";
 
 import { useAuth } from "@/components/AuthProvider";
+import { Logo } from "@/components/Logo";
 import { postJSON } from "@/lib/api";
+import { authHref, clearPostAuthNext, readPostAuthNext, rememberPostAuthNext, safeInternalNext } from "@/lib/safe-next";
 import { CheckCircle2, Loader2, MailCheck, RefreshCw, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
@@ -18,6 +20,7 @@ export default function VerifyEmailPage() {
   const [verifiedEmail, setVerifiedEmail] = useState("");
   const [resending, setResending] = useState(false);
   const [cooldown, setCooldown] = useState(0);
+  const [nextPath, setNextPath] = useState("/dashboard");
   const handled = useRef(false);
 
   useEffect(() => {
@@ -25,6 +28,11 @@ export default function VerifyEmailPage() {
     handled.current = true;
 
     const query = new URLSearchParams(window.location.search);
+    const storedNext = readPostAuthNext("/dashboard");
+    const intendedNext = safeInternalNext(query.get("next"), storedNext);
+    setNextPath(intendedNext);
+    if (intendedNext !== "/dashboard") rememberPostAuthNext(intendedNext);
+
     if (query.get("sent") === "0") {
       setMessage("Your account is protected, but the first email could not be delivered. Use resend below.");
     } else if (query.get("sent") === "1") {
@@ -35,8 +43,9 @@ export default function VerifyEmailPage() {
     const token = fragment.get("token");
     if (!token) return;
 
-    // Remove the raw secret from browser history before making the API call.
-    window.history.replaceState(null, "", "/verify-email");
+    // Remove the one-time token from browser history immediately while keeping
+    // only the validated internal continuation destination.
+    window.history.replaceState(null, "", authHref("/verify-email", intendedNext === "/dashboard" ? null : intendedNext));
     setState("verifying");
     setMessage("Verifying this email…");
     postJSON<VerifyResponse>("/auth/verify-email", { token })
@@ -44,9 +53,6 @@ export default function VerifyEmailPage() {
         setVerifiedEmail(result.email);
         setState("verified");
         setMessage(result.message);
-        // Always refresh. The token can finish before AuthProvider has loaded
-        // the session; refreshing closes that race and updates the current
-        // account if this browser is signed into the verified address.
         await refresh();
       })
       .catch((error) => {
@@ -91,11 +97,13 @@ export default function VerifyEmailPage() {
   const verifiedCurrentAccount = Boolean(
     user && (alreadyVerified || (verifiedEmail && user.email.toLowerCase() === verifiedEmail.toLowerCase())),
   );
+  const continueHref = verifiedCurrentAccount ? nextPath : authHref("/login", nextPath);
+  const creatorPulseIntent = nextPath === "/creator-pulse";
 
   return (
     <div className="auth-page">
       <div className="auth-visual">
-        <Link href="/" className="auth-brand">✦ ClipKaro AI</Link>
+        <div className="auth-brand"><Logo light /></div>
         <div className="auth-story">
           <span className="eyebrow dark">PROTECTING YOUR AI QUOTA</span>
           <h1>One real creator.<br/><em>One protected account.</em></h1>
@@ -110,21 +118,27 @@ export default function VerifyEmailPage() {
 
       <div className="auth-panel">
         <div className="auth-card">
-          <Link href="/" className="auth-mobile-logo">✦ ClipKaro AI</Link>
+          <div className="auth-mobile-logo"><Logo /></div>
           <span className="auth-kicker">EMAIL VERIFICATION</span>
 
           {state === "verifying" ? (
             <>
               <h2>Checking your link</h2>
               <p>We&apos;re confirming that this email belongs to you.</p>
-              <button className="primary-btn auth-submit" disabled><Loader2 className="spin" size={17}/> Verifying…</button>
+              <button type="button" className="primary-btn auth-submit" disabled><Loader2 className="spin" size={17}/> Verifying…</button>
             </>
           ) : success ? (
             <>
               <h2>Email verified</h2>
               <p>{message || "Your account can now use ClipKaro AI processing."}</p>
-              <Link className="primary-btn auth-submit" href={verifiedCurrentAccount ? "/dashboard" : "/login"}>
-                {verifiedCurrentAccount ? "Continue to ClipKaro" : "Sign in to the verified account"}
+              <Link
+                className="primary-btn auth-submit"
+                href={continueHref}
+                onClick={() => { if (verifiedCurrentAccount) clearPostAuthNext(); }}
+              >
+                {verifiedCurrentAccount
+                  ? (creatorPulseIntent ? "Continue to Creator Pulse" : "Continue to ClipKaro")
+                  : "Sign in to the verified account"}
               </Link>
             </>
           ) : (
@@ -136,11 +150,12 @@ export default function VerifyEmailPage() {
                   : "Open the verification link from your email, or sign in to request a new one."}
               </p>
 
+              {creatorPulseIntent && <div className="processing-note">After verification, you&apos;ll continue directly to Creator Pulse.</div>}
               {message && <div className={["error", "expired", "invalid"].includes(state) ? "form-error" : "processing-note"}>{message}</div>}
 
               {user ? (
                 <>
-                  <button className="primary-btn auth-submit" onClick={resend} disabled={resending || cooldown > 0}>
+                  <button type="button" className="primary-btn auth-submit" onClick={resend} disabled={resending || cooldown > 0}>
                     {resending
                       ? <><Loader2 className="spin" size={17}/> Sending…</>
                       : <><RefreshCw size={17}/> {cooldown > 0 ? `Resend in ${cooldown}s` : "Resend verification email"}</>}
@@ -148,7 +163,7 @@ export default function VerifyEmailPage() {
                   <div className="auth-switch">Wrong account? <button type="button" onClick={() => logout()}>Sign out</button></div>
                 </>
               ) : (
-                <Link className="primary-btn auth-submit" href="/login">Sign in to resend</Link>
+                <Link className="primary-btn auth-submit" href={authHref("/login", nextPath)}>Sign in to resend</Link>
               )}
             </>
           )}

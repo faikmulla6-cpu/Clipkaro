@@ -13,7 +13,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from app.core.config import get_settings
-from app.core.database import execute, fetch_one, run_in_transaction
+from app.core.database import distributed_advisory_lock, execute, fetch_one, run_in_transaction
 from app.services.auth import current_user
 from app.services.billing import (
     PAID_PLANS,
@@ -31,6 +31,7 @@ from app.services.billing import (
     verify_subscription_signature,
 )
 from app.services.legal import checkout_allowed, has_current_legal_acceptance
+from app.api.creator_pulse import reconcile_creator_pulse_webhook
 
 router = APIRouter()
 logger = logging.getLogger("clipkaro.billing")
@@ -58,6 +59,8 @@ async def _require_new_paid_commitment_ready(user_id: str) -> None:
 
 async def init_subscription_lifecycle() -> None:
     """Create durable pending-plan state without requiring a destructive migration."""
+    if get_settings().normalized_database_backend == "postgres":
+        return
     await execute(
         """CREATE TABLE IF NOT EXISTS subscription_plan_changes (
              user_id TEXT PRIMARY KEY,
@@ -601,7 +604,7 @@ async def billing_checkout(body: dict, user: dict = Depends(current_user)) -> di
     # Serialize checkout creation per user. This prevents a double-click, HTTP
     # retry or two browser tabs from creating multiple recurring subscriptions
     # before the first provider reference is durably stored.
-    async with _checkout_locks[str(user["id"])]:
+    async with _checkout_locks[str(user["id"])], distributed_advisory_lock(f"checkout:{user['id']}"):
         fresh = await fetch_one("SELECT * FROM users WHERE id=?", (user["id"],)) or user
         fresh_plan = str(fresh.get("plan") or "free")
         fresh_reference = str(fresh.get("billing_reference") or "")
@@ -612,6 +615,11 @@ async def billing_checkout(body: dict, user: dict = Depends(current_user)) -> di
 
         catalog = PLAN_CATALOG[plan]
         kind = "one_time" if catalog["billing"] == "one_time" else "subscription"
+        await execute(
+            """UPDATE billing_checkouts SET status='expired'
+               WHERE user_id=? AND plan=? AND kind=? AND status IN ('created','authorized') AND created_at<?""",
+            (fresh["id"], plan, kind, (utc_now() - timedelta(minutes=15)).isoformat()),
+        )
         reusable = await _recent_reusable_checkout(str(fresh["id"]), plan, kind)
         if reusable:
             await _audit(
@@ -1122,6 +1130,23 @@ async def razorpay_webhook(request: Request) -> Response:
         subscription = provider_payload.get("subscription", {}).get("entity", {}) or {}
         payment = provider_payload.get("payment", {}).get("entity", {}) or {}
         order = provider_payload.get("order", {}).get("entity", {}) or {}
+
+        # Creator Pulse top-ups share the signed Razorpay webhook but never share
+        # subscription/plan entitlement state. If this server-created Order belongs
+        # to Pulse, reconcile it idempotently and stop before normal plan billing.
+        pulse_result = await reconcile_creator_pulse_webhook(event_type, payment, order)
+        if pulse_result is not None:
+            await _complete_webhook_event(
+                event_id,
+                user_id=str(pulse_result.get("user_id") or "") or None,
+                event_type=event_type,
+                plan=None,
+                amount=int(pulse_result.get("amount") or 0),
+                status=str(pulse_result.get("status") or "pulse_event_received"),
+                payload_json=sanitized_payload_json,
+            )
+            return Response(status_code=204)
+
         subscription_id = str(subscription.get("id") or "")
         provider_event_created_at = _event_created_at(payload)
         subscription_checkout = await _subscription_checkout(subscription) if subscription else None

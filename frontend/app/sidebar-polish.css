@@ -1,0 +1,156 @@
+/* Workspace navigation hardening.
+   Keeps the navigation scrollable while the usage/help/profile utility area stays visible.
+   Loaded last so it only corrects AppShell sidebar behavior without changing page layouts. */
+
+.sidebar{
+  min-height:0;
+}
+
+.sidebar .side-nav{
+  flex:1 1 auto;
+  min-height:0;
+  overflow-y:auto;
+  overflow-x:hidden;
+  overscroll-behavior:contain;
+  scrollbar-width:none;
+  padding-right:2px;
+}
+.sidebar .side-nav::-webkit-scrollbar{display:none}
+
+.sidebar .usage-card{
+  flex:0 0 auto;
+  margin-top:12px;
+  border-color:#d9e8d4;
+  background:linear-gradient(145deg,#f7fbf4,#eef7e9);
+  box-shadow:0 8px 22px rgba(22,95,67,.06);
+}
+.sidebar .usage-card .usage-row b{color:#183d2f}
+.sidebar .usage-card .progress{background:#dbe7d7}
+.sidebar .usage-card>a{
+  display:inline-flex;
+  align-items:center;
+  min-height:30px;
+}
+
+.sidebar .side-footer{
+  flex:0 0 auto;
+  margin-top:10px;
+  padding-top:10px;
+}
+.sidebar .side-footer>a{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  min-height:40px;
+  padding:9px;
+  border-radius:9px;
+  color:#656c67;
+  font-size:12px;
+  font-weight:600;
+  transition:background-color .18s ease,color .18s ease,transform .18s ease;
+}
+.sidebar .side-footer>a:hover{
+  background:#f4f8f2;
+  color:var(--green);
+}
+.sidebar .side-footer>a:active{transform:scale(.99)}
+
+.sidebar .profile-chip{
+  margin-top:4px;
+  padding:9px;
+  border:1px solid transparent;
+  border-radius:12px;
+  background:#fafcf9;
+  min-width:0;
+}
+.sidebar .profile-chip>div:nth-child(2){min-width:0}
+.sidebar .profile-chip b{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:#202622;
+}
+.sidebar .profile-chip span{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.sidebar .logout-icon{
+  width:30px;
+  height:30px;
+  padding:0!important;
+  border-radius:9px;
+  color:#838a84;
+  transition:background-color .18s ease,color .18s ease;
+}
+.sidebar .logout-icon:hover{
+  background:#edf5e9;
+  color:var(--green);
+}
+
+@media(max-width:900px){
+  .sidebar{
+    top:0;
+    bottom:auto;
+    height:100vh;
+    height:100dvh;
+    max-height:100dvh;
+    padding:18px 16px max(16px,env(safe-area-inset-bottom));
+    overflow:hidden!important;
+    box-shadow:24px 0 60px rgba(11,36,25,.18);
+  }
+
+  .sidebar .side-top{flex:0 0 auto;padding:0 4px}
+  .sidebar .new-project{
+    flex:0 0 auto;
+    min-height:48px;
+    margin:20px 4px 13px;
+    align-items:center;
+    border-radius:12px;
+  }
+
+  .sidebar .side-nav{
+    flex:1 1 auto!important;
+    min-height:0!important;
+    overflow-y:auto!important;
+    overflow-x:hidden!important;
+    padding:2px 3px 8px 0;
+    -webkit-overflow-scrolling:touch;
+  }
+  .sidebar .nav-label{margin-top:14px}
+  .sidebar .side-nav a{min-height:42px}
+
+  .sidebar .usage-card{
+    flex:0 0 auto;
+    margin:8px 0 0!important;
+    padding:12px 13px;
+    border-radius:13px;
+  }
+  .sidebar .usage-card p{margin:7px 0 3px;line-height:1.4}
+
+  .sidebar .side-footer{
+    flex:0 0 auto;
+    margin:8px 0 0!important;
+    padding-top:8px;
+  }
+  .sidebar .side-footer>a{min-height:38px;padding:7px 8px}
+  .sidebar .profile-chip{margin-top:2px;padding:8px}
+
+  .sidebar-backdrop{touch-action:none}
+}
+
+@media(max-width:390px), (max-height:720px) and (max-width:900px){
+  .sidebar{padding-top:14px;padding-left:13px;padding-right:13px}
+  .sidebar .new-project{margin-top:14px;margin-bottom:9px;min-height:44px}
+  .sidebar .nav-label{margin-top:10px;margin-bottom:5px}
+  .sidebar .side-nav a{min-height:38px;padding-top:8px;padding-bottom:8px}
+  .sidebar .usage-card{padding:10px 12px}
+  .sidebar .usage-card p{margin:5px 0 2px}
+  .sidebar .side-footer{margin-top:6px!important;padding-top:6px}
+  .sidebar .side-footer>a{min-height:34px;padding-top:5px;padding-bottom:5px}
+  .sidebar .profile-chip{padding-top:6px;padding-bottom:6px}
+}
+
+@media(prefers-reduced-motion:reduce){
+  .sidebar .side-footer>a,.sidebar .logout-icon{transition:none!important}
+}

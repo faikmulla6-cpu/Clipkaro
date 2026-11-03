@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 
 class SignupRequest(BaseModel):
@@ -99,9 +99,17 @@ class ClipPatch(BaseModel):
     transcript_text: str | None = Field(default=None, max_length=10000)
 
 
+class TranscriptCorrectionRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=10000)
+
+
 class CropKeyframe(BaseModel):
     time: float = Field(ge=0, le=180)
     focus_x: float = Field(ge=0, le=100)
+    # Internal render-control fields share the already-durable keyframe payload
+    # and are removed by render_gate before crop tracking sees real keyframes.
+    zoom: float | None = Field(default=None, ge=1.0, le=2.0)
+    preserve_source_captions: bool | None = None
 
 
 class ExportRequest(BaseModel):
@@ -112,8 +120,30 @@ class ExportRequest(BaseModel):
     watermark: bool = True
     brand_kit_id: str | None = None
     focus_x: float = Field(default=50, ge=0, le=100)
+    zoom: float = Field(default=1.0, ge=1.0, le=2.0)
     crop_keyframes: list[CropKeyframe] = Field(default_factory=list, max_length=120)
     caption_position: str = Field(default="bottom", pattern="^(bottom|above|center)$")
+    preserve_source_captions: bool = False
+    india_quality_mode: bool = False
+    caption_language_style: str = Field(default="auto", pattern="^(auto|roman_hinglish|original)$")
+
+    @model_validator(mode="after")
+    def carry_render_controls(self):
+        # Existing API and durable-worker paths already persist crop_keyframes.
+        # One internal marker keeps zoom and the explicit preserve toggle intact
+        # across both execution paths without changing public crop semantics.
+        has_control = any(
+            item.zoom is not None or item.preserve_source_captions is not None
+            for item in self.crop_keyframes
+        )
+        if not has_control:
+            self.crop_keyframes.append(CropKeyframe(
+                time=180,
+                focus_x=self.focus_x,
+                zoom=self.zoom,
+                preserve_source_captions=self.preserve_source_captions,
+            ))
+        return self
 
 
 class ExportOut(BaseModel):

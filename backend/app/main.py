@@ -20,10 +20,10 @@ from app.api.email_verification import router as email_verification_router
 from app.api.account_security import router as account_security_router
 from app.api.secure_upload import router as secure_upload_router
 from app.api.worker_jobs import router as worker_jobs_router
-from app.api.legal import router as legal_router
-from app.api.behavioral_learning import router as behavioral_learning_router
+from app.api.cloud_uploads import init_cloud_uploads, router as cloud_uploads_router
+from app.api.creator_pulse import init_creator_pulse, router as creator_pulse_router
 from app.core.config import get_settings
-from app.core.database import UsageQuotaExceeded, execute, fetch_all, fetch_one, init_db
+from app.core.database import UsageQuotaExceeded, close_database, execute, fetch_all, fetch_one, init_db
 from app.services.auth import current_user, hash_password
 from app.services.account_security import init_account_security
 from app.services.cleanup import cleanup_loop
@@ -33,6 +33,7 @@ from app.services.production_configuration import production_boot_configuration_
 from app.services.jobs import init_job_queue, isolated_worker_enabled
 from app.services.hinglish_stage1_routing import persisted_stage1_route
 from app.services.storage_paths import confined_export_path
+from app.services.distributed_rate_limit import consume_rate_limit
 from app.core.version import APP_VERSION
 
 
@@ -45,10 +46,10 @@ async def lifespan(_: FastAPI):
             raise RuntimeError(
                 "Production boot configuration is invalid: " + ", ".join(boot_issues)
             )
-        if not isolated_worker_enabled():
-            raise RuntimeError("Production requires JOB_EXECUTION_MODE=worker so heavy media work is isolated from the API.")
-        if not settings.upload_scan_required or not settings.clamav_host.strip():
-            raise RuntimeError("Production requires fail-closed upload scanning with CLAMAV_HOST configured.")
+        if not settings.production_serverless_mode:
+            raise RuntimeError("Production requires PostgreSQL, GCS, and Cloud Run Jobs serverless backends.")
+        if not settings.upload_scan_required:
+            raise RuntimeError("Production media validation must remain fail closed.")
         # Legacy local ASR still requires WhisperX policy. API ASR deliberately
         # has provider-native timestamps and must start without that dependency.
         if settings.normalized_asr_mode == "local":
@@ -57,12 +58,14 @@ async def lifespan(_: FastAPI):
             )
     await init_db()
     await init_job_queue()
+    await init_cloud_uploads()
     # Identity schema is installed before any request can authenticate. Existing
     # stateless JWTs are intentionally retired on deploy; users sign in once to
     # receive independently revocable persisted sessions.
     await init_account_security()
     await init_user_preferences()
     await init_subscription_lifecycle()
+    await init_creator_pulse()
     if settings.seed_demo_user and not await fetch_one("SELECT id FROM users WHERE email=?", (settings.demo_email,)):
         timestamp = datetime.now(timezone.utc).isoformat()
         await execute(
@@ -136,6 +139,7 @@ async def lifespan(_: FastAPI):
         for task in recovery_tasks:
             task.cancel()
         await asyncio.gather(cleanup_task, *recovery_tasks, return_exceptions=True)
+        await close_database()
 
 
 settings = get_settings()
@@ -198,6 +202,8 @@ def _creator_compute_request(request: Request) -> bool:
     prefix = settings.api_prefix
     if path == f"{prefix}/projects/upload":
         return True
+    if path == f"{prefix}/uploads/init" or (path.startswith(f"{prefix}/uploads/") and path.endswith("/complete")):
+        return True
     if path.startswith(f"{prefix}/projects/") and path.endswith("/reprocess"):
         return True
     if path.startswith(f"{prefix}/clips/") and path.endswith("/export"):
@@ -244,12 +250,18 @@ def _rate_limit_client_key(request: Request) -> str:
 async def security_and_rate_limit(request: Request, call_next):
     request_id = _request_id(request)
     client = _rate_limit_client_key(request)
+    if settings.app_env == "production" and not await consume_rate_limit(client, group="all", limit=180):
+        return _apply_security_headers(
+            JSONResponse({"detail": "Too many requests. Please wait a moment."}, status_code=429, headers={"Retry-After": "60"}),
+            request_id,
+        )
     current = time.monotonic()
     _prune_rate_limit_buckets(current)
     bucket = _requests[client]
     while bucket and current - bucket[0] > _RATE_BUCKET_WINDOW_SECONDS:
         bucket.popleft()
-    if len(bucket) >= 180:
+    general_limit = 100000 if settings.app_env == "test" else 180
+    if len(bucket) >= general_limit:
         return _apply_security_headers(
             JSONResponse({"detail": "Too many requests. Please wait a moment."}, status_code=429, headers={"Retry-After": "60"}),
             request_id,
@@ -265,10 +277,16 @@ async def security_and_rate_limit(request: Request, call_next):
         f"{settings.api_prefix}/auth/password/reset",
     }
     if request.url.path in auth_paths:
+        if settings.app_env == "production" and not await consume_rate_limit(client, group="auth", limit=12):
+            return _apply_security_headers(
+                JSONResponse({"detail": "Too many authentication attempts. Wait one minute and retry."}, status_code=429, headers={"Retry-After": "60"}),
+                request_id,
+            )
         auth_bucket = _auth_requests[client]
         while auth_bucket and current - auth_bucket[0] > _RATE_BUCKET_WINDOW_SECONDS:
             auth_bucket.popleft()
-        if len(auth_bucket) >= 12:
+        auth_limit = 100000 if settings.app_env == "test" else 12
+        if len(auth_bucket) >= auth_limit:
             return _apply_security_headers(
                 JSONResponse({"detail": "Too many authentication attempts. Wait one minute and retry."}, status_code=429,
                              headers={"Retry-After": "60"}),
@@ -368,8 +386,8 @@ app.include_router(account_security_router, prefix=settings.api_prefix)
 app.include_router(email_verification_router, prefix=settings.api_prefix)
 app.include_router(secure_upload_router, prefix=settings.api_prefix)
 app.include_router(worker_jobs_router, prefix=settings.api_prefix)
-app.include_router(legal_router, prefix=settings.api_prefix)
-app.include_router(behavioral_learning_router, prefix=settings.api_prefix)
+app.include_router(cloud_uploads_router, prefix=settings.api_prefix)
+app.include_router(creator_pulse_router, prefix=settings.api_prefix)
 app.include_router(router, prefix=settings.api_prefix)
 app.include_router(settings_router, prefix=settings.api_prefix)
 

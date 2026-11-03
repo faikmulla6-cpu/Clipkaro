@@ -1,8 +1,8 @@
-# ClipKaro AI — Multilingual Ranking Hostinger Edition v7.8
+# ClipKaro AI — No-VPS Serverless Production Candidate v7.8
 
 Selecting Hindi now means spoken Hindi/Hinglish rendered in readable Latin script (`main kaise hoon… arre yaar, haan sahi mein`). Recognition remains in the acoustic model's native script for verification and alignment; transliteration happens only in the display layer.
 
-v7.8 adds Hindi/Hinglish-aware moment ranking, content-density-aware clip lengths, opening-hook validation, and score-first overlap suppression while retaining v7.7's faster verified ASR and Hostinger deployment stack. See `docs/V7_8_REFERENCE_INTEGRATION.md`.
+The recommended production architecture keeps the Next.js frontend on Hostinger and runs FastAPI on Cloud Run, PostgreSQL on Neon, private media in GCS, and the existing renderer in Cloud Run Jobs. See `docs/NO_VPS_PRODUCTION_ARCHITECTURE.md` and `docs/NO_VPS_DEPLOYMENT_GUIDE.md`. Legacy VPS files remain optional compatibility artifacts.
 
 ClipKaro AI is an India-first creator product that turns owned long-form videos into ranked, editable, platform-ready Shorts. This edition is a real full-stack product rather than a static prototype: accounts, uploads, AI jobs, live progress, project ownership, clip editing, FFmpeg rendering, downloads, analytics, brand kits, templates, calendar drafts, billing webhooks, admin health, expiry cleanup, and tests are connected.
 

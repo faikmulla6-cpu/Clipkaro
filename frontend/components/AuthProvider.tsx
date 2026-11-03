@@ -2,6 +2,8 @@
 
 import { api, postJSON, User, VerificationStatus } from "@/lib/api";
 import { LEGAL_VERSION } from "@/lib/legal";
+import { SEO_PAGE_SLUGS } from "@/lib/seo-page-slugs";
+import { authHref, rememberPostAuthNext } from "@/lib/safe-next";
 import { usePathname, useRouter } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
@@ -22,8 +24,10 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 const publicPaths = [
-  "/", "/login", "/signup", "/verify-email", "/forgot-password", "/reset-password",
+  "/", "/about", "/pricing", "/contact", "/login", "/signup", "/verify-email", "/forgot-password", "/reset-password",
+  "/youtube-channel-analyzer",
   "/terms", "/privacy", "/refund-policy", "/acceptable-use", "/copyright", "/legal-notice",
+  ...SEO_PAGE_SLUGS.map((slug) => `/${slug}`),
 ];
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -40,8 +44,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         setVerification(await api<VerificationStatus>("/auth/verification-status"));
       } catch {
-        // Backend enforcement remains authoritative. Do not sign a valid user
-        // out merely because the status request had a transient network error.
+        // Backend enforcement remains authoritative. Keep the signed-in user,
+        // but do not assume AI processing is unlocked when verification state
+        // could not be confirmed.
         setVerification(null);
       }
     } catch {
@@ -58,11 +63,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (loading) return;
     const isPublic = publicPaths.includes(path);
     if (!user && !isPublic) {
-      router.replace(`/login?next=${encodeURIComponent(path)}`);
+      rememberPostAuthNext(path);
+      router.replace(authHref("/login", path));
       return;
     }
     if (user && !isPublic && verification?.required && !verification.can_process) {
-      router.replace("/verify-email");
+      rememberPostAuthNext(path);
+      router.replace(authHref("/verify-email", path));
     }
   }, [loading, user, verification, path, router]);
 
@@ -79,8 +86,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setVerification(status);
         return { canProcess: status.can_process };
       } catch {
+        // Authentication succeeded, but verification state is unknown. Route
+        // through the verification screen rather than failing open to creator
+        // compute; the backend remains the final authority either way.
         setVerification(null);
-        return { canProcess: true };
+        return { canProcess: false };
       }
     },
     signup: async (name, email, password, acceptLegal) => {

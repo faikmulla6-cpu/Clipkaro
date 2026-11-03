@@ -43,6 +43,8 @@ MANDATORY_CHECKS = (
     "backend_api_image",
     "backend_worker_image",
     "worker_alignment_runtime",
+    "youtube_ingestion_worker_image",
+    "youtube_ingestion_worker_runtime",
     "frontend_image",
     "source_unchanged_after_checks",
     "docker_image_identity",
@@ -236,8 +238,8 @@ def _certification_analysis(
 
     if not workflow.get("run_id"):
         blockers.append("GitHub workflow run ID is missing; certification must be tied to an immutable workflow artifact")
-    elif workflow.get("repository") != "faikmulla/ClipkaroAI":
-        blockers.append("GitHub repository identity does not match faikmulla/ClipkaroAI")
+    elif workflow.get("repository") != "faikmulla6-cpu/Clipkaro":
+        blockers.append("GitHub repository identity does not match faikmulla6-cpu/Clipkaro")
 
     if checks.get("backend_tests") == "success":
         if not pytest_data.get("available"):
@@ -257,7 +259,7 @@ def _certification_analysis(
             blockers.append("docker_image_identity reported success but image evidence is missing")
         else:
             images = docker_images.get("images") or {}
-            for name in ("api", "worker", "frontend"):
+            for name in ("api", "worker", "youtube_ingestion", "frontend"):
                 item = images.get(name) or {}
                 if not item.get("image_id") or not item.get("repo_digest_or_id"):
                     blockers.append(f"Docker identity evidence incomplete for {name} image")
@@ -276,7 +278,7 @@ def _certification_analysis(
 
 
 def _render_certification_record(report: dict[str, Any]) -> str:
-    status = "CERTIFIED ✅" if report["certified"] else f"{report['decision']} ❌"
+    status = "LAUNCH-CERTIFIED ✅" if report["certified"] else f"LAUNCH-{report['decision']} ❌"
     checks = report.get("checks") or {}
     check_lines = [
         f"- {'✅' if checks.get(name) == 'success' else '❌'} `{name}` — `{checks.get(name, 'missing')}`"
@@ -311,7 +313,7 @@ def _render_certification_record(report: dict[str, Any]) -> str:
         "",
         "This record certifies only the exact build/deployment candidate above. Real ASR, real landscape framing, main-branch protection and live production/operator/payment configuration remain separate launch gates.",
         "",
-        "A tracked source file is intentionally not rewritten to say CERTIFIED after the run, because doing so would create a new Git SHA that was not the SHA tested. This immutable artifact is the certification record for the tested SHA.",
+        "A tracked source file is intentionally not rewritten to say LAUNCH-CERTIFIED after the run, because doing so would create a new Git SHA that was not the SHA tested. This immutable artifact is the certification record for the tested SHA.",
         "",
     ]
     return "\n".join(lines)
@@ -346,8 +348,9 @@ def generate(args: argparse.Namespace) -> int:
         "release_version": args.expected_version,
         "certified": decision == "CERTIFIED",
         "decision": decision,
+        "launch_certification": "LAUNCH-CERTIFIED" if decision == "CERTIFIED" else f"LAUNCH-{decision}",
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
-        "repository": "faikmulla/ClipkaroAI",
+        "repository": "faikmulla6-cpu/Clipkaro",
         "workflow": workflow,
         "identity": identity,
         "mandatory_checks": list(MANDATORY_CHECKS),
@@ -399,8 +402,13 @@ def enforce(args: argparse.Namespace) -> int:
     if set(checks) != set(MANDATORY_CHECKS):
         print("Fresh Launch QA evidence does not contain the exact mandatory check set.", file=sys.stderr)
         return 1
-    if payload.get("certified") is True and payload.get("decision") == "CERTIFIED" and all(checks.get(name) == "success" for name in MANDATORY_CHECKS):
-        print(f"Fresh Launch QA certified {payload.get('release_version')} at {payload.get('identity', {}).get('tested_sha')}")
+    if (
+        payload.get("certified") is True
+        and payload.get("decision") == "CERTIFIED"
+        and payload.get("launch_certification") == "LAUNCH-CERTIFIED"
+        and all(checks.get(name) == "success" for name in MANDATORY_CHECKS)
+    ):
+        print(f"Fresh Launch QA LAUNCH-CERTIFIED {payload.get('release_version')} at {payload.get('identity', {}).get('tested_sha')}")
         return 0
     print(
         f"Fresh Launch QA is {payload.get('decision', 'NOT_CERTIFIED')}. "

@@ -1,6 +1,8 @@
 import fs from "node:fs";
 
-const pricing = fs.readFileSync(new URL("../app/pricing/page.tsx", import.meta.url), "utf8");
+const pricing =
+  fs.readFileSync(new URL("../app/pricing/page.tsx", import.meta.url), "utf8") +
+  fs.readFileSync(new URL("../app/pricing/PricingExperience.tsx", import.meta.url), "utf8");
 const lifecycle = fs.readFileSync(new URL("../../backend/app/api/billing_lifecycle.py", import.meta.url), "utf8");
 const main = fs.readFileSync(new URL("../../backend/app/main.py", import.meta.url), "utf8");
 

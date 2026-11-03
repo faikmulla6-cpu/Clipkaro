@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 
 from app.core.database import fetch_one
 from app.services.auth import current_user
@@ -15,6 +15,8 @@ from app.services.media_delivery import (
     source_media_type,
 )
 from app.services.storage_paths import confined_upload_path
+from app.core.config import get_settings
+from app.services.storage import get_storage_provider, validate_object_key
 
 
 router = APIRouter()
@@ -33,13 +35,18 @@ async def _owned_video(project_id: str, user_id: str) -> dict:
 
 
 @router.get("/projects/{project_id}/media/original")
-async def project_original_media(project_id: str, user: dict = Depends(current_user)) -> FileResponse:
+async def project_original_media(project_id: str, user: dict = Depends(current_user)):
     """Serve the private uploaded bytes with their truthful container MIME.
 
     This route does not claim that every accepted source container/codec is
     playable by every browser; it exists for exact original-media delivery.
     """
     row = await _owned_video(project_id, str(user["id"]))
+    settings = get_settings()
+    if settings.normalized_storage_backend == "gcs":
+        key = validate_object_key(str(row.get("file_path") or ""), expected_prefix=f"users/{user['id']}")
+        url = await get_storage_provider().signed_download_url(key, filename=Path(row.get("original_filename") or "source-video").name, ttl_seconds=min(300, max(60, settings.gcs_download_url_ttl_seconds)))
+        return RedirectResponse(url, status_code=307, headers={"Cache-Control": "private, no-store"})
     source = confined_upload_path(row.get("file_path"))
     if source is None or not source.is_file():
         raise HTTPException(404, "Video not found or has expired.")
@@ -55,7 +62,7 @@ async def project_original_media(project_id: str, user: dict = Depends(current_u
 
 
 @router.get("/projects/{project_id}/media")
-async def project_browser_media(project_id: str, user: dict = Depends(current_user)) -> FileResponse:
+async def project_browser_media(project_id: str, user: dict = Depends(current_user)):
     """Serve a browser-playable source preview without lying about MIME.
 
     H.264/AAC MP4 and compatible WebM can be delivered directly. Containers or
@@ -64,6 +71,11 @@ async def project_browser_media(project_id: str, user: dict = Depends(current_us
     seeking in the project page and Creator Studio.
     """
     row = await _owned_video(project_id, str(user["id"]))
+    settings = get_settings()
+    if settings.normalized_storage_backend == "gcs":
+        key = validate_object_key(str(row.get("file_path") or ""), expected_prefix=f"users/{user['id']}")
+        url = await get_storage_provider().signed_download_url(key, filename=Path(row.get("original_filename") or "source-video").name, ttl_seconds=min(300, max(60, settings.gcs_download_url_ttl_seconds)))
+        return RedirectResponse(url, status_code=307, headers={"Cache-Control": "private, no-store"})
     source = confined_upload_path(row.get("file_path"))
     if source is None or not source.is_file():
         raise HTTPException(404, "Video not found or has expired.")
