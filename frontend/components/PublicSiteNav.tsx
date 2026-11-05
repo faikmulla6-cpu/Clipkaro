@@ -30,8 +30,8 @@ const products = [
   },
   {
     href: "/youtube-video-to-shorts-ai",
-    label: "YouTube URL → Shorts",
-    text: "Paste a supported link or use the original-file fallback.",
+    label: "YouTube URL → Shorts · Soon",
+    text: "Coming soon. Upload your original video to create Shorts today.",
     icon: Link2,
   },
   {
