@@ -66,7 +66,7 @@ async def _require_paid_feature(user: dict) -> dict:
                 "code": "SMART_LAYOUT_PASS_EXHAUSTED" if exhausted else "SMART_LAYOUT_UPGRADE",
                 "message": (
                     "This Mini Pass has reached its existing Short or processing-minute allowance."
-                    if exhausted else "Real Smart Layout is available with an active premium plan."
+                    if exhausted else "Real Smart Layout requires an available one-time Free trial or active paid plan."
                 ),
             },
         )
@@ -196,7 +196,7 @@ async def _active_job(clip_id: str, uid: str, key: str) -> dict | None:
 
 @router.get("/clips/{clip_id}/smart-layout-v2")
 async def analysis_status(clip_id: str, user: dict = Depends(current_user)) -> dict:
-    await _require_paid_feature(user)
+    entitlement = await _require_paid_feature(user)
     row = await _owned(clip_id, str(user["id"]))
     identity = _identity(row, str(user["id"]))
     ready = await _cached(row, identity)
@@ -207,7 +207,7 @@ async def analysis_status(clip_id: str, user: dict = Depends(current_user)) -> d
     if active:
         # Opening another editor/tab must not imply that this request charged a credit.
         return {**active, "billing_action": "existing_job"}
-    return {"status": "not_started", "reanalysis_free": await previously_paid(identity)}
+    return {"status": "not_started", "reanalysis_free": (entitlement["plan"] != "free" and await previously_paid(identity))}
 
 
 @router.post("/clips/{clip_id}/smart-layout-v2", status_code=202)
@@ -242,7 +242,7 @@ async def request_analysis(
         try:
             job_id, action = await reserve_analysis(uid, identity)
         except SmartLayoutQuotaError as exc:
-            code = 402 if exc.code in ("SMART_LAYOUT_UPGRADE", "SMART_LAYOUT_CREDITS") else 429
+            code = 402 if exc.code in ("SMART_LAYOUT_UPGRADE", "SMART_LAYOUT_CREDITS", "SMART_LAYOUT_TRIAL_EXHAUSTED") else 429
             raise HTTPException(status_code=code, detail={
                 "code": exc.code, "message": str(exc)}) from exc
         if action == "existing":

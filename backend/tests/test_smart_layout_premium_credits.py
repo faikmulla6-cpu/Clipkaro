@@ -355,13 +355,81 @@ class PremiumSmartLayoutCreditTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(error.exception.code,"SMART_LAYOUT_PASS_EXHAUSTED")
         self.assertEqual(self.used(),0)
 
-    async def test_free_is_denied_without_side_effects(self):
-        self.conn.execute("UPDATE users SET plan='free',plan_expires_at=NULL WHERE id=?",(self.uid,))
+    def make_free(self):
+        self.conn.execute(
+            "UPDATE users SET plan='free',billing_reference=NULL,plan_started_at=NULL,plan_expires_at=NULL WHERE id=?",
+            (self.uid,))
+
+    async def test_free_one_lifetime_preview_does_not_renew(self):
+        self.make_free()
+        before=await quota.entitlement_status({"id":self.uid},rollout=True)
+        self.assertTrue(before["enabled"])
+        self.assertEqual((before["allowance"],before["remaining"],before["period_end"]),(1,1,None))
+        job,action=await quota.reserve_analysis(self.uid,self.identity(0.,180.))
+        self.assertEqual(action,"new_charge")
+        row=self.conn.execute(
+            "SELECT period_key,credits FROM smart_layout_credit_reservations WHERE job_id=?",(job,)).fetchone()
+        self.assertEqual((row["period_key"],row["credits"]),(quota.FREE_TRIAL_PERIOD_KEY,1))
+        await quota.settle_analysis_job(job,succeeded=True)
+        self.conn.execute("UPDATE jobs SET status='completed' WHERE id=?",(job,))
+        with patch.object(quota,"_now",return_value=datetime.now(timezone.utc)+timedelta(days=45)):
+            after=await quota.entitlement_status({"id":self.uid},rollout=True)
+            self.assertEqual((after["remaining"],after["daily_remaining"]),(0,0))
+            with self.assertRaises(quota.SmartLayoutQuotaError) as error:
+                await quota.reserve_analysis(self.uid,self.identity(60.,120.))
+        self.assertEqual(error.exception.code,"SMART_LAYOUT_CREDITS")
+
+    async def test_free_concurrent_clips_cannot_use_twice(self):
+        self.make_free()
+        outcomes=await asyncio.gather(
+            quota.reserve_analysis(self.uid,self.identity(0.,60.)),
+            quota.reserve_analysis(self.uid,self.identity(60.,120.)),
+            return_exceptions=True)
+        successes=[item for item in outcomes if isinstance(item,tuple)]
+        failures=[item for item in outcomes if isinstance(item,quota.SmartLayoutQuotaError)]
+        self.assertEqual((len(successes),len(failures)),(1,1))
+        self.assertEqual(failures[0].code,"SMART_LAYOUT_CREDITS")
+        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0],1)
+        self.assertEqual(self.used(),1)
+        with self.assertRaises(quota.SmartLayoutQuotaError):
+            await quota.reserve_analysis(self.uid,self.identity(120.,180.))
+
+    async def test_free_failed_analysis_refunds_and_retry_exhausts(self):
+        self.make_free()
+        identity=self.identity()
+        first,_=await quota.reserve_analysis(self.uid,identity)
+        await quota.settle_analysis_job(first,succeeded=False)
+        self.conn.execute("UPDATE jobs SET status='failed' WHERE id=?",(first,))
+        self.assertEqual((await quota.entitlement_status({"id":self.uid},rollout=True))["remaining"],1)
+        second,_=await quota.reserve_analysis(self.uid,identity)
+        self.assertNotEqual(first,second)
+        await quota.settle_analysis_job(second,succeeded=True)
+        self.conn.execute("UPDATE jobs SET status='completed' WHERE id=?",(second,))
+        self.assertEqual((await quota.entitlement_status({"id":self.uid},rollout=True))["remaining"],0)
         with self.assertRaises(quota.SmartLayoutQuotaError) as error:
-            await quota.reserve_analysis(self.uid,self.identity())
-        self.assertEqual(error.exception.code,"SMART_LAYOUT_UPGRADE")
-        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0],0)
-        self.assertEqual(self.used(),0)
+            await quota.reserve_analysis(self.uid,identity)
+        self.assertEqual(error.exception.code,"SMART_LAYOUT_TRIAL_EXHAUSTED")
+        self.assertEqual(self.used(),1)
+
+    async def test_free_trial_is_separate_from_paid_and_persists_after_downgrade(self):
+        self.make_free()
+        first,_=await quota.reserve_analysis(self.uid,self.identity(0.,60.))
+        await quota.settle_analysis_job(first,succeeded=True)
+        self.conn.execute("UPDATE jobs SET status='completed' WHERE id=?",(first,))
+        self.conn.execute(
+            "UPDATE users SET plan='creator',billing_reference='sub_new',plan_started_at=?,plan_expires_at=? WHERE id=?",
+            (self.started,self.expires,self.uid))
+        paid=await quota.entitlement_status({"id":self.uid},rollout=True)
+        self.assertEqual((paid["allowance"],paid["remaining"]),(12,12))
+        second,_=await quota.reserve_analysis(self.uid,self.identity(60.,120.))
+        await quota.settle_analysis_job(second,succeeded=True)
+        self.conn.execute("UPDATE jobs SET status='completed' WHERE id=?",(second,))
+        paid=await quota.entitlement_status({"id":self.uid},rollout=True)
+        self.assertEqual((paid["remaining"],paid["daily_remaining"]),(11,3))
+        self.make_free()
+        free=await quota.entitlement_status({"id":self.uid},rollout=True)
+        self.assertEqual((free["remaining"],free["daily_remaining"]),(0,0))
+        self.assertEqual(self.used(),2)
 
     async def test_source_generation_is_billing_fingerprint_not_model_revision(self):
         identity=self.identity()

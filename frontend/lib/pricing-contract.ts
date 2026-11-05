@@ -24,7 +24,7 @@ export function planFeatureMinutes(plan: PricingPlanId): string {
 
 /** Premium face-aware analysis has its own credits, independent of clipping. */
 export const SMART_LAYOUT_PREMIUM = {
-  free: { credits: 0, daily: 0 },
+  free: { credits: 1, daily: 1 },
   mini_pass: { credits: 1, daily: 1 },
   creator: { credits: 12, daily: 4 },
   growth: { credits: 40, daily: 10 },
@@ -34,6 +34,7 @@ export const SMART_LAYOUT_PREMIUM = {
 
 export function smartLayoutFeature(plan: PricingPlanId): string {
   const { credits, daily } = SMART_LAYOUT_PREMIUM[plan];
+  if (plan === "free") return "Real Smart Layout beta: 1 free preview per account, once for life (during approved rollout)";
   if (!credits) return "Real Smart Layout not included · Classic framing available";
   return `Real Smart Layout beta: ${credits} analysis ${credits === 1 ? "credit" : "credits"} ${plan === "mini_pass" ? "per pass" : "/month"} · up to ${daily}/24h`;
 }

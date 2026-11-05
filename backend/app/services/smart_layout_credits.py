@@ -15,9 +15,11 @@ from app.core.database import fetch_one, run_in_transaction
 from app.services.billing import entitlement_for, mini_pass_is_exhausted, usage_period_key
 from app.services.smart_layout_cache import AnalysisIdentity
 
-POLICY_VERSION = "smart-layout-balanced-v1"
+POLICY_VERSION = "smart-layout-balanced-v2-free-once"
+# Immutable lifetime entitlement; never use the monthly Free billing period here.
+FREE_TRIAL_PERIOD_KEY = "free:smart-layout-once:v1"
 LIMITS: dict[str, tuple[int, int]] = {
-    "free": (0, 0),
+    "free": (1, 1),
     "mini_pass": (1, 1),
     "creator": (12, 4),
     "growth": (40, 10),
@@ -74,6 +76,12 @@ def _active_plan(user: dict, now: datetime) -> str:
 
 def _period_end(user: dict) -> str | None:
     return str(user.get("plan_expires_at") or "") or None
+
+
+def _smart_period(user: dict, plan: str) -> str:
+    # Every Free account gets exactly one lifetime trial, never a new monthly grant.
+    # Paid period keys and grandfathered credits remain unchanged.
+    return FREE_TRIAL_PERIOD_KEY if plan == "free" else usage_period_key(user)
 
 
 async def init_smart_layout_credits() -> None:
@@ -155,11 +163,20 @@ async def _balance(db, uid: str, period: str, cap: int, daily: int, now: datetim
            WHERE user_id=? AND period_key=? AND status IN ('reserved','finalized')""",
         (uid, period))).fetchone()
     used = int(row["used"] if row else 0)
+    if period == FREE_TRIAL_PERIOD_KEY:
+        # Trial is lifetime-limited, not a rolling 24h grant. Paid usage today
+        # must not unexpectedly consume the separate trial entitlement.
+        return {
+            "allowance": cap, "used": used, "remaining": max(0, cap-used),
+            "daily_cap": daily, "daily_used": used,
+            "daily_remaining": max(0, daily-used),
+        }
     since = (now - timedelta(hours=24)).isoformat()
     row = await (await db.execute(
         """SELECT COALESCE(SUM(credits),0) used FROM smart_layout_credit_reservations
-           WHERE user_id=? AND status IN ('reserved','finalized') AND reserved_at>=?""",
-        (uid, since))).fetchone()
+           WHERE user_id=? AND status IN ('reserved','finalized') AND reserved_at>=?
+             AND period_key<>?""",
+        (uid, since, FREE_TRIAL_PERIOD_KEY))).fetchone()
     daily_used = int(row["used"] if row else 0)
     return {
         "allowance": cap, "used": used, "remaining": max(0, cap-used),
@@ -178,7 +195,7 @@ async def entitlement_status(user: dict, *, rollout: bool) -> dict:
     plan = _active_plan(current, now)
     mini_exhausted = plan == "mini_pass" and await mini_pass_is_exhausted(current)
     allowance, daily = LIMITS[plan]
-    period = usage_period_key(current)
+    period = _smart_period(current, plan)
     async def check(db):
         await _release_terminal_failures(db, uid, now)
         snapshot = await (await db.execute(
@@ -228,7 +245,7 @@ async def reserve_analysis(user_id: str, identity: AnalysisIdentity) -> tuple[st
     now = _now()
     timestamp = now.isoformat()
     fingerprint = analysis_fingerprint(identity)
-    cost = credit_cost(identity.end - identity.start)
+    requested_cost = credit_cost(identity.end - identity.start)
     # Initialize the purchased pass snapshot outside the reservation lock.
     # The authoritative exhaustion check then runs inside the same lock
     # and transaction as the Smart Layout credit reservation.
@@ -247,12 +264,13 @@ async def reserve_analysis(user_id: str, identity: AnalysisIdentity) -> tuple[st
         owned = dict(user)
         plan = _active_plan(owned, now)
         cap, daily = LIMITS[plan]
+        cost = 1 if plan == "free" else requested_cost
         if not cap:
-            raise SmartLayoutQuotaError("SMART_LAYOUT_UPGRADE", "Real Smart Layout requires an active premium plan.")
+            raise SmartLayoutQuotaError("SMART_LAYOUT_UPGRADE", "Real Smart Layout requires an active premium plan or available Free trial.")
         if plan == "mini_pass" and await _mini_pass_exhausted_locked(db, owned):
             raise SmartLayoutQuotaError(
                 "SMART_LAYOUT_PASS_EXHAUSTED", "This Mini Pass has reached its existing creation or minute allowance.")
-        period = usage_period_key(owned)
+        period = _smart_period(owned, plan)
         await _release_terminal_failures(db, uid, now)
         snapshot = await (await db.execute(
             """SELECT plan_key,allowance,daily_cap
@@ -283,6 +301,11 @@ async def reserve_analysis(user_id: str, identity: AnalysisIdentity) -> tuple[st
         # Existing finalized analysis may be recomputed at zero cost when its
         # private plan TTL or model revision changes.
         free_recompute = bool(existing and existing["status"] == "finalized")
+        if free_recompute and plan == "free":
+            # Free preview is truly once; a TTL/model refresh cannot mint
+            # more background analysis after the first successful trial.
+            raise SmartLayoutQuotaError(
+                "SMART_LAYOUT_TRIAL_EXHAUSTED", "Your one-time free Smart Layout preview has been used.")
         balance = await _balance(db, uid, period, cap, daily, now)
         if not free_recompute and balance["remaining"] < cost:
             raise SmartLayoutQuotaError("SMART_LAYOUT_CREDITS", "Not enough Smart Layout credits for this clip.")
