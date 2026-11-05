@@ -268,7 +268,7 @@ export default function Editor() {
       if (currentBillingAction === "existing_job") return "Existing analysis · no additional charge";
       if (currentBillingAction === "free_refresh" || freeReanalysis) return "Free refresh in progress";
       if (currentBillingAction === "new_charge") return oneTimeTrial ? "Free lifetime preview reserved" : smartClipCostText + " reserved";
-      return smartClipCostText + " · pending";
+      return oneTimeTrial ? "One-time Free preview · pending" : smartClipCostText + " · pending";
     }
     return freeReanalysis ? "Free refresh" : oneTimeTrial ? "One-time free preview" : smartClipCostText;
   })();
@@ -1652,10 +1652,10 @@ export default function Editor() {
               width={360} height={640} aria-label="Analyzed Smart Layout preview"/>}
             {ratio === "9:16" && layoutMode !== "classic" && smartCapability !== "ready" &&
               <div className="smart-layout-v2-status" role="status">
-                {smartCapability === "checking" ? "Checking secure Smart Layout availability…" : smartQuota?.reason === "pass_exhausted" ? "Mini Pass creation or minute allowance reached. Open Frame to compare plans." : smartQuota?.reason === "upgrade" ? "Real Smart Layout is premium. Open Frame to compare plans. Classic is still available." : "Real Smart Layout is currently limited to approved beta accounts. No simulated split is shown."}
+                {smartCapability === "checking" ? "Checking secure Smart Layout availability…" : smartQuota?.reason === "pass_exhausted" ? "Mini Pass creation or minute allowance reached. Open Frame to compare plans." : smartQuota?.reason === "upgrade" ? "Real Smart Layout requires a one-time Free preview or paid credits. Open Frame to compare plans. Classic framing is still available." : "Real Smart Layout is currently limited to approved beta accounts. No simulated split is shown."}
               </div>}
             {smartRequested && SMART_LAYOUT_V2_ENABLED && !realPlan && <div className="smart-layout-v2-status" role="status">
-              {layoutAnalysis === "error" ? <><span>Smart Layout preview unavailable: {layoutAnalysisError}</span><button type="button" onClick={() => { setLayoutPlans(null); setLayoutPlansClipKey(null); setAnalysisConfirmedFor(null); layoutBillingRef.current = null; setLayoutBilling(null); setLayoutAnalysis("idle"); setLayoutAnalysisError(""); }}>Review and retry</button></> : layoutAnalysis === "analyzing" ? (currentBillingAction === "existing_job" ? "An existing Smart Layout analysis is already running…" : "Analyzing real speaker positions…") : analysisConfirmed ? "Analyzing real speaker positions…" : (!freeReanalysis && ((smartQuota?.remaining ?? 0) < smartClipCost || (smartQuota?.daily_remaining ?? 0) < smartClipCost)) ? "Not enough credits for a new analysis. Open Frame for your balance." : "Review the credit cost in Frame, then choose Analyze securely."}
+              {layoutAnalysis === "error" ? <><span>Smart Layout preview unavailable: {layoutAnalysisError}</span><button type="button" onClick={() => { setLayoutPlans(null); setLayoutPlansClipKey(null); setAnalysisConfirmedFor(null); layoutBillingRef.current = null; setLayoutBilling(null); setLayoutAnalysis("idle"); setLayoutAnalysisError(""); }}>Review and retry</button></> : layoutAnalysis === "analyzing" ? (currentBillingAction === "existing_job" ? "An existing Smart Layout analysis is already running…" : "Analyzing real speaker positions…") : analysisConfirmed ? "Analyzing real speaker positions…" : (!freeReanalysis && ((smartQuota?.remaining ?? 0) < smartClipCost || (smartQuota?.daily_remaining ?? 0) < smartClipCost)) ? (oneTimeTrial ? "Your one-time Free preview has been used. Saved results remain available." : "Not enough credits for a new analysis. Open Frame for your balance.") : (oneTimeTrial ? "Review your one-time Free preview in Frame, then start analysis." : "Review the credit cost in Frame, then choose Analyze securely.")}
             </div>}
             {previewDual && <>
               <div className="smart-preview-band" aria-hidden="true" />
