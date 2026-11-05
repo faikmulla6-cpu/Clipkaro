@@ -203,7 +203,8 @@ export default function Editor() {
     setLayoutBilling(value);
   }, []);
   const [smartQuota, setSmartQuota] = useState<SmartQuotaStatus | null>(null);
-  const smartClipCost = clip ? Math.max(1, Math.ceil(((clip.end_time - clip.start_time) - .00000001) / 60)) : 1;
+  const oneTimeTrial = smartQuota?.plan === "free";
+  const smartClipCost = oneTimeTrial ? 1 : clip ? Math.max(1, Math.ceil(((clip.end_time - clip.start_time) - .00000001) / 60)) : 1;
   const smartClipCostText = smartClipCost + (smartClipCost === 1 ? " credit" : " credits");
   const [smartCapability, setSmartCapability] = useState<"checking" | "ready" | "unavailable">("checking");
   const SMART_LAYOUT_V2_ENABLED = smartCapability === "ready";
@@ -257,7 +258,7 @@ export default function Editor() {
   const realPlan = smartRequested && verifiedLayoutPlans && layoutAnalysis !== "error" ? verifiedLayoutPlans[layoutMode] : null;
   const smartClipBillingLabel = (() => {
     if (realPlan) {
-      if (currentBillingAction === "new_charge") return smartClipCostText + " used";
+      if (currentBillingAction === "new_charge") return oneTimeTrial ? "Free lifetime preview used" : smartClipCostText + " used";
       if (currentBillingAction === "free_refresh") return "Free refresh · 0 new credits";
       if (currentBillingAction === "existing_job") return "Existing result · no additional charge";
       if (currentBillingAction === "cached_reuse") return "Saved result · 0 new credits";
@@ -266,10 +267,10 @@ export default function Editor() {
     if (layoutAnalysis === "analyzing") {
       if (currentBillingAction === "existing_job") return "Existing analysis · no additional charge";
       if (currentBillingAction === "free_refresh" || freeReanalysis) return "Free refresh in progress";
-      if (currentBillingAction === "new_charge") return smartClipCostText + " reserved";
+      if (currentBillingAction === "new_charge") return oneTimeTrial ? "Free lifetime preview reserved" : smartClipCostText + " reserved";
       return smartClipCostText + " · pending";
     }
-    return freeReanalysis ? "Free refresh" : smartClipCostText;
+    return freeReanalysis ? "Free refresh" : oneTimeTrial ? "One-time free preview" : smartClipCostText;
   })();
   const actualScene = realPlan ? findScene(realPlan, playhead) : null;
   const dualStackCoverage = realPlan && layoutMode === "dual_stack" ? dualStackCoverageSeconds(realPlan) : null;
@@ -1561,16 +1562,16 @@ export default function Editor() {
                 <p className="field-note">{smartCapability === "ready"
                   ? "One secure analysis powers Auto Director, Dual Stack and Speaker Focus. Switching modes or re-exporting uses saved results for free."
                   : (smartQuota?.reason === "upgrade" || smartQuota?.reason === "pass_exhausted")
-                    ? smartQuota?.reason === "pass_exhausted" ? "Mini Pass has reached its Short or processing-minute allowance. Classic framing remains available." : "Real Smart Layout requires a premium plan. Classic framing remains available."
+                    ? smartQuota?.reason === "pass_exhausted" ? "Mini Pass has reached its Short or processing-minute allowance. Classic framing remains available." : "Real Smart Layout is available with a one-time Free trial or a paid plan. Classic framing remains available."
                     : "Real Smart Layout is in controlled beta. No simulated split will be shown."}</p>
-                {ratio === "9:16" && layoutMode !== "classic" && <section className="smart-quota-card" aria-label="Real Smart Layout credits">
+                {ratio === "9:16" && layoutMode !== "classic" && <section className="smart-quota-card" aria-label="Real Smart Layout allowance">
                   <div className="smart-quota-head"><span><Sparkles size={15}/> REAL SMART LAYOUT</span><b>{smartQuota?.plan ? smartQuota.plan.replace("_", " ").toUpperCase() : "PRIVATE BETA"}</b></div>
                   {smartQuota?.available ? <>
-                    <div className="smart-quota-numbers"><strong>{smartQuota.remaining ?? 0}<small> / {smartQuota.allowance ?? 0} credits left</small></strong><span>Renews with your paid plan</span></div>
+                    <div className="smart-quota-numbers"><strong>{smartQuota.remaining ?? 0}<small> / {smartQuota.allowance ?? 0} {oneTimeTrial ? "free preview left" : "credits left"}</small></strong><span>{oneTimeTrial ? "Once per account · never renews" : "Renews with your paid plan"}</span></div>
                     <div className="smart-quota-track" role="progressbar" aria-label="Smart Layout plan credits remaining" aria-valuemin={0} aria-valuemax={smartQuota.allowance || 1} aria-valuenow={smartQuota.remaining || 0}>
                       <div style={{ width: String(Math.min(100, (smartQuota.remaining || 0) / Math.max(1, smartQuota.allowance || 1) * 100)) + "%" }}/>
                     </div>
-                    <p className="smart-quota-meta">Last 24h: <b>{smartQuota.daily_remaining ?? 0} of {smartQuota.daily_cap ?? 0}</b> available · This clip: <b>{smartClipBillingLabel}</b></p>
+                    <p className="smart-quota-meta">{oneTimeTrial ? "One real analysis, once for life" : <>Last 24h: <b>{smartQuota.daily_remaining ?? 0} of {smartQuota.daily_cap ?? 0}</b> available</>} · This clip: <b>{smartClipBillingLabel}</b></p>
                     {smartQuota.period_end && <small className="smart-quota-date">Plan period ends {new Date(smartQuota.period_end).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}.</small>}
                     {!realPlan && layoutAnalysis !== "analyzing" && !analysisConfirmed && <button className="smart-quota-action" type="button"
                       disabled={!freeReanalysis && ((smartQuota.remaining ?? 0) < smartClipCost || (smartQuota.daily_remaining ?? 0) < smartClipCost)}
@@ -1581,11 +1582,11 @@ export default function Editor() {
                         setLayoutAnalysis("analyzing");
                         setLayoutAnalysisError("");
                       }}>
-                      <Sparkles size={14}/> {freeReanalysis ? "Refresh previous analysis · Free" : "Analyze securely · " + smartClipCost + (smartClipCost === 1 ? " credit" : " credits")}
+                      <Sparkles size={14}/> {freeReanalysis ? "Refresh previous analysis · Free" : oneTimeTrial ? "Try Smart Layout once · Free" : "Analyze securely · " + smartClipCost + (smartClipCost === 1 ? " credit" : " credits")}
                     </button>}
                     {!realPlan && !freeReanalysis && ((smartQuota.remaining ?? 0) < smartClipCost || (smartQuota.daily_remaining ?? 0) < smartClipCost) &&
-                      <p className="smart-quota-warning" role="status">Not enough {((smartQuota.remaining ?? 0) < smartClipCost) ? "plan" : "daily"} credits for a new analysis. Previously analyzed clips stay reusable.</p>}
-                    {realPlan && currentBillingAction === "new_charge" && <p className="smart-quota-reused"><Check size={13}/> Analysis complete · {smartClipCostText} used</p>}
+                      <p className="smart-quota-warning" role="status">{oneTimeTrial ? "Your one-time Free Smart Layout preview is already used. Saved results remain available while retained. " : <>Not enough {((smartQuota.remaining ?? 0) < smartClipCost) ? "plan" : "daily"} credits for a new analysis. Previously analyzed clips stay reusable. </>}<a href="/pricing">See plans</a></p>}
+                    {realPlan && currentBillingAction === "new_charge" && <p className="smart-quota-reused"><Check size={13}/> Analysis complete · {oneTimeTrial ? "One-time Free preview used" : smartClipCostText + " used"}</p>}
                     {realPlan && currentBillingAction === "cached_reuse" && <p className="smart-quota-reused"><Check size={13}/> Saved analysis reused · no new charge</p>}
                     {realPlan && currentBillingAction === "free_refresh" && <p className="smart-quota-reused"><Check size={13}/> Saved analysis refreshed · no new charge</p>}
                     {realPlan && currentBillingAction === "existing_job" && <p className="smart-quota-reused"><Check size={13}/> Existing analysis reused · no additional charge</p>}
