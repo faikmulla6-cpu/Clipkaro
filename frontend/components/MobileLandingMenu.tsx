@@ -7,7 +7,7 @@ import { TransitionLink } from "./TransitionLink";
 import styles from "./mobile-landing-menu.module.css";
 
 const productLinks = [
-  ["YouTube URL → Shorts", "/youtube-video-to-shorts-ai"],
+  ["YouTube URL → Shorts · Soon", "/youtube-video-to-shorts-ai"],
   ["AI Shorts Maker", "/ai-shorts-maker-india"],
   ["Creator Pulse · ₹1", "/youtube-channel-analyzer"],
   ["Hindi & Hinglish", "/hindi-video-to-reels"],
@@ -55,7 +55,7 @@ export function MobileLandingMenu() {
       <div id="mobile-landing-navigation" className={`${styles.sheet} ${open ? styles.open : ""}`} aria-hidden={!open}>
         <div className={styles.sheetTop}>
           <span>Explore ClipKaro</span>
-          <small>YouTube URL intake, upload fallback, Shorts creation and Creator Pulse intelligence.</small>
+          <small>Video upload, AI Shorts creation and Creator Pulse. URL import is coming soon.</small>
         </div>
 
         <nav className={styles.links} aria-label="Mobile ClipKaro navigation">
