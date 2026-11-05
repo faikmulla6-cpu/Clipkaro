@@ -56,7 +56,7 @@ def _require_feature(user_id: str) -> None:
         raise HTTPException(404, "This preview is not available.")
 
 
-async def _require_entitled_feature(user: dict) -> dict:
+async def _require_paid_feature(user: dict) -> dict:
     _require_feature(str(user["id"]))
     state = await entitlement_status(user, rollout=True)
     if not state["enabled"]:
@@ -196,7 +196,7 @@ async def _active_job(clip_id: str, uid: str, key: str) -> dict | None:
 
 @router.get("/clips/{clip_id}/smart-layout-v2")
 async def analysis_status(clip_id: str, user: dict = Depends(current_user)) -> dict:
-    entitlement = await _require_entitled_feature(user)
+    entitlement = await _require_paid_feature(user)
     row = await _owned(clip_id, str(user["id"]))
     identity = _identity(row, str(user["id"]))
     ready = await _cached(row, identity)
@@ -214,7 +214,7 @@ async def analysis_status(clip_id: str, user: dict = Depends(current_user)) -> d
 async def request_analysis(
     clip_id: str, tasks: BackgroundTasks, user: dict = Depends(current_user),
 ) -> dict:
-    await _require_entitled_feature(user)
+    await _require_paid_feature(user)
     uid = str(user["id"])
     row = await _owned(clip_id, uid)
     identity = _identity(row, uid)
@@ -268,7 +268,7 @@ async def original_canvas_video(
     DO NOT redirect to B2: cross-origin signed video can taint browser Canvas.
     The request cannot supply a B2 key or access another user's source.
     """
-    await _require_entitled_feature(user)
+    await _require_paid_feature(user)
     uid = str(user["id"])
     row = await _owned(clip_id, uid)
     if Path(str(row["original_filename"])).suffix.lower() != ".mp4":
