@@ -291,7 +291,7 @@ export function HomeExperience() {
               {audiences.map(({Icon,title,text,image})=><article key={title} data-public-reveal="scale"><div className={styles.audiencePhoto}><img src={image} alt={`Illustrative ${title.toLowerCase()} creator workflow`}/><span><Icon size={18}/></span></div><div><b>{title}</b><p>{text}</p></div></article>)}
             </div>
             <div className={styles.useCaseLinks} data-public-reveal="scale">
-              <TransitionLink href="/youtube-video-to-shorts-ai">YouTube video → Shorts</TransitionLink>
+              <TransitionLink href="/youtube-video-to-shorts-ai">YouTube URL → Shorts · Coming soon</TransitionLink>
               <TransitionLink href="/podcast-to-clips-india">Podcast → clips</TransitionLink>
               <TransitionLink href="/hindi-video-to-reels">Hindi video → Reels</TransitionLink>
               <TransitionLink href="/educational-video-to-shorts">Education → Shorts</TransitionLink>
