@@ -269,7 +269,7 @@ export function HomeExperience() {
 
           <section className={styles.workflowSection} id="workflow">
             <div className={styles.workflowLead} data-public-reveal="left"><span>Simple process. Powerful results.</span><h2>From long video to creator-ready output.</h2></div>
-            <p className={styles.workflowIntro} data-public-reveal="right">Paste a supported YouTube URL or upload the original file, let ClipKaro analyse it, then review the suggested clips, captions and framing before you publish.</p>
+            <p className={styles.workflowIntro} data-public-reveal="right">Upload an original video file and let ClipKaro analyse it, then review the suggested clips, captions and framing before you publish. YouTube URL import is coming soon.</p>
             <div className={styles.workflowGrid}>
               {workflow.map(([Icon,title,text],index)=><article key={title} data-public-reveal="scale"><span>{index+1}</span><i><Icon size={21}/></i><div><b>{title}</b><p>{text}</p></div>{index<workflow.length-1&&<ArrowRight className={styles.stepArrow} size={18}/>}</article>)}
             </div>
@@ -321,7 +321,7 @@ export function HomeExperience() {
             <div className={styles.faqGrid} data-public-reveal="right">{questions.map(([question,answer])=><details key={question}><summary>{question}<span>+</span></summary><p>{answer}</p></details>)}</div>
           </section>
 
-          <section className={styles.finalCta} data-public-reveal="scale"><div><span><Sparkles size={14}/> START WITH ONE VIDEO</span><h2>Create the Short. Edit it. Post it. Keep moving.</h2><p>Create a free account, paste a supported YouTube link or upload content you own, review the AI suggestions, then publish finished Shorts to Instagram or YouTube with Post Karo.</p></div><TransitionLink href="/signup" className={styles.limeButton}>Create my first Short free <ArrowRight size={16}/></TransitionLink></section>
+          <section className={styles.finalCta} data-public-reveal="scale"><div><span><Sparkles size={14}/> START WITH ONE VIDEO</span><h2>Create the Short. Edit it. Post it. Keep moving.</h2><p>Create a free account, upload content you own, review the AI suggestions, then publish finished Shorts to Instagram or YouTube with Post Karo. YouTube link import is coming soon.</p></div><TransitionLink href="/signup" className={styles.limeButton}>Create my first Short free <ArrowRight size={16}/></TransitionLink></section>
         </main>
 
         <PublicSiteFooter />
