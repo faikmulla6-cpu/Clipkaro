@@ -15,6 +15,14 @@ for (const [plan, { credits, daily }] of Object.entries(SMART_LAYOUT_PREMIUM)) {
   assert.ok(accountPricing.includes('smartLayoutFeature("' + plan + '")'), plan + ' account pricing feature');
   assert.ok(smartLayoutFeature(plan).includes(credits ? 'beta' : 'not included'));
 }
+assert.equal(SMART_LAYOUT_PREMIUM.free.credits, 1, "Free includes exactly one lifetime preview");
+assert.match(smartLayoutFeature("free"), /once for life/, "pricing must explain the nonrenewing trial");
+assert.match(backend, /FREE_TRIAL_PERIOD_KEY = "free:smart-layout-once:v1"/, "Free trial has immutable lifetime accounting");
+assert.match(backend, /return FREE_TRIAL_PERIOD_KEY if plan == "free" else usage_period_key\(user\)/, "Free period never rotates monthly");
+assert.match(backend, /cost = 1 if plan == "free" else requested_cost/, "Free trial is one real analysis, regardless of clip length");
+assert.match(backend, /AND period_key<>\?/, "Complimentary preview cannot consume purchased 24h credits");
+assert.match(editor, /oneTimeTrial \? "Try Smart Layout once · Free"/, "editor presents honest lifetime CTA");
+assert.match(editor, /Once per account · never renews/, "editor explains trial does not recur");
 assert.match(editor, /setAnalysisConfirmedFor\(clipAnalysisKey\)/, "analysis consent is scoped to the exact clip/range");
 assert.match(editor, /layoutPlansClipKey === clipAnalysisKey/, "cached plans cannot leak across clips/ranges");
 assert.match(editor, /billing_action\?: SmartLayoutBillingAction/, "frontend consumes server-authoritative billing outcome");
