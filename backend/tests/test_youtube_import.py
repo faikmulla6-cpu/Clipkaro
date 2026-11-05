@@ -165,6 +165,38 @@ def test_youtube_bot_check_surfaces_no_charge_upload_fallback(monkeypatch, tmp_p
     assert "Upload your original file instead" in error.value.public_message
 
 
+def test_download_phase_bot_check_keeps_original_upload_fallback(monkeypatch, tmp_path: Path) -> None:
+    class BlockedDownloadDL(_FakeYoutubeDL):
+        def extract_info(self, url: str, download: bool = False) -> dict:
+            if download:
+                raise RuntimeError("Sign in to confirm you're not a bot")
+            return super().extract_info(url, download=False)
+
+    monkeypatch.setitem(sys.modules, "yt_dlp", SimpleNamespace(YoutubeDL=BlockedDownloadDL))
+    with pytest.raises(YouTubeImportError, match="YOUTUBE_IMPORT_FAILED") as error:
+        download_youtube_source(
+            "https://youtube.com/watch?v=dQw4w9WgXcQ",
+            tmp_path,
+            max_minutes=15,
+            remaining_minutes=15,
+            max_bytes=1024,
+        )
+    assert "YouTube blocked the secure server import" in error.value.public_message
+    assert "Karo Minutes were not charged" in error.value.public_message
+    assert "Upload your original file instead" in error.value.public_message
+
+
+def test_vendored_ytdlp_matches_the_modal_and_ingestion_worker_builds() -> None:
+    root = Path(__file__).resolve().parents[2]
+    version = (root / "yt-dlp" / "yt_dlp" / "version.py").read_text(encoding="utf-8")
+    backend_requirements = (root / "backend" / "requirements.txt").read_text(encoding="utf-8")
+    worker_dockerfile = (root / "ingestion_worker" / "Dockerfile").read_text(encoding="utf-8")
+    assert "__version__ = '2026.10.26'" in version
+    assert "yt-dlp[default,deno]==2026.10.26" in backend_requirements
+    assert "COPY yt-dlp /opt/yt-dlp-src" in worker_dockerfile
+    assert "'/opt/yt-dlp-src[default]'" in worker_dockerfile
+
+
 class _ProviderResponse:
     def __init__(self, payload=None, *, status_code=200, body=b"", headers=None):
         self._payload = payload
