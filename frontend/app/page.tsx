@@ -142,7 +142,7 @@ const softwareStructuredData = {
   },
   inLanguage: ["en", "hi", "hi-Latn"],
   featureList: [
-    "YouTube URL import for supported videos, Shorts and live replays",
+    "YouTube URL import (coming soon)",
     "Original-file upload fallback when direct URL acquisition is unavailable",
     "AI clip detection and ranking",
     "Premium Smart Layout with Auto Director, Dual Stack and Speaker Focus portrait framing",
