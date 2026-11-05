@@ -174,8 +174,9 @@ async def _balance(db, uid: str, period: str, cap: int, daily: int, now: datetim
     since = (now - timedelta(hours=24)).isoformat()
     row = await (await db.execute(
         """SELECT COALESCE(SUM(credits),0) used FROM smart_layout_credit_reservations
-           WHERE user_id=? AND status IN ('reserved','finalized') AND reserved_at>=?""",
-        (uid, since))).fetchone()
+           WHERE user_id=? AND status IN ('reserved','finalized') AND reserved_at>=?
+             AND period_key<>?""",
+        (uid, since, FREE_TRIAL_PERIOD_KEY))).fetchone()
     daily_used = int(row["used"] if row else 0)
     return {
         "allowance": cap, "used": used, "remaining": max(0, cap-used),
