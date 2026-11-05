@@ -95,7 +95,10 @@ def _read_failure_message(exc: Exception) -> str:
             "YouTube blocked the secure server import before download. "
             "Your Karo Minutes were not charged. Upload your original file instead."
         )
-    return "ClipKaro could not read this YouTube video. Make sure the video is available and try again."
+    return (
+        "ClipKaro could not read this YouTube video. Make sure the video is available and try again. "
+        "Your Karo Minutes were not charged."
+    )
 
 
 def _provider_host_suffixes(value: str) -> tuple[str, ...]:
@@ -346,10 +349,9 @@ def _download_native_source(
     except YouTubeImportError:
         raise
     except Exception as exc:
-        raise YouTubeImportError(
-            "ClipKaro could not import this YouTube video. No Karo Minutes were charged.",
-            retry_with_provider=True,
-        ) from exc
+        # yt-dlp can encounter YouTube bot checks after metadata succeeds.
+        # Preserve the no-charge, original-upload guidance in that case too.
+        raise YouTubeImportError(_read_failure_message(exc), retry_with_provider=True) from exc
 
     root = destination.resolve()
     candidates = [
