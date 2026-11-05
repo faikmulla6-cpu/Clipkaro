@@ -22,6 +22,8 @@ const STAGES = [
   ["transcribing", "Transcript"], ["ranking", "Moments"], ["finishing", "Previews"],
 ] as const;
 
+// Temporary release gate: keep URL import inaccessible until a production smoke test succeeds.
+const YOUTUBE_URL_IMPORT_AVAILABLE = false;
 const DIRECT_GCS_UPLOAD = process.env.NEXT_PUBLIC_UPLOAD_MODE === "direct_gcs";
 const DIRECT_UPLOAD_FALLBACK = { init: "/uploads/init", completeSuffix: "/complete" } as const;
 
@@ -122,6 +124,7 @@ export function UploadStudio() {
   }
 
   async function startImport() {
+    if (!YOUTUBE_URL_IMPORT_AVAILABLE) return;
     if (!videoId || !rightsConfirmed || busy || fileUploadActive || noKaroMinutes || preflight?.ready === false) return;
     setBusy(true); setError("");
     try {
@@ -183,7 +186,7 @@ export function UploadStudio() {
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_14%_12%,rgba(223,255,87,.14),transparent_30%),radial-gradient(circle_at_90%_82%,rgba(30,190,120,.12),transparent_34%)]" />
         <WandSparkles className="pointer-events-none absolute bottom-4 right-[5%] rotate-12 text-[#dfff57]/[.045]" size={170}/>
         <div className="dual-source-grid relative grid gap-6 p-5 sm:p-7 lg:grid-cols-2 lg:p-8 xl:p-9">
-          <div className="dual-upload-card source-card source-card--upload rounded-[28px] p-4 text-[#10271d] sm:p-5">
+          <div id="clipkaro-file-upload" className="dual-upload-card source-card source-card--upload rounded-[28px] p-4 text-[#10271d] sm:p-5">
             <div className="source-card-header mb-4 flex items-start justify-between gap-3">
               <div className="flex items-center gap-3"><span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#ecff9f] text-[#165f43]"><CloudUpload size={22}/></span><div><div className="flex flex-wrap items-center gap-2"><b className="text-sm">Upload video</b><span className="rounded-full bg-[#165f43] px-2.5 py-1 text-[9px] font-black tracking-[.08em] text-white">RECOMMENDED</span></div><span className="mt-1 block text-xs text-[#607067]">The most reliable way to start</span></div></div>
               {usage && <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#165f43]/10 bg-[#f5f8f3] px-2.5 py-1 text-[10px] font-bold text-[#52685f]"><Clock3 size={12}/>{perShortPlan ? `${resolvedShortsRemaining} AI Shorts · ${minutesLeft} Karo Minutes · max ${miniPassSourceCap} min/video` : `${resolvedShortsRemaining} ${legacyProjectPlan ? "source projects" : "AI Shorts"} · ${minutesLeft} Karo Minutes`}</span>}
@@ -193,6 +196,8 @@ export function UploadStudio() {
           </div>
 
           <div className="source-card source-card--youtube rounded-[28px] p-4 backdrop-blur-xl sm:p-5">
+            {YOUTUBE_URL_IMPORT_AVAILABLE ? (
+              <>
             <div className="source-card-header mb-4 flex items-center justify-between gap-3"><div className="flex items-center gap-3"><span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#ff0033]"><Youtube size={23}/></span><div><b className="block text-sm">Paste YouTube link</b><span className="text-xs text-white/45">Fast when the source allows importing</span></div></div><span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/10 px-2.5 py-1 text-[10px] font-bold text-emerald-200"><ShieldCheck size={12}/> PRIVATE</span></div>
             <div className="source-card-notice source-card-notice--warning mb-4 flex items-start gap-2.5 rounded-2xl p-3 text-xs leading-5 text-amber-50"><AlertTriangle className="mt-0.5 shrink-0 text-amber-300" size={16}/><span><b>Some YouTube links may not work.</b> Restrictions or video permissions can block an import. If that happens, use <b>Upload video</b>.</span></div>
             <label className="mb-2 block text-xs font-bold text-white/65">Paste your YouTube video link</label>
@@ -210,11 +215,33 @@ export function UploadStudio() {
             {error && <div className="mt-4 flex gap-2 rounded-xl border border-rose-300/20 bg-rose-400/10 p-3 text-xs leading-5 text-rose-50"><AlertCircle className="shrink-0" size={16}/>{error}</div>}
             <button type="button" disabled={!videoId || !rightsConfirmed || busy || fileUploadActive || noKaroMinutes || preflight?.ready === false} onClick={startImport} className="source-cta source-cta--youtube mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-5 py-4 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0">{busy ? <Loader2 className="animate-spin" size={17}/> : <Sparkles size={17}/>} {busy ? "Starting secure import…" : "Find my best moments"} {!busy && <ChevronRight size={17}/>}</button>
             <div className="source-meta mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1 text-[10px] font-semibold"><span>500 MB YouTube-import cap</span><span>{perShortPlan ? `Up to ${miniPassSourceCap} min per source video` : "Plan minute limits apply"}</span><span>Private processing</span></div>
+              </>
+            ) : (
+
+            <div data-youtube-import-status="coming-soon" className="relative isolate flex h-full min-h-[350px] flex-col justify-between overflow-hidden rounded-[24px] border border-white/[.08] bg-[radial-gradient(circle_at_82%_15%,rgba(223,255,87,.12),transparent_46%)] p-4 sm:p-5">
+              <div className="pointer-events-none absolute -right-16 -top-20 h-60 w-60 rounded-full bg-[#dfff57]/[.07] blur-3xl" aria-hidden="true"/>
+              <div className="relative">
+                <div className="mb-8 flex flex-wrap items-center justify-between gap-3">
+                  <span className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-[#ff0033]/90 text-white"><Youtube size={24}/></span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-[#dfff57]/25 bg-[#dfff57]/10 px-3 py-1.5 text-[10px] font-black tracking-[.13em] text-[#eaffb5]"><Sparkles size={12}/> COMING SOON</span>
+                </div>
+                <h3 className="text-2xl font-black leading-tight tracking-[-.035em] text-white sm:text-[29px]">Paste a YouTube link.<br/><span className="text-[#dfff57]">Soon, right here.</span></h3>
+                <p className="mt-3 max-w-sm text-sm leading-6 text-white/60">We&apos;re improving the reliability of URL imports before opening this feature to creators. You can still create Shorts today by uploading your original video.</p>
+                <div aria-disabled="true" className="mt-5 flex items-center gap-3 rounded-2xl border border-white/10 bg-black/25 px-4 py-4 text-sm text-white/35">
+                  <Link2 size={17} className="shrink-0"/>
+                  <span className="min-w-0 flex-1 truncate">youtube.com/watch?v=...</span>
+                  <LockKeyhole size={15} className="shrink-0"/>
+                </div>
+                <p className="mt-3 flex items-start gap-2 text-xs leading-5 text-[#cfe2d3]/65"><ShieldCheck size={15} className="mt-0.5 shrink-0 text-[#dfff57]/70"/>Your original-file upload uses the same private AI clipping workflow.</p>
+              </div>
+              <a href="#clipkaro-file-upload" className="relative mt-6 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#dfff57] px-5 py-4 text-sm font-black text-[#10271d] transition hover:-translate-y-0.5 hover:bg-[#edff9f] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#dfff57]">Upload a video now <ChevronRight size={18}/></a>
+            </div>
+            )}
           </div>
         </div>
       </section>
 
-      <div className="mt-5 grid gap-3 md:grid-cols-3"><Trust icon={<CloudUpload size={17}/>} title="Upload when reliability matters" copy="Supported video files avoid YouTube link-access restrictions."/><Trust icon={<Link2 size={17}/>} title="Paste when the link is available" copy="Use YouTube import for convenience when the source allows it."/><Trust icon={<WandSparkles size={17}/>} title="Same AI workflow" copy="Either route continues into transcription, ranking and clip creation."/></div>
+      <div className="mt-5 grid gap-3 md:grid-cols-3"><Trust icon={<CloudUpload size={17}/>} title="Upload when reliability matters" copy="Supported video files avoid YouTube link-access restrictions."/><Trust icon={<Link2 size={17}/>} title="YouTube URL · coming soon" copy="We are improving URL import reliability before opening it to everyone."/><Trust icon={<WandSparkles size={17}/>} title="Your Shorts workflow is ready" copy="Uploaded video files still go through transcription, ranking and clip creation."/></div>
     </div>
   );
 }

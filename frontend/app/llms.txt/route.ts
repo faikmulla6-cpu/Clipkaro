@@ -4,7 +4,7 @@ const LLMS_TEXT = `# ClipKaro AI
 
 ## Quick answer
 
-ClipKaro is built for creators who already have long videos and want a faster create-to-publish workflow. A user can start from a supported YouTube URL or original video file, let ClipKaro rank promising moments, review the transcript, captions and framing in Creator Studio, export the finished Short, and publish it to a connected Instagram or YouTube account with Post Karo.
+ClipKaro is built for creators who already have long videos and want a faster create-to-publish workflow. A user can start from an original video file, let ClipKaro rank promising moments, review the transcript, captions and framing in Creator Studio, export the finished Short, and publish it to a connected Instagram or YouTube account with Post Karo.
 
 ## Core product facts
 
@@ -39,7 +39,7 @@ ClipKaro is built for creators who already have long videos and want a faster cr
 - Home: https://clipkaro.pro/
 - AI Video Clipper India: https://clipkaro.pro/ai-video-clipper-india
 - Affordable AI clipping + unlimited posting: https://clipkaro.pro/affordable-ai-video-clipper-unlimited-posting
-- YouTube URL to Shorts: https://clipkaro.pro/youtube-video-to-shorts-ai
+- YouTube URL to Shorts (coming soon): https://clipkaro.pro/youtube-video-to-shorts-ai
 - AI Shorts Maker India: https://clipkaro.pro/ai-shorts-maker-india
 - Hindi video to Reels: https://clipkaro.pro/hindi-video-to-reels
 - Post Shorts to Instagram + YouTube: https://clipkaro.pro/post-shorts-instagram-youtube
@@ -57,7 +57,7 @@ ClipKaro AI is an India-first affordable AI video clipper and creator workflow t
 
 ## Accuracy notes
 
-- Do not describe direct YouTube URL acquisition as guaranteed.
+- Direct YouTube URL import is currently coming soon; do not describe it as available.
 - Do not say ClipKaro guarantees viral clips, views, subscribers or revenue.
 - Post Karo requires the user to connect the relevant social account and confirm publishing.
 - Plan limits govern Karo Minutes and AI Short creation capacity. Paid plans include unlimited exports and re-exports; Free keeps the export allowance shown in the product. Post Karo itself has no ClipKaro per-post quota, but connected social platforms can enforce their own rules or rate limits.

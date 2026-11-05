@@ -24,4 +24,23 @@ for (const tag of ["MULTIPART", "part_size", "/abort", "/complete"]) {
 if (!client.includes("object_storage_provider") || !api.includes("object_storage_provider_name")) {
   throw new Error("Direct upload cannot safely discover the server-side storage provider.");
 }
-console.log("Plan-aware multipart upload contract passed.");
+// Keep the public YouTube link import closed until the source pipeline is reliable.
+const uploadStudio = readFileSync(resolve(root, "frontend/components/UploadStudio.tsx"), "utf8");
+const home = readFileSync(resolve(root, "frontend/components/HomeExperience.tsx"), "utf8");
+for (const required of [
+  "const YOUTUBE_URL_IMPORT_AVAILABLE = false;",
+  "if (!YOUTUBE_URL_IMPORT_AVAILABLE) return;",
+  "YOUTUBE_URL_IMPORT_AVAILABLE ? (",
+  'data-youtube-import-status="coming-soon"',
+  'href="#clipkaro-file-upload"',
+  'id="clipkaro-file-upload"',
+  "<DirectUploadFallback",
+]) {
+  if (!uploadStudio.includes(required)) {
+    throw new Error("YouTube Coming Soon release gate or file-upload fallback missing: " + required);
+  }
+}
+if (!home.includes("YOUTUBE URL IMPORT · COMING SOON") || !home.includes("Upload your original video.")) {
+  throw new Error("Home page must accurately disclose YouTube URL import availability.");
+}
+console.log("Plan-aware multipart upload and YouTube Coming Soon contracts passed.");
