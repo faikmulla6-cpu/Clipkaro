@@ -38,7 +38,7 @@ const aboutStructuredData = {
       description,
       offers: { "@type": "Offer", priceCurrency: "INR", price: "0", url: "https://clipkaro.pro/pricing" },
       featureList: [
-        "YouTube URL import for supported videos, Shorts and live replays",
+        "YouTube URL import (coming soon)",
         "Original-file upload fallback when direct URL acquisition is unavailable",
         "AI clip detection and ranking",
         "Premium Smart Layout with Auto Director, Dual Stack and Speaker Focus",
