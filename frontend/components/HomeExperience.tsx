@@ -31,7 +31,7 @@ import { TRUST_PROFILE } from "@/lib/legal";
 import styles from "./HomeExperience.module.css";
 
 const workflow = [
-  [Link2, "Paste URL or upload", "Start with a supported YouTube link, or upload the original file you own or have permission to process."],
+  [Upload, "Upload your video", "Start with the original file you own or have permission to process. YouTube URL import is coming soon."],
   [WandSparkles, "Analyse", "ClipKaro transcribes the source and finds promising moments."],
   [Scissors, "Edit & refine", "Review the suggested moments, captions and framing before export."],
   [Clapperboard, "Publish with Post Karo", "Render the Shorts you choose, then publish to Instagram Reels or YouTube Shorts from ClipKaro after you connect your account."],
@@ -66,8 +66,8 @@ const plans = [
 ] as const;
 
 const questions = [
-  ["Can I paste a YouTube URL?", "Yes. Paste a supported YouTube video, Shorts or live-replay URL. If direct acquisition is unavailable for that source, ClipKaro lets you upload the original file instead and continue the same creator workflow."],
-  ["What happens if a YouTube link cannot be imported?", "Use the original-file upload fallback. ClipKaro then continues with the same transcript, clip-finding, editing and export workflow."],
+  ["Can I paste a YouTube URL?", "YouTube URL import is coming soon while we improve reliability. For now, upload an original video you own or have permission to process and use the full AI clipping workflow."],
+  ["How do I create Shorts while URL import is coming soon?", "Upload your original video file. ClipKaro then continues with transcript review, clip-finding, editing and export."],
   ["Will the clips be 9:16?", "Creator Studio supports vertical short-form framing and gives you controls to review framing before export."],
   ["What is Smart Layout?", "Smart Layout adds premium speaker-aware portrait framing in Auto Director, Dual Stack and Speaker Focus modes. Preview the result and review camera choices before export; results depend on the source footage."],
   ["Does Smart Layout use credits?", "Yes. Real Smart Layout analysis uses a separate plan-based credit balance. ClipKaro shows the cost before you authorise analysis, and you can continue using Classic framing without premium analysis."],
@@ -90,10 +90,10 @@ export function HomeExperience() {
               <div className={styles.heroCopy} data-public-reveal="left">
                 <span className={styles.eyebrow}><Sparkles size={14}/> AI VIDEO CLIPPER FOR INDIA · CREATE → EDIT → POST</span>
                 <h1>One long video in. <span>Strong Shorts out.</span></h1>
-                <p>Turn a supported YouTube URL or original file into strong Shorts. AI finds promising moments, Creator Studio gives you control over the edit, then Post Karo gives every plan unlimited publishing access to connected Instagram Reels and YouTube Shorts accounts.</p>
+                <p>Turn an original video file into strong Shorts. AI finds promising moments, Creator Studio gives you control over the edit, and Post Karo gives every plan unlimited publishing access. YouTube link import is coming soon.</p>
                 <div className={styles.heroActions}>
                   <TransitionLink href="/signup" className={styles.primary}>Try ClipKaro free <ArrowRight size={17}/></TransitionLink>
-                  <a href="#youtube-url-to-shorts" className={styles.secondary}><Link2 size={15}/> See URL workflow</a>
+                  <a href="#youtube-url-to-shorts" className={styles.secondary}><Link2 size={15}/> See the workflow</a>
                 </div>
                 <div className={styles.heroTrust}>
                   <span><CheckCircle2 size={14}/> No card required</span>
@@ -144,7 +144,7 @@ export function HomeExperience() {
             </div>
 
             <div className={styles.productRail} data-public-reveal="scale">
-              <TransitionLink href="/youtube-video-to-shorts-ai"><Link2 size={19}/><span><b>YouTube URL → Shorts</b><small>Paste a link or use file fallback</small></span></TransitionLink>
+              <TransitionLink href="/youtube-video-to-shorts-ai"><Link2 size={19}/><span><b>YouTube URL → Shorts</b><small>Coming soon · upload works today</small></span></TransitionLink>
               <TransitionLink href="/post-shorts-instagram-youtube"><Youtube size={19}/><span><b>Post Karo</b><small>Unlimited publishing · every plan</small></span></TransitionLink>
               <TransitionLink href="/hindi-video-to-reels"><Languages size={19}/><span><b>Hindi & Hinglish</b><small>India-first creator workflows</small></span></TransitionLink>
               <TransitionLink href="/youtube-channel-analyzer"><Activity size={19}/><span><b>Creator Pulse</b><small>₹1 channel intelligence</small></span></TransitionLink>
@@ -157,40 +157,39 @@ export function HomeExperience() {
             <div className={styles.urlGlow} aria-hidden="true" />
             <div className={styles.urlFeatureInner}>
               <div className={styles.urlCopy} data-public-reveal="left">
-                <span className={styles.urlEyebrow}><Youtube size={15}/> NEW CREATOR INTAKE</span>
-                <h2>Paste the YouTube link.<br/><strong>Keep the upload fallback.</strong></h2>
+                <span className={styles.urlEyebrow}><Youtube size={15}/> YOUTUBE URL IMPORT · COMING SOON</span>
+                <h2>Upload your original video.<br/><strong>URL import is coming soon.</strong></h2>
                 <p>
-                  Start from the video URL you already have. ClipKaro can import supported YouTube videos,
-                  Shorts and live replays, then move them into the same transcript, clip-finding and editing
-                  workflow. If a source cannot be retrieved directly, upload the original file instead
-                  — your creative workflow stays the same.
+                  YouTube link importing is temporarily paused while we improve reliability.
+                  Upload a video you own or have permission to use and create Shorts today with
+                  the same AI clip-finding, captioning, editing and export workflow.
                 </p>
                 <div className={styles.urlBenefits}>
-                  <span><CheckCircle2 size={15}/> One link to start</span>
-                  <span><ShieldCheck size={15}/> Rights confirmation required</span>
-                  <span><Upload size={15}/> Original-file fallback</span>
+                  <span><CheckCircle2 size={15}/> Original upload works today</span>
+                  <span><ShieldCheck size={15}/> Permissioned video sources</span>
+                  <span><Upload size={15}/> URL import coming soon</span>
                 </div>
                 <div className={styles.urlActions}>
-                  <TransitionLink href="/upload" className={styles.urlPrimary}>Try YouTube URL import <ArrowRight size={16}/></TransitionLink>
-                  <TransitionLink href="/youtube-video-to-shorts-ai" className={styles.urlSecondary}>See the full workflow</TransitionLink>
+                  <TransitionLink href="/upload" className={styles.urlPrimary}>Upload a video now <ArrowRight size={16}/></TransitionLink>
+                  <TransitionLink href="/youtube-video-to-shorts-ai" className={styles.urlSecondary}>See what is coming</TransitionLink>
                 </div>
-                <small>Direct URL acquisition depends on the source being retrievable. If it is not, ClipKaro surfaces the file-upload path instead of leaving you stuck.</small>
+                <small>YouTube URL importing is not available yet. Original-file upload is open now; no link-import job is started.</small>
               </div>
 
-              <div className={styles.urlGlassStage} data-public-reveal="right" aria-label="Illustrative YouTube URL import with original-file fallback">
+              <div className={styles.urlGlassStage} data-public-reveal="right" aria-label="Preview of upcoming YouTube URL importing, currently coming soon">
                 <div className={styles.urlGlassTop}>
                   <span><i/><i/><i/></span>
-                  <small>CLIPKARO · LINK-FIRST CREATION</small>
+                  <small>CLIPKARO · COMING SOON PREVIEW</small>
                 </div>
                 <div className={styles.urlInputCard}>
                   <div className={styles.urlSourceIcon}><Youtube size={22}/></div>
                   <div className={styles.urlInputBody}>
-                    <span>Paste a YouTube video link</span>
-                    <div><Link2 size={15}/><b>youtube.com/watch?v=your-video</b><em>PASTE</em></div>
+                    <span>YouTube video link · coming soon</span>
+                    <div><Link2 size={15}/><b>youtube.com/watch?v=your-video</b><em>SOON</em></div>
                   </div>
                   <i className={styles.urlVerified}><Check size={13}/></i>
                 </div>
-                <div className={styles.urlFlowLine}><span/><b>secure import</b><span/></div>
+                <div className={styles.urlFlowLine}><span/><b>planned URL import</b><span/></div>
                 <div className={styles.urlPipeline}>
                   <div><Sparkles size={18}/><span><b>Analyse</b><small>Transcript + moments</small></span></div>
                   <ArrowRight size={16}/>
@@ -200,7 +199,7 @@ export function HomeExperience() {
                 </div>
                 <div className={styles.fallbackCard}>
                   <div className={styles.fallbackIcon}><Upload size={18}/></div>
-                  <div><span>URL unavailable?</span><b>Upload the original file instead.</b><small>Same project flow · no dead end</small></div>
+                  <div><span>Ready to create now?</span><b>Upload the original file.</b><small>AI Shorts workflow available today</small></div>
                   <ArrowRight size={17}/>
                 </div>
                 <div className={styles.urlOrbitOne} aria-hidden="true"><Link2 size={16}/></div>
@@ -215,7 +214,7 @@ export function HomeExperience() {
               <h2>What is ClipKaro AI?</h2>
               <p>
                 ClipKaro AI is an India-first creator workflow for turning long videos into Shorts. Start from
-                a supported YouTube URL or original file, review AI-ranked moments, refine the edit in Creator Studio,
+                an original video file, review AI-ranked moments, refine the edit in Creator Studio,
                 then publish finished Shorts with unlimited Post Karo access on every plan.
               </p>
             </div>
