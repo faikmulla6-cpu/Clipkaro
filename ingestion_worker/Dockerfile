@@ -6,9 +6,13 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY ingestion_worker/requirements.txt /app/requirements.txt
+# Install the exact upstream yt-dlp release vendored in this repository.
+COPY yt-dlp /opt/yt-dlp-src
 RUN python3 -m venv /opt/venv \
     && /opt/venv/bin/pip install --no-cache-dir --upgrade pip \
-    && /opt/venv/bin/pip install --no-cache-dir -r /app/requirements.txt
+    && /opt/venv/bin/pip install --no-cache-dir -r /app/requirements.txt \
+    && /opt/venv/bin/pip install --no-cache-dir '/opt/yt-dlp-src[default]' \
+    && /opt/venv/bin/python -c "from yt_dlp.version import __version__; assert __version__ == '2026.10.26', __version__"
 
 RUN git clone --depth 1 --branch 2.0.0 \
       https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git /opt/bgutil \
