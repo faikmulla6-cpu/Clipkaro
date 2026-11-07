@@ -34,7 +34,8 @@ export default function VerifyEmailPage() {
     if (intendedNext !== "/dashboard") rememberPostAuthNext(intendedNext);
 
     if (query.get("sent") === "0") {
-      setMessage("Your account is protected, but the first email could not be delivered. Use resend below.");
+      setState("error");
+      setMessage("Your account was created, but we could not send the first verification email. Please try Resend below.");
     } else if (query.get("sent") === "1") {
       setMessage("Verification email sent. Check your inbox and spam folder.");
     }
@@ -83,9 +84,16 @@ export default function VerifyEmailPage() {
         setMessage("This email is already verified.");
         return;
       }
+      if (!result.sent) {
+        setState("error");
+        setMessage("We could not confirm that a new email was sent. Please try again shortly.");
+        return;
+      }
+      setState("idle");
       setCooldown(result.retry_after || 60);
-      setMessage("A fresh verification email was sent. The previous link no longer works.");
+      setMessage("A fresh verification email was sent. Use the newest link; older links no longer work.");
     } catch (error) {
+      setState("error");
       setMessage(error instanceof Error ? error.message : "Could not resend the verification email.");
     } finally {
       setResending(false);
@@ -150,8 +158,15 @@ export default function VerifyEmailPage() {
                   : "Open the verification link from your email, or sign in to request a new one."}
               </p>
 
+              <div className="my-4 rounded-2xl border border-emerald-700/15 bg-emerald-50/80 p-4 text-left text-xs leading-5 text-[#244b39]" aria-label="Email verification steps">
+                <p className="mb-2 font-bold text-[#145c43]">Two quick steps to unlock your first Short</p>
+                <ol className="space-y-2">
+                  <li><b>1. Check your email.</b> Look in Inbox, Spam or Promotions. Search for &quot;ClipKaro&quot; if you cannot see it.</li>
+                  <li><b>2. Tap the newest verification link.</b> We&apos;ll confirm your email and unlock AI processing automatically.</li>
+                </ol>
+              </div>
               {creatorPulseIntent && <div className="processing-note">After verification, you&apos;ll continue directly to Creator Pulse.</div>}
-              {message && <div className={["error", "expired", "invalid"].includes(state) ? "form-error" : "processing-note"}>{message}</div>}
+              {message && <div role="status" aria-live="polite" className={["error", "expired", "invalid"].includes(state) ? "form-error" : "processing-note"}>{message}</div>}
 
               {user ? (
                 <>

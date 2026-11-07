@@ -86,17 +86,17 @@ export default function Projects() {
             <div className="project-cover">
               <div className="cover-pattern"/>
               <span className="project-play-indicator" aria-hidden="true"><Play size={17} fill="currentColor"/></span>
-              <span className="project-duration">{project.duration ? `${Math.floor(project.duration / 60)}:${String(Math.round(project.duration % 60)).padStart(2, "0")}` : "Processing"}</span>
+              <span className="project-duration">{project.duration > 0 ? `${Math.floor(project.duration / 60)}:${String(Math.round(project.duration % 60)).padStart(2, "0")}` : project.status === "failed" ? "Needs attention" : ["processing", "queued"].includes(project.status) ? "Processing" : "No duration"}</span>
             </div>
             <div className="project-card-body">
               <div className="project-card-title"><h3>{project.title}</h3><MoreHorizontal size={17}/></div>
               <div className="project-meta"><span><Sparkles size={13}/>{project.clip_count || 0} moments</span><span><Video size={13}/>{project.export_count || 0} exports</span></div>
               {project.status === "processing" || project.status === "queued" ? (
                 <div className="mini-processing"><div><b>{project.stage}</b><span>{project.progress}%</span></div><div className="progress"><span style={{ width: `${project.progress}%` }}/></div></div>
+              ) : project.status === "failed" ? (
+                <div className="failed-pill" title={project.error || "Processing failed"}><AlertCircle size={12}/>Needs attention · open for details</div>
               ) : project.video_status === "expired" ? (
                 <div className="failed-pill"><Clock3 size={12}/>Source expired · history kept</div>
-              ) : project.status === "failed" ? (
-                <div className="failed-pill" title={project.error || "Processing failed"}><AlertCircle size={12}/>Retry available</div>
               ) : (
                 <div className="ready-row"><span className="ready-pill"><Sparkles size={12}/>Ready</span><small><Clock3 size={11}/>Updated {new Date(project.updated_at).toLocaleDateString()}</small></div>
               )}

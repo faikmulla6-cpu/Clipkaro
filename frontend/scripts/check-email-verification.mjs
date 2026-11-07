@@ -14,6 +14,8 @@ const requirements = [
   [verifyPage.includes('window.history.replaceState'), "verification secret must be removed from browser history"],
   [verifyPage.includes('/auth/verify-email'), "verification page must consume the one-time token through the backend"],
   [verifyPage.includes('/auth/resend-verification'), "verification page must support protected resend"],
+  [verifyPage.includes("if (!result.sent)") && verifyPage.includes('setState("error")'), "resend UI must not claim an email was sent when the backend reports otherwise"],
+  [verifyPage.includes("Two quick steps to unlock your first Short") && verifyPage.includes("Spam or Promotions"), "verification screen must help new creators locate the email"],
   [!verifyPage.includes('?token='), "raw verification tokens must not be placed in query strings"],
 ];
 
