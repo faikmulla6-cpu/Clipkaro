@@ -2,7 +2,7 @@
 
 Never accepts object keys or user IDs from the client. All media/analysis
 operations bind to clip ownership via the existing session middleware.
-The feature remains OFF until end-to-end media/preview QA is approved.
+Free accounts receive one real analysis by default; paid beta access remains canary-gated.
 """
 from __future__ import annotations
 
@@ -51,14 +51,28 @@ def enabled_for_user(user_id: str) -> bool:
     return "*" in canary or str(user_id) in canary
 
 
-def _require_feature(user_id: str) -> None:
-    if not enabled_for_user(user_id):
+def free_trial_enabled() -> bool:
+    # The owner approved one actual Smart Layout analysis for every Free account.
+    # A separate emergency switch pauses this exposure without touching paid beta.
+    return os.getenv("KARO_REAL_PREVIEW_FREE_TRIAL_ENABLED", "true").lower() == "true"
+
+
+def _rollout_permitted(user_id: str, plan: str) -> bool:
+    # The plan MUST come from entitlement_status()'s DB-backed active-plan lookup,
+    # never from a caller-provided ID, cookie or stale subscription claim.
+    if plan == "free":
+        return free_trial_enabled()
+    return enabled_for_user(user_id)
+
+
+def _require_feature(user_id: str, plan: str) -> None:
+    if not _rollout_permitted(user_id, plan):
         raise HTTPException(404, "This preview is not available.")
 
 
 async def _require_paid_feature(user: dict) -> dict:
-    _require_feature(str(user["id"]))
     state = await entitlement_status(user, rollout=True)
+    _require_feature(str(user["id"]), state["plan"])
     if not state["enabled"]:
         exhausted = bool(state.get("pass_exhausted"))
         raise HTTPException(
@@ -76,10 +90,9 @@ async def _require_paid_feature(user: dict) -> dict:
 @router.get("/smart-layout-v2/capabilities")
 async def preview_capabilities(user: dict = Depends(current_user)) -> dict:
     """Safe runtime capability discovery with authoritative prepaid balance."""
-    rollout = enabled_for_user(str(user["id"]))
-    if not rollout:
-        return {"available": False, "reason": "rollout", "model_version": None}
     state = await entitlement_status(user, rollout=True)
+    if not _rollout_permitted(str(user["id"]), state["plan"]):
+        return {"available": False, "reason": "rollout", "model_version": None}
     return {
         **state, "available": state["enabled"],
         "reason": ("ready" if state["enabled"] else
