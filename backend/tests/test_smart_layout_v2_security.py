@@ -18,8 +18,11 @@ def user_ids():
 
 
 class SmartLayoutSecurityTests(unittest.IsolatedAsyncioTestCase):
-    async def test_feature_off_is_inaccessible(self):
-        with patch.dict(os.environ,{"KARO_REAL_PREVIEW_ENABLED":"false"}):
+    async def test_paid_beta_off_is_inaccessible(self):
+        with patch.dict(os.environ,{"KARO_REAL_PREVIEW_ENABLED":"false",
+                                    "KARO_REAL_PREVIEW_FREE_TRIAL_ENABLED":"true"}), \
+             patch.object(api, "entitlement_status", new_callable=AsyncMock,
+                          return_value={"enabled":True,"plan":"creator","remaining":12}):
             with self.assertRaises(HTTPException) as exc:
                 await api.analysis_status(str(uuid.uuid4()),{"id":str(uuid.uuid4())})
             self.assertEqual(exc.exception.status_code,404)
@@ -243,10 +246,63 @@ class VerifiedB2DownloadTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(target.stat().st_size,1500)
 
 
+class SmartLayoutFreeTrialRolloutTests(unittest.IsolatedAsyncioTestCase):
+    async def test_all_free_accounts_are_ready_without_any_canary_or_paid_flag(self):
+        first,second=user_ids()[:2]
+        with patch.dict(os.environ, {"KARO_REAL_PREVIEW_ENABLED":"false",
+                                    "KARO_REAL_PREVIEW_CANARY_USERS":"",
+                                    "KARO_REAL_PREVIEW_FREE_TRIAL_ENABLED":"true"}), \
+             patch.object(api,"entitlement_status",new_callable=AsyncMock,
+                          return_value={"enabled":True,"plan":"free","remaining":1,"allowance":1}):
+            for uid in (first,second):
+                status=await api.preview_capabilities({"id":uid})
+                self.assertTrue(status["available"])
+                self.assertEqual((status["plan"],status["remaining"] ),("free",1))
+                self.assertEqual((await api._require_paid_feature({"id":uid}))["plan"],"free")
+
+    async def test_free_trial_remains_accessible_to_view_saved_results_after_use(self):
+        with patch.dict(os.environ, {"KARO_REAL_PREVIEW_ENABLED":"false",
+                                    "KARO_REAL_PREVIEW_FREE_TRIAL_ENABLED":"true"}), \
+             patch.object(api,"entitlement_status",new_callable=AsyncMock,
+                          return_value={"enabled":True,"plan":"free","remaining":0,"allowance":1}):
+            status=await api.preview_capabilities({"id":str(uuid.uuid4())})
+            self.assertTrue(status["available"])
+            self.assertEqual(status["remaining"],0)
+
+    async def test_explicit_free_trial_kill_switch_blocks_all_free_accounts(self):
+        owner=str(uuid.uuid4())
+        with patch.dict(os.environ, {"KARO_REAL_PREVIEW_ENABLED":"true",
+                                    "KARO_REAL_PREVIEW_CANARY_USERS":"*",
+                                    "KARO_REAL_PREVIEW_FREE_TRIAL_ENABLED":"false"}), \
+             patch.object(api,"entitlement_status",new_callable=AsyncMock,
+                          return_value={"enabled":True,"plan":"free","remaining":1}):
+            self.assertFalse((await api.preview_capabilities({"id":owner}))["available"])
+            with self.assertRaises(HTTPException) as exc:
+                await api._require_paid_feature({"id":owner})
+            self.assertEqual(exc.exception.status_code,404)
+
+    async def test_paid_account_cannot_bypass_canary_via_free_rollout(self):
+        owner=str(uuid.uuid4())
+        with patch.dict(os.environ, {"KARO_REAL_PREVIEW_ENABLED":"false",
+                                    "KARO_REAL_PREVIEW_CANARY_USERS":"",
+                                    "KARO_REAL_PREVIEW_FREE_TRIAL_ENABLED":"true"}), \
+             patch.object(api,"entitlement_status",new_callable=AsyncMock,
+                          return_value={"enabled":True,"plan":"creator","remaining":12}):
+            self.assertFalse((await api.preview_capabilities({"id":owner}))["available"])
+            with self.assertRaises(HTTPException):
+                await api._require_paid_feature({"id":owner})
+
+
 class SmartLayoutCanaryGateTests(unittest.IsolatedAsyncioTestCase):
     async def test_canary_defaults_off_and_requires_explicit_allowlist(self):
         owner = str(uuid.uuid4())
         stranger = str(uuid.uuid4())
+        # Capability reads are now DB-backed before evaluating rollout.
+        with patch.object(api, "entitlement_status", new_callable=AsyncMock,
+                          return_value={"enabled":True, "plan":"creator", "remaining":12}):
+            await self._assert_paid_canary(owner, stranger)
+
+    async def _assert_paid_canary(self, owner: str, stranger: str):
         with patch.dict(os.environ, {"KARO_REAL_PREVIEW_ENABLED":"true",
                                      "KARO_REAL_PREVIEW_CANARY_USERS":""}):
             self.assertFalse(api.enabled_for_user(owner))
