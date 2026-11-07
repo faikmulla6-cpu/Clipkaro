@@ -297,6 +297,12 @@ class SmartLayoutCanaryGateTests(unittest.IsolatedAsyncioTestCase):
     async def test_canary_defaults_off_and_requires_explicit_allowlist(self):
         owner = str(uuid.uuid4())
         stranger = str(uuid.uuid4())
+        # Capability reads are now DB-backed before evaluating rollout.
+        with patch.object(api, "entitlement_status", new_callable=AsyncMock,
+                          return_value={"enabled":True, "plan":"creator", "remaining":12}):
+            await self._assert_paid_canary(owner, stranger)
+
+    async def _assert_paid_canary(self, owner: str, stranger: str):
         with patch.dict(os.environ, {"KARO_REAL_PREVIEW_ENABLED":"true",
                                      "KARO_REAL_PREVIEW_CANARY_USERS":""}):
             self.assertFalse(api.enabled_for_user(owner))
