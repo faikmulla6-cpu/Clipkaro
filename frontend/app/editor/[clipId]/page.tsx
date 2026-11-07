@@ -1735,6 +1735,15 @@ export default function Editor() {
           {activeTool === "captions" && <>
             <div className="pro-editor-inspector-head"><span>CAPTIONS</span><h3>Layout & language</h3></div>
             <div className="pro-editor-inspector-scroll">
+              <div className="pro-editor-preserve-card" aria-label="Source captions and vertical framing">
+                <div className="pro-editor-preserve-header"><span><Sparkles size={13}/> FRAMING TIP</span><em>9:16 SHORTS</em></div>
+                <div className="toggle-row pro-editor-toggle pro-editor-preserve-toggle">
+                  <div><b>Preserve source captions</b><span>{preserveSourceCaptions ? "On · Keep subtitles in your original video" : "Off · Allow a closer vertical crop"}</span></div>
+                  <button type="button" className={preserveSourceCaptions ? "on" : ""} aria-label="Preserve source captions" aria-pressed={preserveSourceCaptions} disabled={ratio === "9:16" && layoutMode !== "classic"} onClick={() => setPreserveSourceCaptions(value => !value)}><i/></button>
+                </div>
+                <p className="pro-editor-preserve-explanation">{preserveSourceCaptions ? "ON keeps subtitles already burned into the source, so a wide video may appear smaller inside the vertical frame." : <>For full-screen 9:16 Shorts, keep this OFF. ClipKaro can zoom and crop around the speaker, then use its own captions. Original subtitles{sourceHasCaptions ? " (detected near " + Math.round((sourceCaptionBand ?? .82)*100) + "% height)" : ""} may be cropped.</>}</p>
+                {ratio === "9:16" && layoutMode !== "classic" && <p className="pro-editor-preserve-smart-note"><Check size={12}/> Smart Layout turns this off automatically for accurate framing.</p>}
+              </div>
               <div className="toggle-row pro-editor-toggle">
                 <div><b>India Quality Mode</b><span>{indiaQualityHint || "Hindi, Hinglish and Indian English defaults"}</span></div>
                 <button className={indiaQualityMode ? "on" : ""} aria-pressed={indiaQualityMode} onClick={() => setIndiaQualityMode(value => !value)}><i/></button>
@@ -1770,10 +1779,6 @@ export default function Editor() {
                   <button type="button" className={captionAlignment==="right" ? "active" : ""} onClick={() => setCaptionAlignment("right")}><AlignRight size={14}/> Right</button>
                 </div>
                 <p className="field-note caption-reflow-note"><Check size={12}/> Text wraps and reflows automatically as caption size changes.</p>
-              </div>
-              <div className="toggle-row pro-editor-toggle">
-                <div><b>Preserve source captions</b><span>{ratio === "9:16" && layoutMode !== "classic" ? "Switch to Classic to keep burned-in subtitles. Smart Layout uses ClipKaro captions." : sourceHasCaptions ? "Detected near " + Math.round((sourceCaptionBand ?? .82)*100) + "% height" : "Use when source already contains subtitles"}</span></div>
-                <button className={preserveSourceCaptions ? "on" : ""} aria-label="Preserve source captions" aria-pressed={preserveSourceCaptions} disabled={ratio === "9:16" && layoutMode !== "classic"} onClick={() => setPreserveSourceCaptions(value => !value)}><i/></button>
               </div>
             </div>
           </>}

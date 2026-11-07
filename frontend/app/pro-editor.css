@@ -187,6 +187,29 @@ radial-gradient(circle at 50% 12%,rgba(255,255,255,.9),rgba(242,245,240,.5) 45%,
 .pro-editor-field input:hover,.pro-editor-field textarea:hover,.pro-editor-field select:hover{border-color:#cdd7c9}
 .pro-editor-toggle{border-radius:10px;padding:9px 7px!important;margin-bottom:5px}
 .pro-editor-toggle:hover{background:#f8faf6}
+
+/* The original-caption switch changes framing, so surface it before caption styling. */
+.pro-editor-preserve-card{
+  margin-bottom:13px;
+  padding:12px;
+  border:1px solid #acd5b4;
+  border-radius:13px;
+  background:linear-gradient(145deg,#f0faee 0%,#f8fcf6 62%,#fff 100%);
+  box-shadow:0 6px 20px rgba(28,93,58,.07),inset 0 1px 0 rgba(255,255,255,.88);
+}
+.pro-editor-preserve-header{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.pro-editor-preserve-header>span{display:inline-flex;align-items:center;gap:5px;color:#286444;font-size:8px;font-weight:900;letter-spacing:.1em}
+.pro-editor-preserve-header>em{flex:none;font-size:7px;font-style:normal;font-weight:900;letter-spacing:.06em;color:#315d42;background:#e3f3dc;border:1px solid #c5e3ba;border-radius:99px;padding:4px 6px}
+.pro-editor-preserve-card .pro-editor-preserve-toggle{padding:10px 0!important;margin:0;gap:8px}
+.pro-editor-preserve-card .pro-editor-preserve-toggle:hover{background:transparent}
+.pro-editor-preserve-toggle>div{min-width:0;flex:1}
+.pro-editor-preserve-toggle b{font-size:11px;line-height:1.3;color:#173d2b}
+.pro-editor-preserve-toggle span{font-size:9px;line-height:1.4;color:#52725c;margin-top:4px}
+.pro-editor-preserve-card .pro-editor-preserve-toggle>button{flex:none;box-shadow:0 0 0 3px rgba(57,125,77,.1)}
+.pro-editor-preserve-explanation{border-top:1px solid #d5e9d4;padding-top:9px;margin:0;font-size:9px;line-height:1.55;color:#355841}
+.pro-editor-preserve-smart-note{display:flex;gap:6px;align-items:flex-start;margin:8px 0 0;font-size:8px;line-height:1.45;font-weight:700;color:#285f41}
+.pro-editor-preserve-smart-note svg{flex:none;margin-top:1px}
+
 .pro-editor-note,.pro-editor-alert p{font-size:8px}
 
 .pro-editor-transcript{
