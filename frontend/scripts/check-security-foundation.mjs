@@ -55,6 +55,8 @@ requireText(nextConfig, "https://*.backblazeb2.com", "Hostinger CSP must allow d
 requireText(nextConfig, "https://*.r2.cloudflarestorage.com", "Hostinger CSP must allow direct R2 upload and signed media delivery");
 requireText(nextConfig, "https://fonts.googleapis.com", "Hostinger CSP must allow the declared Google Fonts stylesheet");
 requireText(nextConfig, "https://fonts.gstatic.com", "Hostinger CSP must allow the declared Google Fonts files");
+requireText(nextConfig, 'process.env.NODE_ENV === "development"', "unsafe-eval must be restricted to development mode");
+requireText(rootLayout, 'process.env.NODE_ENV === "development"', "in-document CSP must restrict unsafe-eval to development mode");
 requireText(nextConfig, "same-origin-allow-popups", "Hostinger frontend must keep Razorpay popups compatible while isolating openers");
 requireText(rootLayout, 'httpEquiv="Content-Security-Policy"', "Hostinger frontend must keep an in-document CSP fallback when the edge replaces the upstream CSP header");
 requireText(rootLayout, "https://storage.googleapis.com", "CSP fallback must preserve GCS rollback upload and media delivery");
