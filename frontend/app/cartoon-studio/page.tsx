@@ -1,0 +1,434 @@
+"use client";
+
+import { AppShell } from "@/components/AppShell";
+import { api, deleteJSON, postJSON } from "@/lib/api";
+import {
+  AlertCircle, Check, Clapperboard, Clock3, Download, KeyRound, Loader2,
+  LockKeyhole, Play, RefreshCw, ShieldCheck, Sparkles, Volume2, WandSparkles,
+} from "lucide-react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import styles from "./cartoon-studio.module.css";
+
+type Character = {
+  id: string;
+  name: string;
+  role: string;
+  species?: string;
+  voice_id?: string;
+  appearance?: { shirt_color?: string; hair_color?: string; skin_color?: string };
+};
+type Scene = {
+  id: string;
+  scene_title: string;
+  environment: string;
+  action: string;
+  dialogue: string;
+  speaker_id: string;
+};
+type Storyboard = {
+  title?: string;
+  summary?: string;
+  characters?: Character[];
+  scenes?: Scene[];
+};
+type CartoonProject = {
+  id: string;
+  title: string;
+  prompt: string;
+  duration_seconds: number;
+  aspect_ratio: string;
+  style: string;
+  language: string;
+  status: string;
+  progress: number;
+  stage: string;
+  error?: string | null;
+  storyboard?: Storyboard;
+  created_at?: string;
+};
+type ProviderStatus = {
+  openrouter: { connected: boolean; masked_key: string; validated_at?: string | null };
+};
+type TTSModel = { id: string; name: string; voices: string[]; description: string };
+type TTSResponse = { models: TTSModel[]; default_model: string };
+
+const STAGE_LABELS: Record<string, string> = {
+  queued: "Waiting in queue",
+  preparing: "Preparing your project",
+  story_planning: "Writing your story",
+  story_ready: "Story and characters ready",
+  voice_generation: "Creating character voices",
+  animating: "Building character animation",
+  checking: "Checking scenes",
+  rendering: "Rendering your video",
+  uploading: "Saving your MP4",
+  ready: "Ready to download",
+  failed: "Needs attention",
+};
+
+export default function CartoonStudioPage() {
+  const [provider, setProvider] = useState<ProviderStatus | null>(null);
+  const [models, setModels] = useState<TTSModel[]>([]);
+  const [ttsModel, setTtsModel] = useState("");
+  const [projects, setProjects] = useState<CartoonProject[]>([]);
+  const [selected, setSelected] = useState<CartoonProject | null>(null);
+  const [apiKey, setApiKey] = useState("");
+  const [prompt, setPrompt] = useState("");
+  const [duration, setDuration] = useState(30);
+  const [ratio, setRatio] = useState("9:16");
+  const [style, setStyle] = useState("2d-cartoon");
+  const [language, setLanguage] = useState("hi");
+  const [reference, setReference] = useState<File | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+
+  const mergeProject = useCallback((project: CartoonProject) => {
+    setSelected(project);
+    setProjects((current) => [project, ...current.filter((item) => item.id !== project.id)]);
+  }, []);
+
+  const loadModels = useCallback(async () => {
+    const response = await api<TTSResponse>("/cartoon-studio/tts-models");
+    setModels(response.models || []);
+    setTtsModel((current) => current || response.default_model || response.models?.[0]?.id || "");
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      api<ProviderStatus>("/cartoon-studio/providers"),
+      api<CartoonProject[]>("/cartoon-studio/projects"),
+    ]).then(([providerData, projectData]) => {
+      if (cancelled) return;
+      setProvider(providerData);
+      setProjects(projectData || []);
+      const active = (projectData || []).find((item) => item.status === "processing" || item.status === "queued");
+      if (active) setSelected(active);
+      setLoading(false);
+    }).catch((cause) => {
+      if (!cancelled) {
+        setError(cause instanceof Error ? cause.message : "Cartoon Studio could not be loaded.");
+        setLoading(false);
+      }
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!provider?.openrouter.connected) {
+      setModels([]);
+      setTtsModel("");
+      return;
+    }
+    loadModels().catch((cause) => {
+      setError(cause instanceof Error ? cause.message : "Voice models could not be loaded.");
+    });
+  }, [provider?.openrouter.connected, loadModels]);
+
+  useEffect(() => {
+    if (!selected || (selected.status !== "queued" && selected.status !== "processing")) return;
+    const timer = window.setInterval(() => {
+      api<CartoonProject>("/cartoon-studio/projects/" + selected.id)
+        .then(mergeProject)
+        .catch(() => null);
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, [selected?.id, selected?.status, mergeProject]);
+
+  const activeCharacters = useMemo(
+    () => selected?.storyboard?.characters || [],
+    [selected?.storyboard?.characters],
+  );
+  const isRendering = selected?.status === "queued" || selected?.status === "processing";
+  const connected = Boolean(provider?.openrouter.connected);
+
+  async function connectProvider(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!apiKey.trim() || busy) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const saved = await postJSON<{ connected: boolean; masked_key: string; validated_at: string }>(
+        "/cartoon-studio/providers/openrouter",
+        { api_key: apiKey.trim() },
+      );
+      setProvider({ openrouter: saved });
+      setApiKey("");
+      await loadModels();
+      setNotice("OpenRouter connected securely. Your key is encrypted and never shown again.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "OpenRouter could not be connected.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function disconnectProvider() {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await deleteJSON("/cartoon-studio/providers/openrouter");
+      setProvider({ openrouter: { connected: false, masked_key: "" } });
+      setModels([]);
+      setTtsModel("");
+      setNotice("OpenRouter key disconnected.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The provider key could not be removed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createCartoon(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (busy || !connected) return;
+    if (prompt.trim().length < 8) {
+      setError("Describe your story in at least 8 characters.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const body = new FormData();
+      body.set("prompt", prompt.trim());
+      body.set("duration_seconds", String(duration));
+      body.set("aspect_ratio", ratio);
+      body.set("style", style);
+      body.set("language", language);
+      body.set("tts_model", ttsModel);
+      if (reference) body.set("reference_video", reference);
+      const project = await api<CartoonProject>("/cartoon-studio/projects", { method: "POST", body });
+      mergeProject(project);
+      setNotice("Your cartoon is queued. You can leave this page while it renders.");
+      setReference(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Cartoon generation could not start.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function openProject(projectId: string) {
+    setError("");
+    try {
+      const project = await api<CartoonProject>("/cartoon-studio/projects/" + projectId);
+      mergeProject(project);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Project details could not be loaded.");
+    }
+  }
+
+  async function retryProject() {
+    if (!selected || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const project = await api<CartoonProject>(
+        "/cartoon-studio/projects/" + selected.id + "/retry",
+        { method: "POST" },
+      );
+      mergeProject(project);
+      setNotice("Retry queued. Saved storyboard and completed voice files will be reused.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The project could not be retried.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function downloadProject() {
+    if (!selected || selected.status !== "ready") return;
+    setError("");
+    try {
+      const result = await api<{ url: string }>("/cartoon-studio/projects/" + selected.id + "/download");
+      window.location.assign(result.url);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The MP4 could not be downloaded.");
+    }
+  }
+
+  return (
+    <AppShell
+      title="Cartoon Studio"
+      subtitle="Create original animated stories with consistent characters and their own voices."
+    >
+      <div className={styles.page}>
+        <div className={styles.hero}>
+          <div>
+            <span className={styles.eyebrow}><Sparkles size={13} /> CARTOON STUDIO · BETA</span>
+            <h2>Give your story <em>a voice.</em></h2>
+            <p>Describe a scene. GLM plans the story, each character gets a saved voice, and HyperFrames builds the animation without generating a new image for every frame.</p>
+          </div>
+          <div className={styles.heroMark}><Clapperboard size={32} /><span>2D<br />ANIMATION</span></div>
+        </div>
+
+        {error && <div className={styles.alertError} role="alert"><AlertCircle size={17} />{error}<button onClick={() => setError("")} aria-label="Dismiss error">×</button></div>}
+        {notice && <div className={styles.alertSuccess} role="status"><Check size={17} />{notice}<button onClick={() => setNotice("")} aria-label="Dismiss message">×</button></div>}
+
+        <div className={styles.grid}>
+          <section className={styles.panel}>
+            <div className={styles.panelHead}>
+              <div><span className={styles.kicker}>01 · YOUR STORY</span><h3>Create a cartoon</h3></div>
+              <span className={styles.freeBadge}>No image-generation credits</span>
+            </div>
+            <form onSubmit={createCartoon} className={styles.form}>
+              <label className={styles.field}>
+                <span>What should happen in your story?</span>
+                <textarea
+                  value={prompt}
+                  onChange={(event) => setPrompt(event.target.value)}
+                  placeholder="Example: A curious little fox finds a glowing map in the forest and asks a wise owl for help..."
+                  rows={5}
+                  maxLength={3000}
+                  required
+                />
+                <small>{prompt.length}/3000 · Original, family-friendly stories work best.</small>
+              </label>
+              <div className={styles.fieldsTwo}>
+                <label className={styles.field}><span>Video length</span>
+                  <select value={duration} onChange={(event) => setDuration(Number(event.target.value))}>
+                    <option value={15}>15 seconds</option><option value={30}>30 seconds</option>
+                    <option value={45}>45 seconds</option><option value={60}>60 seconds</option>
+                  </select>
+                </label>
+                <label className={styles.field}><span>Aspect ratio</span>
+                  <select value={ratio} onChange={(event) => setRatio(event.target.value)}>
+                    <option value="9:16">9:16 · Reels / Shorts</option>
+                    <option value="16:9">16:9 · YouTube</option><option value="1:1">1:1 · Square</option>
+                  </select>
+                </label>
+                <label className={styles.field}><span>Animation style</span>
+                  <select value={style} onChange={(event) => setStyle(event.target.value)}>
+                    <option value="2d-cartoon">2D Cartoon</option><option value="storybook">Storybook</option>
+                    <option value="anime-inspired">Anime-inspired</option><option value="flat-vector">Flat vector</option>
+                  </select>
+                </label>
+                <label className={styles.field}><span>Story language</span>
+                  <select value={language} onChange={(event) => setLanguage(event.target.value)}>
+                    <option value="hi">Hindi</option><option value="hinglish">Hinglish</option>
+                    <option value="en">English</option><option value="mr">Marathi</option><option value="auto">Auto</option>
+                  </select>
+                </label>
+              </div>
+              <label className={styles.field}>
+                <span>Voice model</span>
+                <select value={ttsModel} onChange={(event) => setTtsModel(event.target.value)} disabled={!connected || models.length === 0}>
+                  {models.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}
+                </select>
+                <small>{connected ? (models.find((model) => model.id === ttsModel)?.description || "Every character keeps its assigned voice across the scenes in this project.") : "Connect your OpenRouter key to load available voice models."}</small>
+                {connected && language === "mr" && ttsModel === "hexgrad/kokoro-82m" && (
+                  <small className={styles.languageHint}>Kokoro lists Hindi and English among its supported languages, but not Marathi. Choose Gemini 3.1 Flash TTS for broader language coverage.</small>
+                )}
+                {connected && language === "hinglish" && ttsModel === "hexgrad/kokoro-82m" && (
+                  <small className={styles.languageHint}>For mixed Hindi-English narration, Gemini 3.1 Flash TTS may handle language switching more reliably.</small>
+                )}
+              </label>
+              <label className={styles.fileField}>
+                <span>Optional reference video</span>
+                <input type="file" accept="video/mp4,video/quicktime,video/webm,video/x-matroska" onChange={(event) => setReference(event.target.files?.[0] || null)} />
+                <small>{reference ? reference.name : "Up to 50 MB. Used only to analyse visual style; not required."}</small>
+              </label>
+              <button className={styles.primaryButton} type="submit" disabled={!connected || busy || !ttsModel}>
+                {busy ? <Loader2 className={styles.spin} size={18} /> : <WandSparkles size={18} />}
+                {busy ? "Please wait..." : "Create my cartoon"}
+              </button>
+              {!connected && <p className={styles.formHint}>Connect your own OpenRouter API key below to enable generation.</p>}
+            </form>
+          </section>
+
+          <div className={styles.sideColumn}>
+            <section className={styles.providerPanel}>
+              <div className={styles.panelHead}>
+                <div><span className={styles.kicker}>02 · YOUR AI ACCOUNT</span><h3>Connect OpenRouter</h3></div>
+                <KeyRound size={21} />
+              </div>
+              {connected ? (
+                <div className={styles.connectedState}>
+                  <div className={styles.connectedIcon}><ShieldCheck size={22} /></div>
+                  <div><strong>Provider connected</strong><span>{provider?.openrouter.masked_key}</span></div>
+                  <button type="button" className={styles.textButton} onClick={disconnectProvider} disabled={busy}>Disconnect</button>
+                </div>
+              ) : (
+                <form onSubmit={connectProvider} className={styles.keyForm}>
+                  <label className={styles.field}><span>OpenRouter API key</span>
+                    <input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="sk-or-v1-..." autoComplete="off" minLength={20} required />
+                  </label>
+                  <button className={styles.secondaryButton} type="submit" disabled={busy || !apiKey.trim()}>
+                    {busy ? <Loader2 className={styles.spin} size={16} /> : <LockKeyhole size={16} />} Connect key
+                  </button>
+                  <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer">Get an API key from OpenRouter ↗</a>
+                </form>
+              )}
+              <div className={styles.securityNote}><LockKeyhole size={15} /><span>Your key is encrypted at rest. ClipKaro's backend uses it for model discovery and generation, and never returns the key to your browser.</span></div>
+              <div className={styles.billingNote}><Volume2 size={15} /><span>GLM story planning and character TTS are billed to your OpenRouter account. ClipKaro never switches to a platform-owned AI key. Video rendering runs on ClipKaro.</span></div>
+            </section>
+
+            <section className={styles.stepsPanel}>
+              <span className={styles.kicker}>HOW IT WORKS</span>
+              <div className={styles.step}><span>1</span><div><strong>Build the characters</strong><small>Structured character designs, reusable across scenes.</small></div></div>
+              <div className={styles.step}><span>2</span><div><strong>Give each one a voice</strong><small>One saved voice ID per character, not one random voice per line.</small></div></div>
+              <div className={styles.step}><span>3</span><div><strong>Animate and export</strong><small>SVG rigs, GSAP motion, HyperFrames and FFmpeg.</small></div></div>
+            </section>
+          </div>
+        </div>
+
+        {selected && (
+          <section className={styles.projectPanel}>
+            <div className={styles.panelHead}>
+              <div><span className={styles.kicker}>03 · CURRENT PROJECT</span><h3>{selected.storyboard?.title || selected.title}</h3></div>
+              <span className={selected.status === "ready" ? styles.statusReady : selected.status === "failed" ? styles.statusFailed : styles.statusRunning}>
+                {selected.status === "ready" ? "Ready" : selected.status === "failed" ? "Failed" : "Rendering"}
+              </span>
+            </div>
+            <p className={styles.projectPrompt}>{selected.storyboard?.summary || selected.prompt}</p>
+            {isRendering && <div className={styles.progressWrap}>
+              <div className={styles.progressLabels}><span>{STAGE_LABELS[selected.stage] || selected.stage}</span><strong>{selected.progress}%</strong></div>
+              <div className={styles.progressTrack}><span style={{ width: selected.progress + "%" }} /></div>
+              <small>Keep this tab open to watch progress, or return later from Recent projects.</small>
+            </div>}
+            {selected.error && <div className={styles.projectError}><AlertCircle size={16} />{selected.error}</div>}
+            {activeCharacters.length > 0 && <div className={styles.characters}>
+              <div className={styles.sectionTitle}><strong>Characters and their voices</strong><small>Saved voice identities</small></div>
+              <div className={styles.characterGrid}>
+                {activeCharacters.map((character) => <div className={styles.characterCard} key={character.id}>
+                  <div className={styles.characterAvatar} style={{ background: character.appearance?.shirt_color || "#e87552" }}>
+                    <span style={{ background: character.appearance?.skin_color || "#e9b58f" }} />
+                  </div>
+                  <div><strong>{character.name}</strong><small>{character.role}</small><span><Volume2 size={12} /> {character.voice_id || "Voice assigned"}</span></div>
+                </div>)}
+              </div>
+            </div>}
+            {selected.storyboard?.scenes?.length ? <div className={styles.scenes}>
+              <div className={styles.sectionTitle}><strong>Storyboard</strong><small>{selected.storyboard.scenes.length} scenes</small></div>
+              {selected.storyboard.scenes.map((scene, index) => <div className={styles.sceneRow} key={scene.id}>
+                <span className={styles.sceneNumber}>{String(index + 1).padStart(2, "0")}</span>
+                <div><strong>{scene.scene_title}</strong><small>{scene.action}</small><p>“{scene.dialogue}”</p></div>
+              </div>)}
+            </div> : null}
+            <div className={styles.projectActions}>
+              {selected.status === "ready" && <button className={styles.primaryButton} type="button" onClick={downloadProject}><Download size={17} /> Download MP4</button>}
+              {selected.status === "failed" && <button className={styles.secondaryButton} type="button" onClick={retryProject} disabled={busy}><RefreshCw size={16} /> Retry project</button>}
+              {isRendering && <span><Loader2 className={styles.spin} size={15} /> Rendering in the background</span>}
+            </div>
+          </section>
+        )}
+
+        <section className={styles.recentPanel}>
+          <div className={styles.panelHead}><div><span className={styles.kicker}>YOUR LIBRARY</span><h3>Recent cartoons</h3></div><span>{projects.length} projects</span></div>
+          {loading ? <div className={styles.loading}><Loader2 className={styles.spin} /> Loading projects...</div> :
+            projects.length === 0 ? <div className={styles.empty}><Play size={20} /><strong>Your first cartoon starts here</strong><span>Create a story above to see its storyboard, voices and MP4 here.</span></div> :
+            <div className={styles.recentList}>{projects.map((project) => <button type="button" className={styles.recentItem} key={project.id} onClick={() => openProject(project.id)}>
+              <span className={styles.recentIcon}><Clapperboard size={18} /></span>
+              <span className={styles.recentCopy}><strong>{project.storyboard?.title || project.title}</strong><small>{project.duration_seconds}s · {project.aspect_ratio} · {new Date(project.created_at || Date.now()).toLocaleDateString()}</small></span>
+              <span className={project.status === "ready" ? styles.statusReady : project.status === "failed" ? styles.statusFailed : styles.statusRunning}>{project.status}</span>
+            </button>)}</div>}
+        </section>
+      </div>
+    </AppShell>
+  );
+}

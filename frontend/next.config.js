@@ -30,6 +30,7 @@ const privateIndexPaths = [
   "/brand/:path*",
   "/calendar/:path*",
   "/content-packs/:path*",
+  "/cartoon-studio/:path*",
   "/creator-pulse/:path*",
   "/dashboard/:path*",
   "/editor/:path*",

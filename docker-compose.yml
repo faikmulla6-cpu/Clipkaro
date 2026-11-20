@@ -1,6 +1,8 @@
 services:
   api:
-    build: ./backend
+    build:
+      context: ./backend
+      target: api
     env_file:
       - ./backend/.env
     ports: ["8000:8000"]
@@ -9,7 +11,27 @@ services:
       CORS_ORIGINS: http://localhost:3000
       DATABASE_PATH: /app/storage/clipkaro.db
       STORAGE_ROOT: /app/storage
+      JOB_EXECUTION_MODE: worker
     volumes: ["clipkaro_storage:/app/storage"]
+  worker:
+    build:
+      context: ./backend
+      target: ${WORKER_IMAGE_TARGET:-media}
+    env_file:
+      - ./backend/.env
+    command: ["python", "-m", "app.worker"]
+    restart: unless-stopped
+    environment:
+      DATABASE_PATH: /app/storage/clipkaro.db
+      STORAGE_ROOT: /app/storage
+      JOB_EXECUTION_MODE: worker
+      WORKER_POLL_SECONDS: ${WORKER_POLL_SECONDS:-0.75}
+      WORKER_HEARTBEAT_SECONDS: ${WORKER_HEARTBEAT_SECONDS:-5}
+      WORKER_STALE_AFTER_SECONDS: ${WORKER_STALE_AFTER_SECONDS:-30}
+    volumes: ["clipkaro_storage:/app/storage"]
+    depends_on:
+      api:
+        condition: service_healthy
   web:
     build:
       context: ./frontend

@@ -110,10 +110,10 @@ services:
   worker:
     build:
       context: ./backend
-      # The launch default stays lightweight/API-first. Operators who deliberately
-      # enable the legacy local faster-whisper/WhisperX path must also build the
-      # heavyweight worker image so runtime capabilities match ASR_MODE.
-      target: ${WORKER_IMAGE_TARGET:-api}
+      # The isolated worker needs FFmpeg and the pinned HyperFrames browser even
+      # when ASR is API-first. The media target includes both without local WhisperX;
+      # choose worker only when enabling the legacy local faster-whisper/WhisperX path.
+      target: ${WORKER_IMAGE_TARGET:-media}
     command: ["python", "-m", "app.worker"]
     restart: unless-stopped
     environment:

@@ -234,3 +234,43 @@ def test_smart_layout_cache_uses_private_rows_and_cascades_on_project_deletion(c
     asyncio.run(execute("DELETE FROM projects WHERE id=?",(project_id,)))
     assert asyncio.run(read_plan(identity)) is None
     asyncio.run(expire_old_plans())
+
+
+def test_worker_reconstructs_cartoon_generation_with_dedicated_pipeline(client: TestClient):
+    user = _signup(client, "cartoon-worker@example.com")
+    timestamp = "2026-11-20T00:00:00+00:00"
+    project_id = "cartoon-project-worker"
+    awaitable = execute(
+        """INSERT INTO cartoon_projects(
+             id,user_id,title,prompt,duration_seconds,aspect_ratio,style,language,
+             text_model,tts_model,status,progress,stage,storyboard_json,assets_json,
+             created_at,updated_at
+           ) VALUES (?,?,?,?,?,?,?,?,?,?,'queued',0,'queued','{}','{}',?,?)""",
+        (
+            project_id, user["id"], "Cartoon worker test", "A fox finds a map",
+            15, "9:16", "2d-cartoon", "en", "z-ai/glm-5.3-flash",
+            "mistralai/voxtral-mini-tts-2603", timestamp, timestamp,
+        ),
+    )
+    asyncio.run(awaitable)
+    job_id = asyncio.run(create_job(
+        user["id"], "cartoon_generate", payload={"cartoon_project_id": project_id},
+    ))
+    claimed = asyncio.run(claim_next_job("cartoon-worker"))
+    assert claimed and claimed["id"] == job_id
+
+    storage = object()
+    with (
+        patch("app.services.cartoon_job.run_cartoon_generation", new=AsyncMock()) as generate,
+        patch("app.services.storage.get_storage_provider", return_value=storage),
+    ):
+        asyncio.run(run_claimed_job(claimed))
+
+    generate.assert_awaited_once()
+    args = generate.await_args.args
+    assert args[0]["id"] == job_id
+    assert args[0]["payload"] == {"cartoon_project_id": project_id}
+    assert args[1].name.startswith("clipkaro-cartoon-worker-")
+    assert not args[1].exists()  # Temporary render workspace is cleaned after the job.
+    assert args[2] is storage
+    assert asyncio.run(fetch_one("SELECT * FROM job_claims WHERE job_id=?", (job_id,))) is None

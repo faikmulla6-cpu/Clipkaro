@@ -411,6 +411,10 @@ async def _run(job: dict, scratch: Path) -> None:
         from app.services.smart_layout_job import run_smart_layout_analysis
         await run_smart_layout_analysis(job, scratch, storage)
         return
+    if job["kind"] == "cartoon_generate":
+        from app.services.cartoon_job import run_cartoon_generation
+        await run_cartoon_generation(job, scratch, storage)
+        return
     if job["kind"] == "import_youtube":
         await _run_youtube_import(job, scratch, storage)
         return
@@ -525,8 +529,24 @@ async def run_job(job_id: str, *, execution_id: str = "", worker_prefix: str = "
         if isinstance(exc, YouTubeImportError):
             category = "YOUTUBE_IMPORT_FAILED"
         else:
-            category = str(exc) if str(exc) in {"MEDIA_VALIDATION_FAILED", "EXPORT_FAILED"} else "PROVIDER_TEMPORARY_FAILURE"
+            category = str(getattr(exc, "category", "") or "")
+            if not category:
+                category = str(exc) if str(exc) in {"MEDIA_VALIDATION_FAILED", "EXPORT_FAILED"} else "PROVIDER_TEMPORARY_FAILURE"
         failure_message = public_message or "Media processing failed"
+
+        if job.get("kind") == "cartoon_generate":
+            cartoon_id = str((job.get("payload") or {}).get("cartoon_project_id") or "")
+            current = await fetch_one("SELECT status FROM cartoon_projects WHERE id=?", (cartoon_id,)) if cartoon_id else None
+            if current and current.get("status") == "ready":
+                await update_job(job_id, 100, "ready", "Your cartoon is ready to download", "completed")
+                return 0
+            if cartoon_id:
+                await execute(
+                    "UPDATE cartoon_projects SET status='failed',stage='failed',error=?,updated_at=? WHERE id=?",
+                    (failure_message, utcnow(), cartoon_id),
+                )
+            await update_job(job_id, int(job.get("progress") or 0), "failed", failure_message, "failed", category)
+            return 1
 
         if job.get("kind") == "smart_layout_analysis":
             # A PREVIEW error must never turn a completed customer project into

@@ -67,6 +67,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       router.replace(authHref("/login", path));
       return;
     }
+    if (user && path.startsWith("/cartoon-studio") && !user.cartoon_studio_access_override) {
+      router.replace("/dashboard");
+      return;
+    }
     if (user && !isPublic && verification?.required && !verification.can_process) {
       rememberPostAuthNext(path);
       router.replace(authHref("/verify-email", path));

@@ -9,7 +9,7 @@ from app.services.asr_gate import asr_queue_snapshot
 from app.services.job_launcher import get_job_launcher
 
 
-HEAVY_JOB_KINDS = ("process_video", "upgrade_pipeline", "render_export")
+HEAVY_JOB_KINDS = ("process_video", "upgrade_pipeline", "render_export", "cartoon_generate")
 
 
 def utcnow() -> str:
@@ -175,7 +175,7 @@ async def claim_next_job(worker_id: str) -> dict[str, Any] | None:
                FROM jobs j LEFT JOIN job_payloads p ON p.job_id=j.id
                LEFT JOIN job_claims c ON c.job_id=j.id
                WHERE j.status='queued' AND c.job_id IS NULL
-                 AND j.kind IN ('process_video','upgrade_pipeline','render_export','smart_layout_analysis')
+                 AND j.kind IN ('process_video','upgrade_pipeline','render_export','smart_layout_analysis','cartoon_generate')
                ORDER BY CASE WHEN j.kind='smart_layout_analysis' THEN 1 ELSE 0 END,
                         j.created_at ASC,j.id ASC LIMIT 1"""
         )
@@ -309,18 +309,18 @@ async def _durable_worker_queue_snapshot(row: dict[str, Any]) -> dict[str, Any] 
     if row.get("kind") not in HEAVY_JOB_KINDS:
         return None
     active_rows = await fetch_all(
-        "SELECT id FROM jobs WHERE status='processing' AND kind IN ('process_video','upgrade_pipeline','render_export')"
+        "SELECT id FROM jobs WHERE status='processing' AND kind IN ('process_video','upgrade_pipeline','render_export','cartoon_generate')"
     )
     active = len(active_rows)
     if row.get("status") == "queued":
         ahead = await fetch_all(
             """SELECT id FROM jobs
-               WHERE status='queued' AND kind IN ('process_video','upgrade_pipeline','render_export')
+               WHERE status='queued' AND kind IN ('process_video','upgrade_pipeline','render_export','cartoon_generate')
                  AND (created_at < ? OR (created_at = ? AND id <= ?))""",
             (row["created_at"], row["created_at"], row["id"]),
         )
         queued = await fetch_all(
-            "SELECT id FROM jobs WHERE status='queued' AND kind IN ('process_video','upgrade_pipeline','render_export')"
+            "SELECT id FROM jobs WHERE status='queued' AND kind IN ('process_video','upgrade_pipeline','render_export','cartoon_generate')"
         )
         position = max(1, len(ahead))
         return {
