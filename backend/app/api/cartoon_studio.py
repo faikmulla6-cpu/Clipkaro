@@ -17,6 +17,7 @@ from app.core.config import get_settings
 from app.core.database import distributed_advisory_lock, execute, fetch_all, fetch_one
 from app.services.distributed_rate_limit import consume_rate_limit
 from app.services.auth import current_user
+from app.services.cartoon_speech import SYSTEM_URDU_TTS_MODEL, system_urdu_tts_model_row
 from app.services.cartoon_security import (
     CartoonCredentialError, decrypt_provider_key, encrypt_provider_key,
     fingerprint_provider_key, mask_provider_key,
@@ -48,11 +49,12 @@ PREFERRED_TTS = [
     "microsoft/mai-voice-2",
     "deepgram/aura-2",
     "minimax/speech-2.8-turbo",
+    SYSTEM_URDU_TTS_MODEL,
 ]
 ALLOWED_DURATIONS = {15, 30, 45, 60}
 ALLOWED_RATIOS = {"9:16", "16:9", "1:1"}
-ALLOWED_STYLES = {"2d-cartoon", "storybook", "anime-inspired", "flat-vector"}
-ALLOWED_LANGUAGES = {"auto", "en", "hi", "hinglish", "mr"}
+ALLOWED_STYLES = {"2d-cartoon", "storybook", "anime-inspired", "flat-vector", "cinematic-jannat"}
+ALLOWED_LANGUAGES = {"auto", "en", "hi", "hinglish", "mr", "ur"}
 
 
 class ProviderKeyRequest(BaseModel):
@@ -111,11 +113,13 @@ async def _models(api_key: str, modality: str) -> list[dict[str, Any]]:
 
 
 def _models_with_preset_voices(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [
+    models = [
         item for item in rows
         if isinstance(item.get("supported_voices"), list)
         and any(str(voice).strip() for voice in item["supported_voices"])
     ]
+    models.append(system_urdu_tts_model_row())
+    return models
 
 
 def _project_out(row: dict[str, Any], job: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -278,6 +282,16 @@ async def create_cartoon_project(
             tts_model = str(speech_models[0].get("id") or "")
     if not tts_model or tts_model not in speech_ids:
         raise HTTPException(422, "Select a currently available text-to-speech model.")
+    if tts_model == SYSTEM_URDU_TTS_MODEL and language != "ur":
+        raise HTTPException(422, "Select Urdu as the story language to use the word-timed system Urdu voice.")
+
+    if style == "cinematic-jannat" and (
+        duration_seconds != 30 or aspect_ratio != "16:9" or language != "ur" or tts_model != SYSTEM_URDU_TTS_MODEL
+    ):
+        raise HTTPException(
+            422,
+            "The Jannat cinematic preset requires 30 seconds, 16:9, Urdu and the System Urdu word-timed voice.",
+        )
 
     project_id = str(uuid.uuid4())
     timestamp = _now()

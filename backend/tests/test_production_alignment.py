@@ -82,7 +82,8 @@ def test_production_docker_compose_splits_api_asr_from_legacy_whisperx() -> None
     base_requirements = _read("backend/requirements.txt")
     compose = _read("docker-compose.hostinger.yml")
     production_env = _read(".env.production.example")
-    assert "FROM runtime-base AS worker" in dockerfile
+    assert "FROM media-base AS worker" in dockerfile
+    assert "COPY --from=cartoon-runtime /opt/cartoon-engine/dist/animation.js ./cartoon_engine/dist/animation.js" in dockerfile
     assert "FROM runtime-base AS api" in dockerfile
     assert "COPY requirements-alignment.txt ." in dockerfile
     assert "pip install --no-cache-dir -r requirements-alignment.txt" in dockerfile

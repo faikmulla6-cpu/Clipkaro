@@ -12,7 +12,7 @@ from app.core.config import get_settings
 from app.core.database import execute, fetch_one
 from app.main import _auth_requests, _requests, app
 from app.services import cartoon_job
-from app.services.cartoon_job import CartoonJobError, _normalize_storyboard, _tts_audio, _voice_for
+from app.services.cartoon_job import CartoonJobError, _apply_cinematic_jannat_storyboard, _normalize_storyboard, _tts_audio, _voice_for
 from app.services.cartoon_renderer import build_cartoon_project
 from app.services.cartoon_security import decrypt_provider_key, encrypt_provider_key
 
@@ -96,7 +96,7 @@ def test_storyboard_normalization_keeps_character_identity_and_escapes_untrusted
     assert "compositions/scene-1.html" in files
     html = "".join(files.values())
     assert "<script>run()" not in html
-    assert "&lt;script&gt;run()&lt;/script&gt;" in html
+    assert "&lt;script&gt;run()&lt;/script&gt;" not in html  # Scene directions are not rendered as on-screen text.
     assert "background:url(javascript" not in html
     assert 'data-composition-src="compositions/scene-1.html"' in files["index.html"]
     assert "<template>" in files["compositions/scene-1.html"]
@@ -339,7 +339,7 @@ def test_cartoon_api_connects_byok_and_queues_private_project(cartoon_api_client
         available = client.get("/api/v1/cartoon-studio/tts-models")
         assert available.status_code == 200, available.text
         assert available.json()["default_model"] == tts_model
-        assert [model["id"] for model in available.json()["models"]] == [tts_model]
+        assert [model["id"] for model in available.json()["models"]] == [tts_model, "system/edge-tts-urdu"]
 
         created = client.post(
             "/api/v1/cartoon-studio/projects",
@@ -393,3 +393,29 @@ async def test_serverless_media_job_dispatches_cartoon_to_dedicated_pipeline(tmp
         await media_job._run(job, tmp_path)
 
     generate.assert_awaited_once_with(job, tmp_path, storage)
+
+
+def test_cinematic_jannat_preset_locks_one_character_and_three_bedroom_scenes():
+    storyboard = {
+        "characters": [{"id": "different", "name": "Different"}],
+        "scenes": [
+            {"environment": "forest", "character_ids": ["different"], "speaker_id": "different"},
+            {"environment": "city", "character_ids": ["different"], "speaker_id": "different"},
+            {"environment": "school", "character_ids": ["different"], "speaker_id": "different"},
+        ],
+    }
+    result = _apply_cinematic_jannat_storyboard(storyboard)
+    assert len(result["characters"]) == 1
+    character = result["characters"][0]
+    assert character["id"] == "jannat"
+    assert character["name"] == "Jannat"
+    assert character["voice_type"] == "female"
+    assert character["appearance"]["shirt_color"] == "#306b73"
+    assert character["appearance"]["hair_color"] == "#121c29"
+    assert all(scene["environment"] == "home" for scene in result["scenes"])
+    assert all(scene["character_ids"] == ["jannat"] for scene in result["scenes"])
+    assert all(scene["speaker_id"] == "jannat" for scene in result["scenes"])
+
+    with pytest.raises(CartoonJobError) as error:
+        _apply_cinematic_jannat_storyboard({"characters": [], "scenes": [{"id": "only-one"}]})
+    assert error.value.category == "CARTOON_CINEMATIC_STORY_INVALID"

@@ -74,3 +74,10 @@ frontend/tsconfig.tsbuildinfo
 backend.env
 backend/.env.*
 !backend/.env.example
+
+# Cartoon Studio Remotion and HyperFrames local smoke artifacts.
+backend/cartoon_engine/caption-smoke*/
+backend/cartoon_engine/remotion-helper-smoke*/
+backend/cartoon_engine/remotion-frame-*.png
+backend/cartoon_engine/ur-voice-test.mp3
+backend/.pytest-tmp-remotion/

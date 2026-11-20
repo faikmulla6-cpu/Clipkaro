@@ -291,36 +291,54 @@ export default function CartoonStudioPage() {
               </label>
               <div className={styles.fieldsTwo}>
                 <label className={styles.field}><span>Video length</span>
-                  <select value={duration} onChange={(event) => setDuration(Number(event.target.value))}>
+                  <select value={duration} onChange={(event) => setDuration(Number(event.target.value))} disabled={style === "cinematic-jannat"}>
                     <option value={15}>15 seconds</option><option value={30}>30 seconds</option>
                     <option value={45}>45 seconds</option><option value={60}>60 seconds</option>
                   </select>
                 </label>
                 <label className={styles.field}><span>Aspect ratio</span>
-                  <select value={ratio} onChange={(event) => setRatio(event.target.value)}>
+                  <select value={ratio} onChange={(event) => setRatio(event.target.value)} disabled={style === "cinematic-jannat"}>
                     <option value="9:16">9:16 · Reels / Shorts</option>
                     <option value="16:9">16:9 · YouTube</option><option value="1:1">1:1 · Square</option>
                   </select>
                 </label>
                 <label className={styles.field}><span>Animation style</span>
-                  <select value={style} onChange={(event) => setStyle(event.target.value)}>
+                  <select value={style} onChange={(event) => {
+                    const nextStyle = event.target.value;
+                    setStyle(nextStyle);
+                    if (nextStyle === "cinematic-jannat") {
+                      setDuration(30);
+                      setRatio("16:9");
+                      setLanguage("ur");
+                      setTtsModel("system/edge-tts-urdu");
+                    }
+                  }}>
                     <option value="2d-cartoon">2D Cartoon</option><option value="storybook">Storybook</option>
-                    <option value="anime-inspired">Anime-inspired</option><option value="flat-vector">Flat vector</option>
+                    <option value="anime-inspired">Anime-inspired</option><option value="flat-vector">Flat vector</option><option value="cinematic-jannat">Jannat cinematic (reference)</option>
                   </select>
+                  {style === "cinematic-jannat" && (
+                    <small className={styles.languageHint}>Uses the reference Jannat rig and moonlit bedroom, with separate Urdu narration, dialogue, original suspense score and bedroom foley. Locks 30 seconds, 16:9 and the word-timed female voice.</small>
+                  )}
                 </label>
                 <label className={styles.field}><span>Story language</span>
-                  <select value={language} onChange={(event) => setLanguage(event.target.value)}>
+                  <select value={language} onChange={(event) => setLanguage(event.target.value)} disabled={style === "cinematic-jannat"}>
                     <option value="hi">Hindi</option><option value="hinglish">Hinglish</option>
-                    <option value="en">English</option><option value="mr">Marathi</option><option value="auto">Auto</option>
+                    <option value="en">English</option><option value="mr">Marathi</option><option value="ur">Urdu</option><option value="auto">Auto</option>
                   </select>
                 </label>
               </div>
               <label className={styles.field}>
                 <span>Voice model</span>
-                <select value={ttsModel} onChange={(event) => setTtsModel(event.target.value)} disabled={!connected || models.length === 0}>
+                <select value={ttsModel} onChange={(event) => setTtsModel(event.target.value)} disabled={!connected || models.length === 0 || style === "cinematic-jannat"}>
                   {models.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}
                 </select>
                 <small>{connected ? (models.find((model) => model.id === ttsModel)?.description || "Every character keeps its assigned voice across the scenes in this project.") : "Connect your OpenRouter key to load available voice models."}</small>
+                {connected && language === "ur" && ttsModel === "system/edge-tts-urdu" && (
+                  <small className={styles.languageHint}>Uses the built-in Urdu voice and captures native word timestamps for synchronized captions. Voice service availability may vary.</small>
+                )}
+                {connected && language === "ur" && ttsModel !== "system/edge-tts-urdu" && (
+                  <small className={styles.languageHint}>This speech model does not return native word timings; captions will use estimated alignment. Choose System Urdu Female for word-timed captions.</small>
+                )}
                 {connected && language === "mr" && ttsModel === "hexgrad/kokoro-82m" && (
                   <small className={styles.languageHint}>Kokoro lists Hindi and English among its supported languages, but not Marathi. Choose Gemini 3.1 Flash TTS for broader language coverage.</small>
                 )}
@@ -365,7 +383,7 @@ export default function CartoonStudioPage() {
                 </form>
               )}
               <div className={styles.securityNote}><LockKeyhole size={15} /><span>Your key is encrypted at rest. ClipKaro's backend uses it for model discovery and generation, and never returns the key to your browser.</span></div>
-              <div className={styles.billingNote}><Volume2 size={15} /><span>GLM story planning and character TTS are billed to your OpenRouter account. ClipKaro never switches to a platform-owned AI key. Video rendering runs on ClipKaro.</span></div>
+              <div className={styles.billingNote}><Volume2 size={15} /><span>GLM story planning and OpenRouter TTS use your OpenRouter account. The built-in Urdu voice uses the external Edge speech service and does not consume OpenRouter TTS credits. Video rendering runs on ClipKaro.</span></div>
             </section>
 
             <section className={styles.stepsPanel}>

@@ -129,7 +129,7 @@ media_image = (
     .workdir("/root/clipkaro")
     .env({**RUNTIME_ENV, "HYPERFRAMES_CACHE_DIR": "/root/.cache/hyperframes"})
     .run_commands(
-        "cd /root/clipkaro/cartoon_engine && npm ci --omit=dev --no-audit --no-fund && ./node_modules/.bin/hyperframes browser ensure",
+        "cd /root/clipkaro/cartoon_engine && npm ci --omit=dev --no-audit --no-fund && npm run build && ./node_modules/.bin/hyperframes browser ensure",
         "shell=\"$(find /root/.cache/hyperframes -type f -name 'chrome-headless-shell' -perm /111 | head -n 1)\"; test -n \"$shell\"; printf '%s\\n' \"$shell\" > /etc/hyperframes-headless-shell-path",
     )
 )
