@@ -3,7 +3,7 @@ import asyncio
 import hashlib
 import hmac
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 from app.core.config import get_settings
@@ -796,6 +796,10 @@ def test_export_slots_are_atomically_reserved_and_refunded(client: TestClient):
 
 
 def test_mini_pass_caps_new_ai_short_creations_even_with_minutes_left(client: TestClient):
+    now = datetime.now(timezone.utc)
+    started_at = (now - timedelta(days=1)).isoformat()
+    expires_at = (now + timedelta(days=30)).isoformat()
+    snapshot_created_at = started_at
     signup = client.post("/api/v1/auth/signup", json={
         "name": "Mini Creator", "email": "mini-create-cap@example.com", "password": "Secure123"
     })
@@ -807,7 +811,7 @@ def test_mini_pass_caps_new_ai_short_creations_even_with_minutes_left(client: Te
     asyncio.run(execute(
         """UPDATE users SET plan='mini_pass',billing_reference=?,
            plan_started_at=?,plan_expires_at=? WHERE id=?""",
-        ("order-mini-create-cap", "2026-10-06T00:00:00+00:00", "2026-11-05T00:00:00+00:00", user_id),
+        ("order-mini-create-cap", started_at, expires_at, user_id),
     ))
     # Customer purchased the original 125-minute / source-credit Mini Pass.
     legacy = asyncio.run(fetch_one("SELECT * FROM users WHERE id=?", (user_id,)))
@@ -817,7 +821,7 @@ def test_mini_pass_caps_new_ai_short_creations_even_with_minutes_left(client: Te
             short_mode,price_paise,created_at)
            VALUES (?,?,?,?,?,?,?,?,?)""",
         (user_id,usage_period_key(legacy),"mini_pass",125.0,5,25.0,
-         "source_projects",5900,"2026-10-06T00:00:00+00:00"),
+         "source_projects",5900,snapshot_created_at),
     ))
 
     uploads = []
@@ -863,6 +867,11 @@ def test_mini_pass_caps_new_ai_short_creations_even_with_minutes_left(client: Te
 
 
 def test_mini_pass_exports_and_reexports_do_not_consume_creation_credits(client: TestClient):
+    now = datetime.now(timezone.utc)
+    started_at = (now - timedelta(days=1)).isoformat()
+    expires_at = (now + timedelta(days=30)).isoformat()
+    snapshot_created_at = started_at
+    reservation_created_at = (now - timedelta(hours=23)).isoformat()
     signup = client.post("/api/v1/auth/signup", json={
         "name": "Mini Renderer", "email": "mini-render@example.com", "password": "Secure123"
     })
@@ -872,7 +881,7 @@ def test_mini_pass_exports_and_reexports_do_not_consume_creation_credits(client:
     asyncio.run(execute(
         """UPDATE users SET plan='mini_pass',billing_reference=?,
            plan_started_at=?,plan_expires_at=? WHERE id=?""",
-        ("order-mini-render", "2026-10-06T00:00:00+00:00", "2026-11-05T00:00:00+00:00", user_id),
+        ("order-mini-render", started_at, expires_at, user_id),
     ))
     # Legacy source-project creation credits remain unchanged for old purchases.
     legacy = asyncio.run(fetch_one("SELECT * FROM users WHERE id=?", (user_id,)))
@@ -882,7 +891,7 @@ def test_mini_pass_exports_and_reexports_do_not_consume_creation_credits(client:
             short_mode,price_paise,created_at)
            VALUES (?,?,?,?,?,?,?,?,?)""",
         (user_id,usage_period_key(legacy),"mini_pass",125.0,5,25.0,
-         "source_projects",5900,"2026-10-06T00:00:00+00:00"),
+         "source_projects",5900,snapshot_created_at),
     ))
 
     with patch("app.api.routes._process_project", new=AsyncMock()):
@@ -919,7 +928,7 @@ def test_mini_pass_exports_and_reexports_do_not_consume_creation_credits(client:
             (
                 f"extra-mini-source-{index}", user_id, before["period_key"], "minutes", 1.0,
                 f"extra-mini-project-{index}", "finalized",
-                "2026-10-06T01:00:00+00:00", "2026-10-06T01:00:00+00:00",
+                reservation_created_at, reservation_created_at,
             ),
         ))
     exhausted = client.get("/api/v1/usage").json()
