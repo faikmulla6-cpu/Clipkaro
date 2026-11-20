@@ -88,7 +88,7 @@ const CharacterRig: FunctionComponent<{
   const ears = species === "rabbit"
     ? <><ellipse cx="137" cy="69" rx="24" ry="72" transform="rotate(-12 137 69)" fill={skin}/><ellipse cx="223" cy="69" rx="24" ry="72" transform="rotate(12 223 69)" fill={skin}/><ellipse cx="138" cy="66" rx="10" ry="52" fill="#E99A9A"/><ellipse cx="222" cy="66" rx="10" ry="52" fill="#E99A9A"/></>
     : ["cat", "fox"].includes(species)
-      ? <><path d="M102 128 L105 31 L164 104Z M258 128 L255 31 L196 104Z" fill={skin} stroke="#6D493E" strokeWidth="4"/><path d="M116 100 L119 54 L148 103Z M244 100 L241 54 L212 103Z" fill="#E99A9A"/></>
+      ? <><path d="M102 128 L105 31 L164 104Z M258 128 L255 31 L196 104Z" fill={skin} stroke="#6D493E" stroke-width="4"/><path d="M116 100 L119 54 L148 103Z M244 100 L241 54 L212 103Z" fill="#E99A9A"/></>
       : species === "bear"
         ? <><circle cx="112" cy="82" r="37" fill={skin}/><circle cx="248" cy="82" r="37" fill={skin}/><circle cx="112" cy="82" r="18" fill="#D99B83"/><circle cx="248" cy="82" r="18" fill="#D99B83"/></>
         : species === "dog"
@@ -101,33 +101,33 @@ const CharacterRig: FunctionComponent<{
     ? <path d="M165 191 L195 191 L180 219Z" fill="#E9A44A"/>
     : <ellipse cx="180" cy="198" rx="10" ry="7" fill="#30272A"/>;
   const tail = ["fox", "cat", "dog", "rabbit", "bear"].includes(species)
-    ? <path d="M240 355 Q318 305 326 382 Q330 424 267 413" stroke={skin} strokeWidth="25" fill="none" strokeLinecap="round"/>
+    ? <path d="M240 355 Q318 305 326 382 Q330 424 267 413" stroke={skin} stroke-width="25" fill="none" stroke-linecap="round"/>
     : null;
   const mouthShape = mouth > 0.12
     ? <ellipse cx="180" cy={mouthY} rx={scared ? 12 : 15} ry={2 + mouth * 16} fill="#652D36"/>
     : sad
-      ? <path d="M151 233 Q180 204 209 233" stroke="#652D36" strokeWidth="8" fill="none" strokeLinecap="round"/>
-      : <path d="M148 220 Q180 248 212 220" stroke="#652D36" strokeWidth="8" fill="none" strokeLinecap="round"/>;
+      ? <path d="M151 233 Q180 204 209 233" stroke="#652D36" stroke-width="8" fill="none" stroke-linecap="round"/>
+      : <path d="M148 220 Q180 248 212 220" stroke="#652D36" stroke-width="8" fill="none" stroke-linecap="round"/>;
   return (
     <g transform={`translate(${x} ${y - 480 * scale - bounce}) scale(${scale})`}>
       <ellipse cx="180" cy="493" rx="104" ry="18" fill="#10202B" opacity=".24"/>
       {tail}
-      <path d="M145 354 Q142 412 132 452" stroke={pants} strokeWidth="37" fill="none" strokeLinecap="round"/>
-      <path d="M214 354 Q218 412 230 452" stroke={pants} strokeWidth="37" fill="none" strokeLinecap="round"/>
+      <path d="M145 354 Q142 412 132 452" stroke={pants} stroke-width="37" fill="none" stroke-linecap="round"/>
+      <path d="M214 354 Q218 412 230 452" stroke={pants} stroke-width="37" fill="none" stroke-linecap="round"/>
       <path d="M130 452 Q110 464 112 480 L163 480 Q174 465 151 452Z" fill={shoe}/>
       <path d="M226 452 Q210 464 220 480 L271 480 Q279 465 248 452Z" fill={shoe}/>
-      <path d="M125 244 Q180 222 235 244 L251 354 Q180 385 109 354Z" fill={shirt} stroke="#FFFFFF" strokeOpacity=".2" strokeWidth="5"/>
+      <path d="M125 244 Q180 222 235 244 L251 354 Q180 385 109 354Z" fill={shirt} stroke="#FFFFFF" stroke-opacity=".2" stroke-width="5"/>
       <g transform={`rotate(${-armWave} 123 264)`}>
-        <path d="M123 264 Q82 293 76 354" stroke={skin} strokeWidth="28" fill="none" strokeLinecap="round"/>
+        <path d="M123 264 Q82 293 76 354" stroke={skin} stroke-width="28" fill="none" stroke-linecap="round"/>
         <circle cx="76" cy="355" r="17" fill={skin}/>
       </g>
       <g transform={`rotate(${armWave} 238 264)`}>
-        <path d="M238 264 Q279 291 285 348" stroke={skin} strokeWidth="28" fill="none" strokeLinecap="round"/>
+        <path d="M238 264 Q279 291 285 348" stroke={skin} stroke-width="28" fill="none" stroke-linecap="round"/>
         <circle cx="285" cy="349" r="17" fill={skin}/>
       </g>
       <g>
         {ears}
-        <ellipse cx="180" cy="153" rx="91" ry="106" fill={skin} stroke="#6D493E" strokeOpacity=".22" strokeWidth="5"/>
+        <ellipse cx="180" cy="153" rx="91" ry="106" fill={skin} stroke="#6D493E" stroke-opacity=".22" stroke-width="5"/>
         {hairPath}
         {muzzle}
         <g transform={`translate(0 0) scale(1 ${eyeScale})`}>
@@ -138,7 +138,7 @@ const CharacterRig: FunctionComponent<{
           <circle cx="154" cy="177" r="4" fill="#FFFFFF"/>
           <circle cx="217" cy="177" r="4" fill="#FFFFFF"/>
         </g>
-        <path d="M130 155 Q147 142 163 153 M198 153 Q215 142 231 155" stroke="#4A3029" strokeWidth="7" fill="none" strokeLinecap="round"/>
+        <path d="M130 155 Q147 142 163 153 M198 153 Q215 142 231 155" stroke="#4A3029" stroke-width="7" fill="none" stroke-linecap="round"/>
         {nose}
         {mouthShape}
         <ellipse cx="116" cy="205" rx="13" ry="7" fill="#E88786" opacity=".35"/>
@@ -195,12 +195,12 @@ export const ClipKaroScene: FunctionComponent<CartoonSceneProps & {time: number}
       <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid slice">
         <defs>
           <linearGradient id={skyId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor={environment.sky}/>
-            <stop offset="1" stopColor={environment.glow}/>
+            <stop offset="0" stop-color={environment.sky}/>
+            <stop offset="1" stop-color={environment.glow}/>
           </linearGradient>
           <radialGradient id={glowId}>
-            <stop offset="0" stopColor="#FFFFFF" stopOpacity=".12"/>
-            <stop offset="1" stopColor="#081525" stopOpacity=".18"/>
+            <stop offset="0" stop-color="#FFFFFF" stop-opacity=".12"/>
+            <stop offset="1" stop-color="#081525" stop-opacity=".18"/>
           </radialGradient>
         </defs>
         <g transform={`translate(${width / 2 + panX} ${height / 2}) scale(${zoom}) translate(${-width / 2} ${-height / 2})`}>
@@ -219,26 +219,26 @@ export const ClipKaroScene: FunctionComponent<CartoonSceneProps & {time: number}
             <g>
               <rect width={width} height={height} fill="#8D6E65"/>
               <rect y={baseline} width={width} height={height - baseline} fill="#40333A"/>
-              <path d={"M0 " + baseline + " Q" + width * .5 + " " + (baseline - height * .02) + " " + width + " " + baseline} stroke="#C39B83" strokeWidth="8" fill="none" opacity=".65"/>
-              <rect x={width * .065} y={height * .12} width={width * .31} height={height * .39} rx="10" fill="#20354A" stroke="#D8C0A5" strokeWidth="16"/>
+              <path d={"M0 " + baseline + " Q" + width * .5 + " " + (baseline - height * .02) + " " + width + " " + baseline} stroke="#C39B83" stroke-width="8" fill="none" opacity=".65"/>
+              <rect x={width * .065} y={height * .12} width={width * .31} height={height * .39} rx="10" fill="#20354A" stroke="#D8C0A5" stroke-width="16"/>
               <rect x={width * .085} y={height * .14} width={width * .27} height={height * .35} fill="#304F69"/>
               <circle cx={width * .29} cy={height * .22} r={width * .035} fill="#E8E0C6"/>
               <circle cx={width * .305} cy={height * .205} r={width * .033} fill="#304F69"/>
               <path d={"M" + width * .085 + " " + height * .42 + " L" + width * .17 + " " + height * .33 + " L" + width * .23 + " " + height * .39 + " L" + width * .355 + " " + height * .31 + " V" + height * .49 + " H" + width * .085 + "Z"} fill="#172A3B"/>
               <path d={"M" + width * .045 + " " + height * .1 + " Q" + width * .1 + " " + height * .2 + " " + width * .07 + " " + height * .54 + " L" + width * .12 + " " + height * .54 + " Q" + width * .15 + " " + height * .25 + " " + width * .13 + " " + height * .1 + "Z"} fill="#554554"/>
               <path d={"M" + width * .32 + " " + height * .1 + " Q" + width * .29 + " " + height * .27 + " " + width * .35 + " " + height * .54 + " L" + width * .39 + " " + height * .54 + " Q" + width * .35 + " " + height * .22 + " " + width * .39 + " " + height * .1 + "Z"} fill="#554554"/>
-              <rect x={width * .76} y={height * .11} width={width * .19} height={height * .55} rx="8" fill="#4A302D" stroke="#C6A88A" strokeWidth="12"/>
+              <rect x={width * .76} y={height * .11} width={width * .19} height={height * .55} rx="8" fill="#4A302D" stroke="#C6A88A" stroke-width="12"/>
               <rect x={width * .78} y={height * .14} width={width * .15} height={height * .49} fill="#68453B"/>
               <circle cx={width * .91} cy={height * .46} r="9" fill="#D7B985"/>
-              <rect x={width * .46} y={height * .17} width={width * .2} height={height * .13} rx="5" fill="#463C45" stroke="#D5BDA2" strokeWidth="9"/>
+              <rect x={width * .46} y={height * .17} width={width * .2} height={height * .13} rx="5" fill="#463C45" stroke="#D5BDA2" stroke-width="9"/>
               <path d={"M" + width * .48 + " " + height * .28 + " L" + width * .54 + " " + height * .2 + " L" + width * .61 + " " + height * .28 + "Z"} fill="#8A9B9B"/>
-              <rect x={width * .26} y={height * .74} width={width * .67} height={height * .15} rx="18" fill="#4B353A" stroke="#2C2831" strokeWidth="10"/>
-              <rect x={width * .28} y={height * .69} width={width * .63} height={height * .11} rx="30" fill="#B9C6C8" stroke="#586B73" strokeWidth="8"/>
-              <path d={"M" + width * .28 + " " + height * .77 + " Q" + width * .58 + " " + height * .73 + " " + width * .93 + " " + height * .78 + " V" + height * .88 + " Q" + width * .58 + " " + height * .92 + " " + width * .28 + " " + height * .87 + "Z"} fill="#75677E" stroke="#3F3748" strokeWidth="6"/>
-              <path d={"M" + width * .31 + " " + height * .8 + " Q" + width * .6 + " " + height * .77 + " " + width * .9 + " " + height * .81} stroke="#C7B9C8" strokeWidth="5" opacity=".5" fill="none"/>
+              <rect x={width * .26} y={height * .74} width={width * .67} height={height * .15} rx="18" fill="#4B353A" stroke="#2C2831" stroke-width="10"/>
+              <rect x={width * .28} y={height * .69} width={width * .63} height={height * .11} rx="30" fill="#B9C6C8" stroke="#586B73" stroke-width="8"/>
+              <path d={"M" + width * .28 + " " + height * .77 + " Q" + width * .58 + " " + height * .73 + " " + width * .93 + " " + height * .78 + " V" + height * .88 + " Q" + width * .58 + " " + height * .92 + " " + width * .28 + " " + height * .87 + "Z"} fill="#75677E" stroke="#3F3748" stroke-width="6"/>
+              <path d={"M" + width * .31 + " " + height * .8 + " Q" + width * .6 + " " + height * .77 + " " + width * .9 + " " + height * .81} stroke="#C7B9C8" stroke-width="5" opacity=".5" fill="none"/>
               <rect x={width * .06} y={height * .7} width={width * .16} height={height * .13} rx="8" fill="#523C3A"/>
               <rect x={width * .075} y={height * .72} width={width * .13} height={height * .045} fill="#8C756D"/>
-              <path d={"M" + width * .14 + " " + height * .7 + " V" + height * .59 + " M" + width * .1 + " " + height * .59 + " H" + width * .18 + " L" + width * .2 + " " + height * .68 + " H" + width * .08 + "Z"} fill="#D6B48A" stroke="#6B514A" strokeWidth="5"/>
+              <path d={"M" + width * .14 + " " + height * .7 + " V" + height * .59 + " M" + width * .1 + " " + height * .59 + " H" + width * .18 + " L" + width * .2 + " " + height * .68 + " H" + width * .08 + "Z"} fill="#D6B48A" stroke="#6B514A" stroke-width="5"/>
               <ellipse cx={width * .14} cy={height * .58} rx={width * .055} ry={height * .035} fill="#E8C99C"/>
               <ellipse cx={width * .5} cy={height * .86} rx={width * .3} ry={height * .025} fill="#211E26" opacity=".28"/>
             </g>
