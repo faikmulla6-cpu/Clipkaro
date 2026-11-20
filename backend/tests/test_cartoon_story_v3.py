@@ -12,6 +12,32 @@ def story():
     return normalize_director_story(fixtures()["jannat"],duration=30)
 
 
+@pytest.mark.asyncio
+async def test_postgres_startup_accepts_the_actual_migration_head(monkeypatch):
+    from types import SimpleNamespace
+    from contextlib import asynccontextmanager
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+    from app.core import database
+
+    config = Config()
+    config.set_main_option("script_location", str(Path(__file__).resolve().parents[1] / "migrations"))
+    head = ScriptDirectory.from_config(config).get_current_head()
+    connection = SimpleNamespace(fetchval=AsyncMock(return_value=head))
+
+    @asynccontextmanager
+    async def acquire():
+        yield connection
+
+    monkeypatch.setattr(database, "get_settings", lambda: SimpleNamespace(normalized_database_backend="postgres"))
+    monkeypatch.setattr(database, "_get_postgres_pool", AsyncMock(return_value=SimpleNamespace(acquire=acquire)))
+    await database.init_db()
+    connection.fetchval.assert_awaited_once()
+    connection.fetchval.return_value = "outdated-revision"
+    with pytest.raises(RuntimeError, match="schema is not current"):
+        await database.init_db()
+
+
 def audio_for(story):
     return [{"id":line["id"],"filename":line["id"]+".mp3","duration":2,
              "word_boundaries":[{"text":line["text"].split()[0],"offset":1000000,"duration":5000000}],
