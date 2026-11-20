@@ -4,6 +4,7 @@ import html
 import re
 from pathlib import Path
 from typing import Any
+from app.services.cartoon_timing import build_karaoke_caption_markup
 
 
 RATIOS = {
@@ -260,7 +261,8 @@ def build_cartoon_project(
     width, height, resolution = RATIOS.get(ratio, RATIOS["9:16"])
     style = str(project.get("style") or "2d-cartoon")
     language = str(project.get("language") or "auto").lower()
-    html_language = "hi" if language in {"hi", "hinglish"} else language if language in {"en", "mr"} else "en"
+    html_language = "ur" if language == "ur" else "hi" if language in {"hi", "hinglish"} else language if language in {"en", "mr"} else "en"
+    html_direction = "rtl" if language == "ur" else "ltr"
     characters = storyboard.get("characters") if isinstance(storyboard.get("characters"), list) else []
     scenes = storyboard.get("scenes") if isinstance(storyboard.get("scenes"), list) else []
     char_map = {str(item.get("id")): item for item in characters if isinstance(item, dict)}
@@ -329,13 +331,36 @@ def build_cartoon_project(
         char_markup: list[str] = []
         audio_info = audio_map.get(scene_id, {})
         audio_duration = float(audio_info.get("duration") or 0)
-        speech_start = round(min(1.05, slot * .16), 3)
+        animation_filename = str(audio_info.get("animation_filename") or "")
+        if not re.fullmatch(r"[A-Za-z0-9_.-]{1,100}", animation_filename):
+            animation_filename = ""
+        animation_markup = (
+            f'<video id="{scene_id}-animation" class="clip scene-animation" data-start="0" '
+            f'data-duration="{scene_duration}" data-track-index="0" data-track-kind="video" '
+            f'src="assets/animation/{animation_filename}" muted playsinline></video>'
+            if animation_filename else ""
+        )
+        speech_start = round(float(audio_info.get("speech_start_seconds") if audio_info.get("speech_start_seconds") is not None else min(1.05, slot * .16)), 3)
         speech_duration = min(
             audio_duration or max(1.5, slot * .5),
             max(1.2, slot - 1.25),
         )
+        caption_words = audio_info.get("words") if isinstance(audio_info.get("words"), list) else []
+        if index == 0 and isinstance(project.get("narration_words"), list):
+            caption_words = sorted(
+                [*project["narration_words"], *caption_words],
+                key=lambda word: float(word.get("start_seconds") or 0) if isinstance(word, dict) else 0.0,
+            )
+        caption_markup, caption_timeline = build_karaoke_caption_markup(
+            caption_words,
+            overlay_id=scene_id,
+            rtl=language == "ur",
+            bottom_percent=30 if ratio == "9:16" else 18,
+        )
+        if caption_timeline:
+            timeline_js.append(caption_timeline)
 
-        for char_index, char_id in enumerate(char_ids):
+        for char_index, char_id in enumerate(char_ids if not animation_filename else []):
             character = char_map[char_id]
             uid = f"char-{index+1}-{_id(char_id, 'hero')}"
             left_pct = positions[char_index]
@@ -356,12 +381,18 @@ def build_cartoon_project(
                 )
             if char_id == speaker_id:
                 mouth_id = f"#{uid}-mouth"
-                cycles = max(3, min(22, int(speech_duration * 3.1)))
-                for cycle in range(cycles):
-                    t = speech_start + cycle * speech_duration / cycles
+                lip_envelope = audio_info.get("lip_envelope") if isinstance(audio_info.get("lip_envelope"), list) else []
+                for sample_index, sample in enumerate(lip_envelope):
+                    level = max(0.0, min(1.0, float(sample or 0)))
+                    scale = .55 + level * 1.35
+                    sample_time = speech_start + sample_index / 60.0
                     timeline_js.append(
-                        f'tl.to("{mouth_id}", {{scaleY:1.8,duration:.075,transformOrigin:"50% 50%"}}, {round(t,3)});'
-                        f'tl.to("{mouth_id}", {{scaleY:.55,duration:.09,transformOrigin:"50% 50%"}}, {round(t+.075,3)});'
+                        f'tl.set("{mouth_id}", {{scaleY:{scale:.3f},transformOrigin:"50% 50%"}}, {sample_time:.4f});'
+                    )
+                if lip_envelope:
+                    close_time = speech_start + len(lip_envelope) / 60.0
+                    timeline_js.append(
+                        f'tl.set("{mouth_id}", {{scaleY:.55,transformOrigin:"50% 50%"}}, {close_time:.4f});'
                     )
                 if motion == "wave":
                     timeline_js.append(
@@ -383,7 +414,9 @@ def build_cartoon_project(
         speaker = _text(char_map.get(speaker_id, {}).get("name") or "Character", 40)
         dialogue_hold = max(3.3, audio_duration + .65)
         dialogue_end = min(scene_duration - .18, speech_start + dialogue_hold)
-        if camera == "push-in":
+        if animation_filename:
+            camera_anim = ""
+        elif camera == "push-in":
             camera_anim = (
                 f'tl.fromTo("#{scene_id}-inner", {{scale:1.04}}, '
                 f'{{scale:1,duration:{scene_duration},ease:"none"}}, 0);'
@@ -402,21 +435,12 @@ def build_cartoon_project(
         else:
             camera_anim = ""
         timeline_js.append(camera_anim)
-        timeline_js.append(
-            f'tl.fromTo("#{scene_id}-title", {{y:20}}, '
-            f'{{y:0,duration:.3,ease:"power3.out"}}, .12);'
-            f'tl.fromTo("#{scene_id}-dialogue", {{y:24,opacity:0}}, '
-            f'{{y:0,opacity:1,duration:.12,ease:"power2.out"}}, {speech_start});'
-            f'tl.to("#{scene_id}-dialogue", {{opacity:0,duration:.12}}, {dialogue_end});'
-        )
 
         bg = _background_svg(environment, width, height, index + 1)
         scene_markup = (
-            f'<div id="{scene_id}-inner" class="scene-inner" data-layout-allow-overflow="true">{bg}'
-            f'<div class="scene-heading"><h1 id="{scene_id}-title">{title}</h1><p>{action}</p></div>'
+            f'<div id="{scene_id}-inner" class="scene-inner" data-layout-allow-overflow="true">{bg}{animation_markup}'
             f'{"".join(char_markup)}'
-            f'<div id="{scene_id}-dialogue" class="dialogue-box {dialogue_class}" '
-            f'><span>{speaker}</span><p>{dialogue}</p></div>'
+            f'{caption_markup}'
             f'</div>'
         )
         scene_hosts.append(
@@ -432,9 +456,10 @@ def build_cartoon_project(
 #root{{position:absolute;inset:0;width:100%;height:100%;overflow:hidden;background:#172a37}}
 .scene-inner{{position:absolute;inset:0;overflow:hidden}}
 .scene-bg{{position:absolute;inset:0;width:100%;height:100%}}
-.scene-heading{{position:absolute;z-index:3;top:17%;left:6%;right:6%;padding:24px 28px 26px;border-radius:26px;text-align:center;color:#fff;background:rgba(13,35,29,.82);box-shadow:0 16px 38px rgba(12,28,24,.22);text-shadow:0 2px 8px rgba(0,0,0,.24)}}
-.scene-heading h1{{font-size:{title_size}px;line-height:1.08;font-weight:900;letter-spacing:-1.5px;text-wrap:balance}}
-.scene-heading p{{font-size:28px;line-height:1.3;margin:14px auto 0;max-width:88%;font-weight:700}}
+.scene-animation{{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1}}
+.scene-heading{{position:absolute;z-index:3;top:16%;left:6%;right:6%;padding:10px 16px;border-radius:14px;text-align:left;color:#fff;background:rgba(13,25,36,.42);box-shadow:none;text-shadow:0 2px 8px rgba(0,0,0,.24);max-width:68%}}
+.scene-heading h1{{font-size:{max(28, title_size//2)}px;line-height:1.08;font-weight:900;letter-spacing:-.5px;text-wrap:balance}}
+.scene-heading p{{font-size:30px;line-height:1.25;margin:6px 0 0;max-width:100%;font-weight:650;opacity:.86}}
 .character-slot{{position:absolute;z-index:4;display:flex;align-items:flex-end;justify-content:center;transform-origin:50% 100%}}
 .character-svg{{width:100%;height:100%;overflow:visible;filter:drop-shadow(0 15px 15px rgba(20,36,45,.13))}}
 .dialogue-box{{position:absolute;z-index:7;left:24%;right:24%;bottom:38%;padding:16px 18px 18px;border-radius:24px;background:rgba(255,255,255,.97);box-shadow:0 12px 32px rgba(24,37,49,.18);text-align:center;opacity:0}}
@@ -463,12 +488,42 @@ tl.seek(0);
             audio_name = _text(audio_info["filename"], 80)
             audio_markup.append(
                 f'<audio id="dialogue-{scene_id}" class="clip" data-start="{audio_start}" '
-                f'data-duration="{audio_track_duration}" data-track-index="20" '
-                f'data-volume="1" src="assets/audio/{audio_name}"></audio>'
+                f'data-duration="{audio_track_duration}" data-track-index="20" data-track-kind="audio" '
+                f'data-volume="1" data-fade-in="0.040" data-fade-out="0.120" '
+                f'src="assets/audio/{audio_name}"></audio>'
             )
 
+    extra_tracks = project.get("audio_tracks") if isinstance(project.get("audio_tracks"), list) else []
+    track_indexes = {"narration": 10, "dialogue": 20, "music": 40, "foley": 50}
+    for track_number, track in enumerate(extra_tracks):
+        if not isinstance(track, dict):
+            continue
+        filename = str(track.get("filename") or "")
+        if not re.fullmatch(r"[A-Za-z0-9_.-]{1,100}", filename):
+            continue
+        try:
+            start = max(0.0, float(track.get("start_seconds") or 0))
+            track_duration = max(0.05, float(track.get("duration_seconds") or 0))
+            volume = min(1.5, max(0.0, float(track.get("volume", 1.0))))
+            fade_in = min(5.0, max(0.0, float(track.get("fade_in_seconds") or 0)))
+            fade_out = min(5.0, max(0.0, float(track.get("fade_out_seconds") or 0)))
+        except (TypeError, ValueError):
+            continue
+        if start >= duration:
+            continue
+        track_duration = min(track_duration, duration - start)
+        kind = str(track.get("track") or "foley").lower()
+        track_index = track_indexes.get(kind, 50)
+        audio_markup.append(
+            f'<audio id="audio-extra-{track_number + 1}" class="clip" data-start="{start:.4f}" '
+            f'data-duration="{track_duration:.4f}" data-track-index="{track_index}" '
+            f'data-track-kind="audio" data-volume="{volume:.3f}" '
+            f'data-fade-in="{fade_in:.3f}" data-fade-out="{fade_out:.3f}" '
+            f'src="assets/audio/{filename}"></audio>'
+        )
+
     root_html = f"""<!doctype html>
-<html lang="{html_language}" data-resolution="{resolution}">
+<html lang="{html_language}" dir="{html_direction}" data-resolution="{resolution}">
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width={width},height={height}"/>

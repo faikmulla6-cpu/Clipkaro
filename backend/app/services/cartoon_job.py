@@ -18,6 +18,10 @@ import httpx
 from app.core.config import get_settings
 from app.core.database import execute, fetch_one
 from app.services.cartoon_renderer import build_cartoon_project
+from app.services.cartoon_speech import SYSTEM_URDU_TTS_MODEL, system_urdu_tts_model_row, synthesize_edge_tts
+from app.services.cartoon_audio import build_lip_envelope
+from app.services.cartoon_score import build_jannat_audio_stems
+from app.services.cartoon_timing import approximate_word_boundaries, build_episode_lip_envelope, normalize_word_boundaries
 from app.services.cartoon_security import decrypt_provider_key
 from app.services.jobs import update_job, utcnow
 from app.services.storage import validate_object_key
@@ -129,7 +133,16 @@ async def _openrouter_models(api_key: str, modality: str) -> list[dict[str, Any]
 
 def _voice_for(character: dict[str, Any], voices: list[str], language: str = "auto") -> str:
     voice_type = str(character.get("voice_type") or "neutral").lower()
-    if language in {"hi", "hinglish"}:
+    if language == "ur":
+        urdu_preferences = {
+            "male": ["ur-PK-AsadNeural"],
+            "female": ["ur-PK-UzmaNeural"],
+            "child": ["ur-PK-UzmaNeural"],
+            "elder": ["ur-PK-UzmaNeural"],
+            "neutral": ["ur-PK-UzmaNeural"],
+        }
+        preferences = urdu_preferences.get(voice_type, urdu_preferences["neutral"])
+    elif language in {"hi", "hinglish"}:
         hindi_preferences = {
             "male": ["hm_omega", "hm_psi"],
             "female": ["hf_alpha", "hf_beta"],
@@ -238,6 +251,7 @@ def _normalize_storyboard(raw: dict[str, Any], scene_count: int, prompt: str) ->
     return {
         "title": str(raw.get("title") or prompt[:64] or "A New Adventure")[:80],
         "summary": str(raw.get("summary") or "")[:300],
+        "narration": str(raw.get("narration") or "")[:400],
         "characters": characters,
         "scenes": scenes,
     }
@@ -290,7 +304,7 @@ async def _extract_reference_frames(job: dict, project: dict, scratch: Path, sto
 
 
 async def _generate_storyboard(api_key: str, prompt: str, duration: int, style: str, language: str, frames: list[Path]) -> dict[str, Any]:
-    scene_count = max(2, min(6, math.ceil(duration / 10)))
+    scene_count = 3 if style == "cinematic-jannat" else max(2, min(6, math.ceil(duration / 10)))
     system = (
         "You are the story director for ClipKaro Cartoon Studio. Create original, family-friendly short cartoon stories. "
         "Return only one valid JSON object. Never return HTML, CSS, JavaScript, markdown or executable code. "
@@ -305,6 +319,7 @@ Return JSON with exactly these top-level keys:
 {{
   "title":"short title",
   "summary":"one sentence",
+  "narration":"one concise opening narration line in the requested language, or an empty string",
   "characters":[
     {{"id":"hero","name":"name","role":"role","species":"human|fox|cat|dog|rabbit|bear|owl|robot","voice_type":"male|female|child|elder|neutral",
       "appearance":{{"skin_color":"#RRGGBB","hair_color":"#RRGGBB","shirt_color":"#RRGGBB","pants_color":"#RRGGBB","shoe_color":"#RRGGBB","hair_style":"short|long|curly|spiky|bald"}}}}
@@ -318,6 +333,17 @@ Return JSON with exactly these top-level keys:
 }}
 
 Create exactly {scene_count} scenes and 1 to 3 recurring characters. Keep every character's species, colours, hair and identity unchanged in all scenes. Keep each dialogue under 12 spoken words and each action under 12 words so the text fits its scene. Use 1 or 2 characters per scene where possible. Return JSON only."""
+    if style == "cinematic-jannat":
+        user_text += (
+            "\n\nCINEMATIC JANNAT PRESET: Use exactly one recurring female human character named Jannat. "
+            "She has long center-parted black hair, warm wheat skin, and the same teal shalwar kameez in every shot. "
+            "Every scene stays in the same moonlit bedroom at midnight. Plan the 30-second story in this order: "
+            "Return exactly 3 scenes of 10 seconds each: scene 1 shows Jannat waking from a recurring dream and sitting up; "
+            "scene 2 shows her looking toward the closed bedroom door and briefly recalling a painful memory; "
+            "scene 3 shows her getting out of bed and facing the door. "
+            "Write one short natural Urdu dialogue line per scene and one separate concise Urdu narration line in the top-level narration field. "
+            "Do not repeat dialogue in narration. Do not introduce other visible characters or change her clothes."
+        )
     content: list[dict[str, Any]] = [{"type": "text", "text": user_text}]
     for frame in frames:
         encoded = base64.b64encode(frame.read_bytes()).decode("ascii")
@@ -355,7 +381,47 @@ Create exactly {scene_count} scenes and 1 to 3 recurring characters. Keep every 
         raise CartoonJobError("The story planner returned an invalid storyboard. Retry with a shorter, clearer idea.", category="CARTOON_STORY_INVALID") from exc
 
 
-async def _tts_audio(api_key: str, model: str, voice: str, text: str, output: Path) -> None:
+def _apply_cinematic_jannat_storyboard(storyboard: dict[str, Any]) -> dict[str, Any]:
+    """Lock the reference template to one stable Jannat character and bedroom setting."""
+    storyboard["characters"] = [{
+        "id": "jannat",
+        "name": "Jannat",
+        "role": "main character",
+        "species": "human",
+        "voice_type": "female",
+        "appearance": {
+            "skin_color": "#ca9a85",
+            "hair_color": "#121c29",
+            "shirt_color": "#306b73",
+            "pants_color": "#306b73",
+            "shoe_color": "#17202b",
+            "hair_style": "long",
+        },
+    }]
+    scenes = storyboard.get("scenes") if isinstance(storyboard.get("scenes"), list) else []
+    if len(scenes) != 3:
+        raise CartoonJobError(
+            "The Jannat cinematic preset requires exactly three 10-second scenes. Regenerate the storyboard and retry.",
+            category="CARTOON_CINEMATIC_STORY_INVALID",
+        )
+    for scene in scenes:
+        if not isinstance(scene, dict):
+            continue
+        scene["environment"] = "home"
+        scene["character_ids"] = ["jannat"]
+        scene["speaker_id"] = "jannat"
+    return storyboard
+
+
+async def _tts_audio(
+    api_key: str, model: str, voice: str, text: str, output: Path,
+    *, rate: str = "-8%", volume: str = "-8%", pitch: str = "-3Hz",
+) -> list[dict[str, Any]]:
+    if model == SYSTEM_URDU_TTS_MODEL:
+        try:
+            return await synthesize_edge_tts(text, voice, output, rate=rate, volume=volume, pitch=pitch)
+        except RuntimeError as exc:
+            raise CartoonJobError(str(exc), category="CARTOON_TTS_SYSTEM_FAILED") from exc
     response_format = "pcm" if model.startswith(("google/", "hexgrad/")) else "mp3"
     payload = {"model": model, "input": text, "voice": voice, "response_format": response_format}
     try:
@@ -437,6 +503,28 @@ async def _tts_audio(api_key: str, model: str, voice: str, text: str, output: Pa
 
     if not output.is_file() or output.stat().st_size < 128:
         raise CartoonJobError("ClipKaro could not validate the generated character voice file.", category="CARTOON_TTS_CONVERSION_FAILED")
+    return []
+
+
+async def _probe_audio_duration(path: Path) -> float:
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        raise CartoonJobError("FFprobe is required to time generated narration.", category="CARTOON_RENDERER_UNAVAILABLE")
+    result = await asyncio.to_thread(
+        subprocess.run,
+        [ffprobe, "-v", "error", "-show_entries", "format=duration",
+         "-of", "default=noprint_wrappers=1:nokey=1", str(path)],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=30,
+    )
+    if result.returncode != 0:
+        raise CartoonJobError("The narration audio could not be timed.", category="CARTOON_TTS_INVALID_RESPONSE")
+    try:
+        duration = float(result.stdout.decode().strip())
+    except ValueError as exc:
+        raise CartoonJobError("The narration returned an invalid duration.", category="CARTOON_TTS_INVALID_RESPONSE") from exc
+    if not 0.05 <= duration <= 30:
+        raise CartoonJobError("The narration duration is outside the supported range.", category="CARTOON_TTS_INVALID_RESPONSE")
+    return duration
 
 
 async def _run_cli(args: list[str], *, cwd: Path, env: dict[str, str], timeout: int) -> tuple[int, str]:
@@ -467,6 +555,13 @@ def _engine_paths() -> tuple[Path, Path, Path]:
         gsap = Path("/usr/local/lib/node_modules/gsap/dist/gsap.min.js")
     node = Path(shutil.which("node") or shutil.which("nodejs") or "")
     return engine, cli, gsap if node else Path("")
+
+
+def _remotion_cli_path(engine: Path) -> Path:
+    cli = engine / "node_modules" / "@remotion" / "cli" / "remotion-cli.js"
+    if not cli.is_file():
+        cli = Path("/usr/local/lib/node_modules/@remotion/cli/remotion-cli.js")
+    return cli
 
 
 async def run_cartoon_generation(job: dict[str, Any], scratch: Path, storage) -> None:
@@ -512,8 +607,16 @@ async def run_cartoon_generation(job: dict[str, Any], scratch: Path, storage) ->
             "UPDATE cartoon_projects SET storyboard_json=?,progress=18,stage='story_ready',updated_at=? WHERE id=?",
             (json.dumps(storyboard, separators=(",", ":"), ensure_ascii=False), utcnow(), project_id),
         )
+    if str(project.get("style") or "") == "cinematic-jannat":
+        storyboard = _apply_cinematic_jannat_storyboard(storyboard)
+        await execute(
+            "UPDATE cartoon_projects SET storyboard_json=?,updated_at=? WHERE id=?",
+            (json.dumps(storyboard, separators=(",", ":"), ensure_ascii=False), utcnow(), project_id),
+        )
+
     tts_model = str(project.get("tts_model") or "hexgrad/kokoro-82m")
     tts_models = await _openrouter_models(api_key, "speech")
+    tts_models.append(system_urdu_tts_model_row())
     model_row = next((row for row in tts_models if row.get("id") == tts_model), None)
     if not model_row:
         raise CartoonJobError("The selected text-to-speech model is no longer available. Refresh the voice model list and retry.", category="CARTOON_TTS_MODEL_UNAVAILABLE")
@@ -537,12 +640,16 @@ async def run_cartoon_generation(job: dict[str, Any], scratch: Path, storage) ->
     )
     assets = _loads(project.get("assets_json"), {})
     audio_assets: list[dict[str, Any]] = []
+    cinematic_jannat = str(project.get("style") or "") == "cinematic-jannat"
     scenes = storyboard.get("scenes", [])
     for index, scene in enumerate(scenes):
         scene_id = str(scene["id"])
         filename = f"scene-{index+1}.mp3"
         local_audio = project_dir / "assets" / "audio" / filename
         saved = assets.get(scene_id) if isinstance(assets.get(scene_id), dict) else {}
+        word_boundaries = saved.get("word_boundaries") if isinstance(saved.get("word_boundaries"), list) else []
+        lip_envelope = saved.get("lip_envelope") if isinstance(saved.get("lip_envelope"), list) else []
+        asset_generation = saved.get("generation")
         audio_key = str(saved.get("key") or f"users/{job['user_id']}/cartoons/{project_id}/audio/{filename}")
         audio_meta = await storage.stat(audio_key) if saved.get("key") else None
         if audio_meta and audio_meta.size > 0:
@@ -555,8 +662,15 @@ async def run_cartoon_generation(job: dict[str, Any], scratch: Path, storage) ->
                 "UPDATE cartoon_projects SET progress=?,stage='voice_generation',updated_at=? WHERE id=?",
                 (voice_progress, utcnow(), project_id),
             )
-            await update_job(job["id"], voice_progress, "voice_generation", f"Generating {character['name']}'s voice · scene {index+1} of {len(scenes)}")
-            await _tts_audio(api_key, tts_model, str(character.get("voice_id") or "Puck"), str(scene.get("dialogue") or ""), local_audio)
+            await update_job(job["id"], voice_progress, "voice_generation", f"Generating {character['name']}'s voice \u00b7 scene {index+1} of {len(scenes)}")
+            word_boundaries = await _tts_audio(
+                api_key, tts_model, str(character.get("voice_id") or "Puck"),
+                str(scene.get("dialogue") or ""), local_audio,
+                rate="-18%" if cinematic_jannat else "-8%",
+                volume="-12%" if cinematic_jannat else "-8%", pitch="-3Hz",
+            )
+            if tts_model == SYSTEM_URDU_TTS_MODEL:
+                await asyncio.sleep(0.75)
             audio_duration = float((await probe_metadata(local_audio))["duration"]) if local_audio.suffix.lower() in {".mp4", ".mov"} else 0.0
             ffprobe = shutil.which("ffprobe")
             if ffprobe:
@@ -572,12 +686,54 @@ async def run_cartoon_generation(job: dict[str, Any], scratch: Path, storage) ->
             else:
                 audio_duration = max(1.5, len(str(scene.get("dialogue") or "").split()) * .36)
             uploaded = await storage.upload(local_audio, audio_key, content_type="audio/mpeg")
-            assets[scene_id] = {"key": audio_key, "generation": uploaded.generation, "duration": audio_duration}
+            asset_generation = uploaded.generation
+            assets[scene_id] = {"key": audio_key, "generation": uploaded.generation, "duration": audio_duration, "word_boundaries": word_boundaries}
             await execute(
                 "UPDATE cartoon_projects SET assets_json=?,updated_at=? WHERE id=?",
                 (json.dumps(assets, separators=(",", ":"), ensure_ascii=False), utcnow(), project_id),
             )
-        audio_assets.append({"scene_id": scene_id, "filename": filename, "duration": audio_duration})
+        if not lip_envelope:
+            lip_envelope = await build_lip_envelope(local_audio)
+        assets[scene_id] = {
+            "key": audio_key,
+            "generation": asset_generation,
+            "duration": audio_duration,
+            "word_boundaries": word_boundaries,
+            "lip_envelope": lip_envelope,
+        }
+        await execute(
+            "UPDATE cartoon_projects SET assets_json=?,updated_at=? WHERE id=?",
+            (json.dumps(assets, separators=(",", ":"), ensure_ascii=False), utcnow(), project_id),
+        )
+        slot = int(project["duration_seconds"]) / max(1, len(scenes))
+        speech_start = 6.2 if cinematic_jannat and index == 0 else min(1.05, slot * .16)
+        speaker_id = str(scene.get("speaker_id") or "")
+        if word_boundaries:
+            caption_words = normalize_word_boundaries(
+                word_boundaries,
+                audio_duration=audio_duration,
+                global_start=speech_start,
+                speaker_id=speaker_id,
+                track="dialogue",
+            )
+        else:
+            caption_words = approximate_word_boundaries(
+                str(scene.get("dialogue") or ""),
+                audio_duration=audio_duration,
+                global_start=speech_start,
+                speaker_id=speaker_id,
+                track="dialogue",
+            )
+        audio_assets.append({
+            "scene_id": scene_id,
+            "filename": filename,
+            "duration": audio_duration,
+            "words": caption_words,
+            "word_boundaries": word_boundaries,
+            "lip_envelope": lip_envelope,
+            "speaker_id": speaker_id,
+            "speech_start_seconds": speech_start,
+        })
     storyboard_json = json.dumps(storyboard, separators=(",", ":"), ensure_ascii=False)
     await execute(
         "UPDATE cartoon_projects SET storyboard_json=?,progress=60,stage='animating',updated_at=? WHERE id=?",
@@ -587,10 +743,270 @@ async def run_cartoon_generation(job: dict[str, Any], scratch: Path, storage) ->
 
     engine, cli, gsap = _engine_paths()
     node = shutil.which("node") or shutil.which("nodejs")
+    remotion_cli = _remotion_cli_path(engine)
+    remotion_entry = engine / "remotion" / "src" / "index.ts"
     if not node or not cli.is_file() or not gsap.is_file():
         raise CartoonJobError("The HyperFrames renderer is not installed in the media worker. Deploy the updated cartoon media image.", category="CARTOON_RENDERER_UNAVAILABLE")
+    if not remotion_cli.is_file() or not remotion_entry.is_file():
+        raise CartoonJobError("The Remotion animation engine is not installed in the media worker. Deploy the updated cartoon media image.", category="CARTOON_REMOTION_UNAVAILABLE")
     shutil.copy2(gsap, project_dir / "assets" / "gsap.min.js")
-    render_files = build_cartoon_project(project, storyboard, audio_assets)
+
+    # Remotion renders the animated scene plates; HyperFrames then composes
+    # those plates with word-timed captions and independent dialogue tracks.
+    animation_dir = project_dir / "assets" / "animation"
+    props_dir = project_dir / "remotion-props"
+    animation_dir.mkdir(parents=True, exist_ok=True)
+    props_dir.mkdir(parents=True, exist_ok=True)
+    render_env = os.environ.copy()
+    chromium = shutil.which("chromium") or shutil.which("chromium-browser") or shutil.which("google-chrome")
+    if chromium:
+        render_env.setdefault("PUPPETEER_EXECUTABLE_PATH", chromium)
+    headless_path_file = Path("/etc/hyperframes-headless-shell-path")
+    if headless_path_file.is_file():
+        headless_path = headless_path_file.read_text(encoding="utf-8").strip()
+        if headless_path:
+            render_env["PRODUCER_HEADLESS_SHELL_PATH"] = headless_path
+    remotion_browser = (
+        render_env.get("PRODUCER_HEADLESS_SHELL_PATH")
+        or render_env.get("REMOTION_BROWSER_EXECUTABLE")
+        or render_env.get("PUPPETEER_EXECUTABLE_PATH")
+    )
+    slot_seconds = int(project["duration_seconds"]) / max(1, len(scenes))
+    cinematic_jannat = str(project.get("style") or "") == "cinematic-jannat"
+    if cinematic_jannat:
+        if str(project.get("aspect_ratio") or "") != "16:9" or int(project.get("duration_seconds") or 0) != 30:
+            raise CartoonJobError(
+                "The Jannat cinematic reference preset currently requires 30 seconds in 16:9 format.",
+                category="CARTOON_CINEMATIC_PRESET_INVALID",
+            )
+        episode_lip_envelope = build_episode_lip_envelope(
+            audio_assets,
+            total_duration=30,
+            slot_seconds=slot_seconds,
+        )
+        audio_dir = project_dir / "assets" / "audio"
+        audio_dir.mkdir(parents=True, exist_ok=True)
+        for audio_asset in audio_assets:
+            scene_id = str(audio_asset.get("scene_id") or "scene")
+            (audio_dir / f"{scene_id}-words.json").write_text(
+                json.dumps(audio_asset.get("word_boundaries") or [], ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        (audio_dir / "dialogue-words.json").write_text(
+            json.dumps([
+                {
+                    "scene_id": item.get("scene_id"),
+                    "speech_start_seconds": item.get("speech_start_seconds"),
+                    "word_boundaries": item.get("word_boundaries") or [],
+                }
+                for item in audio_assets
+            ], ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        (audio_dir / "episode-lip-envelope.json").write_text(
+            json.dumps({"fps": 60, "samples": episode_lip_envelope}, separators=(",", ":")),
+            encoding="utf-8",
+        )
+        props_path = props_dir / "jannat-episode.json"
+        props_path.write_text(json.dumps({
+            "durationSeconds": 30,
+            "episodeLipEnvelope": episode_lip_envelope,
+        }, separators=(",", ":")), encoding="utf-8")
+        episode_output = animation_dir / "jannat-cinematic-episode.mp4"
+        await update_job(
+            job["id"], 64, "animating",
+            "Rendering Jannat's consistent cinematic character and bedroom with Remotion",
+        )
+        remotion_args = [
+            node, str(remotion_cli), "render", str(remotion_entry),
+            "ClipKaroJannatCinematic", str(episode_output),
+            f"--props={props_path}", "--codec=h264", "--crf=18",
+            "--concurrency=2", "--log=error",
+        ]
+        if remotion_browser and Path(remotion_browser).is_file():
+            remotion_args.extend(["--browser-executable", remotion_browser])
+        render_code, render_output = await _run_cli(
+            remotion_args, cwd=engine, env=render_env, timeout=900,
+        )
+        props_path.unlink(missing_ok=True)
+        if render_code != 0 or not episode_output.is_file() or episode_output.stat().st_size < 100_000:
+            logger.warning("cartoon_jannat_remotion_failed project_id=%s exit=%s", project_id, render_code)
+            raise CartoonJobError(
+                "Remotion could not finish the Jannat cinematic animation. Your storyboard and voice files are saved; retry rendering.",
+                category="CARTOON_REMOTION_RENDER_FAILED",
+            )
+        ffmpeg = shutil.which("ffmpeg")
+        if not ffmpeg:
+            raise CartoonJobError("FFmpeg is required to split the cinematic animation into scene plates.", category="CARTOON_RENDERER_UNAVAILABLE")
+        for scene_index, scene in enumerate(scenes):
+            scene_id = str(scene["id"])
+            start_seconds = scene_index * slot_seconds
+            segment_duration = min(slot_seconds, 30 - start_seconds)
+            animation_filename = f"{scene_id}.mp4"
+            animation_output = animation_dir / animation_filename
+            split_args = [
+                ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
+                "-ss", f"{start_seconds:.3f}", "-i", str(episode_output),
+                "-t", f"{segment_duration:.3f}", "-an",
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+                "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+                str(animation_output),
+            ]
+            split_result = await asyncio.to_thread(
+                subprocess.run, split_args, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, check=False, timeout=180,
+            )
+            if split_result.returncode != 0 or not animation_output.is_file() or animation_output.stat().st_size < 10_000:
+                logger.warning("cartoon_jannat_scene_split_failed project_id=%s scene_id=%s", project_id, scene_id)
+                raise CartoonJobError(
+                    "The Jannat animation could not be split into its timed scene plates. Retry rendering.",
+                    category="CARTOON_REMOTION_RENDER_FAILED",
+                )
+            audio_info = next((item for item in audio_assets if str(item.get("scene_id")) == scene_id), None)
+            if audio_info is None:
+                raise CartoonJobError("A Jannat scene is missing its saved dialogue track.", category="CARTOON_AUDIO_MISSING")
+            audio_info["animation_filename"] = animation_filename
+        episode_output.unlink(missing_ok=True)
+    else:
+        for scene_index, scene in enumerate(scenes):
+            scene_id = str(scene["id"])
+            audio_info = next((item for item in audio_assets if str(item.get("scene_id")) == scene_id), {})
+            scene_character_ids = scene.get("character_ids") if isinstance(scene.get("character_ids"), list) else []
+            speaker_id = str(scene.get("speaker_id") or (scene_character_ids[0] if scene_character_ids else ""))
+            if speaker_id and speaker_id not in scene_character_ids:
+                scene_character_ids = [speaker_id] + scene_character_ids
+            scene_characters = [
+                character for character in storyboard.get("characters", [])
+                if isinstance(character, dict) and str(character.get("id")) in {str(value) for value in scene_character_ids}
+            ][:3]
+            if not scene_characters and storyboard.get("characters"):
+                scene_characters = [storyboard["characters"][0]]
+                speaker_id = str(scene_characters[0].get("id") or "")
+            scene_duration = round(slot_seconds, 3)
+            animation_filename = f"{scene_id}.mp4"
+            animation_output = animation_dir / animation_filename
+            props_path = props_dir / f"{scene_id}.json"
+            props = {
+                "durationSeconds": scene_duration,
+                "aspectRatio": str(project.get("aspect_ratio") or "9:16"),
+                "scene": {
+                    "id": scene_id,
+                    "scene_title": str(scene.get("scene_title") or ""),
+                    "environment": str(scene.get("environment") or "forest"),
+                    "expression": str(scene.get("expression") or "happy"),
+                    "motion": str(scene.get("motion") or "idle"),
+                    "camera_move": str(scene.get("camera_move") or "push-in"),
+                    "speaker_id": speaker_id,
+                    "action": str(scene.get("action") or ""),
+                },
+                "characters": scene_characters,
+                "audioEnvelope": audio_info.get("lip_envelope") if isinstance(audio_info.get("lip_envelope"), list) else [],
+                "dialogueStartSeconds": min(1.05, slot_seconds * .16),
+            }
+            props_path.write_text(json.dumps(props, ensure_ascii=False), encoding="utf-8")
+            animation_progress = 60 + int(((scene_index + 1) / max(1, len(scenes))) * 7)
+            await update_job(
+                job["id"], animation_progress, "animating",
+                f"Animating scene {scene_index + 1} of {len(scenes)} with Remotion",
+            )
+            remotion_args = [
+                node, str(remotion_cli), "render", str(remotion_entry),
+                "ClipKaroScene", str(animation_output),
+                f"--props={props_path}", "--codec=h264", "--crf=23",
+                "--concurrency=2", "--log=error",
+            ]
+            if remotion_browser and Path(remotion_browser).is_file():
+                remotion_args.extend(["--browser-executable", remotion_browser])
+            render_code, render_output = await _run_cli(
+                remotion_args, cwd=engine, env=render_env, timeout=600,
+            )
+            if render_code != 0 or not animation_output.is_file() or animation_output.stat().st_size < 10_000:
+                logger.warning("cartoon_remotion_scene_failed project_id=%s scene_id=%s exit=%s", project_id, scene_id, render_code)
+                raise CartoonJobError(
+                    "Remotion could not finish one of the animated cartoon scenes. Your storyboard and voice files are saved; retry rendering.",
+                    category="CARTOON_REMOTION_RENDER_FAILED",
+                )
+            audio_info["animation_filename"] = animation_filename
+            props_path.unlink(missing_ok=True)
+
+    render_project = dict(project)
+    if cinematic_jannat:
+        await update_job(job["id"], 66, "audio_mixing", "Generating Urdu narration, original suspense score and bedroom foley")
+        audio_dir = project_dir / "assets" / "audio"
+        audio_dir.mkdir(parents=True, exist_ok=True)
+        narration_text = str(storyboard.get("narration") or "").strip()
+        if not narration_text:
+            narration_text = "\u0622\u062f\u06be\u06cc\u0020\u0631\u0627\u062a\u0020\u06a9\u0648\u060c\u0020\u062c\u0646\u062a\u0020\u0627\u06cc\u06a9\u0020\u0628\u0627\u0631\u0020\u067e\u06be\u0631\u0020\u0627\u0633\u06cc\u0020\u062e\u0648\u0627\u0628\u0020\u0633\u06d2\u0020\u062c\u0627\u06af\u0020\u0627\u0679\u06be\u06cc\u06d4"
+        narration_path = audio_dir / "narration.mp3"
+        narration_key = f"users/{job['user_id']}/cartoons/{project_id}/audio/narration.mp3"
+        saved_narration = assets.get("_narration") if isinstance(assets.get("_narration"), dict) else {}
+        narration_meta = await storage.stat(narration_key) if saved_narration.get("key") else None
+        if narration_meta and narration_meta.size > 0:
+            await storage.download(narration_key, narration_path, generation=saved_narration.get("generation"))
+            narration_boundaries = saved_narration.get("word_boundaries") if isinstance(saved_narration.get("word_boundaries"), list) else []
+            narration_duration = float(saved_narration.get("duration") or 0)
+        else:
+            narrator = storyboard["characters"][0]
+            narration_boundaries = await _tts_audio(
+                api_key, tts_model, str(narrator.get("voice_id") or "ur-PK-UzmaNeural"),
+                narration_text, narration_path, rate="-8%", volume="-8%", pitch="-3Hz",
+            )
+            narration_duration = await _probe_audio_duration(narration_path)
+            await asyncio.sleep(0.75)
+            uploaded_narration = await storage.upload(narration_path, narration_key, content_type="audio/mpeg")
+            assets["_narration"] = {
+                "key": narration_key,
+                "generation": uploaded_narration.generation,
+                "duration": narration_duration,
+                "word_boundaries": narration_boundaries,
+            }
+            await execute(
+                "UPDATE cartoon_projects SET assets_json=?,updated_at=? WHERE id=?",
+                (json.dumps(assets, separators=(",", ":"), ensure_ascii=False), utcnow(), project_id),
+            )
+        if narration_duration <= 0:
+            narration_duration = await _probe_audio_duration(narration_path)
+        narration_words = normalize_word_boundaries(
+            narration_boundaries, audio_duration=narration_duration,
+            global_start=0.4, speaker_id="narrator", track="narration",
+        )
+        (audio_dir / "narration-words.json").write_text(
+            json.dumps(narration_boundaries, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        jannat_voice = str(storyboard["characters"][0].get("voice_id") or "ur-PK-UzmaNeural")
+        (audio_dir / "voice-info.json").write_text(
+            json.dumps({
+                "provider": "Microsoft Edge speech service via edge-tts",
+                "language": "ur-PK",
+                "voice_id": jannat_voice,
+                "narration": {"rate": "-8%", "volume": "-8%", "pitch": "-3Hz"},
+                "dialogue": {"rate": "-18%", "volume": "-12%", "pitch": "-3Hz"},
+                "timing": "Native Edge TTS WordBoundary events (100 ns ticks)",
+                "note": "External speech service; availability and commercial-use terms must be reviewed.",
+            }, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        stems = await asyncio.to_thread(build_jannat_audio_stems, audio_dir, duration_seconds=30)
+        render_project["narration_words"] = narration_words
+        render_project["audio_tracks"] = [
+            {
+                "track": "narration", "filename": narration_path.name,
+                "start_seconds": 0.4, "duration_seconds": narration_duration,
+                "volume": 1.0, "fade_in_seconds": 0.05, "fade_out_seconds": 0.15,
+            },
+            {
+                "track": "music", "filename": Path(stems["score_path"]).name,
+                "start_seconds": 0.0, "duration_seconds": 30.0,
+                "volume": 0.75, "fade_in_seconds": 0.0, "fade_out_seconds": 0.0,
+            },
+            {
+                "track": "foley", "filename": Path(stems["foley_path"]).name,
+                "start_seconds": 0.0, "duration_seconds": 30.0,
+                "volume": 1.0, "fade_in_seconds": 0.0, "fade_out_seconds": 0.0,
+            },
+        ]
+    render_files = build_cartoon_project(render_project, storyboard, audio_assets)
     for relative_path, content in render_files.items():
         target_path = project_dir / relative_path
         target_path.parent.mkdir(parents=True, exist_ok=True)

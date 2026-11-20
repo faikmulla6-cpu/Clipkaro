@@ -24,3 +24,5 @@ webrtcvad-wheels==2.0.12
 socksio==1.0.0
 indic-transliteration==2.3.75
 yt-dlp[default,deno]==2026.8.19
+edge-tts==7.3.1
+numpy==2.2.6

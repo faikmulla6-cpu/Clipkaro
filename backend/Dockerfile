@@ -20,8 +20,8 @@ COPY app ./app
 RUN mkdir -p /app/storage/uploads /app/storage/exports /app/storage/models \
     && chown -R 10001:10001 /app /home/clipkaro
 
-# Native media tools plus the pinned HyperFrames runtime are required by the
-# isolated Cloud Run Job. The API image stays small and does not include them.
+# Native media tools plus the pinned HyperFrames + Remotion runtime are
+# required by the isolated Cloud Run Job. The API image stays small.
 FROM runtime-base AS media-base
 USER root
 RUN apt-get update \
@@ -36,6 +36,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 COPY assets ./assets
 COPY cartoon_engine/package.json ./cartoon_engine/package.json
+COPY cartoon_engine/remotion ./cartoon_engine/remotion
+COPY cartoon_engine/remotion.config.ts ./cartoon_engine/remotion.config.ts
+COPY cartoon_engine/tsconfig.json ./cartoon_engine/tsconfig.json
 COPY --from=cartoon-runtime /usr/local/bin/node /usr/local/bin/node
 COPY --from=cartoon-runtime /opt/cartoon-engine/node_modules ./cartoon_engine/node_modules
 COPY --from=cartoon-runtime /root/.cache/hyperframes /home/clipkaro/.cache/hyperframes
