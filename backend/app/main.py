@@ -25,6 +25,7 @@ from app.api.cloud_uploads import init_cloud_uploads, router as cloud_uploads_ro
 from app.api.creator_pulse import init_creator_pulse, router as creator_pulse_router
 from app.api.credit_topups import router as credit_topups_router
 from app.api.post_karo import router as post_karo_router
+from app.api.cartoon_studio import router as cartoon_studio_router
 from app.core.config import get_settings
 from app.core.database import UsageQuotaExceeded, close_database, execute, fetch_all, fetch_one, init_db
 from app.services.auth import current_user, hash_password
@@ -34,6 +35,7 @@ from app.services.email_verification import init_email_verification, requires_ve
 from app.services.forced_alignment import validate_production_alignment_policy
 from app.services.production_configuration import production_boot_configuration_issues
 from app.services.jobs import init_job_queue, isolated_worker_enabled
+from app.services.cartoon_repository import init_cartoon_studio
 from app.services.hinglish_stage1_routing import persisted_stage1_route
 from app.services.media_retention import reconcile_active_paid_source_retention
 from app.services.storage_paths import confined_export_path
@@ -66,6 +68,7 @@ async def lifespan(_: FastAPI):
         from app.services.smart_layout_repository import init_smart_layout_repository
         await init_smart_layout_repository()
     await init_job_queue()
+    await init_cartoon_studio()
     await init_cloud_uploads()
     # Identity schema is installed before any request can authenticate. Existing
     # stateless JWTs are intentionally retired on deploy; users sign in once to
@@ -216,6 +219,10 @@ def _creator_compute_request(request: Request) -> bool:
     if path.startswith(f"{prefix}/projects/") and path.endswith("/reprocess"):
         return True
     if path.startswith(f"{prefix}/clips/") and path.endswith("/export"):
+        return True
+    if path == f"{prefix}/cartoon-studio/projects":
+        return True
+    if path.startswith(f"{prefix}/cartoon-studio/projects/") and path.endswith("/retry"):
         return True
     return False
 
@@ -396,6 +403,7 @@ app.include_router(cloud_uploads_router, prefix=settings.api_prefix)
 app.include_router(creator_pulse_router, prefix=settings.api_prefix)
 app.include_router(credit_topups_router, prefix=settings.api_prefix)
 app.include_router(post_karo_router, prefix=settings.api_prefix)
+app.include_router(cartoon_studio_router, prefix=settings.api_prefix)
 app.include_router(router, prefix=settings.api_prefix)
 app.include_router(settings_router, prefix=settings.api_prefix)
 

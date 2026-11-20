@@ -18,7 +18,8 @@ function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function timeoutMsFor(method: string): number {
+function timeoutMsFor(method: string, body?: BodyInit | null): number {
+  if (typeof FormData !== "undefined" && body instanceof FormData) return 180_000;
   if (method === "GET" || method === "HEAD") return 12_000;
   return 30_000;
 }
@@ -71,7 +72,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
       response = await requestWithTimeout(
         `${API_URL}${path}`,
         { credentials: "include", ...init, headers },
-        timeoutMsFor(method),
+        timeoutMsFor(method, init?.body),
       );
     } catch (cause) {
       lastError = new Error(
@@ -114,7 +115,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   throw lastError || new Error("Something went wrong");
 }
 
-export type User = { id: string; name: string; email: string; plan: string; role: string; onboarding_complete: boolean };
+export type User = { id: string; name: string; email: string; plan: string; role: string; onboarding_complete: boolean; cartoon_studio_access_override: boolean };
 export type VerificationStatus = {
   verified: boolean;
   required: boolean;

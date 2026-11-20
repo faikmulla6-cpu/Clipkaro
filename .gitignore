@@ -66,6 +66,8 @@ launch-qa/
 launch-qa-attempt/
 backend/pytest-report.xml
 backend/test-tmp/
+backend/.pytest-tmp/
+backend/cartoon_engine/smoke-project/
 frontend/npm-audit-production.json
 frontend/tsconfig.tsbuildinfo
 # Local/private backend environment copies must never enter release artifacts.

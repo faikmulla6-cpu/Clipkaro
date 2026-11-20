@@ -5,6 +5,7 @@ import importlib.util
 import logging
 import os
 import socket
+import tempfile
 import uuid
 from importlib import metadata
 from pathlib import Path
@@ -37,7 +38,7 @@ def _worker_id() -> str:
     return f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
 
 
-async def _fail_reconstruction(job: dict, message: str) -> None:
+async def _fail_reconstruction(job: dict, message: str, *, category: str | None = None) -> None:
     detail = message[:900]
     if job.get("project_id"):
         await execute(
@@ -50,7 +51,14 @@ async def _fail_reconstruction(job: dict, message: str) -> None:
             "UPDATE exports SET status='failed',error=? WHERE id=?",
             (detail, job["export_id"]),
         )
-    await update_job(job["id"], 0, "failed", "Worker could not reconstruct this job", "failed", detail)
+    if job.get("kind") == "cartoon_generate":
+        cartoon_id = str((job.get("payload") or {}).get("cartoon_project_id") or "")
+        if cartoon_id:
+            await execute(
+                "UPDATE cartoon_projects SET status='failed',stage='failed',error=?,updated_at=? WHERE id=?",
+                (detail, project_routes.utcnow(), cartoon_id),
+            )
+    await update_job(job["id"], 0, "failed", detail, "failed", category or detail)
 
 
 async def run_claimed_job(job: dict) -> None:
@@ -73,6 +81,14 @@ async def run_claimed_job(job: dict) -> None:
             await project_routes._process_project(
                 job["id"], project_id, video["id"], user, route["asr_route"], force_transcribe,
             )
+            return
+
+        if job["kind"] == "cartoon_generate":
+            from app.services.cartoon_job import run_cartoon_generation
+            from app.services.storage import get_storage_provider
+
+            with tempfile.TemporaryDirectory(prefix="clipkaro-cartoon-worker-") as directory:
+                await run_cartoon_generation(job, Path(directory), get_storage_provider())
             return
 
         if job["kind"] == "render_export":
@@ -129,10 +145,10 @@ async def _recover_pre_worker_jobs() -> None:
     orphaned = await fetch_all(
         """SELECT j.* FROM jobs j LEFT JOIN job_claims c ON c.job_id=j.id
            WHERE j.status='processing' AND c.job_id IS NULL
-             AND j.kind IN ('process_video','upgrade_pipeline','render_export')"""
+             AND j.kind IN ('process_video','upgrade_pipeline','render_export','cartoon_generate')"""
     )
     for job in orphaned:
-        if job["kind"] in {"process_video", "upgrade_pipeline"}:
+        if job["kind"] in {"process_video", "upgrade_pipeline", "cartoon_generate"}:
             await execute(
                 "UPDATE jobs SET status='queued',stage='recovery',message='Migrated into isolated media worker',updated_at=? WHERE id=?",
                 (project_routes.utcnow(), job["id"]),
@@ -277,6 +293,8 @@ async def run_forever() -> None:
     await init_behavioral_learning()
     await init_behavioral_triggers()
     await init_job_queue()
+    from app.services.cartoon_repository import init_cartoon_studio
+    await init_cartoon_studio()
     recovered = await requeue_interrupted_worker_jobs()
     await _recover_pre_worker_jobs()
     worker_id = _worker_id()
@@ -316,10 +334,12 @@ async def run_forever() -> None:
                 # Preserve the claim. The replacement worker requeues persisted
                 # claims on startup, preventing two workers from running one job.
                 raise
-            except Exception:
+            except Exception as exc:
                 logger.exception("Unhandled isolated worker failure job_id=%s", job.get("id"))
+                message = str(getattr(exc, "public_message", "") or "The isolated media worker failed unexpectedly. Retry this job.")
+                category = str(getattr(exc, "category", "") or "")
                 try:
-                    await _fail_reconstruction(job, "The isolated media worker failed unexpectedly. Retry this job.")
+                    await _fail_reconstruction(job, message, category=category)
                 finally:
                     await release_claim(job["id"])
     finally:

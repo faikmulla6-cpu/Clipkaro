@@ -32,6 +32,7 @@ class UserOut(BaseModel):
     plan: str
     role: str
     onboarding_complete: bool = False
+    cartoon_studio_access_override: bool = False
 
 
 class AuthOut(BaseModel):

@@ -40,6 +40,7 @@ def _public_user(user: dict) -> dict:
         "plan": str(user["plan"]),
         "role": str(user["role"]),
         "onboarding_complete": bool(user.get("onboarding_complete", 0)),
+        "cartoon_studio_access_override": bool(user.get("cartoon_studio_access_override", 0)),
     }
 
 
