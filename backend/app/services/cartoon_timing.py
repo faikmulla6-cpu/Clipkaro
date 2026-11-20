@@ -195,7 +195,7 @@ def build_karaoke_caption_markup(
         'font-family:"Noto Sans",sans-serif;'
         'font-size:clamp(28px,3.4vw,52px);font-weight:800;line-height:1.45;'
         'text-align:center;text-shadow:0 2px 5px rgba(0,0,0,.9);'
-        'unicode-bidi:plaintext;direction:inherit}'
+        f'unicode-bidi:isolate;direction:{direction}}}'
         '.caption-word{display:inline;color:#fff;unicode-bidi:isolate;padding:0 .04em}'
         '</style>'
     )

@@ -62,6 +62,8 @@ def test_caption_groups_keep_word_timings_and_markup_is_rtl_safe_and_escaped():
     assert len(phrases) == 1
     markup, timeline = build_karaoke_caption_markup(words, overlay_id="test", rtl=True)
     assert 'dir="rtl"' in markup
+    assert "unicode-bidi:isolate;direction:rtl" in markup
+    assert "unicode-bidi:plaintext" not in markup
     assert "&lt;script&gt;" in markup
     assert "<script>" not in markup
     assert "test-phrase-1-word-1" in timeline
