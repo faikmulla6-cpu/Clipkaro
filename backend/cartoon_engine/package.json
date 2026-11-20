@@ -5,18 +5,14 @@
   "scripts": {
     "check:demo": "hyperframes check --json",
     "render:demo": "hyperframes render --quality draft -o demo.mp4",
-    "remotion:studio": "remotion studio remotion/src/index.ts",
-    "remotion:render": "remotion render remotion/src/index.ts ClipKaroScene remotion-scene-demo.mp4"
+    "build": "esbuild animation/index.tsx --bundle --minify --global-name=ClipKaroAnimation --outfile=dist/animation.js"
   },
   "dependencies": {
-    "@remotion/bundler": "4.0.545",
-    "@remotion/cli": "4.0.545",
-    "@remotion/renderer": "4.0.545",
     "gsap": "3.15.0",
     "hyperframes": "0.9.72",
     "react": "19.3.1",
     "react-dom": "19.3.1",
-    "remotion": "4.0.545"
+    "esbuild": "0.28.2"
   },
   "allowScripts": {
     "esbuild@0.28.1": true,

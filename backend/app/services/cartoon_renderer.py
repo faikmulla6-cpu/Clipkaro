@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -274,6 +275,9 @@ def build_cartoon_project(
     scene_hosts: list[str] = []
     audio_markup: list[str] = []
     files: dict[str, str] = {}
+    native_animation = bool(project.get("native_animation"))
+    cinematic = native_animation and style == "cinematic-jannat"
+    animation_scenes: list[dict[str, Any]] = []
 
     if ratio == "9:16":
         title_size, caption_size = 54, 30
@@ -341,6 +345,23 @@ def build_cartoon_project(
             if animation_filename else ""
         )
         speech_start = round(float(audio_info.get("speech_start_seconds") if audio_info.get("speech_start_seconds") is not None else min(1.05, slot * .16)), 3)
+        if native_animation and not cinematic:
+            animation_scenes.append({
+                "start": scene_start,
+                "durationSeconds": scene_duration,
+                "width": width,
+                "height": height,
+                "scene": {
+                    "environment": environment,
+                    "expression": expression,
+                    "motion": motion,
+                    "camera_move": camera,
+                    "speaker_id": speaker_id,
+                },
+                "characters": [char_map[char_id] for char_id in char_ids],
+                "audioEnvelope": audio_info.get("lip_envelope") or [],
+                "dialogueStartSeconds": speech_start,
+            })
         speech_duration = min(
             audio_duration or max(1.5, slot * .5),
             max(1.2, slot - 1.25),
@@ -360,7 +381,7 @@ def build_cartoon_project(
         if caption_timeline:
             timeline_js.append(caption_timeline)
 
-        for char_index, char_id in enumerate(char_ids if not animation_filename else []):
+        for char_index, char_id in enumerate(char_ids if not (native_animation or animation_filename) else []):
             character = char_map[char_id]
             uid = f"char-{index+1}-{_id(char_id, 'hero')}"
             left_pct = positions[char_index]
@@ -414,7 +435,7 @@ def build_cartoon_project(
         speaker = _text(char_map.get(speaker_id, {}).get("name") or "Character", 40)
         dialogue_hold = max(3.3, audio_duration + .65)
         dialogue_end = min(scene_duration - .18, speech_start + dialogue_hold)
-        if animation_filename:
+        if native_animation or animation_filename:
             camera_anim = ""
         elif camera == "push-in":
             camera_anim = (
@@ -436,7 +457,8 @@ def build_cartoon_project(
             camera_anim = ""
         timeline_js.append(camera_anim)
 
-        bg = _background_svg(environment, width, height, index + 1)
+        bg = "" if native_animation else _background_svg(environment, width, height, index + 1)
+        scene_background = "transparent" if native_animation else "#172a37"
         scene_markup = (
             f'<div id="{scene_id}-inner" class="scene-inner" data-layout-allow-overflow="true">{bg}{animation_markup}'
             f'{"".join(char_markup)}'
@@ -453,7 +475,7 @@ def build_cartoon_project(
         scene_html = f"""<template>
 <style>
 *{{box-sizing:border-box;margin:0;padding:0;font-family:"Noto Sans","Liberation Sans",Arial,sans-serif}}
-#root{{position:absolute;inset:0;width:100%;height:100%;overflow:hidden;background:#172a37}}
+#root{{position:absolute;inset:0;width:100%;height:100%;overflow:hidden;background:{scene_background}}}
 .scene-inner{{position:absolute;inset:0;overflow:hidden}}
 .scene-bg{{position:absolute;inset:0;width:100%;height:100%}}
 .scene-animation{{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1}}
@@ -522,6 +544,35 @@ tl.seek(0);
             f'src="assets/audio/{filename}"></audio>'
         )
 
+    animation_script = ""
+    episode_markup = ""
+    animation_timeline = ""
+    if native_animation:
+        animation = {"kind": "jannat", "envelope": project.get("episode_lip_envelope") or []} if cinematic else {
+            "kind": "cartoon", "scenes": animation_scenes,
+        }
+        animation["duration"] = duration
+        animation_json = json.dumps(animation, ensure_ascii=True, allow_nan=False).replace("<", "\\u003c")
+        animation_script = '<script src="assets/animation.js"></script>'
+        episode_markup = (
+            f'<div id="cartoon-animation" class="clip" data-start="0" data-duration="{duration}" '
+            'data-track-index="0" data-track-kind="graphics" style="position:absolute;inset:0"></div>'
+        )
+        animation_timeline = f"""
+const drawFrame = ClipKaroAnimation.createFrameRenderer(document.getElementById("cartoon-animation"), {animation_json});
+let frameTime = 0;
+const frame = {{
+  get time() {{ return frameTime; }},
+  set time(value) {{
+    if (value === frameTime) return;
+    frameTime = value;
+    drawFrame(value);
+  }},
+}};
+drawFrame(0);
+tl.to(frame, {{time:{duration},duration:{duration},ease:"none"}}, 0);
+"""
+
     root_html = f"""<!doctype html>
 <html lang="{html_language}" dir="{html_direction}" data-resolution="{resolution}">
 <head>
@@ -529,6 +580,7 @@ tl.seek(0);
 <meta name="viewport" content="width={width},height={height}"/>
 <title>{_text(storyboard.get("title") or "ClipKaro Cartoon", 80)}</title>
 <script src="assets/gsap.min.js"></script>
+{animation_script}
 <style>
 *{{box-sizing:border-box;margin:0;padding:0;font-family:"Noto Sans","Liberation Sans",Arial,sans-serif}}
 html,body{{width:{width}px;height:{height}px;overflow:hidden;background:#172a37}}
@@ -537,12 +589,14 @@ html,body{{width:{width}px;height:{height}px;overflow:hidden;background:#172a37}
 </head>
 <body>
 <div id="root" data-composition-id="main" data-start="0" data-duration="{duration}" data-width="{width}" data-height="{height}">
+{episode_markup}
 {"".join(scene_hosts)}
 {"".join(audio_markup)}
 </div>
 <script>
 window.__timelines = window.__timelines || {{}};
 const tl = gsap.timeline({{paused:true}});
+{animation_timeline}
 window.__timelines["main"] = tl;
 tl.seek(0);
 </script>

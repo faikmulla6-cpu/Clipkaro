@@ -1,11 +1,4 @@
 import React from "react";
-import {
-  AbsoluteFill,
-  interpolate,
-  useCurrentFrame,
-  useVideoConfig,
-} from "remotion";
-
 type Appearance = {
   skin_color?: string;
   hair_color?: string;
@@ -34,8 +27,9 @@ type StoryScene = {
 };
 
 export type CartoonSceneProps = {
-  durationSeconds?: number;
-  aspectRatio?: "16:9" | "9:16" | "1:1";
+  durationSeconds: number;
+  width: number;
+  height: number;
   scene?: StoryScene;
   characters?: CartoonCharacter[];
   audioEnvelope?: number[];
@@ -154,30 +148,31 @@ const CharacterRig: React.FC<{
   );
 };
 
-export const ClipKaroScene: React.FC<CartoonSceneProps> = ({
+export const ClipKaroScene: React.FC<CartoonSceneProps & {time: number}> = ({
+  time: t,
+  durationSeconds,
+  width,
+  height,
   scene = {},
   characters = [],
   audioEnvelope = [],
   dialogueStartSeconds = 1,
 }) => {
-  const frame = useCurrentFrame();
-  const {fps, width, height, durationInFrames} = useVideoConfig();
-  const t = frame / fps;
   const environment = environments[String(scene.environment || "forest").toLowerCase()] || environments.forest;
   const environmentName = String(scene.environment || "forest").toLowerCase();
   const motion = String(scene.motion || "idle").toLowerCase();
   const expression = String(scene.expression || "happy").toLowerCase();
   const cameraMove = String(scene.camera_move || "push-in").toLowerCase();
-  const progress = durationInFrames > 1 ? frame / (durationInFrames - 1) : 0;
+  const progress = clamp(t / Math.max(1 / 30, durationSeconds - 1 / 30));
   const zoom = cameraMove === "push-in"
-    ? interpolate(progress, [0, 1], [1.0, 1.09])
+    ? 1 + 0.09 * progress
     : cameraMove === "zoom-out"
-      ? interpolate(progress, [0, 1], [1.12, 1.0])
+      ? 1.12 - 0.12 * progress
       : cameraMove === "pan-left" || cameraMove === "pan-right" ? 1.035 : 1;
   const panX = cameraMove === "pan-left"
-    ? interpolate(progress, [0, 1], [width * 0.035, -width * 0.035])
+    ? width * 0.035 * (1 - 2 * progress)
     : cameraMove === "pan-right"
-      ? interpolate(progress, [0, 1], [-width * 0.035, width * 0.035])
+      ? width * 0.035 * (2 * progress - 1)
       : 0;
   const dialogueTime = t - dialogueStartSeconds;
   const envelopeIndex = Math.max(0, dialogueTime * 60);
@@ -196,7 +191,7 @@ export const ClipKaroScene: React.FC<CartoonSceneProps> = ({
   const glowId = "clipkaro-scene-glow";
 
   return (
-    <AbsoluteFill style={{backgroundColor: environment.sky}}>
+    <div style={{position: "absolute", inset: 0, backgroundColor: environment.sky}}>
       <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid slice">
         <defs>
           <linearGradient id={skyId} x1="0" y1="0" x2="0" y2="1">
@@ -270,6 +265,6 @@ export const ClipKaroScene: React.FC<CartoonSceneProps> = ({
           <rect width={width} height={height} fill={`url(#${glowId})`}/>
         </g>
       </svg>
-    </AbsoluteFill>
+    </div>
   );
 };

@@ -5,10 +5,13 @@ The first release creates deterministic, editable 2D cartoon scenes with SVG cha
 ## Runtime
 
 - Node.js 22+
-- HyperFrames 0.9.70 (Apache-2.0)
+- HyperFrames 0.9.72 (Apache-2.0)
 - GSAP 3.15.0
 - Chromium + FFmpeg/FFprobe
+- Build the animation bundle with npm run build in this directory. The media image runs this at build time.
 - Python worker calls the pinned HyperFrames CLI from the isolated media job.
+
+The Jannat preset plays a continuous 30-second bedroom animation from animation/jannat.js. The generic renderer uses animation/CartoonScene.tsx. HyperFrames seeks both from the same timeline that plays narration, dialogue, sound effects and word-timed captions.
 
 ## Agent skills
 

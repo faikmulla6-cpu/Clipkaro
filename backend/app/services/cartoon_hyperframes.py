@@ -47,7 +47,7 @@ def build_final_hyperframes_project(
     caption_words: list[dict[str, Any]],
     language: str = "auto",
 ) -> dict[str, str]:
-    """Create a HyperFrames final-mix project from a Remotion animation and timed audio."""
+    """Create a HyperFrames final-mix project from a video asset and timed audio."""
     width, height, resolution = RATIOS.get(aspect_ratio, RATIOS["9:16"])
     language = str(language or "auto").lower()
     rtl = language in {"ur", "ar", "fa"}

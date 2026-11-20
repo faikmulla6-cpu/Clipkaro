@@ -557,13 +557,6 @@ def _engine_paths() -> tuple[Path, Path, Path]:
     return engine, cli, gsap if node else Path("")
 
 
-def _remotion_cli_path(engine: Path) -> Path:
-    cli = engine / "node_modules" / "@remotion" / "cli" / "remotion-cli.js"
-    if not cli.is_file():
-        cli = Path("/usr/local/lib/node_modules/@remotion/cli/remotion-cli.js")
-    return cli
-
-
 async def run_cartoon_generation(job: dict[str, Any], scratch: Path, storage) -> None:
     payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
     project_id = str(payload.get("cartoon_project_id") or "")
@@ -743,36 +736,16 @@ async def run_cartoon_generation(job: dict[str, Any], scratch: Path, storage) ->
 
     engine, cli, gsap = _engine_paths()
     node = shutil.which("node") or shutil.which("nodejs")
-    remotion_cli = _remotion_cli_path(engine)
-    remotion_entry = engine / "remotion" / "src" / "index.ts"
-    if not node or not cli.is_file() or not gsap.is_file():
-        raise CartoonJobError("The HyperFrames renderer is not installed in the media worker. Deploy the updated cartoon media image.", category="CARTOON_RENDERER_UNAVAILABLE")
-    if not remotion_cli.is_file() or not remotion_entry.is_file():
-        raise CartoonJobError("The Remotion animation engine is not installed in the media worker. Deploy the updated cartoon media image.", category="CARTOON_REMOTION_UNAVAILABLE")
+    animation_bundle = engine / "dist" / "animation.js"
+    if not node or not cli.is_file() or not gsap.is_file() or not animation_bundle.is_file():
+        raise CartoonJobError(
+            "The cartoon renderer is missing from the media worker. Deploy the updated media image.",
+            category="CARTOON_RENDERER_UNAVAILABLE",
+        )
     shutil.copy2(gsap, project_dir / "assets" / "gsap.min.js")
+    shutil.copy2(animation_bundle, project_dir / "assets" / "animation.js")
 
-    # Remotion renders the animated scene plates; HyperFrames then composes
-    # those plates with word-timed captions and independent dialogue tracks.
-    animation_dir = project_dir / "assets" / "animation"
-    props_dir = project_dir / "remotion-props"
-    animation_dir.mkdir(parents=True, exist_ok=True)
-    props_dir.mkdir(parents=True, exist_ok=True)
-    render_env = os.environ.copy()
-    chromium = shutil.which("chromium") or shutil.which("chromium-browser") or shutil.which("google-chrome")
-    if chromium:
-        render_env.setdefault("PUPPETEER_EXECUTABLE_PATH", chromium)
-    headless_path_file = Path("/etc/hyperframes-headless-shell-path")
-    if headless_path_file.is_file():
-        headless_path = headless_path_file.read_text(encoding="utf-8").strip()
-        if headless_path:
-            render_env["PRODUCER_HEADLESS_SHELL_PATH"] = headless_path
-    remotion_browser = (
-        render_env.get("PRODUCER_HEADLESS_SHELL_PATH")
-        or render_env.get("REMOTION_BROWSER_EXECUTABLE")
-        or render_env.get("PUPPETEER_EXECUTABLE_PATH")
-    )
-    slot_seconds = int(project["duration_seconds"]) / max(1, len(scenes))
-    cinematic_jannat = str(project.get("style") or "") == "cinematic-jannat"
+    render_project = {**project, "native_animation": True}
     if cinematic_jannat:
         if str(project.get("aspect_ratio") or "") != "16:9" or int(project.get("duration_seconds") or 0) != 30:
             raise CartoonJobError(
@@ -782,7 +755,7 @@ async def run_cartoon_generation(job: dict[str, Any], scratch: Path, storage) ->
         episode_lip_envelope = build_episode_lip_envelope(
             audio_assets,
             total_duration=30,
-            slot_seconds=slot_seconds,
+            slot_seconds=int(project["duration_seconds"]) / len(scenes),
         )
         audio_dir = project_dir / "assets" / "audio"
         audio_dir.mkdir(parents=True, exist_ok=True)
@@ -807,130 +780,7 @@ async def run_cartoon_generation(job: dict[str, Any], scratch: Path, storage) ->
             json.dumps({"fps": 60, "samples": episode_lip_envelope}, separators=(",", ":")),
             encoding="utf-8",
         )
-        props_path = props_dir / "jannat-episode.json"
-        props_path.write_text(json.dumps({
-            "durationSeconds": 30,
-            "episodeLipEnvelope": episode_lip_envelope,
-        }, separators=(",", ":")), encoding="utf-8")
-        episode_output = animation_dir / "jannat-cinematic-episode.mp4"
-        await update_job(
-            job["id"], 64, "animating",
-            "Rendering Jannat's consistent cinematic character and bedroom with Remotion",
-        )
-        remotion_args = [
-            node, str(remotion_cli), "render", str(remotion_entry),
-            "ClipKaroJannatCinematic", str(episode_output),
-            f"--props={props_path}", "--codec=h264", "--crf=18",
-            "--concurrency=2", "--log=error",
-        ]
-        if remotion_browser and Path(remotion_browser).is_file():
-            remotion_args.extend(["--browser-executable", remotion_browser])
-        render_code, render_output = await _run_cli(
-            remotion_args, cwd=engine, env=render_env, timeout=900,
-        )
-        props_path.unlink(missing_ok=True)
-        if render_code != 0 or not episode_output.is_file() or episode_output.stat().st_size < 100_000:
-            logger.warning("cartoon_jannat_remotion_failed project_id=%s exit=%s", project_id, render_code)
-            raise CartoonJobError(
-                "Remotion could not finish the Jannat cinematic animation. Your storyboard and voice files are saved; retry rendering.",
-                category="CARTOON_REMOTION_RENDER_FAILED",
-            )
-        ffmpeg = shutil.which("ffmpeg")
-        if not ffmpeg:
-            raise CartoonJobError("FFmpeg is required to split the cinematic animation into scene plates.", category="CARTOON_RENDERER_UNAVAILABLE")
-        for scene_index, scene in enumerate(scenes):
-            scene_id = str(scene["id"])
-            start_seconds = scene_index * slot_seconds
-            segment_duration = min(slot_seconds, 30 - start_seconds)
-            animation_filename = f"{scene_id}.mp4"
-            animation_output = animation_dir / animation_filename
-            split_args = [
-                ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
-                "-ss", f"{start_seconds:.3f}", "-i", str(episode_output),
-                "-t", f"{segment_duration:.3f}", "-an",
-                "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
-                "-pix_fmt", "yuv420p", "-movflags", "+faststart",
-                str(animation_output),
-            ]
-            split_result = await asyncio.to_thread(
-                subprocess.run, split_args, stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE, check=False, timeout=180,
-            )
-            if split_result.returncode != 0 or not animation_output.is_file() or animation_output.stat().st_size < 10_000:
-                logger.warning("cartoon_jannat_scene_split_failed project_id=%s scene_id=%s", project_id, scene_id)
-                raise CartoonJobError(
-                    "The Jannat animation could not be split into its timed scene plates. Retry rendering.",
-                    category="CARTOON_REMOTION_RENDER_FAILED",
-                )
-            audio_info = next((item for item in audio_assets if str(item.get("scene_id")) == scene_id), None)
-            if audio_info is None:
-                raise CartoonJobError("A Jannat scene is missing its saved dialogue track.", category="CARTOON_AUDIO_MISSING")
-            audio_info["animation_filename"] = animation_filename
-        episode_output.unlink(missing_ok=True)
-    else:
-        for scene_index, scene in enumerate(scenes):
-            scene_id = str(scene["id"])
-            audio_info = next((item for item in audio_assets if str(item.get("scene_id")) == scene_id), {})
-            scene_character_ids = scene.get("character_ids") if isinstance(scene.get("character_ids"), list) else []
-            speaker_id = str(scene.get("speaker_id") or (scene_character_ids[0] if scene_character_ids else ""))
-            if speaker_id and speaker_id not in scene_character_ids:
-                scene_character_ids = [speaker_id] + scene_character_ids
-            scene_characters = [
-                character for character in storyboard.get("characters", [])
-                if isinstance(character, dict) and str(character.get("id")) in {str(value) for value in scene_character_ids}
-            ][:3]
-            if not scene_characters and storyboard.get("characters"):
-                scene_characters = [storyboard["characters"][0]]
-                speaker_id = str(scene_characters[0].get("id") or "")
-            scene_duration = round(slot_seconds, 3)
-            animation_filename = f"{scene_id}.mp4"
-            animation_output = animation_dir / animation_filename
-            props_path = props_dir / f"{scene_id}.json"
-            props = {
-                "durationSeconds": scene_duration,
-                "aspectRatio": str(project.get("aspect_ratio") or "9:16"),
-                "scene": {
-                    "id": scene_id,
-                    "scene_title": str(scene.get("scene_title") or ""),
-                    "environment": str(scene.get("environment") or "forest"),
-                    "expression": str(scene.get("expression") or "happy"),
-                    "motion": str(scene.get("motion") or "idle"),
-                    "camera_move": str(scene.get("camera_move") or "push-in"),
-                    "speaker_id": speaker_id,
-                    "action": str(scene.get("action") or ""),
-                },
-                "characters": scene_characters,
-                "audioEnvelope": audio_info.get("lip_envelope") if isinstance(audio_info.get("lip_envelope"), list) else [],
-                "dialogueStartSeconds": min(1.05, slot_seconds * .16),
-            }
-            props_path.write_text(json.dumps(props, ensure_ascii=False), encoding="utf-8")
-            animation_progress = 60 + int(((scene_index + 1) / max(1, len(scenes))) * 7)
-            await update_job(
-                job["id"], animation_progress, "animating",
-                f"Animating scene {scene_index + 1} of {len(scenes)} with Remotion",
-            )
-            remotion_args = [
-                node, str(remotion_cli), "render", str(remotion_entry),
-                "ClipKaroScene", str(animation_output),
-                f"--props={props_path}", "--codec=h264", "--crf=23",
-                "--concurrency=2", "--log=error",
-            ]
-            if remotion_browser and Path(remotion_browser).is_file():
-                remotion_args.extend(["--browser-executable", remotion_browser])
-            render_code, render_output = await _run_cli(
-                remotion_args, cwd=engine, env=render_env, timeout=600,
-            )
-            if render_code != 0 or not animation_output.is_file() or animation_output.stat().st_size < 10_000:
-                logger.warning("cartoon_remotion_scene_failed project_id=%s scene_id=%s exit=%s", project_id, scene_id, render_code)
-                raise CartoonJobError(
-                    "Remotion could not finish one of the animated cartoon scenes. Your storyboard and voice files are saved; retry rendering.",
-                    category="CARTOON_REMOTION_RENDER_FAILED",
-                )
-            audio_info["animation_filename"] = animation_filename
-            props_path.unlink(missing_ok=True)
-
-    render_project = dict(project)
-    if cinematic_jannat:
+        render_project["episode_lip_envelope"] = episode_lip_envelope
         await update_job(job["id"], 66, "audio_mixing", "Generating Urdu narration, original suspense score and bedroom foley")
         audio_dir = project_dir / "assets" / "audio"
         audio_dir.mkdir(parents=True, exist_ok=True)

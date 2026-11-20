@@ -4,7 +4,9 @@
 FROM node:22-bookworm-slim AS cartoon-runtime
 WORKDIR /opt/cartoon-engine
 COPY cartoon_engine/package.json cartoon_engine/package-lock.json ./
+COPY cartoon_engine/animation ./animation
 RUN npm ci --omit=dev --no-audit --no-fund \
+    && npm run build \
     && ./node_modules/.bin/hyperframes browser ensure
 
 FROM python:3.12-slim AS runtime-base
@@ -20,7 +22,7 @@ COPY app ./app
 RUN mkdir -p /app/storage/uploads /app/storage/exports /app/storage/models \
     && chown -R 10001:10001 /app /home/clipkaro
 
-# Native media tools plus the pinned HyperFrames + Remotion runtime are
+# Native media tools plus the pinned HyperFrames runtime are
 # required by the isolated Cloud Run Job. The API image stays small.
 FROM runtime-base AS media-base
 USER root
@@ -36,9 +38,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 COPY assets ./assets
 COPY cartoon_engine/package.json ./cartoon_engine/package.json
-COPY cartoon_engine/remotion ./cartoon_engine/remotion
-COPY cartoon_engine/remotion.config.ts ./cartoon_engine/remotion.config.ts
-COPY cartoon_engine/tsconfig.json ./cartoon_engine/tsconfig.json
+COPY --from=cartoon-runtime /opt/cartoon-engine/dist/animation.js ./cartoon_engine/dist/animation.js
 COPY --from=cartoon-runtime /usr/local/bin/node /usr/local/bin/node
 COPY --from=cartoon-runtime /opt/cartoon-engine/node_modules ./cartoon_engine/node_modules
 COPY --from=cartoon-runtime /root/.cache/hyperframes /home/clipkaro/.cache/hyperframes

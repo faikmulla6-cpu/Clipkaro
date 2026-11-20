@@ -1,5 +1,7 @@
 # Cartoon Studio V2 — Remotion + HyperFrames Design
 
+This document records the Remotion prototype. The implemented renderer now uses HyperFrames and the existing SVG rigs directly. See backend/cartoon_engine/README.md for the current runtime.
+
 Status: design baseline, isolated feature branch only
 Branch: `feature/cartoon-studio-remotion-pipeline-20261120`
 Base: `569d8462d68931a5c3b8d3e2405a3685be0b10e3`

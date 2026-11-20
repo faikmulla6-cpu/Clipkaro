@@ -23,7 +23,7 @@ def _storyboard():
     }
 
 
-def test_remotion_video_is_the_scene_plate_and_hyperframes_keeps_audio_and_rtl_captions_separate():
+def test_imported_video_is_the_scene_plate_and_hyperframes_keeps_audio_and_rtl_captions_separate():
     dialogue, storyboard = _storyboard()
     files = build_cartoon_project(
         {"duration_seconds": 5, "aspect_ratio": "9:16", "style": "2d-cartoon", "language": "ur"},
@@ -53,19 +53,20 @@ def test_remotion_video_is_the_scene_plate_and_hyperframes_keeps_audio_and_rtl_c
     assert dialogue.split()[0] in scene_html
 
 
-def test_media_docker_image_copies_remotion_source_config_and_cli_dependencies():
-    backend = Path(__file__).resolve().parents[1]
-    dockerfile = (backend / "Dockerfile").read_text(encoding="utf-8")
-    package = (backend / "cartoon_engine" / "package.json").read_text(encoding="utf-8")
-    assert "COPY cartoon_engine/remotion ./cartoon_engine/remotion" in dockerfile
-    assert "COPY cartoon_engine/remotion.config.ts ./cartoon_engine/remotion.config.ts" in dockerfile
-    assert '"@remotion/cli"' in package
-    assert '"remotion"' in package
-
-
-def test_job_runs_remotion_before_hyperframes_final_render():
-    backend = Path(__file__).resolve().parents[1]
-    source = (backend / "app" / "services" / "cartoon_job.py").read_text(encoding="utf-8")
-    assert '"ClipKaroScene"' in source
-    assert "animation_filename" in source
-    assert "CARTOON_REMOTION_RENDER_FAILED" in source
+def test_native_animation_uses_the_worker_bundle_and_preserves_the_caption_layer():
+    _, storyboard = _storyboard()
+    files = build_cartoon_project(
+        {"duration_seconds": 30, "aspect_ratio": "16:9", "style": "cinematic-jannat",
+         "language": "ur", "native_animation": True, "episode_lip_envelope": [0, 0.5]},
+        storyboard,
+        [{"scene_id": "scene-1", "duration": 2.1,
+          "words": [{"text": "Hello", "start_seconds": 6.2, "end_seconds": 7.1}]}],
+    )
+    root = files["index.html"]
+    assert 'src="assets/animation.js"' in root
+    assert 'id="cartoon-animation"' in root
+    assert '"kind": "jannat", "envelope": [0, 0.5]' in root
+    scene = files["compositions/scene-1.html"]
+    assert "background:transparent" in scene
+    assert 'dir="rtl"' in scene
+    assert "Hello" in scene
