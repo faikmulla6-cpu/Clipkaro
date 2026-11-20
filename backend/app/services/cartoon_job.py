@@ -22,6 +22,7 @@ from app.services.cartoon_speech import SYSTEM_URDU_TTS_MODEL, system_urdu_tts_m
 from app.services.cartoon_audio import build_lip_envelope
 from app.services.cartoon_score import build_jannat_audio_stems
 from app.services.cartoon_timing import approximate_word_boundaries, build_episode_lip_envelope, normalize_word_boundaries
+from app.services.cartoon_story import director_prompt, normalize_director_story, StoryValidationError
 from app.services.cartoon_security import decrypt_provider_key
 from app.services.jobs import update_job, utcnow
 from app.services.storage import validate_object_key
@@ -304,46 +305,8 @@ async def _extract_reference_frames(job: dict, project: dict, scratch: Path, sto
 
 
 async def _generate_storyboard(api_key: str, prompt: str, duration: int, style: str, language: str, frames: list[Path]) -> dict[str, Any]:
-    scene_count = 3 if style == "cinematic-jannat" else max(2, min(6, math.ceil(duration / 10)))
-    system = (
-        "You are the story director for ClipKaro Cartoon Studio. Create original, family-friendly short cartoon stories. "
-        "Return only one valid JSON object. Never return HTML, CSS, JavaScript, markdown or executable code. "
-        "Use original characters, consistent appearance and short natural dialogue in the requested language. "
-        "Preserve each character's species (human, fox, cat, dog, rabbit, bear, owl or robot) in the visual design. "
-        "Each scene must have one short spoken line and a visible physical action. Do not imitate famous copyrighted characters."
-    )
-    user_text = f"""Create a {duration}-second {style} cartoon in {language}. The user idea is:
-{prompt}
-
-Return JSON with exactly these top-level keys:
-{{
-  "title":"short title",
-  "summary":"one sentence",
-  "narration":"one concise opening narration line in the requested language, or an empty string",
-  "characters":[
-    {{"id":"hero","name":"name","role":"role","species":"human|fox|cat|dog|rabbit|bear|owl|robot","voice_type":"male|female|child|elder|neutral",
-      "appearance":{{"skin_color":"#RRGGBB","hair_color":"#RRGGBB","shirt_color":"#RRGGBB","pants_color":"#RRGGBB","shoe_color":"#RRGGBB","hair_style":"short|long|curly|spiky|bald"}}}}
-  ],
-  "scenes":[
-    {{"scene_title":"short title","environment":"forest|city|beach|space|castle|school|home|mountain|desert|garden",
-      "action":"one concise visual sentence, max 12 words","expression":"happy|sad|surprised|angry|curious|neutral|scared",
-      "motion":"idle|walk|run|jump|wave|point|look","camera_move":"push-in|pan-left|pan-right|zoom-out|static",
-      "character_ids":["hero"],"speaker_id":"hero","dialogue":"one natural spoken line, max 12 words"}}
-  ]
-}}
-
-Create exactly {scene_count} scenes and 1 to 3 recurring characters. Keep every character's species, colours, hair and identity unchanged in all scenes. Keep each dialogue under 12 spoken words and each action under 12 words so the text fits its scene. Use 1 or 2 characters per scene where possible. Return JSON only."""
-    if style == "cinematic-jannat":
-        user_text += (
-            "\n\nCINEMATIC JANNAT PRESET: Use exactly one recurring female human character named Jannat. "
-            "She has long center-parted black hair, warm wheat skin, and the same teal shalwar kameez in every shot. "
-            "Every scene stays in the same moonlit bedroom at midnight. Plan the 30-second story in this order: "
-            "Return exactly 3 scenes of 10 seconds each: scene 1 shows Jannat waking from a recurring dream and sitting up; "
-            "scene 2 shows her looking toward the closed bedroom door and briefly recalling a painful memory; "
-            "scene 3 shows her getting out of bed and facing the door. "
-            "Write one short natural Urdu dialogue line per scene and one separate concise Urdu narration line in the top-level narration field. "
-            "Do not repeat dialogue in narration. Do not introduce other visible characters or change her clothes."
-        )
+    system = "You are ClipKaro's animation director. Return only a validated data storyboard, never code. Plan original characters, timed physical actions, cinematography, narration, dialogue and sound."
+    user_text = director_prompt(duration, language, style, prompt)
     content: list[dict[str, Any]] = [{"type": "text", "text": user_text}]
     for frame in frames:
         encoded = base64.b64encode(frame.read_bytes()).decode("ascii")
@@ -351,7 +314,7 @@ Create exactly {scene_count} scenes and 1 to 3 recurring characters. Keep every 
     payload = {
         "model": STORY_MODEL,
         "temperature": 0.65,
-        "max_tokens": 3000,
+        "max_tokens": 8192,
         "response_format": {"type": "json_object"},
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": content}],
     }
@@ -376,7 +339,7 @@ Create exactly {scene_count} scenes and 1 to 3 recurring characters. Keep every 
         raw = json.loads(text)
         if not isinstance(raw, dict):
             raise ValueError("storyboard must be an object")
-        return _normalize_storyboard(raw, scene_count, prompt)
+        return normalize_director_story(raw, duration=duration)
     except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
         raise CartoonJobError("The story planner returned an invalid storyboard. Retry with a shorter, clearer idea.", category="CARTOON_STORY_INVALID") from exc
 
@@ -600,7 +563,7 @@ async def run_cartoon_generation(job: dict[str, Any], scratch: Path, storage) ->
             "UPDATE cartoon_projects SET storyboard_json=?,progress=18,stage='story_ready',updated_at=? WHERE id=?",
             (json.dumps(storyboard, separators=(",", ":"), ensure_ascii=False), utcnow(), project_id),
         )
-    if str(project.get("style") or "") == "cinematic-jannat":
+    if str(project.get("style") or "") == "cinematic-jannat" and storyboard.get("schema_version") != 3:
         storyboard = _apply_cinematic_jannat_storyboard(storyboard)
         await execute(
             "UPDATE cartoon_projects SET storyboard_json=?,updated_at=? WHERE id=?",
@@ -631,6 +594,12 @@ async def run_cartoon_generation(job: dict[str, Any], scratch: Path, storage) ->
         "UPDATE cartoon_projects SET storyboard_json=?,progress=18,stage='story_ready',updated_at=? WHERE id=?",
         (json.dumps(storyboard, separators=(",", ":"), ensure_ascii=False), utcnow(), project_id),
     )
+    if storyboard.get("schema_version") == 3:
+        from app.services.cartoon_story_job import run_director_job
+        try:
+            return await run_director_job(job, project, storyboard, project_dir, storage, api_key, tts_model)
+        except StoryValidationError as exc:
+            raise CartoonJobError(str(exc), category="CARTOON_STORY_TIMELINE_INVALID") from exc
     assets = _loads(project.get("assets_json"), {})
     audio_assets: list[dict[str, Any]] = []
     cinematic_jannat = str(project.get("style") or "") == "cinematic-jannat"

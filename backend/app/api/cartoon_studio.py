@@ -52,7 +52,7 @@ PREFERRED_TTS = [
     SYSTEM_URDU_TTS_MODEL,
 ]
 ALLOWED_DURATIONS = {15, 30, 45, 60}
-ALLOWED_RATIOS = {"9:16", "16:9", "1:1"}
+ALLOWED_RATIOS = {"9:16", "16:9", "1:1", "4:5"}
 ALLOWED_STYLES = {"2d-cartoon", "storybook", "anime-inspired", "flat-vector", "cinematic-jannat"}
 ALLOWED_LANGUAGES = {"auto", "en", "hi", "hinglish", "mr", "ur"}
 
@@ -66,6 +66,11 @@ async def cartoon_studio_user(user: dict = Depends(current_user)) -> dict:
     if not bool(user.get("cartoon_studio_access_override")):
         raise HTTPException(403, "Cartoon Studio beta access is not enabled for this account.")
     return user
+
+
+@router.get("/capabilities")
+async def cartoon_capabilities(user: dict = Depends(cartoon_studio_user)) -> dict:
+    return {"engine_version": "story-v3", "storyboard_version": 3, "aspect_ratios": ["9:16", "16:9", "1:1", "4:5"]}
 
 
 def _now() -> str:
@@ -128,6 +133,10 @@ def _project_out(row: dict[str, Any], job: dict[str, Any] | None = None) -> dict
     except (TypeError, ValueError, json.JSONDecodeError):
         storyboard = {}
 
+    try:
+        editable_available = bool(json.loads(str(row.get("assets_json") or "{}")).get("_editable"))
+    except (ValueError, TypeError, AttributeError):
+        editable_available = False
     job = job or {}
     job_status = str(job.get("status") or row.get("job_status") or "")
     project_status = str(row.get("status") or "queued")
@@ -151,6 +160,7 @@ def _project_out(row: dict[str, Any], job: dict[str, Any] | None = None) -> dict
         "stage": stage,
         "error": error,
         "storyboard": storyboard if isinstance(storyboard, dict) else {},
+        "editable_available": editable_available,
         "created_at": row.get("created_at"),
         "updated_at": row.get("updated_at"),
     }
@@ -247,6 +257,7 @@ async def create_cartoon_project(
     style: str = Form("2d-cartoon"),
     language: str = Form("auto"),
     tts_model: str = Form(""),
+    voice_id: str = Form(""),
     reference_video: UploadFile | None = File(default=None),
     user: dict = Depends(cartoon_studio_user),
 ) -> dict[str, Any]:
@@ -256,7 +267,7 @@ async def create_cartoon_project(
     if duration_seconds not in ALLOWED_DURATIONS:
         raise HTTPException(422, "Choose a duration of 15, 30, 45 or 60 seconds.")
     if aspect_ratio not in ALLOWED_RATIOS:
-        raise HTTPException(422, "Choose 9:16, 16:9 or 1:1.")
+        raise HTTPException(422, "Choose 9:16, 16:9, 1:1 or 4:5.")
     if style not in ALLOWED_STYLES:
         raise HTTPException(422, "Choose a supported cartoon style.")
     if language not in ALLOWED_LANGUAGES:
@@ -286,13 +297,16 @@ async def create_cartoon_project(
         raise HTTPException(422, "Select Urdu as the story language to use the word-timed system Urdu voice.")
 
     if style == "cinematic-jannat" and (
-        duration_seconds != 30 or aspect_ratio != "16:9" or language != "ur" or tts_model != SYSTEM_URDU_TTS_MODEL
+        language != "ur" or tts_model != SYSTEM_URDU_TTS_MODEL
     ):
         raise HTTPException(
             422,
-            "The Jannat cinematic preset requires 30 seconds, 16:9, Urdu and the System Urdu word-timed voice.",
+            "The Jannat story preset uses Urdu and the System Urdu word-timed voice.",
         )
 
+    selected_model = next(item for item in speech_models if item["id"] == tts_model)
+    if voice_id and voice_id not in selected_model.get("supported_voices", []):
+        raise HTTPException(422, "Choose a voice supported by the selected speech model.")
     project_id = str(uuid.uuid4())
     timestamp = _now()
     title = prompt[:64].strip()
@@ -343,6 +357,7 @@ async def create_cartoon_project(
             ),
         )
         try:
+            await execute("UPDATE cartoon_projects SET assets_json=? WHERE id=?", (json.dumps({"_preferred_voice": voice_id}), project_id))
             job_id = await create_job(
                 user["id"], "cartoon_generate", payload={"cartoon_project_id": project_id},
             )
@@ -440,6 +455,41 @@ async def retry_cartoon_project(
         raise HTTPException(503, "Cartoon rendering service is temporarily unavailable.") from exc
     updated = await _owned_project(project_id, user["id"])
     return _project_out(updated)
+
+
+@router.get("/projects/{project_id}/editable")
+async def cartoon_editable_url(project_id: str, user: dict = Depends(cartoon_studio_user)) -> dict:
+    row = await _owned_project(project_id, user["id"])
+    try:
+        saved = json.loads(row.get("assets_json") or "{}").get("_editable", {})
+    except (ValueError, TypeError, AttributeError):
+        saved = {}
+    if row.get("status") != "ready" or not saved.get("key"):
+        raise HTTPException(409, "This project has no V3 editable package.")
+    key = validate_object_key(saved["key"], expected_prefix=f"users/{user['id']}/cartoons/{project_id}")
+    if object_storage_provider_name() in {"gcs", "s3"}:
+        url = await get_storage_provider().signed_download_url(key, filename=f"clipkaro-editable-{project_id}.zip", ttl_seconds=600)
+        return {"url": url, "expires_in": 600}
+    return {"url": f"{get_settings().api_prefix}/cartoon-studio/projects/{project_id}/editable-file", "expires_in": 0}
+
+
+@router.get("/projects/{project_id}/editable-file")
+async def cartoon_editable_file(project_id: str, user: dict = Depends(cartoon_studio_user)):
+    if object_storage_provider_name() in {"gcs", "s3"}:
+        raise HTTPException(404, "Use the editable download URL.")
+    row = await _owned_project(project_id, user["id"])
+    try:
+        saved = json.loads(row.get("assets_json") or "{}").get("_editable", {})
+    except (ValueError, TypeError, AttributeError):
+        saved = {}
+    if row.get("status") != "ready" or not saved.get("key"):
+        raise HTTPException(409, "Editable assets are unavailable.")
+    key = validate_object_key(saved["key"], expected_prefix=f"users/{user['id']}/cartoons/{project_id}")
+    root = get_settings().storage_root.resolve()
+    path = (root / key).resolve()
+    if root not in path.parents or not path.is_file():
+        raise HTTPException(404, "Editable assets are unavailable.")
+    return FileResponse(path, media_type="application/zip", filename=f"clipkaro-editable-{project_id}.zip")
 
 
 @router.get("/projects/{project_id}/download")

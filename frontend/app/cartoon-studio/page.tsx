@@ -24,6 +24,9 @@ type Scene = {
   action: string;
   dialogue: string;
   speaker_id: string;
+  duration?: number;
+  actions?: {type: string; character_id: string; start: number; end: number}[];
+  speech?: {track: string; text: string; speaker_id: string}[];
 };
 type Storyboard = {
   title?: string;
@@ -44,6 +47,7 @@ type CartoonProject = {
   stage: string;
   error?: string | null;
   storyboard?: Storyboard;
+  editable_available?: boolean;
   created_at?: string;
 };
 type ProviderStatus = {
@@ -70,6 +74,7 @@ export default function CartoonStudioPage() {
   const [provider, setProvider] = useState<ProviderStatus | null>(null);
   const [models, setModels] = useState<TTSModel[]>([]);
   const [ttsModel, setTtsModel] = useState("");
+  const [voiceId, setVoiceId] = useState("");
   const [projects, setProjects] = useState<CartoonProject[]>([]);
   const [selected, setSelected] = useState<CartoonProject | null>(null);
   const [apiKey, setApiKey] = useState("");
@@ -201,6 +206,7 @@ export default function CartoonStudioPage() {
       body.set("style", style);
       body.set("language", language);
       body.set("tts_model", ttsModel);
+      body.set("voice_id", voiceId);
       if (reference) body.set("reference_video", reference);
       const project = await api<CartoonProject>("/cartoon-studio/projects", { method: "POST", body });
       mergeProject(project);
@@ -241,11 +247,11 @@ export default function CartoonStudioPage() {
     }
   }
 
-  async function downloadProject() {
+  async function downloadProject(editable = false) {
     if (!selected || selected.status !== "ready") return;
     setError("");
     try {
-      const result = await api<{ url: string }>("/cartoon-studio/projects/" + selected.id + "/download");
+      const result = await api<{ url: string }>("/cartoon-studio/projects/" + selected.id + (editable ? "/editable" : "/download"));
       window.location.assign(result.url);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The MP4 could not be downloaded.");
@@ -291,15 +297,16 @@ export default function CartoonStudioPage() {
               </label>
               <div className={styles.fieldsTwo}>
                 <label className={styles.field}><span>Video length</span>
-                  <select value={duration} onChange={(event) => setDuration(Number(event.target.value))} disabled={style === "cinematic-jannat"}>
+                  <select value={duration} onChange={(event) => setDuration(Number(event.target.value))}>
                     <option value={15}>15 seconds</option><option value={30}>30 seconds</option>
                     <option value={45}>45 seconds</option><option value={60}>60 seconds</option>
                   </select>
                 </label>
                 <label className={styles.field}><span>Aspect ratio</span>
-                  <select value={ratio} onChange={(event) => setRatio(event.target.value)} disabled={style === "cinematic-jannat"}>
+                  <select value={ratio} onChange={(event) => setRatio(event.target.value)}>
                     <option value="9:16">9:16 · Reels / Shorts</option>
                     <option value="16:9">16:9 · YouTube</option><option value="1:1">1:1 · Square</option>
+                    <option value="4:5">4:5 · Portrait posts</option>
                   </select>
                 </label>
                 <label className={styles.field}><span>Animation style</span>
@@ -307,8 +314,6 @@ export default function CartoonStudioPage() {
                     const nextStyle = event.target.value;
                     setStyle(nextStyle);
                     if (nextStyle === "cinematic-jannat") {
-                      setDuration(30);
-                      setRatio("16:9");
                       setLanguage("ur");
                       setTtsModel("system/edge-tts-urdu");
                     }
@@ -317,7 +322,7 @@ export default function CartoonStudioPage() {
                     <option value="anime-inspired">Anime-inspired</option><option value="flat-vector">Flat vector</option><option value="cinematic-jannat">Jannat cinematic (reference)</option>
                   </select>
                   {style === "cinematic-jannat" && (
-                    <small className={styles.languageHint}>Uses the reference Jannat rig and moonlit bedroom, with separate Urdu narration, dialogue, original suspense score and bedroom foley. Locks 30 seconds, 16:9 and the word-timed female voice.</small>
+                    <small className={styles.languageHint}>A suspense storytelling preset with consistent characters, timed movement and Urdu word-timed voices. Supports every aspect ratio.</small>
                   )}
                 </label>
                 <label className={styles.field}><span>Story language</span>
@@ -329,7 +334,7 @@ export default function CartoonStudioPage() {
               </div>
               <label className={styles.field}>
                 <span>Voice model</span>
-                <select value={ttsModel} onChange={(event) => setTtsModel(event.target.value)} disabled={!connected || models.length === 0 || style === "cinematic-jannat"}>
+                <select value={ttsModel} onChange={(event) => {setTtsModel(event.target.value);setVoiceId("");}} disabled={!connected || models.length === 0 || style === "cinematic-jannat"}>
                   {models.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}
                 </select>
                 <small>{connected ? (models.find((model) => model.id === ttsModel)?.description || "Every character keeps its assigned voice across the scenes in this project.") : "Connect your OpenRouter key to load available voice models."}</small>
@@ -345,6 +350,13 @@ export default function CartoonStudioPage() {
                 {connected && language === "hinglish" && ttsModel === "hexgrad/kokoro-82m" && (
                   <small className={styles.languageHint}>For mixed Hindi-English narration, Gemini 3.1 Flash TTS may handle language switching more reliably.</small>
                 )}
+              </label>
+              <label className={styles.field}><span>Narrator / lead voice</span>
+                <select value={voiceId} onChange={(event) => setVoiceId(event.target.value)} disabled={!connected}>
+                  <option value="">Match the character automatically</option>
+                  {(models.find(model => model.id === ttsModel)?.voices || []).map(voice => <option key={voice} value={voice}>{voice}</option>)}
+                </select>
+                <small>Other characters keep their own assigned voices. Providers without word timestamps use audio alignment for captions.</small>
               </label>
               <label className={styles.fileField}>
                 <span>Optional reference video</span>
@@ -425,11 +437,15 @@ export default function CartoonStudioPage() {
               <div className={styles.sectionTitle}><strong>Storyboard</strong><small>{selected.storyboard.scenes.length} scenes</small></div>
               {selected.storyboard.scenes.map((scene, index) => <div className={styles.sceneRow} key={scene.id}>
                 <span className={styles.sceneNumber}>{String(index + 1).padStart(2, "0")}</span>
-                <div><strong>{scene.scene_title}</strong><small>{scene.action}</small><p>“{scene.dialogue}”</p></div>
+                <div><strong>{scene.scene_title || scene.environment}{scene.duration ? " · " + scene.duration + "s" : ""}</strong>
+                  <small>{scene.actions?.map(action => action.start.toFixed(1) + "–" + action.end.toFixed(1) + "s: " + action.type.replaceAll("_", " ")).join(" · ") || scene.action}</small>
+                  {scene.speech?.map((line,index) => <p key={index}>{line.track === "narration" ? "Narrator" : line.speaker_id}: “{line.text}”</p>)}
+                  {!scene.speech && scene.dialogue && <p>“{scene.dialogue}”</p>}</div>
               </div>)}
             </div> : null}
             <div className={styles.projectActions}>
-              {selected.status === "ready" && <button className={styles.primaryButton} type="button" onClick={downloadProject}><Download size={17} /> Download MP4</button>}
+              {selected.status === "ready" && <><button className={styles.primaryButton} type="button" onClick={() => downloadProject()}><Download size={17} /> Download MP4</button>
+                {selected.editable_available && <button className={styles.secondaryButton} type="button" onClick={() => downloadProject(true)}><Download size={17} /> Editable project</button>}</>}
               {selected.status === "failed" && <button className={styles.secondaryButton} type="button" onClick={retryProject} disabled={busy}><RefreshCw size={16} /> Retry project</button>}
               {isRendering && <span><Loader2 className={styles.spin} size={15} /> Rendering in the background</span>}
             </div>

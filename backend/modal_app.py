@@ -257,6 +257,26 @@ def smart_layout_preflight() -> dict:
     return result
 
 
+@app.function(image=media_image, timeout=900, cpu=2.0, memory=4096, min_containers=0)
+def cartoon_story_v3_preflight() -> dict:
+    """Exercise the deployed V3 worker with saved multi-character speech, no AI requests."""
+    import hashlib
+    import json
+    import tempfile
+    from pathlib import Path
+    from scripts.cartoon_story_v3_qualification import qualify
+    output = Path(tempfile.mkdtemp(prefix="cartoon-story-v3-"))
+    qualify("library", "4:5", output)
+    source = Path("/root/clipkaro/cartoon_engine/animation/StoryEngine.tsx")
+    return {
+        "engine_version": "story-v3",
+        "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+        "verification": json.loads((output / "verification.json").read_text()),
+        "sample_sha256": hashlib.sha256((output / "sample.mp4").read_bytes()).hexdigest(),
+        "ai_provider_calls": 0,
+    }
+
+
 @app.function(image=media_image, timeout=600, cpu=2.0, memory=4096, min_containers=0)
 def cartoon_engine_preflight() -> dict:
     """Build and render a tiny cartoon in the exact production media image."""
