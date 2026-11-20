@@ -5,14 +5,13 @@
   "scripts": {
     "check:demo": "hyperframes check --json",
     "render:demo": "hyperframes render --quality draft -o demo.mp4",
-    "build": "esbuild animation/index.tsx --bundle --minify --global-name=ClipKaroAnimation --outfile=dist/animation.js"
+    "build": "esbuild animation/index.tsx --bundle --jsx-factory=h --jsx-fragment=Fragment --minify --global-name=ClipKaroAnimation --outfile=dist/animation.js"
   },
   "dependencies": {
     "gsap": "3.15.0",
     "hyperframes": "0.9.72",
-    "react": "19.3.1",
-    "react-dom": "19.3.1",
-    "esbuild": "0.28.2"
+    "esbuild": "0.28.2",
+    "preact": "11.2.0"
   },
   "allowScripts": {
     "esbuild@0.28.1": true,

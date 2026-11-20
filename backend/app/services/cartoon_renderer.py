@@ -556,7 +556,7 @@ tl.seek(0);
         animation_script = '<script src="assets/animation.js"></script>'
         episode_markup = (
             f'<div id="cartoon-animation" class="clip" data-start="0" data-duration="{duration}" '
-            'data-track-index="0" data-track-kind="graphics" style="position:absolute;inset:0"></div>'
+            'data-track-index="0" data-track-kind="graphics" data-layout-allow-overflow="true" style="position:absolute;inset:0"></div>'
         )
         animation_timeline = f"""
 const drawFrame = ClipKaroAnimation.createFrameRenderer(document.getElementById("cartoon-animation"), {animation_json});

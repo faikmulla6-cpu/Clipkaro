@@ -1,4 +1,4 @@
-import React from "react";
+import {Fragment, h, type FunctionComponent} from "preact";
 type Appearance = {
   skin_color?: string;
   hair_color?: string;
@@ -51,7 +51,7 @@ const environments: Record<string, {sky: string; glow: string; ground: string; a
   garden: {sky: "#9ED5AE", glow: "#F0F5CE", ground: "#5F9D55", accent: "#397346"},
 };
 
-const CharacterRig: React.FC<{
+const CharacterRig: FunctionComponent<{
   character: CartoonCharacter;
   t: number;
   mouth: number;
@@ -148,7 +148,7 @@ const CharacterRig: React.FC<{
   );
 };
 
-export const ClipKaroScene: React.FC<CartoonSceneProps & {time: number}> = ({
+export const ClipKaroScene: FunctionComponent<CartoonSceneProps & {time: number}> = ({
   time: t,
   durationSeconds,
   width,
