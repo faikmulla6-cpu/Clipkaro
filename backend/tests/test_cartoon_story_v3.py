@@ -187,6 +187,8 @@ async def test_mocked_glm_response_enters_director_contract_without_network(monk
     post.assert_awaited_once()
     payload = post.await_args.kwargs["json"]
     assert payload["model"] == job.STORY_MODEL
+    assert payload["max_tokens"] == 16_384
+    assert payload["reasoning"] == {"effort": "low", "exclude": True}
     assert payload["provider"] == {"require_parameters": True}
     assert payload["response_format"]["type"] == "json_schema"
     assert payload["response_format"]["json_schema"]["strict"] is True

@@ -37,6 +37,7 @@ from app.services.video import probe_metadata
 logger = logging.getLogger("clipkaro.cartoon")
 OPENROUTER_ROOT = "https://openrouter.ai/api/v1"
 STORY_MODEL = "z-ai/glm-5.3-flash"
+STORY_COMPLETION_TOKENS = 16_384
 VOICE_PREFERENCES = {
     "male": [
         "Puck", "Fenrir", "Charon", "Orus", "rex", "leo", "en_paul_neutral",
@@ -320,7 +321,9 @@ async def _generate_storyboard(api_key: str, prompt: str, duration: int, style: 
     payload = {
         "model": STORY_MODEL,
         "temperature": 0.65,
-        "max_tokens": 8192,
+        "max_tokens": STORY_COMPLETION_TOKENS,
+        # GLM Flash defaults to maximum reasoning, which shares the completion budget.
+        "reasoning": {"effort": "low", "exclude": True},
         "response_format": {
             "type": "json_schema",
             "json_schema": {"name": "clipkaro_storyboard", "strict": True, "schema": director_response_schema()},
@@ -329,7 +332,7 @@ async def _generate_storyboard(api_key: str, prompt: str, duration: int, style: 
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": content}],
     }
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(90.0, connect=15.0)) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(180.0, connect=15.0)) as client:
             response = await client.post(
                 f"{OPENROUTER_ROOT}/chat/completions",
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
@@ -343,6 +346,18 @@ async def _generate_storyboard(api_key: str, prompt: str, duration: int, style: 
         reply = response.json()
         choice = reply["choices"][0]
         if choice.get("finish_reason") == "length":
+            usage = reply.get("usage")
+            usage = usage if isinstance(usage, dict) else {}
+            details = usage.get("completion_tokens_details")
+            details = details if isinstance(details, dict) else {}
+            completion = usage.get("completion_tokens")
+            reasoning = details.get("reasoning_tokens")
+            logger.warning(
+                "Cartoon planner output truncated: budget=%d completion_tokens=%s reasoning_tokens=%s",
+                STORY_COMPLETION_TOKENS,
+                completion if type(completion) is int else None,
+                reasoning if type(reasoning) is int else None,
+            )
             raise CartoonJobError(
                 "The story planner ran out of space before finishing its storyboard.",
                 category="CARTOON_STORY_TRUNCATED",
