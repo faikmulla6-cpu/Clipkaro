@@ -110,6 +110,7 @@ export default function CartoonStudioPage() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [createError, setCreateError] = useState("");
 
   const mergeProject = useCallback((project: CartoonProject) => {
     setSelected(project);
@@ -242,8 +243,9 @@ export default function CartoonStudioPage() {
   async function createCartoon(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (busy || !connected) return;
+    setCreateError("");
     if (prompt.trim().length < 8) {
-      setError("Describe your story in at least 8 characters.");
+      setCreateError("Describe your story in at least 8 characters.");
       return;
     }
     setBusy(true);
@@ -266,7 +268,7 @@ export default function CartoonStudioPage() {
       setNotice("Your cartoon is queued. You can leave this page while it renders.");
       setReference(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Cartoon generation could not start.");
+      setCreateError(cause instanceof Error ? cause.message : "Cartoon generation could not start.");
     } finally {
       setBusy(false);
     }
@@ -321,7 +323,7 @@ export default function CartoonStudioPage() {
           <div>
             <span className={styles.eyebrow}><Sparkles size={13} /> CARTOON STUDIO · BETA</span>
             <h2>Give your story <em>a voice.</em></h2>
-            <p>Describe a scene. GLM plans the story, each character gets a saved voice, and HyperFrames builds the animation without generating a new image for every frame.</p>
+            <p>Choose a story planner and describe your scene. Each character gets a saved voice, and HyperFrames builds the animation.</p>
           </div>
           <div className={styles.heroMark}><Clapperboard size={32} /><span>2D<br />ANIMATION</span></div>
         </div>
@@ -392,7 +394,7 @@ export default function CartoonStudioPage() {
                   {provider?.storyboard_test_enabled && <option value="nvidia">NVIDIA Nemotron (internal trial)</option>}
                 </select>
                 <small>{projectPlanner === "nvidia"
-                  ? "Use a fictional text prompt for internal evaluation. Your NVIDIA key is used once to plan this cartoon."
+                  ? "Use a fictional text prompt for internal evaluation. NVIDIA may make one correction attempt to preserve your scene timings."
                   : "Story planning uses your connected OpenRouter account and can consume credits."}</small>
               </label>
               {projectPlanner === "nvidia" && (
@@ -437,6 +439,8 @@ export default function CartoonStudioPage() {
                 {busy ? <Loader2 className={styles.spin} size={18} /> : <WandSparkles size={18} />}
                 {busy ? (projectPlanner === "nvidia" ? "Planning with NVIDIA…" : "Please wait...") : "Create my cartoon"}
               </button>
+              {busy && projectPlanner === "nvidia" && <p className={styles.formHint} role="status">Keep this tab open. Story planning can take up to two minutes before rendering starts.</p>}
+              {createError && <div className={styles.alertError} role="alert"><AlertCircle size={17} />{createError}</div>}
               {!connected && <p className={styles.formHint}>Connect your own OpenRouter API key below to enable generation.</p>}
             </form>
           </section>

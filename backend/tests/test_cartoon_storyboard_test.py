@@ -165,6 +165,34 @@ async def test_project_creation_queues_selected_planner_without_exposing_keys(
         assert json.loads(values[10]) == {}
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("recovers", [True, False])
+async def test_nvidia_create_corrects_timing_only_once(monkeypatch, recovers):
+    prompt = "0–10 seconds Jannat wakes up. 10–20 seconds She remembers. 20–30 seconds She looks at the door."
+    valid = fixtures()["jannat"]
+    valid["scenes"].pop(1)
+    merged = {**valid, "scenes": valid["scenes"][:2]}
+
+    def reply(story):
+        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(story)}}]})
+
+    request = AsyncMock(side_effect=[reply(merged), reply(valid if recovers else merged)])
+    monkeypatch.setattr(studio, "request_storyboard", request)
+    args = ("nvapi-fixture", prompt, 30, "2d-cartoon", "ur", "nvidia")
+    if recovers:
+        story = await studio._plan_in_request(*args, repair_timing=True)
+        assert [scene["start"] for scene in story["scenes"]] == [0, 10, 20]
+    else:
+        with pytest.raises(studio.HTTPException, match="No video was queued"):
+            await studio._plan_in_request(*args, repair_timing=True)
+
+    first, second = request.await_args_list
+    assert first.kwargs["timeout"] + second.kwargs["timeout"] == 105
+    assert first.args[0] == second.args[0] == args[0]
+    assert first.args[1]["messages"][1] == second.args[1]["messages"][1]
+    assert "first storyboard was rejected" in second.args[1]["messages"][0]["content"]
+
+
 def test_scripted_ranges_survive_both_planners_and_combined_scenes_are_rejected():
     prompt = "0–10 seconds Jannat wakes up. 10–20 seconds She remembers. 20–30 seconds She looks at the door."
     raw = fixtures()["jannat"]

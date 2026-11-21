@@ -244,11 +244,10 @@ async def test_storyboard(
             "storyboard": storyboard}
 
 
-async def _plan_in_request(key: str, prompt: str, duration: int, style: str, language: str, provider: str) -> dict:
+async def _request_plan(key: str, payload: dict, provider: str, timeout: int) -> httpx.Response:
     label = "NVIDIA" if provider == "nvidia" else "OpenRouter"
-    payload = planner_payload(prompt, duration, style, language, provider=provider)
     try:
-        upstream = await request_storyboard(key, payload, provider=provider, timeout=105)
+        upstream = await request_storyboard(key, payload, provider=provider, timeout=timeout)
     except (httpx.HTTPError, TimeoutError) as exc:
         raise HTTPException(504, f"{label} did not complete the storyboard. Try again shortly.") from exc
     if upstream.status_code in {401, 403}:
@@ -259,10 +258,34 @@ async def _plan_in_request(key: str, prompt: str, duration: int, style: str, lan
         raise HTTPException(503, f"{label} did not finish the storyboard within this request. Try again shortly.")
     if not upstream.is_success:
         raise HTTPException(502, f"{label} could not complete the storyboard.")
+    return upstream
+
+
+async def _plan_in_request(
+    key: str, prompt: str, duration: int, style: str, language: str, provider: str, *, repair_timing: bool = False,
+) -> dict:
+    payload = planner_payload(prompt, duration, style, language, provider=provider)
+    upstream = await _request_plan(key, payload, provider, 65 if repair_timing else 105)
     try:
         return parse_storyboard_reply(upstream, prompt=prompt, duration=duration)
     except StoryboardReplyError as exc:
-        raise HTTPException(502, str(exc)) from exc
+        if not repair_timing or exc.category != "CARTOON_STORY_BEAT_TIMING":
+            raise HTTPException(502, str(exc)) from exc
+
+    system, idea = payload["messages"]
+    correction = {**system, "content": system["content"] + " " + (
+        "The first storyboard was rejected because its scene count did not match the explicit ranges. "
+        "Return a complete replacement. Make exactly one scene object for each requested range, "
+        "including when adjacent scenes share the same setting. Keep each line and action in its original range."
+    )}
+    repair = {**payload, "temperature": .2, "messages": [correction, idea]}
+    upstream = await _request_plan(key, repair, provider, 40)
+    try:
+        return parse_storyboard_reply(upstream, prompt=prompt, duration=duration)
+    except StoryboardReplyError as exc:
+        message = ("NVIDIA still returned the wrong number of scenes after a correction attempt. "
+                   "No video was queued. You can retry with the same script.")
+        raise HTTPException(502, message if exc.category == "CARTOON_STORY_BEAT_TIMING" else str(exc)) from exc
 
 
 @router.post("/providers/openrouter")
@@ -396,7 +419,11 @@ async def create_cartoon_project(
         raise HTTPException(422, "Choose a voice supported by the selected speech model.")
     # Direct NVIDIA planning finishes before queueing so its key never has to
     # cross the worker boundary. Rendering and retries reuse the saved plan.
-    storyboard = await _plan_in_request(trial_key, prompt, duration_seconds, style, language, "nvidia") if trial_key else {}
+    storyboard = {}
+    if trial_key:
+        storyboard = await _plan_in_request(
+            trial_key, prompt, duration_seconds, style, language, "nvidia", repair_timing=True,
+        )
     project_id = str(uuid.uuid4())
     timestamp = _now()
     title = prompt[:64].strip()
