@@ -15,7 +15,7 @@ COMMON = {
     "kyaa": "kya", "main": "main", "hoo~": "hoon", "haan~": "haan",
     "haa~": "haan", "are": "arre", "yaar": "yaar", "sahee": "sahi",
     "naheen": "nahi", "nahee": "nahi", "men": "mein", "mein": "mein", "hain": "hain",
-    "hai": "hai", "karoo~": "karoon", "dekhoo~": "dekhoon",
+    "hai": "hai", "itanee": "itni", "karoo~": "karoon", "dekhoo~": "dekhoon",
     "oopar": "upar", "injiniyaring": "engineering", "injiniering": "engineering",
 }
 

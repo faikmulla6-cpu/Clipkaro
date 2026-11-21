@@ -18,6 +18,7 @@ from app.core.database import distributed_advisory_lock, execute, fetch_all, fet
 from app.services.distributed_rate_limit import consume_rate_limit
 from app.services.auth import current_user
 from app.services.cartoon_speech import SYSTEM_URDU_TTS_MODEL, system_urdu_tts_model_row
+from app.services.cartoon_story import resolve_cartoon_language
 from app.services.cartoon_security import (
     CartoonCredentialError, decrypt_provider_key, encrypt_provider_key,
     fingerprint_provider_key, mask_provider_key,
@@ -272,6 +273,7 @@ async def create_cartoon_project(
         raise HTTPException(422, "Choose a supported cartoon style.")
     if language not in ALLOWED_LANGUAGES:
         raise HTTPException(422, "Choose a supported story language.")
+    language = resolve_cartoon_language(language, prompt)
     api_key = await _provider_key(user["id"])
     if not api_key:
         raise HTTPException(409, "Add your OpenRouter API key before creating a cartoon.")

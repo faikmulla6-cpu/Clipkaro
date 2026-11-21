@@ -5,11 +5,32 @@ import copy
 import html
 import json
 import re
-from .cartoon_story import RATIOS, StoryValidationError, normalize_director_story
+from .cartoon_story import RATIOS, StoryValidationError, normalize_director_story, resolve_cartoon_language
 from .cartoon_timing import normalize_word_boundaries, build_karaoke_caption_markup
+from .roman_hindi import DEVANAGARI, romanize_hindi
 
 
-def schedule_speech(story: dict, audio_assets: list[dict]) -> tuple[dict, list[dict], list[dict]]:
+def _roman_caption_words(words: list[dict], line: str) -> list[dict]:
+    texts = [word["text"] for word in words]
+    roman = [romanize_hindi(value.replace("।", ".").replace("॥", "."))
+             if DEVANAGARI.search(value) else value for value in texts]
+    scripted = line.split()
+
+    def spelling_key(value: str) -> str:
+        letters = re.sub(r"[^a-z0-9]", "", value.casefold())
+        return re.sub(r"([aeiou])\1+", r"\1", letters)
+
+    # Restore the authored spelling only if each token agrees with the timed speech.
+    scripted_keys = [spelling_key(value) for value in scripted]
+    if (all(char.isascii() or not char.isalpha() for char in line)
+            and all(scripted_keys) and scripted_keys == [spelling_key(value) for value in roman]):
+        roman = scripted
+    return [{**word, "text": value} for word, value in zip(words, roman)]
+
+
+def schedule_speech(
+    story: dict, audio_assets: list[dict], *, language: str = "auto"
+) -> tuple[dict, list[dict], list[dict]]:
     result = copy.deepcopy(story)
     lookup = {a["id"]: a for a in audio_assets}
     tracks, words = [], []
@@ -46,8 +67,9 @@ def schedule_speech(story: dict, audio_assets: list[dict]) -> tuple[dict, list[d
             local_words = normalize_word_boundaries(boundaries,audio_duration=duration,global_start=start,speaker_id=line["speaker_id"],track=line["track"])
             if not local_words:
                 raise StoryValidationError("Speech word timestamps are empty or outside the measured audio.")
+            caption_words = _roman_caption_words(local_words, line["text"]) if language == "hinglish" else local_words
             global_words = [{**w,"start_seconds":round(w["start_seconds"]+scene["start"],4),"end_seconds":round(w["end_seconds"]+scene["start"],4),
-                             "source":asset.get("timing_source","tts_word_boundary")} for w in local_words]
+                             "source":asset.get("timing_source","tts_word_boundary")} for w in caption_words]
             words.extend(global_words)
             audio.append({"start":start,"duration":duration,"speaker_id":line["speaker_id"],"track":line["track"],"words":local_words,"envelope":asset.get("lip_envelope") or []})
             tracks.append({"track":line["track"],"filename":filename,"start_seconds":scene["start"]+start,"duration_seconds":duration,
@@ -63,13 +85,14 @@ def build_story_project(project: dict, storyboard: dict, audio_assets: list[dict
     for c in story["characters"]:
         original=next(x for x in storyboard["characters"] if x["id"]==c["id"])
         c["voice_id"]=original.get("voice_id","")
-    story,tracks,words=schedule_speech(story,audio_assets)
+    story_language = resolve_cartoon_language(project.get("language") or "auto", project.get("prompt") or "")
+    story,tracks,words=schedule_speech(story,audio_assets,language=story_language)
     ratio=project.get("aspect_ratio","9:16")
     if ratio not in RATIOS:
         raise StoryValidationError("Unsupported aspect ratio.")
     w,h,_=RATIOS[ratio]
     caption_on=bool(project.get("captions_enabled",True))
-    rtl=project.get("language")=="ur"
+    rtl=story_language=="ur"
     caption_html,caption_js=build_karaoke_caption_markup(words,overlay_id="story",rtl=rtl,bottom_percent=9,strict_timing=True) if caption_on else ("","")
     extras=project.get("audio_tracks") or []
     audios=[]
@@ -88,7 +111,7 @@ def build_story_project(project: dict, storyboard: dict, audio_assets: list[dict
     payload=json.dumps({"kind":"story-v3","story":story,"width":w,"height":h,"duration":duration},ensure_ascii=True,allow_nan=False).replace("<","\\u003c")
     size=round(min(w,h)*.043)
     direction="rtl" if rtl else "ltr"
-    language={"hinglish":"hi-Latn","auto":"en"}.get(str(project.get("language")),str(project.get("language") or "en"))
+    language={"hinglish":"hi-Latn","auto":"en"}.get(story_language,story_language)
     root=f"""<!doctype html><html lang="{html.escape(language,quote=True)}" dir="{direction}">
 <head><meta charset="UTF-8"><meta name="viewport" content="width={w},height={h}"><title>{html.escape(story['title'])}</title>
 <script src="assets/gsap.min.js"></script><script src="assets/animation.js"></script>

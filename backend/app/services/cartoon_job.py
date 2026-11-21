@@ -28,6 +28,7 @@ from app.services.cartoon_story import (
     director_response_schema,
     normalize_director_story,
     prepare_director_reply,
+    resolve_cartoon_language,
 )
 from app.services.cartoon_security import decrypt_provider_key
 from app.services.jobs import update_job, utcnow
@@ -574,6 +575,12 @@ async def run_cartoon_generation(job: dict[str, Any], scratch: Path, storage) ->
     if project.get("status") == "ready" and project.get("output_key"):
         await update_job(job["id"], 100, "ready", "Your cartoon is ready", "completed")
         return
+    project = {
+        **project,
+        "language": resolve_cartoon_language(
+            project.get("language") or "auto", project.get("prompt") or ""
+        ),
+    }
     credential = await fetch_one(
         "SELECT api_key_ciphertext FROM cartoon_provider_credentials WHERE user_id=? AND provider='openrouter'",
         (job["user_id"],),

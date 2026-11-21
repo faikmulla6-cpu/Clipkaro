@@ -133,6 +133,37 @@ def test_caption_markup_escapes_untrusted_text_and_preserves_measured_end():
     assert 'data-duration="0.5000"' in html or 'data-duration="0.5"' in html
 
 
+@pytest.mark.parametrize(
+    ("language", "prompt", "expected_lang", "expected_caption"),
+    [
+        ("hi", "Make a 15-second cartoon in Roman Hinglish.", "hi-Latn", "Itni raat ko kaun aaya hai?"),
+        ("hi", "Make a story about Jannat.", "hi", "इतनी रात को कौन आया है?"),
+        ("ur", "The character mentions Roman Hinglish.", "ur", "اتنی رات کو کون آیا ہے؟"),
+    ],
+)
+def test_caption_script_follows_project_language_and_keeps_alignment(
+    language, prompt, expected_lang, expected_caption
+):
+    storyboard = story()
+    line = storyboard["scenes"][0]["speech"][0]
+    line["text"] = "Itni raat ko kaun aaya hai?"
+    source = "اتنی رات کو کون آیا ہے؟" if language == "ur" else "इतनी रात को कौन आया है?"
+    assets = audio_for(storyboard)
+    assets[0]["word_boundaries"] = [
+        {"text": word, "offset": index * 2_000_000, "duration": 2_000_000}
+        for index, word in enumerate(source.split())
+    ]
+    files = build_story_project(
+        {"duration_seconds": 30, "language": language, "prompt": prompt}, storyboard, assets
+    )
+    assert f'<html lang="{expected_lang}"' in files["index.html"]
+    actual = json.loads(files["audio-timeline.json"])["words"][:6]
+    baseline = schedule_speech(storyboard, assets)[2][:6]
+    assert actual == [
+        {**word, "text": token} for word, token in zip(baseline, expected_caption.split(), strict=True)
+    ]
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("case", ["garden", "library", "jannat", "absolute-time", "truncated", "unreadable", "missing-target"])
 async def test_mocked_glm_response_enters_director_contract_without_network(monkeypatch, case):

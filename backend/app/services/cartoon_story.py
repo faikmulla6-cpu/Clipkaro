@@ -19,6 +19,15 @@ class StoryValidationError(ValueError):
     pass
 
 
+def resolve_cartoon_language(language: str, prompt: str) -> str:
+    """Honor explicit Roman Hindi or Hinglish when the form defaults to Hindi."""
+    if language in {"hi", "auto"} and re.search(
+        r"\broman(?:[- ]script)?[- ]+(?:hindi|hinglish)\b", prompt, re.IGNORECASE
+    ):
+        return "hinglish"
+    return language
+
+
 def director_response_schema() -> dict:
     """Constrain GLM's response shape before checking cross-field story rules."""
     string = {"type": "string"}
