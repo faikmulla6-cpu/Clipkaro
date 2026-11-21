@@ -28,6 +28,7 @@ export function actorState(scene:Item,actor:Item,t:number,index=0):Item {
     if(a.type==="head")state.head=a.value*10*p;
     if(a.type==="blink"&&active)state.blink=Math.sin(Math.PI*p);
     if(a.type==="wave"&&active)state.wave=Math.sin((t-a.start)*9)*28;
+    if(a.type==="wag"&&active)state.tailWag=Math.sin((t-a.start)*12)*13*a.value;
     if(a.type==="jump"&&active)state.jump=Math.sin(Math.PI*p)*70;
     if(["point","reach","pick_up","put_down","open_door","close_door","open_box"].includes(a.type)) {
       if(active) {state.reach=Math.sin(Math.PI*p);state.target=a.target_id;}
@@ -84,6 +85,7 @@ export function Biped({character,state,t,x,y,scale,prefix,mouth=0,viseme="open"}
   const hair=app.hair_color, shirt=app.shirt_color, pants=app.pants_color, shoe=app.shoe_color;
   const long=app.hair_style==="long",longClothes=["kameez","dress"].includes(app.clothing);
   const animal=!["human","robot"].includes(character.species);
+  const dog=character.species==="dog",robot=character.species==="robot";
   const skinId=prefix+"-skin",clothId=prefix+"-cloth";
   const dy=65*clamp(sleep/.28)*(1-clamp((sleep-.28)/.72))+(state.bodyOffset||0);
   return <g data-character-id={character.id} transform={`translate(${x} ${y-(state.jump||0)*scale}) scale(${scale})`}>
@@ -91,7 +93,10 @@ export function Biped({character,state,t,x,y,scale,prefix,mouth=0,viseme="open"}
     <linearGradient id={clothId} x2="1" y2=".3"><stop stop-color={shirt}/><stop offset="1" stop-color={pants}/></linearGradient></defs>
     <ellipse cx="0" cy="5" rx={85+state.gait*8} ry="10" fill="#071421" opacity=".25"/>
     <g transform={`translate(0 ${dy+bob}) rotate(${rot} 0 -112)`}>
-      {animal&&["fox","cat","dog"].includes(character.species)&&<><path d="M52-129Q144-197 140-98Q138-45 68-47" stroke={skin} stroke-width="31" fill="none" stroke-linecap="round"/>{character.species==="fox"&&<path d="M131-87Q118-49 73-48" stroke="#EDE5D0" stroke-width="23" fill="none" stroke-linecap="round"/>}</>}
+      {animal&&["fox","cat","dog"].includes(character.species)&&<g transform={`rotate(${state.tailWag||0} 52 -129)`}>
+        <path d={dog?"M52-129Q125-130 143-183":"M52-129Q144-197 140-98Q138-45 68-47"} stroke={skin} stroke-width={dog?23:31} fill="none" stroke-linecap="round"/>
+        {character.species==="fox"&&<path d="M131-87Q118-49 73-48" stroke="#EDE5D0" stroke-width="23" fill="none" stroke-linecap="round"/>}
+      </g>}
       <g transform={`rotate(${leg} -24 -110)`}>
         <path d={`M-24-112L${-27-sit*25-(state.crouch||0)*27} ${-60+sit*18}L${-30-sit*48} ${-10-dy}`} fill="none" stroke={ink} stroke-width="35" stroke-linecap="round"/>
         <path d={`M-24-112L${-27-sit*25-(state.crouch||0)*27} ${-60+sit*18}L${-30-sit*48} ${-10-dy}`} fill="none" stroke={pants} stroke-width="30" stroke-linecap="round"/>
@@ -127,7 +132,14 @@ export function Biped({character,state,t,x,y,scale,prefix,mouth=0,viseme="open"}
         <path d={`M${6+state.gaze*4}-352q-7 19-7 28q6 7 14 0`} fill="none" stroke="#875D56" stroke-opacity=".6" stroke-width="2"/>
         {mouth>.1?<g><ellipse cx={5+state.gaze*3} cy="-305" rx={viseme==="round"?9:15} ry={3+mouth*10} fill="#5C3444" stroke="#875365" stroke-width="2"/><path d="M-4-310Q5-314 15-310" fill="none" stroke="#E5D6C8" stroke-width="2"/></g>:
         <path d={sad?"M-14-302Q6-310 23-302":state.expression==="angry"?"M-13-304H22":state.expression==="happy"?"M-16-307Q5-295 24-307":"M-14-304Q5-302 22-304"} fill="none" stroke="#905B63" stroke-width="3" stroke-linecap="round"/>}
-        {character.species!=="human"&&character.species!=="robot"&&<><path d="M-61-394L-68-459L-21-418M61-394L68-459L21-418" fill={skin} stroke={ink} stroke-width="3"/><ellipse cy="-326" rx="13" ry="7" fill="#263440"/></>}
+        {animal&&<>{dog
+          ?<path d="M-51-419Q-93-418-94-378Q-97-347-79-345Q-62-351-61-390Z M51-419Q93-418 94-378Q97-347 79-345Q62-351 61-390Z" fill={hair} stroke={ink} stroke-width="3"/>
+          :<path d="M-61-394L-68-459L-21-418M61-394L68-459L21-418" fill={skin} stroke={ink} stroke-width="3"/>}
+          <ellipse cy="-326" rx={dog?17:13} ry="8" fill="#263440"/></>}
+        {robot&&<g stroke={ink} stroke-width="3">
+          <path d="M0-435V-455" fill="none"/><circle cy="-461" r="7" fill="#B9E5E8"/>
+          <circle cx="-60" cy="-331" r="3.5" fill="#B9E5E8"/><circle cx="60" cy="-331" r="3.5" fill="#B9E5E8"/>
+        </g>}
         {state.expression==="sad"&&<ellipse cx="54" cy={-326+((t*.3)%1)*16} rx="2.5" ry="5" fill="#A4D4DE" opacity=".8"/>}
       </g>
       <Arm side={1} {...{state,t,skin,cloth:shirt,ink}}/>

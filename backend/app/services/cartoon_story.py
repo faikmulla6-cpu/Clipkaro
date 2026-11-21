@@ -8,13 +8,18 @@ from typing import Any
 
 STORY_VERSION = 3
 ENVIRONMENTS = {"bedroom", "home", "forest", "garden", "city", "school", "beach", "space", "castle", "mountain", "desert", "workshop"}
-ACTIONS = {"idle", "sleep", "wake", "walk", "run", "sit", "stand", "turn", "look", "head", "blink", "wave", "point", "reach", "pick_up", "put_down", "open_door", "close_door", "open_box", "react", "jump", "speak"}
+ACTIONS = {"idle", "sleep", "wake", "walk", "run", "sit", "stand", "turn", "look", "head", "blink", "wave", "wag", "point", "reach", "pick_up", "put_down", "open_door", "close_door", "open_box", "react", "jump", "speak"}
 OPENABLE_ACTIONS = {"open_door": "door", "close_door": "door", "open_box": "box"}
 BOX_CONTENTS = {"letter", "book", "pendant", "ball", "cup"}
 EXPRESSIONS = {"neutral", "happy", "sad", "scared", "surprised", "angry", "curious"}
 PROPS = {"door", "bed", "table", "chair", "letter", "book", "pendant", "ball", "box", "lamp", "cup", "tree"}
 PROP_SUPPORTS = {"table", "bed", "chair"}
 MAX_SCENE_PROPS = 12
+PROP_COLORS = {
+    "red": "#DC414F", "blue": "#3F7DCF", "green": "#4B9660", "yellow": "#EDC440",
+    "orange": "#E78842", "purple": "#9159B1", "pink": "#DC739F", "white": "#FAF4E8",
+    "black": "#263142", "brown": "#9B6748", "gold": "#D5AC54", "silver": "#C1CAD3",
+}
 SOUNDS = {"footstep", "rustle", "door_click", "door_creak", "gasp", "knock", "chime", "pickup"}
 RATIOS = {"9:16": (1080, 1920, "portrait"), "16:9": (1920, 1080, "landscape"), "1:1": (1080, 1080, "square"), "4:5": (1080, 1350, "portrait")}
 
@@ -56,7 +61,7 @@ def director_response_schema() -> dict:
         face_shape=choices(["oval", "round", "angular"]), body_scale=numeric,
     )
     actor = obj(character_id=string, **position, pose=choices(["stand", "sit", "sleep"]), facing=numeric, scale=numeric)
-    prop = obj(id=string, type=choices(PROPS), **position, state=choices(["open", "closed"]),
+    prop = obj(id=string, type=choices(PROPS), **position, state=choices(["open", "closed"]), color=string,
                support_id=optional_id, reveal_from_id=optional_id)
     action = obj(
         character_id=string, type=choices(ACTIONS), start=numeric, end=numeric,
@@ -345,6 +350,12 @@ def normalize_director_story(raw: dict, *, duration: int) -> dict:
                 if current is None:
                     placed = {key: value for key, value in prop.items() if key != "reveal_from_id"}
                     props.append({**placed, "holder_id": holder, "support_id": None})
+                elif not current["holder_id"] and not any(
+                    isinstance(action, dict) and action.get("type") == "pick_up" and ident(action.get("target_id")) == pid
+                    for action in source.get("actions") or []
+                ):
+                    current["holder_id"] = holder
+                    current.pop("reveal_from_id", None)
         pids = {p["id"] for p in props}
         if len(pids) != len(props):
             raise StoryValidationError("Prop IDs must be unique per scene.")
@@ -454,7 +465,7 @@ All action start/end, camera time, speech start, and sound at values are local t
 For example, an action one second into the second scene has start 1, even if that scene starts at video time 10.
 Every action must satisfy 0 <= start < end <= scene duration.
 Use the same exact lowercase ASCII IDs in every reference. Each scene needs a visible actor and at least one action.
-List a prop in every scene where an action or camera refers to it, even if it appeared earlier.
+List a prop in every scene where an action or camera refers to it, even if it appeared earlier. Keep the same prop ID, type and hex color across cuts. Set color to the requested #RRGGBB. Use a timed put_down when an actor stops carrying it.
 Use null for unused action targets and positions and empty arrays for unused props, speech, or sounds.
 Loose objects rest on the floor at y .82, or set support_id to a table/bed/chair ID; the renderer places them on its surface.
 Each support_id must name a table, bed or chair declared in that same scene's props with its own support_id set to null.
@@ -474,5 +485,8 @@ Do not invent dialogue for silent beats. Include narration when the user request
 Use the requested script: Urdu in Urdu script/RTL, Hindi in Devanagari/LTR, Hinglish in Roman/LTR.
 Keep speech concise enough to fit after its start, with at least .25s between voices. No simultaneous narration and dialogue.
 Preserve user-supplied dialogue verbatim when it fits. Prefer one short line over several in a brief scene.
+Use each quoted line exactly as often as it occurs in the brief. Keep its speaker and requested time range. Do not repeat a later line as earlier narration or speak a reaction before the event that causes it.
+Show a recognizable story action or object in the first two seconds. Use the final shot to show the requested outcome or cliffhanger. Finish the final action in time to hold on its result.
+For a dog wagging its tail, use wag for the dog actor. Keep the exact requested species in the character data.
 Plan an opening event, a visible response, and a final image or payoff. For a detailed brief, preserve its key beats and requested ending. Show the action that causes a reveal and then show its visible result.
 No executable code, URLs, markdown, generic action sentences or unsupported motion descriptions. JSON only."""

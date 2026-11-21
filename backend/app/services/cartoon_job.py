@@ -31,6 +31,7 @@ from app.services.cartoon_story import (
     resolve_cartoon_language,
 )
 from app.services.cartoon_security import decrypt_provider_key
+from app.services.cartoon_story_direction import direct_story
 from app.services.jobs import update_job, utcnow
 from app.services.storage import validate_object_key
 from app.services.video import probe_metadata
@@ -390,7 +391,8 @@ async def _generate_storyboard(api_key: str, prompt: str, duration: int, style: 
         raw = json.loads(text)
         if not isinstance(raw, dict):
             raise ValueError("storyboard must be an object")
-        return normalize_director_story(prepare_director_reply(raw, prompt=prompt), duration=duration)
+        storyboard = normalize_director_story(prepare_director_reply(raw, prompt=prompt), duration=duration)
+        return direct_story(storyboard, prompt)
     except StoryValidationError as exc:
         # Validator messages are fixed strings. Never log prompts, outputs or credentials.
         logger.warning("Cartoon storyboard rejected: %s", exc)
