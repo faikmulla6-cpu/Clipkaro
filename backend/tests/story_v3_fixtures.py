@@ -17,6 +17,32 @@ def scene(duration,environment,ids,actions,**kw):
             "props":[],"speech":[],"sounds":[],"transition":"dissolve",**kw}
 
 
+def meera_with_invalid_prop_support():
+    """A plausible planner response for the 30-second Dadi Ka Sandook report."""
+    meera = "meera"
+    box = {"id": "box", "type": "box", "x": .62, "y": .68, "support_id": "table"}
+    pendant = {"id": "pendant", "type": "pendant", "x": .62, "y": .68, "support_id": "box"}
+    lamp = {"id": "lamp", "type": "lamp", "x": .84, "y": .82}
+    return {
+        "schema_version": 3,
+        "title": "Dadi Ka Sandook",
+        "mood": "gentle",
+        "characters": [actor(meera, "Meera")],
+        "scenes": [
+            scene(10, "home", [meera], [action(meera, "reach", 1, 3, target_id="box")],
+                  lighting="warm", props=[dict(box), dict(lamp)]),
+            scene(10, "home", [meera], [action(meera, "pick_up", 2, 4, target_id="pendant"),
+                                       action(meera, "react", 4, 6, expression="happy")],
+                  lighting="warm", props=[dict(box), pendant, dict(lamp)],
+                  speech=[{"track": "dialogue", "speaker_id": meera,
+                           "text": "Aap kehti thi, jab darr lage toh chaand ko dekh lena.", "start": 4}]),
+            scene(10, "home", [meera], [action(meera, "look", 1, 3),
+                                       action(meera, "react", 4, 7, expression="happy")],
+                  lighting="warm", props=[dict(box), dict(lamp)]),
+        ],
+    }
+
+
 def fixtures():
     j="jannat"
     room=[{"id":"bed","type":"bed","x":.38,"y":.83},{"id":"door","type":"door","x":.86,"y":.83},{"id":"lamp","type":"lamp","x":.1,"y":.78}]

@@ -3,9 +3,9 @@ import json
 from pathlib import Path
 from unittest.mock import AsyncMock
 import pytest
-from app.services.cartoon_story import normalize_director_story, StoryValidationError, RATIOS, director_prompt
+from app.services.cartoon_story import normalize_director_story, StoryValidationError, RATIOS, director_prompt, prepare_director_reply
 from app.services.cartoon_story_render import build_story_project, schedule_speech
-from story_v3_fixtures import fixtures
+from story_v3_fixtures import fixtures, meera_with_invalid_prop_support
 
 
 def story():
@@ -165,12 +165,17 @@ def test_caption_script_follows_project_language_and_keeps_alignment(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("case", ["garden", "library", "jannat", "absolute-time", "truncated", "unreadable", "missing-target"])
+@pytest.mark.parametrize("case", ["garden", "library", "jannat", "meera-props", "absolute-time", "truncated", "unreadable", "missing-target"])
 async def test_mocked_glm_response_enters_director_contract_without_network(monkeypatch, case):
     from app.services import cartoon_job as job
     import httpx
 
     raw = fixtures().get(case, fixtures()["jannat"])
+    duration = 30 if case == "meera-props" else 15
+    if case == "meera-props":
+        raw = meera_with_invalid_prop_support()
+        with pytest.raises(StoryValidationError, match="requires an existing table"):
+            normalize_director_story(raw, duration=duration)
     if case == "missing-target":
         raw["scenes"][0]["actions"][0]["target_id"] = "missing"
     if case == "absolute-time":
@@ -201,7 +206,7 @@ async def test_mocked_glm_response_enters_director_contract_without_network(monk
         with pytest.raises(job.CartoonJobError, match=errors[case]):
             await job._generate_storyboard("test-only-not-a-key", "A sound at midnight", 15, "2d-cartoon", "hinglish", [])
     else:
-        result = await job._generate_storyboard("test-only-not-a-key", "An animated story", 15, "2d-cartoon", "hinglish", [])
+        result = await job._generate_storyboard("test-only-not-a-key", "An animated story", duration, "2d-cartoon", "hinglish", [])
         assert result["schema_version"] == 3
         assert result["characters"] and result["scenes"]
         if case == "absolute-time":
@@ -209,8 +214,16 @@ async def test_mocked_glm_response_enters_director_contract_without_network(monk
             assert scene["actions"][1]["target_id"] == "old-pendant"
             assert scene["actions"][1]["start"] == pytest.approx(.5)
             assert scene["camera"][0]["time"] == 0
+        if case == "meera-props":
+            first, reveal, ending = [{prop["id"]: prop for prop in scene["props"]} for scene in result["scenes"]]
+            assert first["table"] == reveal["table"] == ending["table"]
+            assert first["box"]["support_id"] == "table"
+            assert reveal["pendant"]["support_id"] == "table"
+            assert ending["pendant"]["holder_id"] == "meera"
+            assert result["scenes"][1]["actions"][0]["target_id"] == "pendant"
+            assert result["scenes"][1]["speech"][0]["text"] == raw["scenes"][1]["speech"][0]["text"]
         files = build_story_project(
-            {"duration_seconds": 15, "aspect_ratio": "4:5", "language": "hinglish"},
+            {"duration_seconds": duration, "aspect_ratio": "4:5", "language": "hinglish"},
             result, audio_for(result),
         )
         assert 'data-height="1350"' in files["index.html"]
@@ -223,6 +236,22 @@ async def test_mocked_glm_response_enters_director_contract_without_network(monk
     assert payload["provider"] == {"require_parameters": True}
     assert payload["response_format"]["type"] == "json_schema"
     assert payload["response_format"]["json_schema"]["strict"] is True
+
+
+def test_prop_support_repair_preserves_aliases_and_falls_back_without_copying_across_locations():
+    raw = meera_with_invalid_prop_support()
+    first, reveal, ending = raw["scenes"]
+    first["props"].append({"id": "dadi-table", "type": "table", "x": .7, "y": .84})
+    reveal["props"][0]["support_id"] = "dadi-table"
+    ending["environment"] = "garden"
+    ending["props"][0]["support_id"] = "dadi-table"
+    resolved = normalize_director_story(prepare_director_reply(raw), duration=30)
+    first, reveal, ending = [{prop["id"]: prop for prop in scene["props"]} for scene in resolved["scenes"]]
+    assert first["box"]["support_id"] == reveal["pendant"]["support_id"] == "dadi-table"
+    assert reveal["dadi-table"] == first["dadi-table"]
+    assert ending["box"]["support_id"] is None and ending["box"]["y"] == .82
+    assert "dadi-table" not in ending
+    assert raw["scenes"][0]["props"][0]["support_id"] == "table"
 
 
 @pytest.mark.asyncio

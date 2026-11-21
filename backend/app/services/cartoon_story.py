@@ -11,6 +11,8 @@ ENVIRONMENTS = {"bedroom", "home", "forest", "garden", "city", "school", "beach"
 ACTIONS = {"idle", "sleep", "wake", "walk", "run", "sit", "stand", "turn", "look", "head", "blink", "wave", "point", "reach", "pick_up", "put_down", "open_door", "close_door", "react", "jump", "speak"}
 EXPRESSIONS = {"neutral", "happy", "sad", "scared", "surprised", "angry", "curious"}
 PROPS = {"door", "bed", "table", "chair", "letter", "book", "pendant", "ball", "box", "lamp", "cup", "tree"}
+PROP_SUPPORTS = {"table", "bed", "chair"}
+MAX_SCENE_PROPS = 12
 SOUNDS = {"footstep", "rustle", "door_click", "door_creak", "gasp", "knock", "chime", "pickup"}
 RATIOS = {"9:16": (1080, 1920, "portrait"), "16:9": (1920, 1080, "landscape"), "1:1": (1080, 1080, "square"), "4:5": (1080, 1350, "portrait")}
 
@@ -104,16 +106,81 @@ def point(value: Any, default: tuple[float, float] = (.5, .82)) -> dict:
     return {"x": number(value.get("x"), default[0], .08, .92), "y": number(value.get("y"), default[1], .25, .9)}
 
 
+def _repair_prop_supports(scene: dict, previous_scene: dict) -> None:
+    props = scene.get("props")
+    if not isinstance(props, list) or any(not isinstance(prop, dict) for prop in props):
+        return
+    prop_by_id = {
+        ident(prop.get("id"), f"prop-{index + 1}"): prop
+        for index, prop in enumerate(props[:MAX_SCENE_PROPS])
+    }
+    support_by_id = {pid: ident(prop.get("support_id")) for pid, prop in prop_by_id.items()}
+    previous_props = previous_scene.get("props")
+    previous_props = previous_props[:MAX_SCENE_PROPS] if isinstance(previous_props, list) else []
+    previous_supports = {
+        ident(prop.get("id"), f"prop-{index + 1}"): prop
+        for index, prop in enumerate(previous_props)
+        if isinstance(prop, dict) and prop.get("type") in PROP_SUPPORTS and not prop.get("support_id")
+    }
+    for prop_id, prop in list(prop_by_id.items()):
+        support_id = support_by_id[prop_id]
+        if not support_id:
+            continue
+
+        # The renderer anchors objects to furniture. A container such as a box
+        # can share its furniture anchor with the object it contains.
+        visited = {prop_id}
+        anchor = prop
+        while support_id in support_by_id and support_by_id[support_id] and support_id not in visited:
+            visited.add(support_id)
+            anchor = prop_by_id[support_id]
+            support_id = support_by_id[support_id]
+        if support_id in visited:
+            support_id = ""
+        support = prop_by_id.get(support_id)
+        if support is None and support_id:
+            replacement = previous_supports.get(support_id)
+            if replacement is None and support_id in PROP_SUPPORTS:
+                matches = [
+                    pid for pid, candidate in prop_by_id.items()
+                    if pid not in visited and candidate.get("type") == support_id and not support_by_id[pid]
+                ]
+                if len(matches) == 1:
+                    support_id = matches[0]
+                    support = prop_by_id[support_id]
+                elif not matches and anchor.get("type") not in PROP_SUPPORTS:
+                    replacement = {"id": support_id, "type": support_id, "x": anchor.get("x"), "y": .82}
+            if replacement is not None and len(props) < MAX_SCENE_PROPS:
+                support = {**replacement, "id": support_id}
+                props.append(support)
+                prop_by_id[support_id] = support
+                support_by_id[support_id] = ""
+
+        if support is not None and support.get("type") in PROP_SUPPORTS:
+            prop["support_id"] = support_id
+        else:
+            # Leave the object and its actions intact at the floor anchor.
+            prop["support_id"] = None
+            prop["y"] = .82
+
+
 def prepare_director_reply(raw: dict) -> dict:
-    """Repair unambiguous model formatting before validating a new reply."""
+    """Repair model timing and prop placement before validating a new reply."""
     story = copy.deepcopy(raw)
     start = 0.0
+    previous_scene = {}
     for scene in story.get("scenes", []):
         if not isinstance(scene, dict):
             break  # The validator reports malformed scenes.
         duration = scene.get("duration")
         if not isinstance(duration, (int, float)) or not math.isfinite(duration) or duration <= 0:
             break
+        same_location = (
+            scene.get("environment") == previous_scene.get("environment")
+            and (scene.get("lighting") == "memory") == (previous_scene.get("lighting") == "memory")
+        )
+        _repair_prop_supports(scene, previous_scene if same_location else {})
+        previous_scene = scene
         actions = scene.get("actions") or []
         action_times = [action[key] for action in actions for key in ("start", "end")
                         if isinstance(action, dict) and key in action]
@@ -186,7 +253,7 @@ def normalize_director_story(raw: dict, *, duration: int) -> dict:
                            "pose": actor.get("pose") if actor.get("pose") in {"stand", "sit", "sleep"} else "stand",
                            "facing": number(actor.get("facing"), 1, -1, 1), "scale": number(actor.get("scale"), 1, .7, 1.15)})
         props = []
-        for j, prop in enumerate((source.get("props") or [])[:12]):
+        for j, prop in enumerate((source.get("props") or [])[:MAX_SCENE_PROPS]):
             if not isinstance(prop, dict) or prop.get("type") not in PROPS:
                 raise StoryValidationError("Unknown prop type.")
             props.append({"id": ident(prop.get("id"), f"prop-{j+1}"), "type": prop["type"], **point(prop, (.78, .82)),
@@ -204,7 +271,7 @@ def normalize_director_story(raw: dict, *, duration: int) -> dict:
         for prop in props:
             if prop["holder_id"] and prop["holder_id"] not in scene_ids:
                 raise StoryValidationError("A prop holder must be visible in its scene.")
-            if prop["support_id"] and not any(p["id"]==prop["support_id"] and p["type"] in {"table","bed","chair"} and not p["support_id"] for p in props):
+            if prop["support_id"] and not any(p["id"]==prop["support_id"] and p["type"] in PROP_SUPPORTS and not p["support_id"] for p in props):
                 raise StoryValidationError("A supported object requires an existing table, bed or chair.")
         actions = []
         for item in (source.get("actions") or [])[:80]:
@@ -300,6 +367,8 @@ Use the same exact lowercase ASCII IDs in every reference. Each scene needs a vi
 List a prop in every scene where an action or camera refers to it, even if it appeared earlier.
 Use null for unused action targets and positions and empty arrays for unused props, speech, or sounds.
 Loose objects rest on the floor at y .82, or set support_id to a table/bed/chair ID; the renderer places them on its surface.
+Each support_id must name a table, bed or chair declared in that same scene's props with its own support_id set to null.
+For an item revealed in a box on a table, use the same table ID for both props. Reveal the item in the next shot and animate picking it up.
 Positions are normalized 0.08-0.92, y is the floor/feet anchor. Place sleeping actors with their hip on a bed.
 Supported action types: {sorted(ACTIONS)}. Express story beats with the closest supported actions and props.
 For example, an envelope can be a letter prop. Suggest complex or offscreen events through sound, framing, and reaction.
