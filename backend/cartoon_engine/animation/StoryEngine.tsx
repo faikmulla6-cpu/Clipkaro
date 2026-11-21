@@ -29,7 +29,7 @@ export function actorState(scene:Item,actor:Item,t:number,index=0):Item {
     if(a.type==="blink"&&active)state.blink=Math.sin(Math.PI*p);
     if(a.type==="wave"&&active)state.wave=Math.sin((t-a.start)*9)*28;
     if(a.type==="jump"&&active)state.jump=Math.sin(Math.PI*p)*70;
-    if(["point","reach","pick_up","put_down","open_door","close_door"].includes(a.type)) {
+    if(["point","reach","pick_up","put_down","open_door","close_door","open_box"].includes(a.type)) {
       if(active) {state.reach=Math.sin(Math.PI*p);state.target=a.target_id;}
       if(a.type==="pick_up"&&p>.5)state.held=a.target_id;
       if(a.type==="put_down"&&p>.5)state.held=null;
@@ -140,7 +140,7 @@ export function propState(scene:Item,prop:Item,t:number) {
   let open=prop.state==="open"?1:0,held:string|null=prop.holder_id||null;
   for(const a of scene.actions) if(a.target_id===prop.id&&a.start<=t) {
     const p=progress(t,a.start,a.end);
-    if(a.type==="open_door")open=p;
+    if(a.type==="open_door"||a.type==="open_box")open=p;
     if(a.type==="close_door")open=1-p;
     if(a.type==="pick_up"&&p>.5)held=a.character_id;
     if(a.type==="put_down"&&p>.5)held=null;
@@ -163,13 +163,22 @@ function Prop({prop,x,y,unit,open=0}:Item) {
     k==="lamp"?<><path d="M0 0V-111M-25 0H25" stroke="#B7B7AB" stroke-width="5"/><path d="M-48-110L-32-168H32L48-110Z" fill="#B6ACA1" stroke={ink} stroke-width="3"/></>:
     k==="tree"?<><path d="M0 0V-221" stroke="#5D5049" stroke-width="25"/><path d="M-74-164Q-116-260-43-289Q-3-338 49-281Q120-260 71-164Z" fill="#3F7A62" stroke="#315A52" stroke-width="4"/></>:
     k==="cup"?<><path d="M-20-40H20L15-4H-15Z" fill="#CFDBD2" stroke={ink} stroke-width="2"/><path d="M20-31Q45-35 34-13L18-10" fill="none" stroke="#CFDBD2" stroke-width="5"/></>:
-    <path d="M-30-50H30V0H-30Z" fill={c} stroke={ink} stroke-width="3"/>}
+    <g>
+      <path d="M-39-35H39V0H-39Z" fill={c} stroke={ink} stroke-width="3"/>
+      <path d="M-39-36L-29-49H31L39-36Z" fill="#44322E" stroke={ink} stroke-width="3"/>
+      <path d="M-32-19H32M-31-11H31" fill="none" stroke="#715048" stroke-width="1.5"/>
+      <g data-box-lid={prop.id} transform={`rotate(${-open*105} -36 -38)`}>
+        <path d="M-39-38H39V-48H-39Z" fill={c} stroke={ink} stroke-width="3"/>
+        <path d="M-5-38H5V-33H-5Z" fill="#D3B278" stroke={ink} stroke-width="1.5"/>
+      </g>
+    </g>}
   </g>;
 }
 
 export function propAnchor(scene:Item,prop:Item,w:number,h:number,unit:number) {
   const support=scene.props.find((p:Item)=>p.id===prop.support_id);
-  return support?{x:support.x*w,y:support.y*h-(support.type==="table"?122:support.type==="chair"?67:119)*unit}:{x:prop.x*w,y:prop.y*h};
+  const anchor=support?{x:support.x*w,y:support.y*h-(support.type==="table"?122:support.type==="chair"?67:119)*unit}:{x:prop.x*w,y:prop.y*h};
+  return prop.reveal_from_id?{x:anchor.x,y:anchor.y-37*unit}:anchor;
 }
 
 function Background({scene,w,h,t,prefix}:Item) {
@@ -209,7 +218,11 @@ function cameraAt(scene:Item,states:Item[],t:number,w:number,h:number,rigHeight:
     const interaction=scene.actions.some((v:Item)=>["pick_up","put_down","open_door","close_door"].includes(v.type)&&t>=v.start-.2&&t<v.end+.2);
     const zoom=interaction?1:({wide:1,medium:1.3,close:2.1,detail:2.6}[key.shot as string]||1);
     const pose=a?poseAmount(a,t):0,sitting=clamp(pose/.28)*(1-clamp((pose-.28)/.72));
-    let x=a?a.x*w:prop?prop.x*w:w/2,y=a?a.y*h-rigHeight*(zoom>1.5?.77-sitting*.145:.44):prop?prop.y*h-h*.18:h/2;
+    const revealAnchor=prop&&(prop.type==="box"||prop.reveal_from_id)
+      ?propAnchor(scene,prop,w,h,Math.min(w,h)/880):null;
+    let x=a?a.x*w:revealAnchor?.x??(prop?prop.x*w:w/2);
+    let y=a?a.y*h-rigHeight*(zoom>1.5?.77-sitting*.145:.44)
+      :revealAnchor?revealAnchor.y-h*.075:(prop?prop.y*h-h*.18:h/2);
     if(zoom===1){x=w/2;y=h/2;}
     x+=key.pan*w;
     return {x:clamp(x,w/(2*zoom),w-w/(2*zoom)),y:clamp(y,h/(2*zoom),h-h/(2*zoom)),zoom};
@@ -225,10 +238,11 @@ function Scene({story,scene,t,w,h,opacity=1}:Item) {
   const scale=rigHeight/455,cam=cameraAt(scene,states,t,w,h,rigHeight);
   const prefix=scene.id+"-";
   const held=new Map(scene.props.map((p:Item)=>[p.id,propState(scene,p,t)]));
+  const visibleProps=scene.props.filter((p:Item)=>!p.reveal_from_id||(held.get(p.reveal_from_id)?.open??0)>=.65);
   return <g opacity={opacity}>
     <g transform={`translate(${w/2} ${h/2}) scale(${cam.zoom}) translate(${-cam.x} ${-cam.y})`}>
       <Background {...{scene,w,h,t,prefix}}/>
-      {scene.props.toSorted((a:Item,b:Item)=>Number(!!a.support_id)-Number(!!b.support_id)).map((p:Item)=>!held.get(p.id)?.held&&<Prop key={p.id} prop={p} {...propAnchor(scene,p,w,h,unit)} unit={p.type==="bed"?Math.min(w*.00095,h*.0014):unit} open={held.get(p.id)?.open}/>)}
+      {visibleProps.toSorted((a:Item,b:Item)=>Number(!!a.support_id)+Number(!!a.reveal_from_id)-Number(!!b.support_id)-Number(!!b.reveal_from_id)).map((p:Item)=>!held.get(p.id)?.held&&<Prop key={p.id} prop={p} {...propAnchor(scene,p,w,h,unit)} unit={p.type==="bed"?Math.min(w*.00095,h*.0014):unit} open={held.get(p.id)?.open}/>)}
       {states.toSorted((a:Item,b:Item)=>a.y-b.y).map((state:Item)=>{
         const c=map.get(state.character_id),speech=(scene.audio||[]).find((a:Item)=>a.speaker_id===c?.id&&a.track==="dialogue"&&t>=a.start&&t<a.start+a.duration);
         const envelope=speech?.envelope||[],frame=speech?(t-speech.start)*60:0;
@@ -242,7 +256,7 @@ function Scene({story,scene,t,w,h,opacity=1}:Item) {
           state.localTarget={x:tx*Math.cos(angle)+y*Math.sin(angle),y:-112-tx*Math.sin(angle)+y*Math.cos(angle)};
         }
         return <g key={c?.id}><Biped character={c} state={state} t={t} x={state.x*w} y={state.y*h} scale={s} prefix={prefix+c?.id} mouth={mouth} viseme={/[وou]/i.test(word)?"round":"open"}/>
-          {scene.props.filter((p:Item)=>held.get(p.id)?.held===state.character_id).map((p:Item)=>{
+          {visibleProps.filter((p:Item)=>held.get(p.id)?.held===state.character_id).map((p:Item)=>{
             const {hand}=armPoints(state,1);
             const angle=rad(state.bend||0);
             return <Prop key={p.id} prop={p} x={state.x*w+(hand.x*Math.cos(angle)-(hand.y+112)*Math.sin(angle))*s}

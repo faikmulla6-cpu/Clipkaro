@@ -36,3 +36,17 @@ test('seeking backwards is deterministic and mouth can remain closed during narr
  expand(engine.storyFrame(story,26,1920,1080));
  assert.equal(expand(engine.storyFrame(story,3,1920,1080)),first);
 });
+test('a box lid opens before the item is visible and the pickup attaches it',()=>{
+ const story=structuredClone(stories.library),scene=story.scenes[0];
+ const book=scene.props.find(p=>p.id==='book'),box={...book,id:'box',type:'box',state:'closed'};
+ scene.props.push(box);
+ book.reveal_from_id='box';
+ scene.actions.push({type:'open_box',character_id:'mira',target_id:'box',start:0,end:1.4});
+ const closed=expand(engine.storyFrame(story,.1,1080,1920));
+ const revealed=expand(engine.storyFrame(story,1.5,1080,1920));
+ assert.match(closed,/data-box-lid=box/);
+ assert.doesNotMatch(closed,/data-prop-id=book/);
+ assert.match(revealed,/data-prop-id=book/);
+ assert.equal(engine.propState(scene,box,1.5).open,1);
+ assert.equal(engine.propState(scene,book,4).held,'mira');
+});

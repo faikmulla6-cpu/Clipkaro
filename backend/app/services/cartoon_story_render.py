@@ -10,20 +10,29 @@ from .cartoon_timing import normalize_word_boundaries, build_karaoke_caption_mar
 from .roman_hindi import DEVANAGARI, romanize_hindi
 
 
+def _roman_spelling_key(value: str) -> str:
+    letters = re.sub(r"[^a-z0-9]", "", value.casefold())
+    letters = letters.replace("ee", "i").replace("oo", "u")
+    letters = re.sub(r"([a-z])\1+", r"\1", letters)
+    letters = re.sub(r"n(?=[bp])", "m", letters)
+    # ASR and transliteration often retain a silent vowel or spell the same
+    # Hindi word differently from a person's Roman script.
+    return {
+        "apaki": "apki", "cand": "chand", "kahati": "kehti",
+        "rakhati": "rakhti", "toh": "to",
+    }.get(letters, letters)
+
+
 def _roman_caption_words(words: list[dict], line: str) -> list[dict]:
     texts = [word["text"] for word in words]
     roman = [romanize_hindi(value.replace("।", ".").replace("॥", "."))
-             if DEVANAGARI.search(value) else value for value in texts]
+             if DEVANAGARI.search(value) else value.replace("|", ".") for value in texts]
     scripted = line.split()
 
-    def spelling_key(value: str) -> str:
-        letters = re.sub(r"[^a-z0-9]", "", value.casefold())
-        return re.sub(r"([aeiou])\1+", r"\1", letters)
-
     # Restore the authored spelling only if each token agrees with the timed speech.
-    scripted_keys = [spelling_key(value) for value in scripted]
+    scripted_keys = [_roman_spelling_key(value) for value in scripted]
     if (all(char.isascii() or not char.isalpha() for char in line)
-            and all(scripted_keys) and scripted_keys == [spelling_key(value) for value in roman]):
+            and all(scripted_keys) and scripted_keys == [_roman_spelling_key(value) for value in roman]):
         roman = scripted
     return [{**word, "text": value} for word, value in zip(words, roman)]
 

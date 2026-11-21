@@ -46,6 +46,7 @@ VOICE_PREFERENCES = {
         "hm_omega", "hm_psi", "pm_alex", "gb_oliver_neutral", "de-DE-Klaus:MAI-Voice-2",
         "aura-2-orion-en", "aura-2-hermes-en", "aura-2-atlas-en",
         "English_magnetic_voiced_man", "English_Trustworth_Man",
+        "george", "adam", "daniel", "brian", "bill",
     ],
     "female": [
         "Kore", "Aoede", "Leda", "Zephyr", "eve", "ara",
@@ -54,6 +55,7 @@ VOICE_PREFERENCES = {
         "es-MX-Valeria:MAI-Voice-2", "fr-FR-Soleil:MAI-Voice-2",
         "aura-2-thalia-en", "aura-2-asteria-en", "aura-2-athena-en", "aura-2-hera-en",
         "English_radiant_girl", "English_Upbeat_Woman", "English_CalmWoman",
+        "sarah", "alice", "bella", "jessica", "laura", "lily", "matilda",
     ],
     "child": [
         "Leda", "Puck", "Kore", "Zephyr", "hf_alpha", "hf_beta", "af_heart",
@@ -140,7 +142,10 @@ async def _openrouter_models(api_key: str, modality: str) -> list[dict[str, Any]
         raise CartoonJobError("OpenRouter returned an unreadable model list.", category="CARTOON_PROVIDER_REQUEST")
 
 
-def _voice_for(character: dict[str, Any], voices: list[str], language: str = "auto") -> str:
+def _voice_for(
+    character: dict[str, Any], voices: list[str], language: str = "auto", *,
+    saved_voice: str = "", strict: bool = False,
+) -> str:
     voice_type = str(character.get("voice_type") or "neutral").lower()
     if language == "ur":
         urdu_preferences = {
@@ -162,9 +167,22 @@ def _voice_for(character: dict[str, Any], voices: list[str], language: str = "au
         preferences = hindi_preferences.get(voice_type, hindi_preferences["neutral"])
     else:
         preferences = VOICE_PREFERENCES.get(voice_type, VOICE_PREFERENCES["neutral"])
-    for preferred in preferences:
-        if preferred in voices:
-            return preferred
+    available = {voice.casefold(): voice for voice in voices}
+    general = VOICE_PREFERENCES.get(voice_type, VOICE_PREFERENCES["neutral"])
+    if voice_type in {"male", "female"}:
+        general = [*general, "ur-PK-UzmaNeural" if voice_type == "female" else "ur-PK-AsadNeural"]
+    candidates = {name.casefold() for name in [*preferences, *general]}
+    if saved_voice in voices and (not strict or voice_type not in {"male", "female"}
+                                 or saved_voice.casefold() in candidates):
+        return saved_voice
+    for preferred in [*preferences, *general]:
+        if preferred.casefold() in available:
+            return available[preferred.casefold()]
+    if strict and voice_type in {"male", "female"}:
+        raise CartoonJobError(
+            f"Choose a speech model with a known {voice_type} voice, or select a voice preset.",
+            category="CARTOON_TTS_VOICE_MATCH_UNAVAILABLE",
+        )
     return voices[0] if voices else "Puck"
 
 
@@ -372,7 +390,7 @@ async def _generate_storyboard(api_key: str, prompt: str, duration: int, style: 
         raw = json.loads(text)
         if not isinstance(raw, dict):
             raise ValueError("storyboard must be an object")
-        return normalize_director_story(prepare_director_reply(raw), duration=duration)
+        return normalize_director_story(prepare_director_reply(raw, prompt=prompt), duration=duration)
     except StoryValidationError as exc:
         # Validator messages are fixed strings. Never log prompts, outputs or credentials.
         logger.warning("Cartoon storyboard rejected: %s", exc)
@@ -632,10 +650,15 @@ async def run_cartoon_generation(job: dict[str, Any], scratch: Path, storage) ->
             "The selected speech model no longer provides preset voices. Refresh the voice model list and retry.",
             category="CARTOON_TTS_VOICES_UNAVAILABLE",
         )
-    for character in storyboard.get("characters", []):
-        saved_voice = str(character.get("voice_id") or "")
-        character["voice_id"] = saved_voice if saved_voice in voices else _voice_for(
-            character, voices, str(project.get("language") or "auto").lower(),
+    preferred_voice = _loads(project.get("assets_json"), {}).get("_preferred_voice")
+    for index, character in enumerate(storyboard.get("characters", [])):
+        character["voice_id"] = (
+            preferred_voice if index == 0 and preferred_voice in voices
+            else _voice_for(
+                character, voices, str(project.get("language") or "auto").lower(),
+                saved_voice=str(character.get("voice_id") or ""),
+                strict=storyboard.get("schema_version") == 3,
+            )
         )
 
     # Persist the character-to-voice assignment before making any billable TTS

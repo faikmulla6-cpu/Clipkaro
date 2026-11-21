@@ -54,9 +54,8 @@ async def run_director_job(job: dict, project: dict, storyboard: dict, project_d
         character["voice_id"]=original["voice_id"]
     saved=worker._loads(project.get("assets_json"),{})
     preferred_voice=str(saved.get("_preferred_voice") or "")
-    if preferred_voice:
+    if preferred_voice and story["characters"][0]["voice_id"] == preferred_voice:
         story["narrator_voice_id"]=preferred_voice
-        story["characters"][0]["voice_id"]=preferred_voice
     audio_dir=project_dir/"assets"/"audio";audio_dir.mkdir(parents=True,exist_ok=True)
     audio=[]
     lines=[line for scene in story["scenes"] for line in scene["speech"]]

@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock
 import pytest
 from app.services.cartoon_story import normalize_director_story, StoryValidationError, RATIOS, director_prompt, prepare_director_reply
-from app.services.cartoon_story_render import build_story_project, schedule_speech
+from app.services.cartoon_story_render import _roman_caption_words, build_story_project, schedule_speech
 from story_v3_fixtures import fixtures, meera_with_invalid_prop_support
 
 
@@ -252,6 +252,43 @@ def test_prop_support_repair_preserves_aliases_and_falls_back_without_copying_ac
     assert ending["box"]["support_id"] is None and ending["box"]["y"] == .82
     assert "dadi-table" not in ending
     assert raw["scenes"][0]["props"][0]["support_id"] == "table"
+
+
+@pytest.mark.parametrize(("scripted", "recognized"), [
+    ("Dadi is dibbe ko hamesha sambhaal kar rakhti thi.",
+     "daadee is dibbe ko hameshaa sanbhaal kar rakhatee thee|"),
+    ("Aap kehti thi, jab darr lage toh chaand ko dekh lena.",
+     "aap kahatee thee, jab daar lage to caand ko dekh lenaa."),
+    ("Aaj aapki bahut yaad aa rahi hai, Dadi.",
+     "aaj aapakee bahut yaad aa rahee hai, daadee."),
+    ("Meera opens the box.", "Meera closes the box."),
+])
+def test_roman_caption_spelling_keeps_measured_boundaries(scripted, recognized):
+    words = [{"text": text, "start_seconds": i, "end_seconds": i + .8}
+             for i, text in enumerate(recognized.split())]
+    rendered = _roman_caption_words(words, scripted)
+    expected = recognized if "closes" in recognized else scripted
+    assert rendered == [
+        {**word, "text": text} for word, text in zip(words, expected.split(), strict=True)
+    ]
+
+
+def test_box_reveal_preserves_prior_box_and_hides_item_until_lid_opens():
+    raw = meera_with_invalid_prop_support()
+    first, reveal, ending = raw["scenes"]
+    table = {"id": "table", "type": "table", "x": .62, "y": .82}
+    first["props"].append(dict(table))
+    reveal["props"] = [dict(table), {**reveal["props"][1], "support_id": "table"}]
+    ending["props"] = []
+    resolved = normalize_director_story(
+        prepare_director_reply(raw, prompt="Meera opens the box and finds a pendant."), duration=30
+    )
+    opening, pickup = resolved["scenes"][1]["actions"][:2]
+    assert (opening["type"], opening["target_id"], opening["end"]) == ("open_box", "box", pickup["start"])
+    assert resolved["scenes"][1]["props"][1]["reveal_from_id"] == "box"
+    assert resolved["scenes"][2]["props"][0]["holder_id"] == "meera"
+    assert "reveal_from_id" not in resolved["scenes"][2]["props"][0]
+    assert normalize_director_story(resolved, duration=30) == resolved
 
 
 @pytest.mark.asyncio

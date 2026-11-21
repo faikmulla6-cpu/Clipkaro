@@ -8,7 +8,9 @@ from typing import Any
 
 STORY_VERSION = 3
 ENVIRONMENTS = {"bedroom", "home", "forest", "garden", "city", "school", "beach", "space", "castle", "mountain", "desert", "workshop"}
-ACTIONS = {"idle", "sleep", "wake", "walk", "run", "sit", "stand", "turn", "look", "head", "blink", "wave", "point", "reach", "pick_up", "put_down", "open_door", "close_door", "react", "jump", "speak"}
+ACTIONS = {"idle", "sleep", "wake", "walk", "run", "sit", "stand", "turn", "look", "head", "blink", "wave", "point", "reach", "pick_up", "put_down", "open_door", "close_door", "open_box", "react", "jump", "speak"}
+OPENABLE_ACTIONS = {"open_door": "door", "close_door": "door", "open_box": "box"}
+BOX_CONTENTS = {"letter", "book", "pendant", "ball", "cup"}
 EXPRESSIONS = {"neutral", "happy", "sad", "scared", "surprised", "angry", "curious"}
 PROPS = {"door", "bed", "table", "chair", "letter", "book", "pendant", "ball", "box", "lamp", "cup", "tree"}
 PROP_SUPPORTS = {"table", "bed", "chair"}
@@ -54,7 +56,8 @@ def director_response_schema() -> dict:
         face_shape=choices(["oval", "round", "angular"]), body_scale=numeric,
     )
     actor = obj(character_id=string, **position, pose=choices(["stand", "sit", "sleep"]), facing=numeric, scale=numeric)
-    prop = obj(id=string, type=choices(PROPS), **position, state=choices(["open", "closed"]), support_id=optional_id)
+    prop = obj(id=string, type=choices(PROPS), **position, state=choices(["open", "closed"]),
+               support_id=optional_id, reveal_from_id=optional_id)
     action = obj(
         character_id=string, type=choices(ACTIONS), start=numeric, end=numeric,
         to={"anyOf": [obj(**position), {"type": "null"}]}, target_id=optional_id,
@@ -164,11 +167,73 @@ def _repair_prop_supports(scene: dict, previous_scene: dict) -> None:
             prop["y"] = .82
 
 
-def prepare_director_reply(raw: dict) -> dict:
+def _repair_box_reveal(scene: dict, previous_scene: dict) -> None:
+    """Restore a clear box-to-item reveal when the director skipped the lid."""
+    props = scene.get("props")
+    actions = scene.get("actions")
+    if (not isinstance(props, list) or not isinstance(actions, list)
+            or any(not isinstance(item, dict) for item in [*props, *actions])):
+        return
+    if any(action.get("type") == "open_box" for action in actions):
+        return
+    boxes = [p for p in props if p.get("type") == "box"]
+    restore_box = not boxes
+    if restore_box:
+        boxes = [p for p in previous_scene.get("props", []) if p.get("type") == "box"]
+    if len(boxes) != 1 or (restore_box and len(props) >= MAX_SCENE_PROPS) or len(actions) >= 80:
+        return
+    box = boxes[0]
+    old_props = {ident(p.get("id")) for p in previous_scene.get("props", [])}
+    contents = {
+        ident(prop.get("id")): prop for prop in props
+        if prop.get("type") in BOX_CONTENTS
+        and (not restore_box or ident(prop.get("id")) not in old_props)
+        and ident(prop.get("support_id")) == ident(box.get("support_id"))
+        and abs(point(prop)["x"] - point(box)["x"]) <= .12
+    }
+    pickups = [a for a in actions if a.get("type") == "pick_up" and ident(a.get("target_id")) in contents]
+    if len(pickups) != 1:
+        return
+    pick = pickups[0]
+    led = contents[ident(pick["target_id"])]
+    box_id = ident(box.get("id"))
+    if (not box_id or box.get("state") == "open" or led.get("holder_id")
+            or (restore_box and any(ident(p.get("id")) == box_id for p in props))):
+        return
+    end = number(pick.get("end"), 0, 0, scene["duration"])
+    start = number(pick.get("start"), 0, 0, end)
+    if end < 1.25:
+        return
+    lid_end = max(.8, start)
+    if lid_end >= end - .2:
+        return
+    if restore_box:
+        props.append(dict(box))
+    led["reveal_from_id"] = box_id
+    pick["start"] = lid_end
+    actions.append({"type": "open_box", "character_id": pick["character_id"],
+                    "target_id": box_id, "start": lid_end - .8, "end": lid_end})
+    for actor in scene.get("actors") or []:
+        if not isinstance(actor, dict) or actor.get("character_id") != pick["character_id"]:
+            continue
+        box_x = point(box)["x"]
+        actor_x = point(actor)["x"]
+        has_approach = any(a.get("character_id") == pick["character_id"] and a.get("type") in {"walk", "run"}
+                           for a in actions)
+        if not has_approach and abs(actor_x - box_x) < .09:
+            offset = -.12 if box_x >= .22 else .12
+            actor["x"] = round(box_x + offset, 4)
+
+
+def prepare_director_reply(raw: dict, *, prompt: str = "") -> dict:
     """Repair model timing and prop placement before validating a new reply."""
     story = copy.deepcopy(raw)
     start = 0.0
     previous_scene = {}
+    requests_box_opening = bool(re.search(
+        r"\b(?:open(?:s|ed|ing)?|lift(?:s|ed|ing)?)\b[^.!?]{0,38}\b(?:box|chest|sandook)\b",
+        prompt, re.IGNORECASE,
+    ))
     for scene in story.get("scenes", []):
         if not isinstance(scene, dict):
             break  # The validator reports malformed scenes.
@@ -180,7 +245,6 @@ def prepare_director_reply(raw: dict) -> dict:
             and (scene.get("lighting") == "memory") == (previous_scene.get("lighting") == "memory")
         )
         _repair_prop_supports(scene, previous_scene if same_location else {})
-        previous_scene = scene
         actions = scene.get("actions") or []
         action_times = [action[key] for action in actions for key in ("start", "end")
                         if isinstance(action, dict) and key in action]
@@ -196,6 +260,9 @@ def prepare_director_reply(raw: dict) -> dict:
                        for item, key in times):
                     for item, key in times:
                         item[key] = round(item[key] - start, 4)
+        if requests_box_opening:
+            _repair_box_reveal(scene, previous_scene if same_location else {})
+        previous_scene = scene
         start += duration
     return story
 
@@ -258,13 +325,16 @@ def normalize_director_story(raw: dict, *, duration: int) -> dict:
                 raise StoryValidationError("Unknown prop type.")
             props.append({"id": ident(prop.get("id"), f"prop-{j+1}"), "type": prop["type"], **point(prop, (.78, .82)),
                           "state": "open" if prop.get("state") == "open" else "closed", "color": color(prop.get("color"), "#947666"),
-                          "support_id": ident(prop.get("support_id")) or None, "holder_id": ident(prop.get("holder_id")) or None})
+                          "support_id": ident(prop.get("support_id")) or None, "holder_id": ident(prop.get("holder_id")) or None,
+                          **({"reveal_from_id": ident(prop["reveal_from_id"])} if prop.get("reveal_from_id") and not prop.get("holder_id") else {})})
         for pid,(prop,holder) in carried.items():
             if holder in scene_ids:
                 current=next((p for p in props if p["id"]==pid),None)
                 if current and current["type"]!=prop["type"]:
                     raise StoryValidationError("A carried prop cannot change its design between scenes.")
-                if current is None:props.append({**prop,"holder_id":holder,"support_id":None})
+                if current is None:
+                    placed = {key: value for key, value in prop.items() if key != "reveal_from_id"}
+                    props.append({**placed, "holder_id": holder, "support_id": None})
         pids = {p["id"] for p in props}
         if len(pids) != len(props):
             raise StoryValidationError("Prop IDs must be unique per scene.")
@@ -279,26 +349,36 @@ def normalize_director_story(raw: dict, *, duration: int) -> dict:
                 raise StoryValidationError("Unsupported animation action. Use a supported director verb.")
             cid = ident(item.get("character_id"))
             target = ident(item.get("target_id")) or None
-            if target is None and item["type"] in {"open_door", "close_door"}:
-                doors = [prop["id"] for prop in props if prop["type"] == "door"]
-                if len(doors) == 1:
-                    target = doors[0]
+            openable_type = OPENABLE_ACTIONS.get(item["type"])
+            if target is None and openable_type:
+                openable = [prop["id"] for prop in props if prop["type"] == openable_type]
+                if len(openable) == 1:
+                    target = openable[0]
             if cid not in scene_ids or (target and target not in pids and target not in scene_ids):
                 raise StoryValidationError("An action references a missing actor or target.")
             at = number(item.get("start"), 0, 0, weight) * factor
             end = number(item.get("end"), weight, 0, weight) * factor
             if end <= at:
                 raise StoryValidationError("Actions need a positive duration within their scene.")
-            if item["type"] in {"pick_up", "put_down", "open_door", "close_door"} and target not in pids:
+            if (item["type"] in {"pick_up", "put_down"} or openable_type) and target not in pids:
                 raise StoryValidationError("Object interaction requires a scene prop.")
-            if item["type"] in {"open_door", "close_door"} and next(p for p in props if p["id"] == target)["type"] != "door":
-                raise StoryValidationError("Door actions require a door prop.")
+            if openable_type and next(p for p in props if p["id"] == target)["type"] != openable_type:
+                message = "Door actions require a door prop." if openable_type == "door" else "Box actions require a box prop."
+                raise StoryValidationError(message)
             actions.append({"type": item["type"], "character_id": cid, "start": round(at,4), "end": round(end,4),
                             "target_id": target, "to": point(item.get("to"), (.65,.82)) if item.get("to") else None,
                             "expression": item.get("expression") if item.get("expression") in EXPRESSIONS else "neutral",
                             "value": number(item.get("value"), 1, -1, 1)})
         if not actions:
             raise StoryValidationError("Each scene needs executable timed actions.")
+        opening_boxes = {a["target_id"] for a in actions if a["type"] == "open_box"}
+        open_boxes = {p["id"] for p in props if p["type"] == "box" and p["state"] == "open"}
+        for prop in props:
+            if prop.get("reveal_from_id") and (
+                prop["type"] not in BOX_CONTENTS
+                or prop["reveal_from_id"] not in (opening_boxes | open_boxes)
+            ):
+                raise StoryValidationError("A revealed item requires a box that opens in the scene.")
         cameras = []
         for c in (source.get("camera") or [{"time": 0, "shot": "wide"}, {"time": weight, "shot": "medium"}])[:16]:
             if not isinstance(c, dict):
@@ -368,12 +448,13 @@ List a prop in every scene where an action or camera refers to it, even if it ap
 Use null for unused action targets and positions and empty arrays for unused props, speech, or sounds.
 Loose objects rest on the floor at y .82, or set support_id to a table/bed/chair ID; the renderer places them on its surface.
 Each support_id must name a table, bed or chair declared in that same scene's props with its own support_id set to null.
-For an item revealed in a box on a table, use the same table ID for both props. Reveal the item in the next shot and animate picking it up.
+For a box reveal, list both props in the scene, sharing the same furniture support or floor position. Use open_box with the box ID, then pick_up with the item ID. Set the item's reveal_from_id to the box ID so it stays hidden until the lid opens. Set reveal_from_id to null for all other props.
 Positions are normalized 0.08-0.92, y is the floor/feet anchor. Place sleeping actors with their hip on a bed.
 Supported action types: {sorted(ACTIONS)}. Express story beats with the closest supported actions and props.
 For example, an envelope can be a letter prop. Suggest complex or offscreen events through sound, framing, and reaction.
 Persistent poses stay until changed.
 Use target_id for picking up/putting down props and opening/closing doors. Reaching/pickup actors must walk within .15 x of target first.
+Stage the actor slightly to the side of a prop so their body does not block the reveal. Frame the box as it opens, then cut or move to the character's reaction.
 Only walk/run change position using "to". React sets expression; look/turn/head use value -1 to 1.
 Camera focus_id must refer to a visible actor or prop. Keep interactions in wide/medium shots so hands and props remain visible.
 For narration use speaker_id "narrator". For dialogue use the speaking character's exact ID.
@@ -383,5 +464,5 @@ Do not invent dialogue for silent beats. Include narration when the user request
 Use the requested script: Urdu in Urdu script/RTL, Hindi in Devanagari/LTR, Hinglish in Roman/LTR.
 Keep speech concise enough to fit after its start, with at least .25s between voices. No simultaneous narration and dialogue.
 Preserve user-supplied dialogue verbatim when it fits. Prefer one short line over several in a brief scene.
-Plan an opening event, a visible response, and a final image or payoff. For a detailed brief, preserve its key beats and requested ending.
+Plan an opening event, a visible response, and a final image or payoff. For a detailed brief, preserve its key beats and requested ending. Show the action that causes a reveal and then show its visible result.
 No executable code, URLs, markdown, generic action sentences or unsupported motion descriptions. JSON only."""
