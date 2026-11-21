@@ -135,7 +135,7 @@ async def test_transcribe_always_enters_asr_gate(monkeypatch, tmp_path):
         entered.append(str(resource))
         yield
 
-    async def fake_impl(video_path, model_name="small", language_hint="auto", request_id="", asr_route="legacy"):
+    async def fake_impl(video_path, model_name="small", language_hint="auto", request_id="", asr_route="legacy", *, generated_dialogue=False):
         return "en", [{"start": 0, "end": 30, "text": "safe transcript"}]
 
     monkeypatch.setattr(transcription, "asr_slot", fake_slot)

@@ -19,7 +19,15 @@ async def audio_alignment(path: Path, language: str) -> list[dict]:
     """Use the installed ASR pipeline only when the chosen TTS lacks word timestamps."""
     from .transcription import transcribe
     from .roman_hindi import romanize_hindi
-    _,segments=await transcribe(path,language_hint="hi" if language=="hinglish" else language)
+    try:
+        _, segments = await transcribe(
+            path, language_hint="hi" if language == "hinglish" else language,
+            generated_dialogue=True,
+        )
+    except (RuntimeError, OSError, ValueError) as exc:
+        raise StoryValidationError(
+            "ClipKaro could not align the generated speech for captions. The voice is saved for retry."
+        ) from exc
     output=[]
     for segment in segments:
         for word in segment.get("words",[]):
