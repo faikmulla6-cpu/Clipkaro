@@ -14,7 +14,7 @@ def schedule_speech(story: dict, audio_assets: list[dict]) -> tuple[dict, list[d
     lookup = {a["id"]: a for a in audio_assets}
     tracks, words = [], []
     for scene in result["scenes"]:
-        cursor, audio = 0.0, []
+        measured, audio = [], []
         for line in sorted(scene["speech"], key=lambda s:s["start"]):
             asset = lookup.get(line["id"])
             if not asset:
@@ -25,9 +25,21 @@ def schedule_speech(story: dict, audio_assets: list[dict]) -> tuple[dict, list[d
             duration = float(asset["duration"])
             if not 0 < duration < 120:
                 raise StoryValidationError("Speech duration must come from a valid audio probe.")
-            start = max(line["start"], cursor)
-            if start + duration > scene["duration"]-.05:
-                raise StoryValidationError("Speech does not fit its scene. Shorten the line or revise the storyboard; audio will not be truncated.")
+            measured.append((line, asset, filename, duration))
+
+        # Reserve space for every later line before following the model's preferred starts.
+        # This recovers late cues without dropping words or changing the speaker order.
+        latest_end = scene["duration"] - .05
+        latest_starts = []
+        for _, _, _, duration in reversed(measured):
+            latest_start = latest_end - duration
+            latest_starts.append(latest_start)
+            latest_end = latest_start - .2
+        if latest_starts and latest_starts[-1] < -1e-9:
+            raise StoryValidationError("The recorded speech does not fit its scene. Choose a longer video or use fewer spoken words.")
+        cursor = 0.0
+        for (line, asset, filename, duration), latest_start in zip(measured, reversed(latest_starts)):
+            start = max(cursor, min(line["start"], latest_start))
             boundaries = asset.get("word_boundaries") or []
             if not boundaries:
                 raise StoryValidationError("Speech requires provider word timestamps or audio-derived alignment; estimated scene timings are not accepted.")

@@ -22,7 +22,13 @@ from app.services.cartoon_speech import SYSTEM_URDU_TTS_MODEL, system_urdu_tts_m
 from app.services.cartoon_audio import build_lip_envelope
 from app.services.cartoon_score import build_jannat_audio_stems
 from app.services.cartoon_timing import approximate_word_boundaries, build_episode_lip_envelope, normalize_word_boundaries
-from app.services.cartoon_story import director_prompt, normalize_director_story, StoryValidationError
+from app.services.cartoon_story import (
+    StoryValidationError,
+    director_prompt,
+    director_response_schema,
+    normalize_director_story,
+    prepare_director_reply,
+)
 from app.services.cartoon_security import decrypt_provider_key
 from app.services.jobs import update_job, utcnow
 from app.services.storage import validate_object_key
@@ -315,7 +321,11 @@ async def _generate_storyboard(api_key: str, prompt: str, duration: int, style: 
         "model": STORY_MODEL,
         "temperature": 0.65,
         "max_tokens": 8192,
-        "response_format": {"type": "json_object"},
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {"name": "clipkaro_storyboard", "strict": True, "schema": director_response_schema()},
+        },
+        "provider": {"require_parameters": True},
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": content}],
     }
     try:
@@ -330,7 +340,14 @@ async def _generate_storyboard(api_key: str, prompt: str, duration: int, style: 
     if response.status_code >= 400:
         raise _provider_error(response, task="story planning")
     try:
-        message = response.json()["choices"][0]["message"]["content"]
+        reply = response.json()
+        choice = reply["choices"][0]
+        if choice.get("finish_reason") == "length":
+            raise CartoonJobError(
+                "The story planner ran out of space before finishing its storyboard.",
+                category="CARTOON_STORY_TRUNCATED",
+            )
+        message = choice["message"]["content"]
         if isinstance(message, list):
             message = "".join(str(part.get("text") or "") for part in message if isinstance(part, dict))
         text = str(message or "").strip()
@@ -339,9 +356,20 @@ async def _generate_storyboard(api_key: str, prompt: str, duration: int, style: 
         raw = json.loads(text)
         if not isinstance(raw, dict):
             raise ValueError("storyboard must be an object")
-        return normalize_director_story(raw, duration=duration)
-    except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
-        raise CartoonJobError("The story planner returned an invalid storyboard. Retry with a shorter, clearer idea.", category="CARTOON_STORY_INVALID") from exc
+        return normalize_director_story(prepare_director_reply(raw), duration=duration)
+    except StoryValidationError as exc:
+        # Validator messages are fixed strings. Never log prompts, outputs or credentials.
+        logger.warning("Cartoon storyboard rejected: %s", exc)
+        raise CartoonJobError(
+            f"The story planner produced an unsupported storyboard. {exc}",
+            category="CARTOON_STORY_INVALID",
+        ) from exc
+    except (AttributeError, KeyError, IndexError, TypeError, ValueError) as exc:
+        logger.warning("Cartoon planner response could not be read (%s)", type(exc).__name__)
+        raise CartoonJobError(
+            "The story planner returned an unreadable response.",
+            category="CARTOON_STORY_INVALID",
+        ) from exc
 
 
 def _apply_cinematic_jannat_storyboard(storyboard: dict[str, Any]) -> dict[str, Any]:

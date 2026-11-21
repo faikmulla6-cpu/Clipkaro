@@ -83,6 +83,20 @@ def test_actual_speech_lengths_move_conflicting_narration_and_dialogue_without_o
     assert all(w["source"]=="tts_word_boundary" for w in words)
 
 
+def test_measured_speech_recovers_late_cues_without_truncating():
+    s = story()
+    scene = s["scenes"][0]
+    scene["speech"][0]["start"] = 5.5
+    scene["speech"].append({"id": "second", "track": "dialogue", "speaker_id": "jannat",
+                            "text": "Kaun hai?", "start": 6.5})
+    _, tracks, _ = schedule_speech(s, audio_for(s))
+    first, second = tracks[:2]
+    assert first["start_seconds"] < 5.5
+    assert second["start_seconds"] >= first["start_seconds"] + 2.19
+    assert second["start_seconds"] + second["duration_seconds"] <= scene["duration"]
+    assert [track["duration_seconds"] for track in (first, second)] == [2, 2]
+
+
 def test_missing_narration_and_oversized_or_untimed_speech_cannot_silently_render():
     s=story();a=audio_for(s)
     with pytest.raises(StoryValidationError,match="no audio"):schedule_speech(s,a[1:])
@@ -120,20 +134,62 @@ def test_caption_markup_escapes_untrusted_text_and_preserves_measured_end():
 
 
 @pytest.mark.asyncio
-async def test_mocked_glm_response_enters_director_contract_without_network(monkeypatch):
+@pytest.mark.parametrize("case", ["garden", "library", "jannat", "absolute-time", "truncated", "unreadable", "missing-target"])
+async def test_mocked_glm_response_enters_director_contract_without_network(monkeypatch, case):
     from app.services import cartoon_job as job
-    class Response:
-        status_code=200
-        def json(self):return {"choices":[{"message":{"content":json.dumps(fixtures()["garden"])}}]}
-    post=AsyncMock(return_value=Response())
+    import httpx
+
+    raw = fixtures().get(case, fixtures()["jannat"])
+    if case == "missing-target":
+        raw["scenes"][0]["actions"][0]["target_id"] = "missing"
+    if case == "absolute-time":
+        scene = raw["scenes"][2]
+        scene["props"][1]["id"] = "old pendant"
+        scene["actions"][1]["target_id"] = "old pendant"
+        for action in scene["actions"]:
+            action["start"] += 15
+            action["end"] += 15
+        for keyframe in scene["camera"]:
+            keyframe["time"] += 15
+    choice = {
+        "finish_reason": "length" if case == "truncated" else "stop",
+        "message": {"content": "not JSON" if case == "unreadable" else json.dumps(raw)},
+    }
+    post = AsyncMock(return_value=httpx.Response(200, json={"choices": [choice]}))
     class Client:
         async def __aenter__(self):return self
         async def __aexit__(self,*args):pass
         async def post(self,*args,**kwargs):return await post(*args,**kwargs)
     monkeypatch.setattr(job.httpx,"AsyncClient",lambda **kwargs:Client())
-    result=await job._generate_storyboard("test-only-not-a-key","Find a ball",10,"2d-cartoon","en",[])
-    assert result["schema_version"]==3
-    assert post.await_args.kwargs["json"]["model"]==job.STORY_MODEL
+    errors = {
+        "truncated": "ran out of space",
+        "unreadable": "unreadable response",
+        "missing-target": "missing actor or target",
+    }
+    if case in errors:
+        with pytest.raises(job.CartoonJobError, match=errors[case]):
+            await job._generate_storyboard("test-only-not-a-key", "A sound at midnight", 15, "2d-cartoon", "hinglish", [])
+    else:
+        result = await job._generate_storyboard("test-only-not-a-key", "An animated story", 15, "2d-cartoon", "hinglish", [])
+        assert result["schema_version"] == 3
+        assert result["characters"] and result["scenes"]
+        if case == "absolute-time":
+            scene = result["scenes"][2]
+            assert scene["actions"][1]["target_id"] == "old-pendant"
+            assert scene["actions"][1]["start"] == pytest.approx(.5)
+            assert scene["camera"][0]["time"] == 0
+        files = build_story_project(
+            {"duration_seconds": 15, "aspect_ratio": "4:5", "language": "hinglish"},
+            result, audio_for(result),
+        )
+        assert 'data-height="1350"' in files["index.html"]
+
+    post.assert_awaited_once()
+    payload = post.await_args.kwargs["json"]
+    assert payload["model"] == job.STORY_MODEL
+    assert payload["provider"] == {"require_parameters": True}
+    assert payload["response_format"]["type"] == "json_schema"
+    assert payload["response_format"]["json_schema"]["strict"] is True
 
 
 @pytest.mark.asyncio

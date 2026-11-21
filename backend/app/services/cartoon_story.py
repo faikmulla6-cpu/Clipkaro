@@ -1,6 +1,7 @@
 """Validated, data-only director contract. No model-authored code reaches a browser."""
 from __future__ import annotations
 
+import copy
 import math
 import re
 from typing import Any
@@ -16,6 +17,58 @@ RATIOS = {"9:16": (1080, 1920, "portrait"), "16:9": (1920, 1080, "landscape"), "
 
 class StoryValidationError(ValueError):
     pass
+
+
+def director_response_schema() -> dict:
+    """Constrain GLM's response shape before checking cross-field story rules."""
+    string = {"type": "string"}
+    numeric = {"type": "number"}
+    optional_id = {"type": ["string", "null"]}
+
+    def obj(**properties):
+        return {"type": "object", "properties": properties, "required": list(properties), "additionalProperties": False}
+
+    def array(items):
+        return {"type": "array", "items": items}
+
+    def choices(values):
+        return {"type": "string", "enum": sorted(values)}
+
+    position = {"x": numeric, "y": numeric}
+    appearance = obj(
+        skin_color=string, hair_color=string, shirt_color=string, pants_color=string,
+        shoe_color=string, eye_color=string,
+        hair_style=choices(["short", "long", "curly", "spiky", "bald"]),
+        clothing=choices(["shirt", "kameez", "dress", "jacket"]),
+        face_shape=choices(["oval", "round", "angular"]), body_scale=numeric,
+    )
+    actor = obj(character_id=string, **position, pose=choices(["stand", "sit", "sleep"]), facing=numeric, scale=numeric)
+    prop = obj(id=string, type=choices(PROPS), **position, state=choices(["open", "closed"]), support_id=optional_id)
+    action = obj(
+        character_id=string, type=choices(ACTIONS), start=numeric, end=numeric,
+        to={"anyOf": [obj(**position), {"type": "null"}]}, target_id=optional_id,
+        expression=choices(EXPRESSIONS), value=numeric,
+    )
+    camera = obj(time=numeric, shot=choices(["wide", "medium", "close", "detail"]), focus_id=string, pan=numeric)
+    speech = obj(track=choices(["narration", "dialogue"]), speaker_id=string, text=string, start=numeric)
+    scene = obj(
+        scene_title=string, duration=numeric, environment=choices(ENVIRONMENTS),
+        lighting=choices(["day", "night", "warm", "memory"]), character_ids=array(string),
+        actors=array(actor), props=array(prop), actions=array(action), camera=array(camera),
+        speech=array(speech), sounds=array(obj(type=choices(SOUNDS), at=numeric)),
+        transition=choices(["cut", "dissolve", "dip"]),
+    )
+    character = obj(
+        id=string, name=string, personality=string, role=string, appearance=appearance,
+        species=choices(["human", "fox", "cat", "dog", "rabbit", "bear", "owl", "robot"]),
+        voice_type=choices(["female", "male", "child", "elder", "neutral"]),
+    )
+    return obj(
+        schema_version={"type": "integer", "enum": [STORY_VERSION]},
+        title=string, summary=string,
+        mood=choices(["suspense", "gentle", "playful", "adventure", "sad"]),
+        characters=array(character), scenes=array(scene),
+    )
 
 
 def number(value: Any, default: float, lo: float, hi: float) -> float:
@@ -40,6 +93,35 @@ def color(value: Any, default: str) -> str:
 def point(value: Any, default: tuple[float, float] = (.5, .82)) -> dict:
     value = value if isinstance(value, dict) else {}
     return {"x": number(value.get("x"), default[0], .08, .92), "y": number(value.get("y"), default[1], .25, .9)}
+
+
+def prepare_director_reply(raw: dict) -> dict:
+    """Repair unambiguous model formatting before validating a new reply."""
+    story = copy.deepcopy(raw)
+    start = 0.0
+    for scene in story.get("scenes", []):
+        if not isinstance(scene, dict):
+            break  # The validator reports malformed scenes.
+        duration = scene.get("duration")
+        if not isinstance(duration, (int, float)) or not math.isfinite(duration) or duration <= 0:
+            break
+        actions = scene.get("actions") or []
+        action_times = [action[key] for action in actions for key in ("start", "end")
+                        if isinstance(action, dict) and key in action]
+        # Require evidence that the whole action group uses video time.
+        if (start > 0 and action_times
+                and all(isinstance(t, (int, float)) and start <= t <= start + duration for t in action_times)
+                and any(t > duration for t in action_times)):
+            for field, keys in (("actions", ("start", "end")), ("camera", ("time",)),
+                                ("speech", ("start",)), ("sounds", ("at",))):
+                times = [(item, key) for item in scene.get(field) or [] if isinstance(item, dict)
+                         for key in keys if key in item]
+                if all(isinstance(item[key], (int, float)) and start <= item[key] <= start + duration
+                       for item, key in times):
+                    for item, key in times:
+                        item[key] = round(item[key] - start, 4)
+        start += duration
+    return story
 
 
 def normalize_director_story(raw: dict, *, duration: int) -> dict:
@@ -82,12 +164,15 @@ def normalize_director_story(raw: dict, *, duration: int) -> dict:
         factor = length / weight
         carried = carried_layers["memory" if source.get("lighting")=="memory" else "present"]
         scene_ids = source.get("character_ids") or [c["id"] for c in characters]
-        if not isinstance(scene_ids, list) or any(cid not in ids for cid in scene_ids) or len(set(scene_ids)) != len(scene_ids):
+        if not isinstance(scene_ids, list) or any(not isinstance(cid, str) for cid in scene_ids):
+            raise StoryValidationError("Scene character IDs must be strings.")
+        scene_ids = [ident(cid.strip()) for cid in scene_ids]
+        if any(cid not in ids for cid in scene_ids) or len(set(scene_ids)) != len(scene_ids):
             raise StoryValidationError("A scene references unknown or duplicate characters.")
         poses = source.get("actors") if isinstance(source.get("actors"), list) else []
         actors = []
         for j, cid in enumerate(scene_ids):
-            actor = next((a for a in poses if isinstance(a, dict) and a.get("character_id") == cid), {})
+            actor = next((a for a in poses if isinstance(a, dict) and ident(a.get("character_id")) == cid), {})
             actors.append({"character_id": cid, **point(actor, ((j+1)/(len(scene_ids)+1), .82)),
                            "pose": actor.get("pose") if actor.get("pose") in {"stand", "sit", "sleep"} else "stand",
                            "facing": number(actor.get("facing"), 1, -1, 1), "scale": number(actor.get("scale"), 1, .7, 1.15)})
@@ -116,7 +201,12 @@ def normalize_director_story(raw: dict, *, duration: int) -> dict:
         for item in (source.get("actions") or [])[:80]:
             if not isinstance(item, dict) or item.get("type") not in ACTIONS:
                 raise StoryValidationError("Unsupported animation action. Use a supported director verb.")
-            cid, target = item.get("character_id"), item.get("target_id")
+            cid = ident(item.get("character_id"))
+            target = ident(item.get("target_id")) or None
+            if target is None and item["type"] in {"open_door", "close_door"}:
+                doors = [prop["id"] for prop in props if prop["type"] == "door"]
+                if len(doors) == 1:
+                    target = doors[0]
             if cid not in scene_ids or (target and target not in pids and target not in scene_ids):
                 raise StoryValidationError("An action references a missing actor or target.")
             at = number(item.get("start"), 0, 0, weight) * factor
@@ -137,7 +227,7 @@ def normalize_director_story(raw: dict, *, duration: int) -> dict:
         for c in (source.get("camera") or [{"time": 0, "shot": "wide"}, {"time": weight, "shot": "medium"}])[:16]:
             if not isinstance(c, dict):
                 raise StoryValidationError("Camera keyframes must be objects.")
-            focus = c.get("focus_id") or scene_ids[0]
+            focus = ident(c.get("focus_id")) or scene_ids[0]
             if focus not in scene_ids and focus not in pids:
                 raise StoryValidationError("Camera focus references a missing actor or prop.")
             cameras.append({"time": number(c.get("time"), 0, 0, weight)*factor,
@@ -151,7 +241,7 @@ def normalize_director_story(raw: dict, *, duration: int) -> dict:
             if not isinstance(line, dict):
                 raise StoryValidationError("Speech must be structured.")
             track = "narration" if line.get("track") == "narration" else "dialogue"
-            speaker = line.get("speaker_id") or (scene_ids[0] if track == "dialogue" else "narrator")
+            speaker = ident(line.get("speaker_id")) or (scene_ids[0] if track == "dialogue" else "narrator")
             if speaker != "narrator" and speaker not in scene_ids:
                 raise StoryValidationError("Speech references a missing character.")
             if track == "dialogue" and speaker not in scene_ids:
@@ -190,25 +280,30 @@ def director_prompt(duration: int, language: str, style: str, prompt: str) -> st
 USER IDEA: {prompt}
 Return a JSON object with schema_version:3, title, summary, mood, characters and scenes.
 Characters: 1-4 unique stable id, name, personality, role, species (human/fox/cat/dog/rabbit/bear/owl/robot),
-voice_type (female/male/child/elder/neutral), rig:"biped-v3", appearance:
+voice_type (female/male/child/elder/neutral), appearance:
 skin_color,hair_color,shirt_color,pants_color,shoe_color,eye_color (#RRGGBB),
 hair_style (short/long/curly/spiky/bald), clothing (shirt/kameez/dress/jacket), face_shape (oval/round/angular), body_scale (.75-1.2).
-Scenes: duration in seconds (sum exactly {duration}), environment from {sorted(ENVIRONMENTS)},
-lighting (day/night/warm/memory), character_ids, actors [{{character_id,x:.4,y:.82,pose:"stand",facing:1,scale:1}}],
-props [{{id,type,x:.8,y:.82,state:"closed",support_id:null}}] with type from {sorted(PROPS)}.
+Scenes: duration in seconds (sum exactly {duration}), environment from {sorted(ENVIRONMENTS)}.
+All action start/end, camera time, speech start, and sound at values are local to their scene.
+For example, an action one second into the second scene has start 1, even if that scene starts at video time 10.
+Every action must satisfy 0 <= start < end <= scene duration.
+Use the same exact lowercase ASCII IDs in every reference. Each scene needs a visible actor and at least one action.
+List a prop in every scene where an action or camera refers to it, even if it appeared earlier.
+Use null for unused action targets and positions and empty arrays for unused props, speech, or sounds.
 Loose objects rest on the floor at y .82, or set support_id to a table/bed/chair ID; the renderer places them on its surface.
 Positions are normalized 0.08-0.92, y is the floor/feet anchor. Place sleeping actors with their hip on a bed.
-actions [{{character_id,type:"walk",start:1,end:3,to:{{x:.7,y:.82}},target_id:null,expression:"curious",value:1}}],
-supported types: {sorted(ACTIONS)}. Every physical verb MUST have an action. Persistent poses stay until changed.
+Supported action types: {sorted(ACTIONS)}. Express story beats with the closest supported actions and props.
+For example, an envelope can be a letter prop. Suggest complex or offscreen events through sound, framing, and reaction.
+Persistent poses stay until changed.
 Use target_id for picking up/putting down props and opening/closing doors. Reaching/pickup actors must walk within .15 x of target first.
 Only walk/run change position using "to". React sets expression; look/turn/head use value -1 to 1.
-camera [{{time:0,shot:"wide",focus_id:"actor-id",pan:0}},{{time:4,shot:"close",focus_id:"actor-id",pan:0}}],
-shots wide/medium/close/detail. Keep interactions in wide/medium shots so hands and props remain visible.
-speech [{{track:"narration",speaker_id:"narrator",text:"short natural line",start:.4}},
-{{track:"dialogue",speaker_id:"actor-id",text:"short line",start:4}}],
-sounds [{{type:"footstep",at:2}}] with types {sorted(SOUNDS)}. transition cut/dissolve/dip.
-Use 3-8 purposeful scenes; each has visible action and camera direction. Keep a location for story continuity when appropriate.
+Camera focus_id must refer to a visible actor or prop. Keep interactions in wide/medium shots so hands and props remain visible.
+For narration use speaker_id "narrator". For dialogue use the speaking character's exact ID.
+Sound types: {sorted(SOUNDS)}.
+Use only as many scenes as the story needs (typically 1-3 for a 15-second story). Keep a location for continuity when appropriate.
 Do not invent dialogue for silent beats. Include narration when the user requests it.
 Use the requested script: Urdu in Urdu script/RTL, Hindi in Devanagari/LTR, Hinglish in Roman/LTR.
 Keep speech concise enough to fit after its start, with at least .25s between voices. No simultaneous narration and dialogue.
+Preserve user-supplied dialogue verbatim when it fits. Prefer one short line over several in a brief scene.
+Plan an opening event, a visible response, and a final image or payoff. For a detailed brief, preserve its key beats and requested ending.
 No executable code, URLs, markdown, generic action sentences or unsupported motion descriptions. JSON only."""
