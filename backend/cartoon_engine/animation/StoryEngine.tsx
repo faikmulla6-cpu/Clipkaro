@@ -167,7 +167,7 @@ function Prop({prop,x,y,unit,open=0}:Item) {
       <path d="M-39-35H39V0H-39Z" fill={c} stroke={ink} stroke-width="3"/>
       <path d="M-39-36L-29-49H31L39-36Z" fill="#44322E" stroke={ink} stroke-width="3"/>
       <path d="M-32-19H32M-31-11H31" fill="none" stroke="#715048" stroke-width="1.5"/>
-      <g data-box-lid={prop.id} transform={`rotate(${-open*105} -36 -38)`}>
+      <g data-box-lid={prop.id} transform={`rotate(${open*100} 36 -38)`}>
         <path d="M-39-38H39V-48H-39Z" fill={c} stroke={ink} stroke-width="3"/>
         <path d="M-5-38H5V-33H-5Z" fill="#D3B278" stroke={ink} stroke-width="1.5"/>
       </g>
@@ -215,14 +215,16 @@ function cameraAt(scene:Item,states:Item[],t:number,w:number,h:number,rigHeight:
   const cam=(key:Item)=>{
     const a=states.find(a=>a.character_id===key.focus_id);
     const prop=scene.props.find((p:Item)=>p.id===key.focus_id);
-    const interaction=scene.actions.some((v:Item)=>["pick_up","put_down","open_door","close_door"].includes(v.type)&&t>=v.start-.2&&t<v.end+.2);
+    const interaction=scene.actions.some((v:Item)=>["pick_up","put_down","open_door","close_door"].includes(v.type)
+      &&t>=v.start-.2&&t<v.end+.2
+      &&!(v.type==="pick_up"&&scene.props.some((p:Item)=>p.id===v.target_id&&p.reveal_from_id)));
     const zoom=interaction?1:({wide:1,medium:1.3,close:2.1,detail:2.6}[key.shot as string]||1);
     const pose=a?poseAmount(a,t):0,sitting=clamp(pose/.28)*(1-clamp((pose-.28)/.72));
     const revealAnchor=prop&&(prop.type==="box"||prop.reveal_from_id)
       ?propAnchor(scene,prop,w,h,Math.min(w,h)/880):null;
     let x=a?a.x*w:revealAnchor?.x??(prop?prop.x*w:w/2);
     let y=a?a.y*h-rigHeight*(zoom>1.5?.77-sitting*.145:.44)
-      :revealAnchor?revealAnchor.y-h*.075:(prop?prop.y*h-h*.18:h/2);
+      :revealAnchor?revealAnchor.y-h*(key.shot==="detail"?.025:.075):(prop?prop.y*h-h*.18:h/2);
     if(zoom===1){x=w/2;y=h/2;}
     x+=key.pan*w;
     return {x:clamp(x,w/(2*zoom),w-w/(2*zoom)),y:clamp(y,h/(2*zoom),h-h/(2*zoom)),zoom};

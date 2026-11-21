@@ -284,7 +284,10 @@ def test_box_reveal_preserves_prior_box_and_hides_item_until_lid_opens():
         prepare_director_reply(raw, prompt="Meera opens the box and finds a pendant."), duration=30
     )
     opening, pickup = resolved["scenes"][1]["actions"][:2]
-    assert (opening["type"], opening["target_id"], opening["end"]) == ("open_box", "box", pickup["start"])
+    assert (opening["type"], opening["target_id"]) == ("open_box", "box")
+    assert pickup["start"] - opening["end"] >= .3
+    assert any(key["time"] == opening["start"] and key["shot"] == "detail" and key["focus_id"] == "box"
+               for key in resolved["scenes"][1]["camera"])
     assert resolved["scenes"][1]["props"][1]["reveal_from_id"] == "box"
     assert resolved["scenes"][2]["props"][0]["holder_id"] == "meera"
     assert "reveal_from_id" not in resolved["scenes"][2]["props"][0]

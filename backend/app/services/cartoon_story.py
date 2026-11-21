@@ -204,15 +204,25 @@ def _repair_box_reveal(scene: dict, previous_scene: dict) -> None:
     start = number(pick.get("start"), 0, 0, end)
     if end < 1.25:
         return
-    lid_end = max(.8, start)
-    if lid_end >= end - .2:
+    pickup_start = max(1.1, start)
+    if pickup_start >= end - .2:
         return
     if restore_box:
         props.append(dict(box))
     led["reveal_from_id"] = box_id
-    pick["start"] = lid_end
+    pick["start"] = pickup_start
     actions.append({"type": "open_box", "character_id": pick["character_id"],
-                    "target_id": box_id, "start": lid_end - .8, "end": lid_end})
+                    "target_id": box_id, "start": pickup_start - 1.1, "end": pickup_start - .35})
+    camera = scene.get("camera")
+    if isinstance(camera, list) and all(isinstance(key, dict) for key in camera):
+        open_start = pickup_start - 1.1
+        closeup = {"time": open_start, "shot": "detail", "focus_id": box_id}
+        scene["camera"] = [
+            *[key for key in camera if number(key.get("time"), 0, 0, scene["duration"]) < open_start],
+            closeup,
+            {**closeup, "time": pickup_start},
+            *[key for key in camera if number(key.get("time"), 0, 0, scene["duration"]) > pickup_start],
+        ]
     for actor in scene.get("actors") or []:
         if not isinstance(actor, dict) or actor.get("character_id") != pick["character_id"]:
             continue
@@ -220,8 +230,8 @@ def _repair_box_reveal(scene: dict, previous_scene: dict) -> None:
         actor_x = point(actor)["x"]
         has_approach = any(a.get("character_id") == pick["character_id"] and a.get("type") in {"walk", "run"}
                            for a in actions)
-        if not has_approach and abs(actor_x - box_x) < .09:
-            offset = -.12 if box_x >= .22 else .12
+        if not has_approach and abs(actor_x - box_x) < .13:
+            offset = -.15 if box_x >= .25 else .15
             actor["x"] = round(box_x + offset, 4)
 
 
