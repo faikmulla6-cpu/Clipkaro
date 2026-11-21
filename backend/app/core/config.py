@@ -80,6 +80,7 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     shunyalabs_api_key: str = ""
     nvidia_api_key: str = ""
+    cartoon_storyboard_test_user_ids: str = ""
     # Candidate-only Gnani Prisma v2.5 credential.  It is deliberately not
     # consumed by the production Groq -> Cloudflare routing.
     gnani_api_key: str = ""

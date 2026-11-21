@@ -23,7 +23,7 @@ def needs_hindi_retry(detected: str, probability: float, language_hint: str, bia
     return detected == "ur" or (detected == "en" and probability < .72)
 
 
-async def transcribe(video_path: Path, model_name: str = "small", language_hint: str = "auto", request_id: str = "", asr_route: str = "legacy") -> tuple[str, list[dict[str, Any]]]:
+async def transcribe(video_path: Path, model_name: str = "small", language_hint: str = "auto", request_id: str = "", asr_route: str = "legacy", *, generated_dialogue: bool = False) -> tuple[str, list[dict[str, Any]]]:
     """Run one source through ClipKaro's globally bounded ASR pipeline.
 
     The gate wraps audio extraction, model loading, primary decoding, recovery
@@ -32,12 +32,10 @@ async def transcribe(video_path: Path, model_name: str = "small", language_hint:
     is still consuming the host's RAM/CPU budget.
     """
     async with asr_slot(video_path):
-        if request_id:
-            return await _transcribe_impl(video_path, model_name, language_hint, request_id, asr_route)
-        return await _transcribe_impl(video_path, model_name, language_hint, "", asr_route)
+        return await _transcribe_impl(video_path, model_name, language_hint, request_id, asr_route, generated_dialogue=generated_dialogue)
 
 
-async def _transcribe_impl(video_path: Path, model_name: str = "small", language_hint: str = "auto", request_id: str = "", asr_route: str = "legacy") -> tuple[str, list[dict[str, Any]]]:
+async def _transcribe_impl(video_path: Path, model_name: str = "small", language_hint: str = "auto", request_id: str = "", asr_route: str = "legacy", *, generated_dialogue: bool = False) -> tuple[str, list[dict[str, Any]]]:
     """Transcribe locally with faster-whisper using CPU-safe int8 inference."""
     settings = get_settings()
     if settings.transcription_backend == "fixture":
@@ -58,7 +56,8 @@ async def _transcribe_impl(video_path: Path, model_name: str = "small", language
                 segments[0]["speech_regions"] = fixture_regions
         return payload.get("language", "en"), segments
     if settings.normalized_asr_mode == "api":
-        return await _transcribe_api_impl(video_path, language_hint, request_id, asr_route)
+        return await _transcribe_api_impl(video_path, language_hint, request_id, asr_route, generated_dialogue=generated_dialogue)
+    min_clean_seconds = 0.1 if generated_dialogue else 20.0
     try:
         from faster_whisper import WhisperModel  # type: ignore
     except ImportError as exc:
@@ -124,11 +123,11 @@ async def _transcribe_impl(video_path: Path, model_name: str = "small", language
             if info.language == "ur" or hindi_quality >= quality - .15:
                 info, rows = hindi_info, hindi_rows
                 final_language = "hi"
-        assessment = assess_transcript(rows, final_language)
+        assessment = assess_transcript(rows, final_language, min_clean_seconds=min_clean_seconds)
         if not assessment["accepted"]:
             retry_info, retry_rows, _ = decode("hi" if final_language in {"hi", "ur"} else requested_language, True)
             retry_language = "hi" if final_language in {"hi", "ur"} else retry_info.language
-            retry_assessment = assess_transcript(retry_rows, retry_language)
+            retry_assessment = assess_transcript(retry_rows, retry_language, min_clean_seconds=min_clean_seconds)
             if retry_assessment["clean_duration"] > assessment["clean_duration"]:
                 final_language, assessment = retry_language, retry_assessment
         if not assessment["accepted"]:
@@ -185,7 +184,7 @@ async def _transcribe_impl(video_path: Path, model_name: str = "small", language
             raise RuntimeError(
                 "Forced alignment is required, but ALIGNMENT_BACKEND is not set to whisperx."
             )
-        if sum(float(s["end"])-float(s["start"]) for s in verified) < 20:
+        if sum(float(s["end"])-float(s["start"]) for s in verified) < min_clean_seconds:
             raise RuntimeError("Transcript needs review: too little speech remained after timestamp stabilization.")
         verified = attach_provenance(verified, "faster-whisper", model_name, agreement_score)
         roman_hindi = settings.hindi_caption_script == "roman" and final_language in {"hi", "ur"}
@@ -212,13 +211,15 @@ async def _transcribe_impl(video_path: Path, model_name: str = "small", language
         audio_path.unlink(missing_ok=True)
 
 
-async def _transcribe_api_impl(video_path: Path, language_hint: str, request_id: str = "", asr_route: str = "legacy") -> tuple[str, list[dict[str, Any]]]:
+async def _transcribe_api_impl(video_path: Path, language_hint: str, request_id: str = "", asr_route: str = "legacy", *, generated_dialogue: bool = False) -> tuple[str, list[dict[str, Any]]]:
     """Use server-side providers while retaining ClipKaro's existing safety gates.
 
     Local WhisperX is deliberately not invoked here: provider word timestamps are
     accepted only after the same hallucination/noise/timestamp checks.
     """
     settings = get_settings()
+    # Cartoon Studio aligns one synthetic speech line at a time.
+    min_clean_seconds = 0.1 if generated_dialogue else 20.0
     audio_path = video_path.with_suffix(".asr.flac")
     chunk_dir = audio_path.with_suffix(".chunks")
     await extract_api_audio(video_path, audio_path)
@@ -270,7 +271,7 @@ async def _transcribe_api_impl(video_path: Path, language_hint: str, request_id:
         verified = result.segments
         if not verified:
             raise RuntimeError("API transcription did not include segment timestamps; no clips were created.")
-        assessment = assess_transcript(verified, final_language)
+        assessment = assess_transcript(verified, final_language, min_clean_seconds=min_clean_seconds)
         normalized_hint = language_hint.strip().lower().replace("-", "_")
         if (
             not assessment["accepted"]
@@ -286,7 +287,7 @@ async def _transcribe_api_impl(video_path: Path, language_hint: str, request_id:
             try:
                 hindi_result = await transcribe_chunks("hi")
                 hindi_language = "hi" if hindi_result.language in {"hi", "ur"} else hindi_result.language
-                hindi_assessment = assess_transcript(hindi_result.segments, hindi_language)
+                hindi_assessment = assess_transcript(hindi_result.segments, hindi_language, min_clean_seconds=min_clean_seconds)
                 if hindi_assessment["accepted"] or hindi_assessment["clean_duration"] > assessment["clean_duration"]:
                     result = hindi_result
                     final_language = hindi_language
@@ -300,7 +301,7 @@ async def _transcribe_api_impl(video_path: Path, language_hint: str, request_id:
         verified = stabilize_word_timestamps(assessment["segments"])
         if not any(segment.get("words") for segment in verified):
             raise RuntimeError("API transcription did not include word timestamps; verified caption export is blocked.")
-        if sum(float(s["end"])-float(s["start"]) for s in verified) < 20:
+        if sum(float(s["end"])-float(s["start"]) for s in verified) < min_clean_seconds:
             raise RuntimeError("Transcript needs review: too little speech remained after timestamp stabilization.")
         verified = attach_provenance(verified, result.provider, result.model, None)
         for segment in verified:

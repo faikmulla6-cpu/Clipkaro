@@ -158,6 +158,7 @@ def build_karaoke_caption_markup(
     overlay_id: str = "captions",
     rtl: bool = False,
     bottom_percent: int = 36,
+    strict_timing: bool = False,
 ) -> tuple[str, str]:
     """Build safe timed phrase markup and scene-local GSAP word-highlight instructions."""
     phrases = group_caption_phrases(words)
@@ -169,7 +170,7 @@ def build_karaoke_caption_markup(
             continue
         phrase_start = min(float(word["start_seconds"]) for word in phrase)
         phrase_end = max(float(word["end_seconds"]) for word in phrase)
-        duration = max(phrase_end - phrase_start, 0.5 + 0.3 * len(phrase))
+        duration = max(.025, phrase_end-phrase_start) if strict_timing else max(phrase_end - phrase_start, 0.5 + 0.3 * len(phrase))
         phrase_id = f"{overlay_id}-phrase-{phrase_index + 1}"
         spans = []
         for word_index, word in enumerate(phrase):

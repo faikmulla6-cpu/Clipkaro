@@ -22,7 +22,7 @@ T = TypeVar("T")
 logger = logging.getLogger("clipkaro.database")
 _LOCK_MESSAGES = ("database is locked", "database table is locked", "database schema is locked")
 _LOCK_PRIMARY_CODES = {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}
-POSTGRES_SCHEMA_REVISION = "20261119_13"
+POSTGRES_SCHEMA_REVISION = "20261121_14"
 _postgres_pool: Any = None
 
 

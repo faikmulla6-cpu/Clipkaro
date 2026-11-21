@@ -1,0 +1,973 @@
+{
+  "jannat": {
+    "schema_version": 3,
+    "title": "Jannat — Midnight",
+    "summary": "",
+    "mood": "suspense",
+    "characters": [
+      {
+        "id": "jannat",
+        "name": "جنت",
+        "role": "",
+        "personality": "",
+        "species": "human",
+        "voice_type": "female",
+        "rig": "biped-v3",
+        "appearance": {
+          "skin_color": "#CAA087",
+          "hair_color": "#172638",
+          "shirt_color": "#397C85",
+          "pants_color": "#2A4F68",
+          "shoe_color": "#1D3041",
+          "eye_color": "#594035",
+          "hair_style": "long",
+          "clothing": "kameez",
+          "face_shape": "oval",
+          "body_scale": 1
+        }
+      }
+    ],
+    "scenes": [
+      {
+        "id": "scene-1",
+        "scene_title": "",
+        "start": 0.0,
+        "duration": 7.0,
+        "environment": "bedroom",
+        "lighting": "night",
+        "character_ids": [
+          "jannat"
+        ],
+        "actors": [
+          {
+            "character_id": "jannat",
+            "x": 0.45,
+            "y": 0.82,
+            "pose": "sleep",
+            "facing": 1,
+            "scale": 1
+          }
+        ],
+        "props": [
+          {
+            "id": "bed",
+            "type": "bed",
+            "x": 0.38,
+            "y": 0.83,
+            "state": "closed",
+            "color": "#947666",
+            "support_id": null,
+            "holder_id": null
+          },
+          {
+            "id": "door",
+            "type": "door",
+            "x": 0.86,
+            "y": 0.83,
+            "state": "closed",
+            "color": "#947666",
+            "support_id": null,
+            "holder_id": null
+          },
+          {
+            "id": "lamp",
+            "type": "lamp",
+            "x": 0.1,
+            "y": 0.78,
+            "state": "closed",
+            "color": "#947666",
+            "support_id": null,
+            "holder_id": null
+          }
+        ],
+        "actions": [
+          {
+            "type": "sleep",
+            "character_id": "jannat",
+            "start": 0.0,
+            "end": 2.0,
+            "target_id": null,
+            "to": null,
+            "expression": "neutral",
+            "value": 1
+          },
+          {
+            "type": "wake",
+            "character_id": "jannat",
+            "start": 2.0,
+            "end": 3.5,
+            "target_id": null,
+            "to": null,
+            "expression": "neutral",
+            "value": 1
+          },
+          {
+            "type": "react",
+            "character_id": "jannat",
+            "start": 2.3,
+            "end": 3.0,
+            "target_id": null,
+            "to": null,
+            "expression": "scared",
+            "value": 1
+          }
+        ],
+        "camera": [
+          {
+            "time": 0.0,
+            "shot": "wide",
+            "focus_id": "jannat",
+            "pan": 0
+          },
+          {
+            "time": 7.0,
+            "shot": "medium",
+            "focus_id": "jannat",
+            "pan": 0
+          }
+        ],
+        "speech": [
+          {
+            "id": "scene-1-line-1",
+            "track": "narration",
+            "speaker_id": "narrator",
+            "text": "آدھی رات کو، جنت ایک بار پھر اسی خواب سے جاگ اٹھی۔",
+            "start": 0.4
+          }
+        ],
+        "sounds": [],
+        "transition": "dissolve"
+      },
+      {
+        "id": "scene-2",
+        "scene_title": "",
+        "start": 7.0,
+        "duration": 8.0,
+        "environment": "bedroom",
+        "lighting": "night",
+        "character_ids": [
+          "jannat"
+        ],
+        "actors": [
+          {
+            "character_id": "jannat",
+            "x": 0.45,
+            "y": 0.82,
+            "pose": "sit",
+            "facing": 1,
+            "scale": 1
+          }
+        ],
+        "props": [
+          {
+            "id": "bed",
+            "type": "bed",
+            "x": 0.38,
+            "y": 0.83,
+            "state": "closed",
+            "color": "#947666",
+            "support_id": null,
+            "holder_id": null
+          },
+          {
+            "id": "door",
+            "type": "door",
+            "x": 0.86,
+            "y": 0.83,
+            "state": "closed",
+            "color": "#947666",
+            "support_id": null,
+            "holder_id": null
+          },
+          {
+            "id": "lamp",
+            "type": "lamp",
+            "x": 0.1,
+            "y": 0.78,
+            "state": "closed",
+            "color": "#947666",
+            "support_id": null,
+            "holder_id": null
+          }
+        ],
+        "actions": [
+          {
+            "type": "react",
+            "character_id": "jannat",
+            "start": 0.0,
+            "end": 1.0,
+            "target_id": null,
+            "to": null,
+            "expression": "scared",
+            "value": 1
+          },
+          {
+            "type": "look",
+            "character_id": "jannat",
+            "start": 5.8,
+            "end": 7.0,
+            "target_id": null,
+            "to": null,
+            "expression": "neutral",
+            "value": 1
+          }
+        ],
+        "camera": [
+          {
+            "time": 0.0,
+            "shot": "close",
+            "focus_id": "jannat",
+            "pan": 0
+          },
+          {
+            "time": 8.0,
+            "shot": "close",
+            "focus_id": "jannat",
+            "pan": 0
+          }
+        ],
+        "speech": [
+          {
+            "id": "scene-2-line-1",
+            "track": "dialogue",
+            "speaker_id": "jannat",
+            "text": "یہ خواب... اتنا حقیقی کیوں لگ رہا تھا؟",
+            "start": 0.5
+          }
+        ],
+        "sounds": [],
+        "transition": "dissolve"
+      },
+      {
+        "id": "scene-3",
+        "scene_title": "",
+        "start": 15.0,
+        "duration": 5.0,
+        "environment": "home",
+        "lighting": "memory",
+        "character_ids": [
+          "jannat"
+        ],
+        "actors": [
+          {
+            "character_id": "jannat",
+            "x": 0.5,
+            "y": 0.82,
+            "pose": "stand",
+            "facing": 1,
+            "scale": 1
+          }
+        ],
+        "props": [
+          {
+            "id": "table",
+            "type": "table",
+            "x": 0.61,
+            "y": 0.82,
+            "state": "closed",
+            "color": "#947666",
+            "support_id": null,
+            "holder_id": null
+          },
+          {
+            "id": "pendant",
+            "type": "pendant",
+            "x": 0.61,
+            "y": 0.82,
+            "state": "closed",
+            "color": "#947666",
+            "support_id": "table",
+            "holder_id": null
+          }
+        ],
+        "actions": [
+          {
+            "type": "react",
+            "character_id": "jannat",
+            "start": 0.0,
+            "end": 1.0,
+            "target_id": null,
+            "to": null,
+            "expression": "sad",
+            "value": 1
+          },
+          {
+            "type": "pick_up",
+            "character_id": "jannat",
+            "start": 1.0,
+            "end": 3.0,
+            "target_id": "pendant",
+            "to": null,
+            "expression": "neutral",
+            "value": 1
+          }
+        ],
+        "camera": [
+          {
+            "time": 0.0,
+            "shot": "medium",
+            "focus_id": "jannat",
+            "pan": 0
+          },
+          {
+            "time": 5.0,
+            "shot": "close",
+            "focus_id": "jannat",
+            "pan": 0
+          }
+        ],
+        "speech": [],
+        "sounds": [],
+        "transition": "dissolve"
+      },
+      {
+        "id": "scene-4",
+        "scene_title": "",
+        "start": 20.0,
+        "duration": 10.0,
+        "environment": "bedroom",
+        "lighting": "night",
+        "character_ids": [
+          "jannat"
+        ],
+        "actors": [
+          {
+            "character_id": "jannat",
+            "x": 0.45,
+            "y": 0.82,
+            "pose": "sit",
+            "facing": 1,
+            "scale": 1
+          }
+        ],
+        "props": [
+          {
+            "id": "bed",
+            "type": "bed",
+            "x": 0.38,
+            "y": 0.83,
+            "state": "closed",
+            "color": "#947666",
+            "support_id": null,
+            "holder_id": null
+          },
+          {
+            "id": "door",
+            "type": "door",
+            "x": 0.86,
+            "y": 0.83,
+            "state": "closed",
+            "color": "#947666",
+            "support_id": null,
+            "holder_id": null
+          },
+          {
+            "id": "lamp",
+            "type": "lamp",
+            "x": 0.1,
+            "y": 0.78,
+            "state": "closed",
+            "color": "#947666",
+            "support_id": null,
+            "holder_id": null
+          }
+        ],
+        "actions": [
+          {
+            "type": "stand",
+            "character_id": "jannat",
+            "start": 0.0,
+            "end": 1.5,
+            "target_id": null,
+            "to": null,
+            "expression": "neutral",
+            "value": 1
+          },
+          {
+            "type": "walk",
+            "character_id": "jannat",
+            "start": 1.5,
+            "end": 5.0,
+            "target_id": null,
+            "to": {
+              "x": 0.72,
+              "y": 0.83
+            },
+            "expression": "neutral",
+            "value": 1
+          },
+          {
+            "type": "look",
+            "character_id": "jannat",
+            "start": 5.0,
+            "end": 6.0,
+            "target_id": null,
+            "to": null,
+            "expression": "neutral",
+            "value": 1
+          },
+          {
+            "type": "react",
+            "character_id": "jannat",
+            "start": 7.0,
+            "end": 8.0,
+            "target_id": null,
+            "to": null,
+            "expression": "scared",
+            "value": 1
+          }
+        ],
+        "camera": [
+          {
+            "time": 0.0,
+            "shot": "wide",
+            "focus_id": "jannat",
+            "pan": 0
+          },
+          {
+            "time": 6.0,
+            "shot": "medium",
+            "focus_id": "jannat",
+            "pan": 0
+          },
+          {
+            "time": 10.0,
+            "shot": "medium",
+            "focus_id": "jannat",
+            "pan": 0
+          }
+        ],
+        "speech": [],
+        "sounds": [
+          {
+            "type": "door_click",
+            "at": 7.2
+          }
+        ],
+        "transition": "dissolve"
+      }
+    ],
+    "duration": 30
+  },
+  "garden": {
+    "schema_version": 3,
+    "title": "Nora finds the lost ball",
+    "summary": "",
+    "mood": "playful",
+    "characters": [
+      {
+        "id": "nora",
+        "name": "Nora",
+        "role": "",
+        "personality": "",
+        "species": "fox",
+        "voice_type": "female",
+        "rig": "biped-v3",
+        "appearance": {
+          "skin_color": "#CB895A",
+          "hair_color": "#7F5039",
+          "shirt_color": "#D59A58",
+          "pants_color": "#2A4F68",
+          "shoe_color": "#1D3041",
+          "eye_color": "#5B4B39",
+          "hair_style": "curly",
+          "clothing": "shirt",
+          "face_shape": "oval",
+          "body_scale": 1
+        }
+      }
+    ],
+    "scenes": [
+      {
+        "id": "scene-1",
+        "scene_title": "",
+        "start": 0.0,
+        "duration": 7.5,
+        "environment": "garden",
+        "lighting": "day",
+        "character_ids": [
+          "nora"
+        ],
+        "actors": [
+          {
+            "character_id": "nora",
+            "x": 0.5,
+            "y": 0.82,
+            "pose": "stand",
+            "facing": 1,
+            "scale": 1
+          }
+        ],
+        "props": [
+          {
+            "id": "ball",
+            "type": "ball",
+            "x": 0.77,
+            "y": 0.82,
+            "state": "closed",
+            "color": "#CE6A64",
+            "support_id": null,
+            "holder_id": null
+          }
+        ],
+        "actions": [
+          {
+            "type": "run",
+            "character_id": "nora",
+            "start": 0.0,
+            "end": 3.45,
+            "target_id": null,
+            "to": {
+              "x": 0.66,
+              "y": 0.82
+            },
+            "expression": "neutral",
+            "value": 1
+          },
+          {
+            "type": "pick_up",
+            "character_id": "nora",
+            "start": 3.6,
+            "end": 5.4,
+            "target_id": "ball",
+            "to": null,
+            "expression": "neutral",
+            "value": 1
+          },
+          {
+            "type": "react",
+            "character_id": "nora",
+            "start": 5.55,
+            "end": 6.75,
+            "target_id": null,
+            "to": null,
+            "expression": "happy",
+            "value": 1
+          }
+        ],
+        "camera": [
+          {
+            "time": 0.0,
+            "shot": "wide",
+            "focus_id": "nora",
+            "pan": 0
+          },
+          {
+            "time": 7.5,
+            "shot": "medium",
+            "focus_id": "nora",
+            "pan": 0
+          }
+        ],
+        "speech": [
+          {
+            "id": "scene-1-line-1",
+            "track": "dialogue",
+            "speaker_id": "nora",
+            "text": "There it is!",
+            "start": 0.9
+          }
+        ],
+        "sounds": [],
+        "transition": "dissolve"
+      },
+      {
+        "id": "scene-2",
+        "scene_title": "",
+        "start": 7.5,
+        "duration": 7.5,
+        "environment": "beach",
+        "lighting": "day",
+        "character_ids": [
+          "nora"
+        ],
+        "actors": [
+          {
+            "character_id": "nora",
+            "x": 0.5,
+            "y": 0.82,
+            "pose": "stand",
+            "facing": 1,
+            "scale": 1
+          }
+        ],
+        "props": [
+          {
+            "id": "ball",
+            "type": "ball",
+            "x": 0.77,
+            "y": 0.82,
+            "state": "closed",
+            "color": "#CE6A64",
+            "support_id": null,
+            "holder_id": "nora"
+          }
+        ],
+        "actions": [
+          {
+            "type": "jump",
+            "character_id": "nora",
+            "start": 0.0,
+            "end": 2.25,
+            "target_id": null,
+            "to": null,
+            "expression": "neutral",
+            "value": 1
+          },
+          {
+            "type": "wave",
+            "character_id": "nora",
+            "start": 2.25,
+            "end": 5.25,
+            "target_id": null,
+            "to": null,
+            "expression": "neutral",
+            "value": 1
+          },
+          {
+            "type": "turn",
+            "character_id": "nora",
+            "start": 5.25,
+            "end": 7.2,
+            "target_id": null,
+            "to": null,
+            "expression": "neutral",
+            "value": -1
+          }
+        ],
+        "camera": [
+          {
+            "time": 0.0,
+            "shot": "wide",
+            "focus_id": "nora",
+            "pan": 0
+          },
+          {
+            "time": 7.5,
+            "shot": "medium",
+            "focus_id": "nora",
+            "pan": 0
+          }
+        ],
+        "speech": [
+          {
+            "id": "scene-2-line-1",
+            "track": "dialogue",
+            "speaker_id": "nora",
+            "text": "Let's play together.",
+            "start": 1.5
+          }
+        ],
+        "sounds": [],
+        "transition": "dissolve"
+      }
+    ],
+    "duration": 15
+  },
+  "library": {
+    "schema_version": 3,
+    "title": "The library surprise",
+    "summary": "",
+    "mood": "gentle",
+    "characters": [
+      {
+        "id": "mira",
+        "name": "Mira",
+        "role": "",
+        "personality": "",
+        "species": "human",
+        "voice_type": "female",
+        "rig": "biped-v3",
+        "appearance": {
+          "skin_color": "#CAA087",
+          "hair_color": "#172638",
+          "shirt_color": "#8A68A5",
+          "pants_color": "#2A4F68",
+          "shoe_color": "#1D3041",
+          "eye_color": "#594035",
+          "hair_style": "long",
+          "clothing": "kameez",
+          "face_shape": "oval",
+          "body_scale": 1
+        }
+      },
+      {
+        "id": "arun",
+        "name": "Arun",
+        "role": "",
+        "personality": "",
+        "species": "human",
+        "voice_type": "male",
+        "rig": "biped-v3",
+        "appearance": {
+          "skin_color": "#CAA087",
+          "hair_color": "#172638",
+          "shirt_color": "#4D80A8",
+          "pants_color": "#2A4F68",
+          "shoe_color": "#1D3041",
+          "eye_color": "#594035",
+          "hair_style": "short",
+          "clothing": "shirt",
+          "face_shape": "oval",
+          "body_scale": 1
+        }
+      }
+    ],
+    "scenes": [
+      {
+        "id": "scene-1",
+        "scene_title": "",
+        "start": 0.0,
+        "duration": 7.5,
+        "environment": "school",
+        "lighting": "day",
+        "character_ids": [
+          "mira",
+          "arun"
+        ],
+        "actors": [
+          {
+            "character_id": "mira",
+            "x": 0.3333,
+            "y": 0.82,
+            "pose": "stand",
+            "facing": 1,
+            "scale": 1
+          },
+          {
+            "character_id": "arun",
+            "x": 0.6667,
+            "y": 0.82,
+            "pose": "stand",
+            "facing": 1,
+            "scale": 1
+          }
+        ],
+        "props": [
+          {
+            "id": "table",
+            "type": "table",
+            "x": 0.54,
+            "y": 0.82,
+            "state": "closed",
+            "color": "#947666",
+            "support_id": null,
+            "holder_id": null
+          },
+          {
+            "id": "book",
+            "type": "book",
+            "x": 0.54,
+            "y": 0.82,
+            "state": "closed",
+            "color": "#9D6659",
+            "support_id": "table",
+            "holder_id": null
+          }
+        ],
+        "actions": [
+          {
+            "type": "walk",
+            "character_id": "mira",
+            "start": 0.0,
+            "end": 1.875,
+            "target_id": null,
+            "to": {
+              "x": 0.43,
+              "y": 0.82
+            },
+            "expression": "neutral",
+            "value": 1
+          },
+          {
+            "type": "look",
+            "character_id": "arun",
+            "start": 0.25,
+            "end": 1.25,
+            "target_id": null,
+            "to": null,
+            "expression": "neutral",
+            "value": -1
+          },
+          {
+            "type": "pick_up",
+            "character_id": "mira",
+            "start": 2.0,
+            "end": 3.75,
+            "target_id": "book",
+            "to": null,
+            "expression": "neutral",
+            "value": 1
+          },
+          {
+            "type": "wave",
+            "character_id": "arun",
+            "start": 3.75,
+            "end": 6.25,
+            "target_id": null,
+            "to": null,
+            "expression": "neutral",
+            "value": 1
+          }
+        ],
+        "camera": [
+          {
+            "time": 0.0,
+            "shot": "wide",
+            "focus_id": "mira",
+            "pan": 0
+          },
+          {
+            "time": 7.5,
+            "shot": "medium",
+            "focus_id": "mira",
+            "pan": 0
+          }
+        ],
+        "speech": [
+          {
+            "id": "scene-1-line-1",
+            "track": "dialogue",
+            "speaker_id": "mira",
+            "text": "Arun, yeh kitaab dekho.",
+            "start": 0.375
+          },
+          {
+            "id": "scene-1-line-2",
+            "track": "dialogue",
+            "speaker_id": "arun",
+            "text": "Wah, kya baat hai!",
+            "start": 3.75
+          }
+        ],
+        "sounds": [],
+        "transition": "dissolve"
+      },
+      {
+        "id": "scene-2",
+        "scene_title": "",
+        "start": 7.5,
+        "duration": 7.5,
+        "environment": "workshop",
+        "lighting": "day",
+        "character_ids": [
+          "mira",
+          "arun"
+        ],
+        "actors": [
+          {
+            "character_id": "mira",
+            "x": 0.3333,
+            "y": 0.82,
+            "pose": "stand",
+            "facing": 1,
+            "scale": 1
+          },
+          {
+            "character_id": "arun",
+            "x": 0.6667,
+            "y": 0.82,
+            "pose": "stand",
+            "facing": 1,
+            "scale": 1
+          }
+        ],
+        "props": [
+          {
+            "id": "door",
+            "type": "door",
+            "x": 0.85,
+            "y": 0.82,
+            "state": "closed",
+            "color": "#947666",
+            "support_id": null,
+            "holder_id": null
+          },
+          {
+            "id": "table",
+            "type": "table",
+            "x": 0.15,
+            "y": 0.83,
+            "state": "closed",
+            "color": "#947666",
+            "support_id": null,
+            "holder_id": null
+          },
+          {
+            "id": "book",
+            "type": "book",
+            "x": 0.54,
+            "y": 0.82,
+            "state": "closed",
+            "color": "#9D6659",
+            "support_id": null,
+            "holder_id": "mira"
+          }
+        ],
+        "actions": [
+          {
+            "type": "walk",
+            "character_id": "arun",
+            "start": 0.0,
+            "end": 2.5,
+            "target_id": null,
+            "to": {
+              "x": 0.78,
+              "y": 0.82
+            },
+            "expression": "neutral",
+            "value": 1
+          },
+          {
+            "type": "open_door",
+            "character_id": "arun",
+            "start": 2.5,
+            "end": 4.375,
+            "target_id": "door",
+            "to": null,
+            "expression": "neutral",
+            "value": 1
+          },
+          {
+            "type": "point",
+            "character_id": "mira",
+            "start": 2.5,
+            "end": 4.375,
+            "target_id": "door",
+            "to": null,
+            "expression": "neutral",
+            "value": 1
+          },
+          {
+            "type": "close_door",
+            "character_id": "arun",
+            "start": 5.0,
+            "end": 6.875,
+            "target_id": "door",
+            "to": null,
+            "expression": "neutral",
+            "value": 1
+          }
+        ],
+        "camera": [
+          {
+            "time": 0.0,
+            "shot": "wide",
+            "focus_id": "mira",
+            "pan": 0
+          },
+          {
+            "time": 7.5,
+            "shot": "medium",
+            "focus_id": "mira",
+            "pan": 0
+          }
+        ],
+        "speech": [],
+        "sounds": [],
+        "transition": "dissolve"
+      }
+    ],
+    "duration": 15
+  }
+}

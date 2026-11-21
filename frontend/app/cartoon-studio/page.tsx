@@ -24,6 +24,10 @@ type Scene = {
   action: string;
   dialogue: string;
   speaker_id: string;
+  start?: number;
+  duration?: number;
+  actions?: {type: string; character_id: string; start: number; end: number}[];
+  speech?: {track: string; text: string; speaker_id: string}[];
 };
 type Storyboard = {
   title?: string;
@@ -39,15 +43,30 @@ type CartoonProject = {
   aspect_ratio: string;
   style: string;
   language: string;
+  text_model?: string;
   status: string;
   progress: number;
   stage: string;
   error?: string | null;
   storyboard?: Storyboard;
+  editable_available?: boolean;
   created_at?: string;
 };
 type ProviderStatus = {
   openrouter: { connected: boolean; masked_key: string; validated_at?: string | null };
+  storyboard_test_enabled?: boolean;
+};
+type PlannerProvider = "nvidia" | "openrouter";
+type ProjectPlanner = "glm" | "nemotron" | "nvidia";
+type StoryboardTest = { provider: PlannerProvider; model: string; storyboard: Storyboard };
+const PLANNER_NAMES: Record<PlannerProvider, string> = {
+  nvidia: "NVIDIA Nemotron",
+  openrouter: "OpenRouter GLM",
+};
+const PROJECT_PLANNER_NAMES: Record<string, string> = {
+  "z-ai/glm-5.3-flash": "GLM",
+  "nvidia/nemotron-3.5-super-vl": "NVIDIA Nemotron",
+  "nvidia/nemotron-3.5-super-vl-120b-a12b": "NVIDIA Nemotron (internal trial)",
 };
 type TTSModel = { id: string; name: string; voices: string[]; description: string };
 type TTSResponse = { models: TTSModel[]; default_model: string };
@@ -70,9 +89,17 @@ export default function CartoonStudioPage() {
   const [provider, setProvider] = useState<ProviderStatus | null>(null);
   const [models, setModels] = useState<TTSModel[]>([]);
   const [ttsModel, setTtsModel] = useState("");
+  const [voiceId, setVoiceId] = useState("");
   const [projects, setProjects] = useState<CartoonProject[]>([]);
   const [selected, setSelected] = useState<CartoonProject | null>(null);
   const [apiKey, setApiKey] = useState("");
+  const [planner, setPlanner] = useState<PlannerProvider>("nvidia");
+  const [projectPlanner, setProjectPlanner] = useState<ProjectPlanner>("glm");
+  const [nvidiaKey, setNvidiaKey] = useState("");
+  const [testBusy, setTestBusy] = useState(false);
+  const [testError, setTestError] = useState("");
+  const [testResults, setTestResults] = useState<Partial<Record<PlannerProvider, StoryboardTest>>>({});
+  const [testedInput, setTestedInput] = useState("");
   const [prompt, setPrompt] = useState("");
   const [duration, setDuration] = useState(30);
   const [ratio, setRatio] = useState("9:16");
@@ -155,7 +182,7 @@ export default function CartoonStudioPage() {
         "/cartoon-studio/providers/openrouter",
         { api_key: apiKey.trim() },
       );
-      setProvider({ openrouter: saved });
+      setProvider((current) => ({ ...current, openrouter: saved }));
       setApiKey("");
       await loadModels();
       setNotice("OpenRouter connected securely. Your key is encrypted and never shown again.");
@@ -172,7 +199,7 @@ export default function CartoonStudioPage() {
     setError("");
     try {
       await deleteJSON("/cartoon-studio/providers/openrouter");
-      setProvider({ openrouter: { connected: false, masked_key: "" } });
+      setProvider((current) => ({ ...current, openrouter: { connected: false, masked_key: "" } }));
       setModels([]);
       setTtsModel("");
       setNotice("OpenRouter key disconnected.");
@@ -180,6 +207,35 @@ export default function CartoonStudioPage() {
       setError(cause instanceof Error ? cause.message : "The provider key could not be removed.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function runStoryboardTest(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (testBusy) return;
+    if (prompt.trim().length < 8) {
+      setTestError("Enter your story in the Create a cartoon form above.");
+      return;
+    }
+    setTestBusy(true);
+    setTestError("");
+    const body = new FormData();
+    body.set("provider", planner);
+    body.set("prompt", prompt.trim());
+    body.set("duration_seconds", String(duration));
+    body.set("language", language);
+    body.set("style", style);
+    if (planner === "nvidia") body.set("nvidia_key", nvidiaKey.trim());
+    const input = JSON.stringify([prompt.trim(), duration, language, style]);
+    if (testedInput !== input) setTestResults({});
+    try {
+      const result = await api<StoryboardTest>("/cartoon-studio/storyboard-test", { method: "POST", body });
+      setTestResults((current) => ({ ...current, [result.provider]: result }));
+      setTestedInput(input);
+    } catch (cause) {
+      setTestError(cause instanceof Error ? cause.message : "Storyboard testing failed. Try again shortly.");
+    } finally {
+      setTestBusy(false);
     }
   }
 
@@ -201,7 +257,10 @@ export default function CartoonStudioPage() {
       body.set("style", style);
       body.set("language", language);
       body.set("tts_model", ttsModel);
-      if (reference) body.set("reference_video", reference);
+      body.set("voice_id", voiceId);
+      body.set("story_planner", projectPlanner);
+      if (projectPlanner === "nvidia") body.set("nvidia_key", nvidiaKey.trim());
+      else if (reference) body.set("reference_video", reference);
       const project = await api<CartoonProject>("/cartoon-studio/projects", { method: "POST", body });
       mergeProject(project);
       setNotice("Your cartoon is queued. You can leave this page while it renders.");
@@ -241,11 +300,11 @@ export default function CartoonStudioPage() {
     }
   }
 
-  async function downloadProject() {
+  async function downloadProject(editable = false) {
     if (!selected || selected.status !== "ready") return;
     setError("");
     try {
-      const result = await api<{ url: string }>("/cartoon-studio/projects/" + selected.id + "/download");
+      const result = await api<{ url: string }>("/cartoon-studio/projects/" + selected.id + (editable ? "/editable" : "/download"));
       window.location.assign(result.url);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The MP4 could not be downloaded.");
@@ -291,15 +350,16 @@ export default function CartoonStudioPage() {
               </label>
               <div className={styles.fieldsTwo}>
                 <label className={styles.field}><span>Video length</span>
-                  <select value={duration} onChange={(event) => setDuration(Number(event.target.value))} disabled={style === "cinematic-jannat"}>
+                  <select value={duration} onChange={(event) => setDuration(Number(event.target.value))}>
                     <option value={15}>15 seconds</option><option value={30}>30 seconds</option>
                     <option value={45}>45 seconds</option><option value={60}>60 seconds</option>
                   </select>
                 </label>
                 <label className={styles.field}><span>Aspect ratio</span>
-                  <select value={ratio} onChange={(event) => setRatio(event.target.value)} disabled={style === "cinematic-jannat"}>
+                  <select value={ratio} onChange={(event) => setRatio(event.target.value)}>
                     <option value="9:16">9:16 · Reels / Shorts</option>
                     <option value="16:9">16:9 · YouTube</option><option value="1:1">1:1 · Square</option>
+                    <option value="4:5">4:5 · Portrait posts</option>
                   </select>
                 </label>
                 <label className={styles.field}><span>Animation style</span>
@@ -307,8 +367,6 @@ export default function CartoonStudioPage() {
                     const nextStyle = event.target.value;
                     setStyle(nextStyle);
                     if (nextStyle === "cinematic-jannat") {
-                      setDuration(30);
-                      setRatio("16:9");
                       setLanguage("ur");
                       setTtsModel("system/edge-tts-urdu");
                     }
@@ -317,7 +375,7 @@ export default function CartoonStudioPage() {
                     <option value="anime-inspired">Anime-inspired</option><option value="flat-vector">Flat vector</option><option value="cinematic-jannat">Jannat cinematic (reference)</option>
                   </select>
                   {style === "cinematic-jannat" && (
-                    <small className={styles.languageHint}>Uses the reference Jannat rig and moonlit bedroom, with separate Urdu narration, dialogue, original suspense score and bedroom foley. Locks 30 seconds, 16:9 and the word-timed female voice.</small>
+                    <small className={styles.languageHint}>A suspense storytelling preset with consistent characters, timed movement and Urdu word-timed voices. Supports every aspect ratio.</small>
                   )}
                 </label>
                 <label className={styles.field}><span>Story language</span>
@@ -327,9 +385,26 @@ export default function CartoonStudioPage() {
                   </select>
                 </label>
               </div>
+              <label className={styles.field}><span>Story planner</span>
+                <select value={projectPlanner} onChange={(event) => setProjectPlanner(event.target.value as ProjectPlanner)} disabled={busy}>
+                  <option value="glm">GLM via OpenRouter</option>
+                  <option value="nemotron">NVIDIA Nemotron via OpenRouter (paid)</option>
+                  {provider?.storyboard_test_enabled && <option value="nvidia">NVIDIA Nemotron (internal trial)</option>}
+                </select>
+                <small>{projectPlanner === "nvidia"
+                  ? "Use a fictional text prompt for internal evaluation. Your NVIDIA key is used once to plan this cartoon."
+                  : "Story planning uses your connected OpenRouter account and can consume credits."}</small>
+              </label>
+              {projectPlanner === "nvidia" && (
+                <label className={styles.field}><span>NVIDIA API key</span>
+                  <input type="password" value={nvidiaKey} onChange={(event) => setNvidiaKey(event.target.value)}
+                    placeholder="nvapi-…" autoComplete="off" spellCheck={false} required disabled={busy} />
+                  <small>Voice generation still uses your selected voice model. Keep this tab open until the project is queued.</small>
+                </label>
+              )}
               <label className={styles.field}>
                 <span>Voice model</span>
-                <select value={ttsModel} onChange={(event) => setTtsModel(event.target.value)} disabled={!connected || models.length === 0 || style === "cinematic-jannat"}>
+                <select value={ttsModel} onChange={(event) => {setTtsModel(event.target.value);setVoiceId("");}} disabled={!connected || models.length === 0 || style === "cinematic-jannat"}>
                   {models.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}
                 </select>
                 <small>{connected ? (models.find((model) => model.id === ttsModel)?.description || "Every character keeps its assigned voice across the scenes in this project.") : "Connect your OpenRouter key to load available voice models."}</small>
@@ -346,14 +421,21 @@ export default function CartoonStudioPage() {
                   <small className={styles.languageHint}>For mixed Hindi-English narration, Gemini 3.1 Flash TTS may handle language switching more reliably.</small>
                 )}
               </label>
-              <label className={styles.fileField}>
+              <label className={styles.field}><span>Narrator / lead voice</span>
+                <select value={voiceId} onChange={(event) => setVoiceId(event.target.value)} disabled={!connected}>
+                  <option value="">Match the character automatically</option>
+                  {(models.find(model => model.id === ttsModel)?.voices || []).map(voice => <option key={voice} value={voice}>{voice}</option>)}
+                </select>
+                <small>Other characters keep their own assigned voices. Providers without word timestamps use audio alignment for captions.</small>
+              </label>
+              {projectPlanner !== "nvidia" && <label className={styles.fileField}>
                 <span>Optional reference video</span>
                 <input type="file" accept="video/mp4,video/quicktime,video/webm,video/x-matroska" onChange={(event) => setReference(event.target.files?.[0] || null)} />
                 <small>{reference ? reference.name : "Up to 50 MB. Used only to analyse visual style; not required."}</small>
-              </label>
-              <button className={styles.primaryButton} type="submit" disabled={!connected || busy || !ttsModel}>
+              </label>}
+              <button className={styles.primaryButton} type="submit" disabled={!connected || busy || !ttsModel || (projectPlanner === "nvidia" && !nvidiaKey.trim())}>
                 {busy ? <Loader2 className={styles.spin} size={18} /> : <WandSparkles size={18} />}
-                {busy ? "Please wait..." : "Create my cartoon"}
+                {busy ? (projectPlanner === "nvidia" ? "Planning with NVIDIA…" : "Please wait...") : "Create my cartoon"}
               </button>
               {!connected && <p className={styles.formHint}>Connect your own OpenRouter API key below to enable generation.</p>}
             </form>
@@ -383,7 +465,7 @@ export default function CartoonStudioPage() {
                 </form>
               )}
               <div className={styles.securityNote}><LockKeyhole size={15} /><span>Your key is encrypted at rest. ClipKaro's backend uses it for model discovery and generation, and never returns the key to your browser.</span></div>
-              <div className={styles.billingNote}><Volume2 size={15} /><span>GLM story planning and OpenRouter TTS use your OpenRouter account. The built-in Urdu voice uses the external Edge speech service and does not consume OpenRouter TTS credits. Video rendering runs on ClipKaro.</span></div>
+              <div className={styles.billingNote}><Volume2 size={15} /><span>Hosted story planners and OpenRouter voices use your OpenRouter account. The built-in Urdu voice uses Edge speech. Video rendering runs on ClipKaro.</span></div>
             </section>
 
             <section className={styles.stepsPanel}>
@@ -395,10 +477,70 @@ export default function CartoonStudioPage() {
           </div>
         </div>
 
+        {provider?.storyboard_test_enabled && (
+          <section className={styles.projectPanel} aria-labelledby="storyboard-test-title">
+            <div className={styles.panelHead}>
+              <div><h3 id="storyboard-test-title">Test storyboard planners</h3></div>
+            </div>
+            <p className={styles.projectPrompt}>
+              Uses the story, length, language and style above. This test generates a storyboard only.
+            </p>
+            <form onSubmit={runStoryboardTest} className={styles.form}>
+              <div className={styles.fieldsTwo}>
+                <label className={styles.field}><span>Story planner</span>
+                  <select value={planner} onChange={(event) => setPlanner(event.target.value as PlannerProvider)} disabled={testBusy}>
+                    <option value="nvidia">NVIDIA Nemotron</option>
+                    <option value="openrouter">OpenRouter GLM</option>
+                  </select>
+                </label>
+                {planner === "nvidia" && (
+                  <label className={styles.field}><span>NVIDIA API key</span>
+                    <input type="password" value={nvidiaKey} onChange={(event) => setNvidiaKey(event.target.value)}
+                      placeholder="nvapi-…" autoComplete="off" spellCheck={false} required disabled={testBusy} />
+                    <small>The key stays in this tab until you clear it or leave the page.</small>
+                  </label>
+                )}
+              </div>
+              <p className={styles.projectPrompt}>{planner === "nvidia"
+                ? "NVIDIA trial access is for internal evaluation. Use fictional prompts without private information."
+                : connected ? "This test uses your connected OpenRouter key and can consume planning credits."
+                  : "Connect OpenRouter above to test GLM."}</p>
+              <button className={styles.secondaryButton} type="submit"
+                disabled={testBusy || (planner === "nvidia" ? !nvidiaKey.trim() : !connected)}>
+                {testBusy && <Loader2 className={styles.spin} size={16} />}
+                {testBusy ? "Planning storyboard…" : "Test storyboard"}
+              </button>
+              {testError && <div className={styles.alertError} role="alert">{testError}</div>}
+            </form>
+            <div className={styles.fieldsTwo} aria-live="polite">
+              {Object.values(testResults).map((result) => (
+                <div className={styles.scenes} key={result.provider}>
+                  <div className={styles.sectionTitle}><strong>{PLANNER_NAMES[result.provider]}</strong><small>{result.model}</small></div>
+                  <p className={styles.projectPrompt}>{result.storyboard.title} · {result.storyboard.summary}</p>
+                  {(result.storyboard.scenes || []).map((scene, index) => (
+                    <div key={scene.id} className={styles.sceneRow}>
+                      <span className={styles.sceneNumber}>{index + 1}</span>
+                      <div>
+                        <strong>{scene.scene_title} · {scene.start ?? 0}–{(scene.start ?? 0) + (scene.duration ?? 0)}s</strong>
+                        <small>{(scene.actions || []).map((action) => action.type.replaceAll("_", " ")).join(" · ")}</small>
+                        {(scene.speech || []).map((line, lineIndex) => (
+                          <p key={lineIndex}>{line.speaker_id} · “{line.text}”</p>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         {selected && (
           <section className={styles.projectPanel}>
             <div className={styles.panelHead}>
-              <div><span className={styles.kicker}>03 · CURRENT PROJECT</span><h3>{selected.storyboard?.title || selected.title}</h3></div>
+              <div><span className={styles.kicker}>03 · CURRENT PROJECT</span><h3>{selected.storyboard?.title || selected.title}</h3>
+                {selected.text_model && <small>{PROJECT_PLANNER_NAMES[selected.text_model]}</small>}
+              </div>
               <span className={selected.status === "ready" ? styles.statusReady : selected.status === "failed" ? styles.statusFailed : styles.statusRunning}>
                 {selected.status === "ready" ? "Ready" : selected.status === "failed" ? "Failed" : "Rendering"}
               </span>
@@ -425,11 +567,15 @@ export default function CartoonStudioPage() {
               <div className={styles.sectionTitle}><strong>Storyboard</strong><small>{selected.storyboard.scenes.length} scenes</small></div>
               {selected.storyboard.scenes.map((scene, index) => <div className={styles.sceneRow} key={scene.id}>
                 <span className={styles.sceneNumber}>{String(index + 1).padStart(2, "0")}</span>
-                <div><strong>{scene.scene_title}</strong><small>{scene.action}</small><p>“{scene.dialogue}”</p></div>
+                <div><strong>{scene.scene_title || scene.environment}{scene.duration ? " · " + scene.duration + "s" : ""}</strong>
+                  <small>{scene.actions?.map(action => action.start.toFixed(1) + "–" + action.end.toFixed(1) + "s: " + action.type.replaceAll("_", " ")).join(" · ") || scene.action}</small>
+                  {scene.speech?.map((line,index) => <p key={index}>{line.track === "narration" ? "Narrator" : line.speaker_id}: “{line.text}”</p>)}
+                  {!scene.speech && scene.dialogue && <p>“{scene.dialogue}”</p>}</div>
               </div>)}
             </div> : null}
             <div className={styles.projectActions}>
-              {selected.status === "ready" && <button className={styles.primaryButton} type="button" onClick={downloadProject}><Download size={17} /> Download MP4</button>}
+              {selected.status === "ready" && <><button className={styles.primaryButton} type="button" onClick={() => downloadProject()}><Download size={17} /> Download MP4</button>
+                {selected.editable_available && <button className={styles.secondaryButton} type="button" onClick={() => downloadProject(true)}><Download size={17} /> Editable project</button>}</>}
               {selected.status === "failed" && <button className={styles.secondaryButton} type="button" onClick={retryProject} disabled={busy}><RefreshCw size={16} /> Retry project</button>}
               {isRendering && <span><Loader2 className={styles.spin} size={15} /> Rendering in the background</span>}
             </div>

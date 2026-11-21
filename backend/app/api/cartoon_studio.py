@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Response, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -18,6 +18,11 @@ from app.core.database import distributed_advisory_lock, execute, fetch_all, fet
 from app.services.distributed_rate_limit import consume_rate_limit
 from app.services.auth import current_user
 from app.services.cartoon_speech import SYSTEM_URDU_TTS_MODEL, system_urdu_tts_model_row
+from app.services.cartoon_story import resolve_cartoon_language
+from app.services.cartoon_story_planner import (
+    NVIDIA_STORY_MODEL, OPENROUTER_ROOT, PROJECT_STORY_MODELS, STORY_MODEL, StoryboardReplyError,
+    parse_storyboard_reply, planner_payload, request_storyboard,
+)
 from app.services.cartoon_security import (
     CartoonCredentialError, decrypt_provider_key, encrypt_provider_key,
     fingerprint_provider_key, mask_provider_key,
@@ -39,8 +44,6 @@ async def _run_media_job(job_id: str) -> int:
     return await run_job(job_id)
 
 
-OPENROUTER_ROOT = "https://openrouter.ai/api/v1"
-TEXT_MODEL = "z-ai/glm-5.3-flash"
 PREFERRED_TTS = [
     "hexgrad/kokoro-82m",
     "google/gemini-3.1-flash-tts-preview",
@@ -52,7 +55,7 @@ PREFERRED_TTS = [
     SYSTEM_URDU_TTS_MODEL,
 ]
 ALLOWED_DURATIONS = {15, 30, 45, 60}
-ALLOWED_RATIOS = {"9:16", "16:9", "1:1"}
+ALLOWED_RATIOS = {"9:16", "16:9", "1:1", "4:5"}
 ALLOWED_STYLES = {"2d-cartoon", "storybook", "anime-inspired", "flat-vector", "cinematic-jannat"}
 ALLOWED_LANGUAGES = {"auto", "en", "hi", "hinglish", "mr", "ur"}
 
@@ -66,6 +69,25 @@ async def cartoon_studio_user(user: dict = Depends(current_user)) -> dict:
     if not bool(user.get("cartoon_studio_access_override")):
         raise HTTPException(403, "Cartoon Studio beta access is not enabled for this account.")
     return user
+
+
+def _storyboard_test_allowed(user: dict) -> bool:
+    allowed = get_settings().cartoon_storyboard_test_user_ids.split(",")
+    return str(user["id"]) in {value.strip() for value in allowed if value.strip()}
+
+
+def _nvidia_trial_key(user: dict, api_key: str) -> str:
+    if not _storyboard_test_allowed(user):
+        raise HTTPException(403, "NVIDIA trial rendering is limited to internal evaluation accounts.")
+    key = api_key.strip()
+    if not re.fullmatch(r"nvapi-[A-Za-z0-9_-]{14,480}", key):
+        raise HTTPException(422, "Enter an NVIDIA API key beginning with nvapi-.")
+    return key
+
+
+@router.get("/capabilities")
+async def cartoon_capabilities(user: dict = Depends(cartoon_studio_user)) -> dict:
+    return {"engine_version": "story-v3", "storyboard_version": 3, "aspect_ratios": ["9:16", "16:9", "1:1", "4:5"]}
 
 
 def _now() -> str:
@@ -128,6 +150,10 @@ def _project_out(row: dict[str, Any], job: dict[str, Any] | None = None) -> dict
     except (TypeError, ValueError, json.JSONDecodeError):
         storyboard = {}
 
+    try:
+        editable_available = bool(json.loads(str(row.get("assets_json") or "{}")).get("_editable"))
+    except (ValueError, TypeError, AttributeError):
+        editable_available = False
     job = job or {}
     job_status = str(job.get("status") or row.get("job_status") or "")
     project_status = str(row.get("status") or "queued")
@@ -146,11 +172,13 @@ def _project_out(row: dict[str, Any], job: dict[str, Any] | None = None) -> dict
         "aspect_ratio": row.get("aspect_ratio") or "9:16",
         "style": row.get("style") or "2d-cartoon",
         "language": row.get("language") or "auto",
+        "text_model": row.get("text_model") or STORY_MODEL,
         "status": status,
         "progress": max(0, min(100, int(progress or 0))),
         "stage": stage,
         "error": error,
         "storyboard": storyboard if isinstance(storyboard, dict) else {},
+        "editable_available": editable_available,
         "created_at": row.get("created_at"),
         "updated_at": row.get("updated_at"),
     }
@@ -170,12 +198,71 @@ async def get_providers(user: dict = Depends(cartoon_studio_user)) -> dict[str, 
         (user["id"],),
     )
     return {
+        "storyboard_test_enabled": _storyboard_test_allowed(user),
         "openrouter": {
             "connected": bool(row),
             "masked_key": row.get("api_key_masked") if row else "",
             "validated_at": row.get("validated_at") if row else None,
         }
     }
+
+
+@router.post("/storyboard-test")
+async def test_storyboard(
+    response: Response,
+    prompt: str = Form(""),
+    duration_seconds: str = Form("30"),
+    language: str = Form("auto"),
+    style: str = Form("2d-cartoon"),
+    provider: str = Form("openrouter"),
+    nvidia_key: str = Form(""),
+    user: dict = Depends(cartoon_studio_user),
+) -> dict:
+    if not _storyboard_test_allowed(user):
+        raise HTTPException(403, "Storyboard testing is not enabled for this account.")
+    response.headers["Cache-Control"] = "no-store"
+    prompt = " ".join(prompt.split())
+    if not 8 <= len(prompt) <= 3000:
+        raise HTTPException(422, "Describe your cartoon in 8 to 3,000 characters.")
+    if duration_seconds not in {str(duration) for duration in ALLOWED_DURATIONS}:
+        raise HTTPException(422, "Choose a duration of 15, 30, 45 or 60 seconds.")
+    if language not in ALLOWED_LANGUAGES or style not in ALLOWED_STYLES:
+        raise HTTPException(422, "Choose a supported story language and style.")
+    if provider not in {"nvidia", "openrouter"}:
+        raise HTTPException(422, "Choose NVIDIA Nemotron or OpenRouter GLM.")
+    if provider == "nvidia":
+        key = _nvidia_trial_key(user, nvidia_key)
+    else:
+        key = await _provider_key(user["id"])
+        if not key:
+            raise HTTPException(409, "Connect your OpenRouter API key first.")
+    if not await consume_rate_limit(str(user["id"]), group="cartoon_storyboard_test", limit=12, window_seconds=3600):
+        raise HTTPException(429, "You have reached the storyboard testing limit. Try again later.")
+    duration = int(duration_seconds)
+    storyboard = await _plan_in_request(key, prompt, duration, style, resolve_cartoon_language(language, prompt), provider)
+    return {"provider": provider, "model": NVIDIA_STORY_MODEL if provider == "nvidia" else STORY_MODEL,
+            "storyboard": storyboard}
+
+
+async def _plan_in_request(key: str, prompt: str, duration: int, style: str, language: str, provider: str) -> dict:
+    label = "NVIDIA" if provider == "nvidia" else "OpenRouter"
+    payload = planner_payload(prompt, duration, style, language, provider=provider)
+    try:
+        upstream = await request_storyboard(key, payload, provider=provider, timeout=105)
+    except (httpx.HTTPError, TimeoutError) as exc:
+        raise HTTPException(504, f"{label} did not complete the storyboard. Try again shortly.") from exc
+    if upstream.status_code in {401, 403}:
+        raise HTTPException(422, f"{label} rejected the key or denied access to this model.")
+    if upstream.status_code in {402, 429}:
+        raise HTTPException(upstream.status_code, f"{label} reached an account credit or rate limit.")
+    if upstream.status_code == 202:
+        raise HTTPException(503, f"{label} did not finish the storyboard within this request. Try again shortly.")
+    if not upstream.is_success:
+        raise HTTPException(502, f"{label} could not complete the storyboard.")
+    try:
+        return parse_storyboard_reply(upstream, prompt=prompt, duration=duration)
+    except StoryboardReplyError as exc:
+        raise HTTPException(502, str(exc)) from exc
 
 
 @router.post("/providers/openrouter")
@@ -247,6 +334,9 @@ async def create_cartoon_project(
     style: str = Form("2d-cartoon"),
     language: str = Form("auto"),
     tts_model: str = Form(""),
+    voice_id: str = Form(""),
+    story_planner: str = Form("glm"),
+    nvidia_key: str = Form(""),
     reference_video: UploadFile | None = File(default=None),
     user: dict = Depends(cartoon_studio_user),
 ) -> dict[str, Any]:
@@ -256,11 +346,19 @@ async def create_cartoon_project(
     if duration_seconds not in ALLOWED_DURATIONS:
         raise HTTPException(422, "Choose a duration of 15, 30, 45 or 60 seconds.")
     if aspect_ratio not in ALLOWED_RATIOS:
-        raise HTTPException(422, "Choose 9:16, 16:9 or 1:1.")
+        raise HTTPException(422, "Choose 9:16, 16:9, 1:1 or 4:5.")
     if style not in ALLOWED_STYLES:
         raise HTTPException(422, "Choose a supported cartoon style.")
     if language not in ALLOWED_LANGUAGES:
         raise HTTPException(422, "Choose a supported story language.")
+    if story_planner not in PROJECT_STORY_MODELS:
+        raise HTTPException(422, "Choose a supported story planner.")
+    trial_key = None
+    if story_planner == "nvidia":
+        trial_key = _nvidia_trial_key(user, nvidia_key)
+        if reference_video is not None:
+            raise HTTPException(422, "NVIDIA trial rendering accepts a fictional text prompt only. Remove the reference video.")
+    language = resolve_cartoon_language(language, prompt)
     api_key = await _provider_key(user["id"])
     if not api_key:
         raise HTTPException(409, "Add your OpenRouter API key before creating a cartoon.")
@@ -286,13 +384,19 @@ async def create_cartoon_project(
         raise HTTPException(422, "Select Urdu as the story language to use the word-timed system Urdu voice.")
 
     if style == "cinematic-jannat" and (
-        duration_seconds != 30 or aspect_ratio != "16:9" or language != "ur" or tts_model != SYSTEM_URDU_TTS_MODEL
+        language != "ur" or tts_model != SYSTEM_URDU_TTS_MODEL
     ):
         raise HTTPException(
             422,
-            "The Jannat cinematic preset requires 30 seconds, 16:9, Urdu and the System Urdu word-timed voice.",
+            "The Jannat story preset uses Urdu and the System Urdu word-timed voice.",
         )
 
+    selected_model = next(item for item in speech_models if item["id"] == tts_model)
+    if voice_id and voice_id not in selected_model.get("supported_voices", []):
+        raise HTTPException(422, "Choose a voice supported by the selected speech model.")
+    # Direct NVIDIA planning finishes before queueing so its key never has to
+    # cross the worker boundary. Rendering and retries reuse the saved plan.
+    storyboard = await _plan_in_request(trial_key, prompt, duration_seconds, style, language, "nvidia") if trial_key else {}
     project_id = str(uuid.uuid4())
     timestamp = _now()
     title = prompt[:64].strip()
@@ -336,13 +440,15 @@ async def create_cartoon_project(
                  id,user_id,title,prompt,duration_seconds,aspect_ratio,style,language,text_model,tts_model,
                  status,progress,stage,storyboard_json,assets_json,reference_key,reference_generation,
                  created_at,updated_at
-               ) VALUES (?,?,?,?,?,?,?,?,?,?,'queued',0,'queued','{}','{}',?,?,?,?)""",
+               ) VALUES (?,?,?,?,?,?,?,?,?,?,'queued',0,'queued',?,'{}',?,?,?,?)""",
             (
                 project_id, user["id"], title, prompt, duration_seconds, aspect_ratio, style, language,
-                TEXT_MODEL, tts_model, reference_key, reference_generation, timestamp, timestamp,
+                PROJECT_STORY_MODELS[story_planner], tts_model, json.dumps(storyboard, ensure_ascii=False),
+                reference_key, reference_generation, timestamp, timestamp,
             ),
         )
         try:
+            await execute("UPDATE cartoon_projects SET assets_json=? WHERE id=?", (json.dumps({"_preferred_voice": voice_id}), project_id))
             job_id = await create_job(
                 user["id"], "cartoon_generate", payload={"cartoon_project_id": project_id},
             )
@@ -440,6 +546,41 @@ async def retry_cartoon_project(
         raise HTTPException(503, "Cartoon rendering service is temporarily unavailable.") from exc
     updated = await _owned_project(project_id, user["id"])
     return _project_out(updated)
+
+
+@router.get("/projects/{project_id}/editable")
+async def cartoon_editable_url(project_id: str, user: dict = Depends(cartoon_studio_user)) -> dict:
+    row = await _owned_project(project_id, user["id"])
+    try:
+        saved = json.loads(row.get("assets_json") or "{}").get("_editable", {})
+    except (ValueError, TypeError, AttributeError):
+        saved = {}
+    if row.get("status") != "ready" or not saved.get("key"):
+        raise HTTPException(409, "This project has no V3 editable package.")
+    key = validate_object_key(saved["key"], expected_prefix=f"users/{user['id']}/cartoons/{project_id}")
+    if object_storage_provider_name() in {"gcs", "s3"}:
+        url = await get_storage_provider().signed_download_url(key, filename=f"clipkaro-editable-{project_id}.zip", ttl_seconds=600)
+        return {"url": url, "expires_in": 600}
+    return {"url": f"{get_settings().api_prefix}/cartoon-studio/projects/{project_id}/editable-file", "expires_in": 0}
+
+
+@router.get("/projects/{project_id}/editable-file")
+async def cartoon_editable_file(project_id: str, user: dict = Depends(cartoon_studio_user)):
+    if object_storage_provider_name() in {"gcs", "s3"}:
+        raise HTTPException(404, "Use the editable download URL.")
+    row = await _owned_project(project_id, user["id"])
+    try:
+        saved = json.loads(row.get("assets_json") or "{}").get("_editable", {})
+    except (ValueError, TypeError, AttributeError):
+        saved = {}
+    if row.get("status") != "ready" or not saved.get("key"):
+        raise HTTPException(409, "Editable assets are unavailable.")
+    key = validate_object_key(saved["key"], expected_prefix=f"users/{user['id']}/cartoons/{project_id}")
+    root = get_settings().storage_root.resolve()
+    path = (root / key).resolve()
+    if root not in path.parents or not path.is_file():
+        raise HTTPException(404, "Editable assets are unavailable.")
+    return FileResponse(path, media_type="application/zip", filename=f"clipkaro-editable-{project_id}.zip")
 
 
 @router.get("/projects/{project_id}/download")

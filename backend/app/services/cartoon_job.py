@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
 import logging
 import math
@@ -22,14 +21,17 @@ from app.services.cartoon_speech import SYSTEM_URDU_TTS_MODEL, system_urdu_tts_m
 from app.services.cartoon_audio import build_lip_envelope
 from app.services.cartoon_score import build_jannat_audio_stems
 from app.services.cartoon_timing import approximate_word_boundaries, build_episode_lip_envelope, normalize_word_boundaries
+from app.services.cartoon_story import StoryValidationError, resolve_cartoon_language
 from app.services.cartoon_security import decrypt_provider_key
+from app.services.cartoon_story_planner import (
+    HOSTED_NEMOTRON_STORY_MODEL, NVIDIA_STORY_MODEL, OPENROUTER_ROOT, STORY_MODEL,
+    StoryboardReplyError, parse_storyboard_reply, planner_payload, request_storyboard,
+)
 from app.services.jobs import update_job, utcnow
 from app.services.storage import validate_object_key
 from app.services.video import probe_metadata
 
 logger = logging.getLogger("clipkaro.cartoon")
-OPENROUTER_ROOT = "https://openrouter.ai/api/v1"
-STORY_MODEL = "z-ai/glm-5.3-flash"
 VOICE_PREFERENCES = {
     "male": [
         "Puck", "Fenrir", "Charon", "Orus", "rex", "leo", "en_paul_neutral",
@@ -37,6 +39,7 @@ VOICE_PREFERENCES = {
         "hm_omega", "hm_psi", "pm_alex", "gb_oliver_neutral", "de-DE-Klaus:MAI-Voice-2",
         "aura-2-orion-en", "aura-2-hermes-en", "aura-2-atlas-en",
         "English_magnetic_voiced_man", "English_Trustworth_Man",
+        "george", "adam", "daniel", "brian", "bill",
     ],
     "female": [
         "Kore", "Aoede", "Leda", "Zephyr", "eve", "ara",
@@ -45,6 +48,7 @@ VOICE_PREFERENCES = {
         "es-MX-Valeria:MAI-Voice-2", "fr-FR-Soleil:MAI-Voice-2",
         "aura-2-thalia-en", "aura-2-asteria-en", "aura-2-athena-en", "aura-2-hera-en",
         "English_radiant_girl", "English_Upbeat_Woman", "English_CalmWoman",
+        "sarah", "alice", "bella", "jessica", "laura", "lily", "matilda",
     ],
     "child": [
         "Leda", "Puck", "Kore", "Zephyr", "hf_alpha", "hf_beta", "af_heart",
@@ -131,7 +135,10 @@ async def _openrouter_models(api_key: str, modality: str) -> list[dict[str, Any]
         raise CartoonJobError("OpenRouter returned an unreadable model list.", category="CARTOON_PROVIDER_REQUEST")
 
 
-def _voice_for(character: dict[str, Any], voices: list[str], language: str = "auto") -> str:
+def _voice_for(
+    character: dict[str, Any], voices: list[str], language: str = "auto", *,
+    saved_voice: str = "", strict: bool = False,
+) -> str:
     voice_type = str(character.get("voice_type") or "neutral").lower()
     if language == "ur":
         urdu_preferences = {
@@ -153,9 +160,22 @@ def _voice_for(character: dict[str, Any], voices: list[str], language: str = "au
         preferences = hindi_preferences.get(voice_type, hindi_preferences["neutral"])
     else:
         preferences = VOICE_PREFERENCES.get(voice_type, VOICE_PREFERENCES["neutral"])
-    for preferred in preferences:
-        if preferred in voices:
-            return preferred
+    available = {voice.casefold(): voice for voice in voices}
+    general = VOICE_PREFERENCES.get(voice_type, VOICE_PREFERENCES["neutral"])
+    if voice_type in {"male", "female"}:
+        general = [*general, "ur-PK-UzmaNeural" if voice_type == "female" else "ur-PK-AsadNeural"]
+    candidates = {name.casefold() for name in [*preferences, *general]}
+    if saved_voice in voices and (not strict or voice_type not in {"male", "female"}
+                                 or saved_voice.casefold() in candidates):
+        return saved_voice
+    for preferred in [*preferences, *general]:
+        if preferred.casefold() in available:
+            return available[preferred.casefold()]
+    if strict and voice_type in {"male", "female"}:
+        raise CartoonJobError(
+            f"Choose a speech model with a known {voice_type} voice, or select a voice preset.",
+            category="CARTOON_TTS_VOICE_MATCH_UNAVAILABLE",
+        )
     return voices[0] if voices else "Puck"
 
 
@@ -303,82 +323,19 @@ async def _extract_reference_frames(job: dict, project: dict, scratch: Path, sto
         raise
 
 
-async def _generate_storyboard(api_key: str, prompt: str, duration: int, style: str, language: str, frames: list[Path]) -> dict[str, Any]:
-    scene_count = 3 if style == "cinematic-jannat" else max(2, min(6, math.ceil(duration / 10)))
-    system = (
-        "You are the story director for ClipKaro Cartoon Studio. Create original, family-friendly short cartoon stories. "
-        "Return only one valid JSON object. Never return HTML, CSS, JavaScript, markdown or executable code. "
-        "Use original characters, consistent appearance and short natural dialogue in the requested language. "
-        "Preserve each character's species (human, fox, cat, dog, rabbit, bear, owl or robot) in the visual design. "
-        "Each scene must have one short spoken line and a visible physical action. Do not imitate famous copyrighted characters."
-    )
-    user_text = f"""Create a {duration}-second {style} cartoon in {language}. The user idea is:
-{prompt}
-
-Return JSON with exactly these top-level keys:
-{{
-  "title":"short title",
-  "summary":"one sentence",
-  "narration":"one concise opening narration line in the requested language, or an empty string",
-  "characters":[
-    {{"id":"hero","name":"name","role":"role","species":"human|fox|cat|dog|rabbit|bear|owl|robot","voice_type":"male|female|child|elder|neutral",
-      "appearance":{{"skin_color":"#RRGGBB","hair_color":"#RRGGBB","shirt_color":"#RRGGBB","pants_color":"#RRGGBB","shoe_color":"#RRGGBB","hair_style":"short|long|curly|spiky|bald"}}}}
-  ],
-  "scenes":[
-    {{"scene_title":"short title","environment":"forest|city|beach|space|castle|school|home|mountain|desert|garden",
-      "action":"one concise visual sentence, max 12 words","expression":"happy|sad|surprised|angry|curious|neutral|scared",
-      "motion":"idle|walk|run|jump|wave|point|look","camera_move":"push-in|pan-left|pan-right|zoom-out|static",
-      "character_ids":["hero"],"speaker_id":"hero","dialogue":"one natural spoken line, max 12 words"}}
-  ]
-}}
-
-Create exactly {scene_count} scenes and 1 to 3 recurring characters. Keep every character's species, colours, hair and identity unchanged in all scenes. Keep each dialogue under 12 spoken words and each action under 12 words so the text fits its scene. Use 1 or 2 characters per scene where possible. Return JSON only."""
-    if style == "cinematic-jannat":
-        user_text += (
-            "\n\nCINEMATIC JANNAT PRESET: Use exactly one recurring female human character named Jannat. "
-            "She has long center-parted black hair, warm wheat skin, and the same teal shalwar kameez in every shot. "
-            "Every scene stays in the same moonlit bedroom at midnight. Plan the 30-second story in this order: "
-            "Return exactly 3 scenes of 10 seconds each: scene 1 shows Jannat waking from a recurring dream and sitting up; "
-            "scene 2 shows her looking toward the closed bedroom door and briefly recalling a painful memory; "
-            "scene 3 shows her getting out of bed and facing the door. "
-            "Write one short natural Urdu dialogue line per scene and one separate concise Urdu narration line in the top-level narration field. "
-            "Do not repeat dialogue in narration. Do not introduce other visible characters or change her clothes."
-        )
-    content: list[dict[str, Any]] = [{"type": "text", "text": user_text}]
-    for frame in frames:
-        encoded = base64.b64encode(frame.read_bytes()).decode("ascii")
-        content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{encoded}"}})
-    payload = {
-        "model": STORY_MODEL,
-        "temperature": 0.65,
-        "max_tokens": 3000,
-        "response_format": {"type": "json_object"},
-        "messages": [{"role": "system", "content": system}, {"role": "user", "content": content}],
-    }
+async def _generate_storyboard(api_key: str, prompt: str, duration: int, style: str, language: str,
+                               frames: list[Path], *, model: str = STORY_MODEL) -> dict[str, Any]:
+    payload = planner_payload(prompt, duration, style, language, provider="openrouter", frames=tuple(frames), model=model)
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(90.0, connect=15.0)) as client:
-            response = await client.post(
-                f"{OPENROUTER_ROOT}/chat/completions",
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json=payload,
-            )
-    except httpx.HTTPError as exc:
+        response = await request_storyboard(api_key, payload, provider="openrouter")
+    except (httpx.HTTPError, TimeoutError) as exc:
         raise CartoonJobError("Could not reach OpenRouter while planning your cartoon.", category="CARTOON_PROVIDER_TEMPORARY") from exc
     if response.status_code >= 400:
         raise _provider_error(response, task="story planning")
     try:
-        message = response.json()["choices"][0]["message"]["content"]
-        if isinstance(message, list):
-            message = "".join(str(part.get("text") or "") for part in message if isinstance(part, dict))
-        text = str(message or "").strip()
-        text = re.sub(r"^\s*\x60{3}(?:json)?\s*", "", text, flags=re.IGNORECASE)
-        text = re.sub(r"\s*\x60{3}\s*$", "", text)
-        raw = json.loads(text)
-        if not isinstance(raw, dict):
-            raise ValueError("storyboard must be an object")
-        return _normalize_storyboard(raw, scene_count, prompt)
-    except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
-        raise CartoonJobError("The story planner returned an invalid storyboard. Retry with a shorter, clearer idea.", category="CARTOON_STORY_INVALID") from exc
+        return parse_storyboard_reply(response, prompt=prompt, duration=duration)
+    except StoryboardReplyError as exc:
+        raise CartoonJobError(str(exc), category=exc.category) from exc
 
 
 def _apply_cinematic_jannat_storyboard(storyboard: dict[str, Any]) -> dict[str, Any]:
@@ -568,6 +525,12 @@ async def run_cartoon_generation(job: dict[str, Any], scratch: Path, storage) ->
     if project.get("status") == "ready" and project.get("output_key"):
         await update_job(job["id"], 100, "ready", "Your cartoon is ready", "completed")
         return
+    project = {
+        **project,
+        "language": resolve_cartoon_language(
+            project.get("language") or "auto", project.get("prompt") or ""
+        ),
+    }
     credential = await fetch_one(
         "SELECT api_key_ciphertext FROM cartoon_provider_credentials WHERE user_id=? AND provider='openrouter'",
         (job["user_id"],),
@@ -590,17 +553,23 @@ async def run_cartoon_generation(job: dict[str, Any], scratch: Path, storage) ->
 
     storyboard = _loads(project.get("storyboard_json"), {})
     if not storyboard.get("scenes"):
+        saved_model = project.get("text_model")
+        if saved_model == NVIDIA_STORY_MODEL:
+            raise CartoonJobError("The NVIDIA storyboard is missing. Create another cartoon with your NVIDIA key.",
+                                  category="CARTOON_STORY_INVALID")
+        model = HOSTED_NEMOTRON_STORY_MODEL if saved_model == HOSTED_NEMOTRON_STORY_MODEL else STORY_MODEL
+        planner_name = "Nemotron" if model == HOSTED_NEMOTRON_STORY_MODEL else "GLM"
         frames = await _extract_reference_frames(job, project, scratch, storage)
-        await update_job(job["id"], 12, "story_planning", "GLM is writing the story and keeping characters consistent")
+        await update_job(job["id"], 12, "story_planning", f"{planner_name} is writing the story and keeping characters consistent")
         storyboard = await _generate_storyboard(
             api_key, str(project["prompt"]), int(project["duration_seconds"]),
-            str(project["style"]), str(project["language"]), frames,
+            str(project["style"]), str(project["language"]), frames, model=model,
         )
         await execute(
             "UPDATE cartoon_projects SET storyboard_json=?,progress=18,stage='story_ready',updated_at=? WHERE id=?",
             (json.dumps(storyboard, separators=(",", ":"), ensure_ascii=False), utcnow(), project_id),
         )
-    if str(project.get("style") or "") == "cinematic-jannat":
+    if str(project.get("style") or "") == "cinematic-jannat" and storyboard.get("schema_version") != 3:
         storyboard = _apply_cinematic_jannat_storyboard(storyboard)
         await execute(
             "UPDATE cartoon_projects SET storyboard_json=?,updated_at=? WHERE id=?",
@@ -619,10 +588,15 @@ async def run_cartoon_generation(job: dict[str, Any], scratch: Path, storage) ->
             "The selected speech model no longer provides preset voices. Refresh the voice model list and retry.",
             category="CARTOON_TTS_VOICES_UNAVAILABLE",
         )
-    for character in storyboard.get("characters", []):
-        saved_voice = str(character.get("voice_id") or "")
-        character["voice_id"] = saved_voice if saved_voice in voices else _voice_for(
-            character, voices, str(project.get("language") or "auto").lower(),
+    preferred_voice = _loads(project.get("assets_json"), {}).get("_preferred_voice")
+    for index, character in enumerate(storyboard.get("characters", [])):
+        character["voice_id"] = (
+            preferred_voice if index == 0 and preferred_voice in voices
+            else _voice_for(
+                character, voices, str(project.get("language") or "auto").lower(),
+                saved_voice=str(character.get("voice_id") or ""),
+                strict=storyboard.get("schema_version") == 3,
+            )
         )
 
     # Persist the character-to-voice assignment before making any billable TTS
@@ -631,6 +605,12 @@ async def run_cartoon_generation(job: dict[str, Any], scratch: Path, storage) ->
         "UPDATE cartoon_projects SET storyboard_json=?,progress=18,stage='story_ready',updated_at=? WHERE id=?",
         (json.dumps(storyboard, separators=(",", ":"), ensure_ascii=False), utcnow(), project_id),
     )
+    if storyboard.get("schema_version") == 3:
+        from app.services.cartoon_story_job import run_director_job
+        try:
+            return await run_director_job(job, project, storyboard, project_dir, storage, api_key, tts_model)
+        except StoryValidationError as exc:
+            raise CartoonJobError(str(exc), category="CARTOON_STORY_TIMELINE_INVALID") from exc
     assets = _loads(project.get("assets_json"), {})
     audio_assets: list[dict[str, Any]] = []
     cinematic_jannat = str(project.get("style") or "") == "cinematic-jannat"

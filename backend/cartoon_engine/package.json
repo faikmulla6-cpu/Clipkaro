@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test:story": "node --test animation/story-v3.test.mjs",
     "check:demo": "hyperframes check --json",
     "render:demo": "hyperframes render --quality draft -o demo.mp4",
     "build": "esbuild animation/index.tsx --bundle --jsx-factory=h --jsx-fragment=Fragment --minify --global-name=ClipKaroAnimation --outfile=dist/animation.js"

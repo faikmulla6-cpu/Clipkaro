@@ -107,6 +107,14 @@ def test_voice_selection_uses_model_specific_gendered_presets():
     assert _voice_for({"voice_type": "female"}, ["en_paul_neutral", "gb_jane_curious"]) == "gb_jane_curious"
     assert _voice_for({"voice_type": "child"}, ["am_puck", "hf_alpha"]) == "hf_alpha"
     assert _voice_for({"voice_type": "male"}, ["am_adam", "hm_omega"], "hi") == "hm_omega"
+    assert _voice_for({"voice_type": "female"}, ["george", "sarah"], "hinglish",
+                      saved_voice="george", strict=True) == "sarah"
+    assert _voice_for({"voice_type": "female"}, ["Puck", "Kore", "Zephyr"], "hinglish",
+                      saved_voice="Zephyr", strict=True) == "Zephyr"
+    assert _voice_for({"voice_type": "female"}, ["Puck", "kore"], "hinglish",
+                      strict=True) == "kore"
+    with pytest.raises(CartoonJobError, match="known female voice"):
+        _voice_for({"voice_type": "female"}, ["george"], "hinglish", strict=True)
     assert _voice_for({"voice_type": "female"}, ["af_heart", "hf_alpha"], "hi") == "hf_alpha"
 
 

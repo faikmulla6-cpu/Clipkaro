@@ -12,6 +12,7 @@ separate autoscaling Modal Function and receives only a durable PostgreSQL JOB_I
 from __future__ import annotations
 
 import asyncio
+import os
 import subprocess
 
 import modal
@@ -71,6 +72,8 @@ api_image = (
     .workdir("/root/clipkaro")
     .env(RUNTIME_ENV)
 )
+if test_users := os.environ.get("CARTOON_STORYBOARD_TEST_USER_IDS", "").strip():
+    api_image = api_image.env({"CARTOON_STORYBOARD_TEST_USER_IDS": test_users})
 
 media_image = (
     modal.Image.debian_slim(python_version="3.12")
@@ -255,6 +258,26 @@ def smart_layout_preflight() -> dict:
         raise RuntimeError("Modal media image is missing Smart Layout dependencies")
     print("KARO_SMART_LAYOUT_PREFLIGHT:", result)
     return result
+
+
+@app.function(image=media_image, timeout=900, cpu=2.0, memory=4096, min_containers=0)
+def cartoon_story_v3_preflight() -> dict:
+    """Exercise the deployed V3 worker with saved multi-character speech, no AI requests."""
+    import hashlib
+    import json
+    import tempfile
+    from pathlib import Path
+    from scripts.cartoon_story_v3_qualification import qualify
+    output = Path(tempfile.mkdtemp(prefix="cartoon-story-v3-"))
+    qualify("library", "4:5", output)
+    source = Path("/root/clipkaro/cartoon_engine/animation/StoryEngine.tsx")
+    return {
+        "engine_version": "story-v3",
+        "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+        "verification": json.loads((output / "verification.json").read_text()),
+        "sample_sha256": hashlib.sha256((output / "sample.mp4").read_bytes()).hexdigest(),
+        "ai_provider_calls": 0,
+    }
 
 
 @app.function(image=media_image, timeout=600, cpu=2.0, memory=4096, min_containers=0)
