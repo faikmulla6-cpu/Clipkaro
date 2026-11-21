@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
 import logging
 import math
@@ -22,24 +21,16 @@ from app.services.cartoon_speech import SYSTEM_URDU_TTS_MODEL, system_urdu_tts_m
 from app.services.cartoon_audio import build_lip_envelope
 from app.services.cartoon_score import build_jannat_audio_stems
 from app.services.cartoon_timing import approximate_word_boundaries, build_episode_lip_envelope, normalize_word_boundaries
-from app.services.cartoon_story import (
-    StoryValidationError,
-    director_prompt,
-    director_response_schema,
-    normalize_director_story,
-    prepare_director_reply,
-    resolve_cartoon_language,
-)
+from app.services.cartoon_story import StoryValidationError, resolve_cartoon_language
 from app.services.cartoon_security import decrypt_provider_key
-from app.services.cartoon_story_direction import direct_story
+from app.services.cartoon_story_planner import (
+    OPENROUTER_ROOT, STORY_MODEL, StoryboardReplyError, parse_storyboard_reply, planner_payload, request_storyboard,
+)
 from app.services.jobs import update_job, utcnow
 from app.services.storage import validate_object_key
 from app.services.video import probe_metadata
 
 logger = logging.getLogger("clipkaro.cartoon")
-OPENROUTER_ROOT = "https://openrouter.ai/api/v1"
-STORY_MODEL = "z-ai/glm-5.3-flash"
-STORY_COMPLETION_TOKENS = 16_384
 VOICE_PREFERENCES = {
     "male": [
         "Puck", "Fenrir", "Charon", "Orus", "rex", "leo", "en_paul_neutral",
@@ -332,80 +323,17 @@ async def _extract_reference_frames(job: dict, project: dict, scratch: Path, sto
 
 
 async def _generate_storyboard(api_key: str, prompt: str, duration: int, style: str, language: str, frames: list[Path]) -> dict[str, Any]:
-    system = "You are ClipKaro's animation director. Return only a validated data storyboard, never code. Plan original characters, timed physical actions, cinematography, narration, dialogue and sound."
-    user_text = director_prompt(duration, language, style, prompt)
-    content: list[dict[str, Any]] = [{"type": "text", "text": user_text}]
-    for frame in frames:
-        encoded = base64.b64encode(frame.read_bytes()).decode("ascii")
-        content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{encoded}"}})
-    payload = {
-        "model": STORY_MODEL,
-        "temperature": 0.65,
-        "max_tokens": STORY_COMPLETION_TOKENS,
-        # GLM Flash defaults to maximum reasoning, which shares the completion budget.
-        "reasoning": {"effort": "low", "exclude": True},
-        "response_format": {
-            "type": "json_schema",
-            "json_schema": {"name": "clipkaro_storyboard", "strict": True, "schema": director_response_schema()},
-        },
-        "provider": {"require_parameters": True},
-        "messages": [{"role": "system", "content": system}, {"role": "user", "content": content}],
-    }
+    payload = planner_payload(prompt, duration, style, language, provider="openrouter", frames=tuple(frames))
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(180.0, connect=15.0)) as client:
-            response = await client.post(
-                f"{OPENROUTER_ROOT}/chat/completions",
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json=payload,
-            )
-    except httpx.HTTPError as exc:
+        response = await request_storyboard(api_key, payload, provider="openrouter")
+    except (httpx.HTTPError, TimeoutError) as exc:
         raise CartoonJobError("Could not reach OpenRouter while planning your cartoon.", category="CARTOON_PROVIDER_TEMPORARY") from exc
     if response.status_code >= 400:
         raise _provider_error(response, task="story planning")
     try:
-        reply = response.json()
-        choice = reply["choices"][0]
-        if choice.get("finish_reason") == "length":
-            usage = reply.get("usage")
-            usage = usage if isinstance(usage, dict) else {}
-            details = usage.get("completion_tokens_details")
-            details = details if isinstance(details, dict) else {}
-            completion = usage.get("completion_tokens")
-            reasoning = details.get("reasoning_tokens")
-            logger.warning(
-                "Cartoon planner output truncated: budget=%d completion_tokens=%s reasoning_tokens=%s",
-                STORY_COMPLETION_TOKENS,
-                completion if type(completion) is int else None,
-                reasoning if type(reasoning) is int else None,
-            )
-            raise CartoonJobError(
-                "The story planner ran out of space before finishing its storyboard.",
-                category="CARTOON_STORY_TRUNCATED",
-            )
-        message = choice["message"]["content"]
-        if isinstance(message, list):
-            message = "".join(str(part.get("text") or "") for part in message if isinstance(part, dict))
-        text = str(message or "").strip()
-        text = re.sub(r"^\s*\x60{3}(?:json)?\s*", "", text, flags=re.IGNORECASE)
-        text = re.sub(r"\s*\x60{3}\s*$", "", text)
-        raw = json.loads(text)
-        if not isinstance(raw, dict):
-            raise ValueError("storyboard must be an object")
-        storyboard = normalize_director_story(prepare_director_reply(raw, prompt=prompt), duration=duration)
-        return direct_story(storyboard, prompt)
-    except StoryValidationError as exc:
-        # Validator messages are fixed strings. Never log prompts, outputs or credentials.
-        logger.warning("Cartoon storyboard rejected: %s", exc)
-        raise CartoonJobError(
-            f"The story planner produced an unsupported storyboard. {exc}",
-            category="CARTOON_STORY_INVALID",
-        ) from exc
-    except (AttributeError, KeyError, IndexError, TypeError, ValueError) as exc:
-        logger.warning("Cartoon planner response could not be read (%s)", type(exc).__name__)
-        raise CartoonJobError(
-            "The story planner returned an unreadable response.",
-            category="CARTOON_STORY_INVALID",
-        ) from exc
+        return parse_storyboard_reply(response, prompt=prompt, duration=duration)
+    except StoryboardReplyError as exc:
+        raise CartoonJobError(str(exc), category=exc.category) from exc
 
 
 def _apply_cinematic_jannat_storyboard(storyboard: dict[str, Any]) -> dict[str, Any]:

@@ -24,6 +24,7 @@ type Scene = {
   action: string;
   dialogue: string;
   speaker_id: string;
+  start?: number;
   duration?: number;
   actions?: {type: string; character_id: string; start: number; end: number}[];
   speech?: {track: string; text: string; speaker_id: string}[];
@@ -52,6 +53,13 @@ type CartoonProject = {
 };
 type ProviderStatus = {
   openrouter: { connected: boolean; masked_key: string; validated_at?: string | null };
+  storyboard_test_enabled?: boolean;
+};
+type PlannerProvider = "nvidia" | "openrouter";
+type StoryboardTest = { provider: PlannerProvider; model: string; storyboard: Storyboard };
+const PLANNER_NAMES: Record<PlannerProvider, string> = {
+  nvidia: "NVIDIA Nemotron",
+  openrouter: "OpenRouter GLM",
 };
 type TTSModel = { id: string; name: string; voices: string[]; description: string };
 type TTSResponse = { models: TTSModel[]; default_model: string };
@@ -78,6 +86,12 @@ export default function CartoonStudioPage() {
   const [projects, setProjects] = useState<CartoonProject[]>([]);
   const [selected, setSelected] = useState<CartoonProject | null>(null);
   const [apiKey, setApiKey] = useState("");
+  const [planner, setPlanner] = useState<PlannerProvider>("nvidia");
+  const [nvidiaKey, setNvidiaKey] = useState("");
+  const [testBusy, setTestBusy] = useState(false);
+  const [testError, setTestError] = useState("");
+  const [testResults, setTestResults] = useState<Partial<Record<PlannerProvider, StoryboardTest>>>({});
+  const [testedInput, setTestedInput] = useState("");
   const [prompt, setPrompt] = useState("");
   const [duration, setDuration] = useState(30);
   const [ratio, setRatio] = useState("9:16");
@@ -160,7 +174,7 @@ export default function CartoonStudioPage() {
         "/cartoon-studio/providers/openrouter",
         { api_key: apiKey.trim() },
       );
-      setProvider({ openrouter: saved });
+      setProvider((current) => ({ ...current, openrouter: saved }));
       setApiKey("");
       await loadModels();
       setNotice("OpenRouter connected securely. Your key is encrypted and never shown again.");
@@ -177,7 +191,7 @@ export default function CartoonStudioPage() {
     setError("");
     try {
       await deleteJSON("/cartoon-studio/providers/openrouter");
-      setProvider({ openrouter: { connected: false, masked_key: "" } });
+      setProvider((current) => ({ ...current, openrouter: { connected: false, masked_key: "" } }));
       setModels([]);
       setTtsModel("");
       setNotice("OpenRouter key disconnected.");
@@ -185,6 +199,35 @@ export default function CartoonStudioPage() {
       setError(cause instanceof Error ? cause.message : "The provider key could not be removed.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function runStoryboardTest(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (testBusy) return;
+    if (prompt.trim().length < 8) {
+      setTestError("Enter your story in the Create a cartoon form above.");
+      return;
+    }
+    setTestBusy(true);
+    setTestError("");
+    const body = new FormData();
+    body.set("provider", planner);
+    body.set("prompt", prompt.trim());
+    body.set("duration_seconds", String(duration));
+    body.set("language", language);
+    body.set("style", style);
+    if (planner === "nvidia") body.set("nvidia_key", nvidiaKey.trim());
+    const input = JSON.stringify([prompt.trim(), duration, language, style]);
+    if (testedInput !== input) setTestResults({});
+    try {
+      const result = await api<StoryboardTest>("/cartoon-studio/storyboard-test", { method: "POST", body });
+      setTestResults((current) => ({ ...current, [result.provider]: result }));
+      setTestedInput(input);
+    } catch (cause) {
+      setTestError(cause instanceof Error ? cause.message : "Storyboard testing failed. Try again shortly.");
+    } finally {
+      setTestBusy(false);
     }
   }
 
@@ -406,6 +449,64 @@ export default function CartoonStudioPage() {
             </section>
           </div>
         </div>
+
+        {provider?.storyboard_test_enabled && (
+          <section className={styles.projectPanel} aria-labelledby="storyboard-test-title">
+            <div className={styles.panelHead}>
+              <div><h3 id="storyboard-test-title">Test storyboard planners</h3></div>
+            </div>
+            <p className={styles.projectPrompt}>
+              Uses the story, length, language and style above. This test generates a storyboard only.
+            </p>
+            <form onSubmit={runStoryboardTest} className={styles.form}>
+              <div className={styles.fieldsTwo}>
+                <label className={styles.field}><span>Story planner</span>
+                  <select value={planner} onChange={(event) => setPlanner(event.target.value as PlannerProvider)} disabled={testBusy}>
+                    <option value="nvidia">NVIDIA Nemotron</option>
+                    <option value="openrouter">OpenRouter GLM</option>
+                  </select>
+                </label>
+                {planner === "nvidia" && (
+                  <label className={styles.field}><span>NVIDIA API key</span>
+                    <input type="password" value={nvidiaKey} onChange={(event) => setNvidiaKey(event.target.value)}
+                      placeholder="nvapi-…" autoComplete="off" spellCheck={false} required disabled={testBusy} />
+                    <small>The key stays in this tab until you clear it or leave the page.</small>
+                  </label>
+                )}
+              </div>
+              <p className={styles.projectPrompt}>{planner === "nvidia"
+                ? "NVIDIA trial access is for internal evaluation. Use fictional prompts without private information."
+                : connected ? "This test uses your connected OpenRouter key and can consume planning credits."
+                  : "Connect OpenRouter above to test GLM."}</p>
+              <button className={styles.secondaryButton} type="submit"
+                disabled={testBusy || (planner === "nvidia" ? !nvidiaKey.trim() : !connected)}>
+                {testBusy && <Loader2 className={styles.spin} size={16} />}
+                {testBusy ? "Planning storyboard…" : "Test storyboard"}
+              </button>
+              {testError && <div className={styles.alertError} role="alert">{testError}</div>}
+            </form>
+            <div className={styles.fieldsTwo} aria-live="polite">
+              {Object.values(testResults).map((result) => (
+                <div className={styles.scenes} key={result.provider}>
+                  <div className={styles.sectionTitle}><strong>{PLANNER_NAMES[result.provider]}</strong><small>{result.model}</small></div>
+                  <p className={styles.projectPrompt}>{result.storyboard.title} · {result.storyboard.summary}</p>
+                  {(result.storyboard.scenes || []).map((scene, index) => (
+                    <div key={scene.id} className={styles.sceneRow}>
+                      <span className={styles.sceneNumber}>{index + 1}</span>
+                      <div>
+                        <strong>{scene.scene_title} · {scene.start ?? 0}–{(scene.start ?? 0) + (scene.duration ?? 0)}s</strong>
+                        <small>{(scene.actions || []).map((action) => action.type.replaceAll("_", " ")).join(" · ")}</small>
+                        {(scene.speech || []).map((line, lineIndex) => (
+                          <p key={lineIndex}>{line.speaker_id} · “{line.text}”</p>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         {selected && (
           <section className={styles.projectPanel}>

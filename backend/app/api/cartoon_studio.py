@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Response, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -19,6 +19,10 @@ from app.services.distributed_rate_limit import consume_rate_limit
 from app.services.auth import current_user
 from app.services.cartoon_speech import SYSTEM_URDU_TTS_MODEL, system_urdu_tts_model_row
 from app.services.cartoon_story import resolve_cartoon_language
+from app.services.cartoon_story_planner import (
+    NVIDIA_STORY_MODEL, OPENROUTER_ROOT, STORY_MODEL, StoryboardReplyError,
+    parse_storyboard_reply, planner_payload, request_storyboard,
+)
 from app.services.cartoon_security import (
     CartoonCredentialError, decrypt_provider_key, encrypt_provider_key,
     fingerprint_provider_key, mask_provider_key,
@@ -40,8 +44,7 @@ async def _run_media_job(job_id: str) -> int:
     return await run_job(job_id)
 
 
-OPENROUTER_ROOT = "https://openrouter.ai/api/v1"
-TEXT_MODEL = "z-ai/glm-5.3-flash"
+TEXT_MODEL = STORY_MODEL
 PREFERRED_TTS = [
     "hexgrad/kokoro-82m",
     "google/gemini-3.1-flash-tts-preview",
@@ -67,6 +70,11 @@ async def cartoon_studio_user(user: dict = Depends(current_user)) -> dict:
     if not bool(user.get("cartoon_studio_access_override")):
         raise HTTPException(403, "Cartoon Studio beta access is not enabled for this account.")
     return user
+
+
+def _storyboard_test_allowed(user: dict) -> bool:
+    allowed = get_settings().cartoon_storyboard_test_user_ids.split(",")
+    return str(user["id"]) in {value.strip() for value in allowed if value.strip()}
 
 
 @router.get("/capabilities")
@@ -181,12 +189,69 @@ async def get_providers(user: dict = Depends(cartoon_studio_user)) -> dict[str, 
         (user["id"],),
     )
     return {
+        "storyboard_test_enabled": _storyboard_test_allowed(user),
         "openrouter": {
             "connected": bool(row),
             "masked_key": row.get("api_key_masked") if row else "",
             "validated_at": row.get("validated_at") if row else None,
         }
     }
+
+
+@router.post("/storyboard-test")
+async def test_storyboard(
+    response: Response,
+    prompt: str = Form(""),
+    duration_seconds: str = Form("30"),
+    language: str = Form("auto"),
+    style: str = Form("2d-cartoon"),
+    provider: str = Form("openrouter"),
+    nvidia_key: str = Form(""),
+    user: dict = Depends(cartoon_studio_user),
+) -> dict:
+    if not _storyboard_test_allowed(user):
+        raise HTTPException(403, "Storyboard testing is not enabled for this account.")
+    response.headers["Cache-Control"] = "no-store"
+    prompt = " ".join(prompt.split())
+    if not 8 <= len(prompt) <= 3000:
+        raise HTTPException(422, "Describe your cartoon in 8 to 3,000 characters.")
+    if duration_seconds not in {str(duration) for duration in ALLOWED_DURATIONS}:
+        raise HTTPException(422, "Choose a duration of 15, 30, 45 or 60 seconds.")
+    if language not in ALLOWED_LANGUAGES or style not in ALLOWED_STYLES:
+        raise HTTPException(422, "Choose a supported story language and style.")
+    if provider not in {"nvidia", "openrouter"}:
+        raise HTTPException(422, "Choose NVIDIA Nemotron or OpenRouter GLM.")
+    label = "NVIDIA" if provider == "nvidia" else "OpenRouter"
+    if provider == "nvidia":
+        key = nvidia_key.strip()
+        if not re.fullmatch(r"nvapi-[A-Za-z0-9_-]{14,480}", key):
+            raise HTTPException(422, "Enter an NVIDIA API key beginning with nvapi-.")
+    else:
+        key = await _provider_key(user["id"])
+        if not key:
+            raise HTTPException(409, "Connect your OpenRouter API key first.")
+    if not await consume_rate_limit(str(user["id"]), group="cartoon_storyboard_test", limit=12, window_seconds=3600):
+        raise HTTPException(429, "You have reached the storyboard testing limit. Try again later.")
+    duration = int(duration_seconds)
+    payload = planner_payload(prompt, duration, style, resolve_cartoon_language(language, prompt), provider=provider)
+    try:
+        upstream = await request_storyboard(key, payload, provider=provider, timeout=105)
+    except (httpx.HTTPError, TimeoutError) as exc:
+        raise HTTPException(504, f"{label} did not complete the storyboard test. Try again shortly.") from exc
+    if upstream.status_code in {401, 403}:
+        raise HTTPException(422, f"{label} rejected the key or denied access to this model.")
+    if upstream.status_code in {402, 429}:
+        raise HTTPException(upstream.status_code, f"{label} reached an account credit or rate limit.")
+    if upstream.status_code == 202:
+        raise HTTPException(503, f"{label} did not finish the storyboard within this request. Try again shortly.")
+    if not upstream.is_success:
+        raise HTTPException(502, f"{label} could not complete the storyboard test.")
+    try:
+        storyboard = parse_storyboard_reply(upstream, prompt=prompt, duration=duration)
+    except StoryboardReplyError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    return {"provider": provider, "model": NVIDIA_STORY_MODEL if provider == "nvidia" else STORY_MODEL,
+            "storyboard": storyboard}
 
 
 @router.post("/providers/openrouter")

@@ -12,6 +12,7 @@ separate autoscaling Modal Function and receives only a durable PostgreSQL JOB_I
 from __future__ import annotations
 
 import asyncio
+import os
 import subprocess
 
 import modal
@@ -71,6 +72,8 @@ api_image = (
     .workdir("/root/clipkaro")
     .env(RUNTIME_ENV)
 )
+if test_users := os.environ.get("CARTOON_STORYBOARD_TEST_USER_IDS", "").strip():
+    api_image = api_image.env({"CARTOON_STORYBOARD_TEST_USER_IDS": test_users})
 
 media_image = (
     modal.Image.debian_slim(python_version="3.12")
