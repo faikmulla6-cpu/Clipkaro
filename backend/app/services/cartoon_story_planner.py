@@ -11,12 +11,18 @@ from pathlib import Path
 import httpx
 
 from .cartoon_story import StoryValidationError, director_prompt, director_response_schema, normalize_director_story, prepare_director_reply
-from .cartoon_story_direction import direct_story
+from .cartoon_story_direction import direct_story, scripted_scene_lengths
 
 OPENROUTER_ROOT = "https://openrouter.ai/api/v1"
 NVIDIA_ROOT = "https://integrate.api.nvidia.com/v1"
 STORY_MODEL = "z-ai/glm-5.3-flash"
 NVIDIA_STORY_MODEL = "nvidia/nemotron-3.5-super-vl-120b-a12b"
+HOSTED_NEMOTRON_STORY_MODEL = "nvidia/nemotron-3.5-super-vl"
+PROJECT_STORY_MODELS = {
+    "glm": STORY_MODEL,
+    "nemotron": HOSTED_NEMOTRON_STORY_MODEL,
+    "nvidia": NVIDIA_STORY_MODEL,
+}
 STORY_COMPLETION_TOKENS = 16_384
 logger = logging.getLogger("clipkaro.cartoon")
 
@@ -28,8 +34,15 @@ class StoryboardReplyError(ValueError):
 
 
 def planner_payload(prompt: str, duration: int, style: str, language: str, *,
-                    provider: str, frames: tuple[Path, ...] = ()) -> dict:
+                    provider: str, frames: tuple[Path, ...] = (), model: str = STORY_MODEL) -> dict:
     user_text = director_prompt(duration, language, style, prompt)
+    if lengths := scripted_scene_lengths(prompt, duration):
+        user_text += (
+            f"\nThe user's script specifies {len(lengths)} consecutive time ranges. Return exactly "
+            f"{len(lengths)} scenes in order with durations {list(lengths)} seconds. Each scene must "
+            "contain only the action, dialogue and sound from its own range. Keep scene-local timestamps "
+            "and repeat the setting across scenes when the location stays the same."
+        )
     nvidia = provider == "nvidia"
     content = user_text if nvidia else [
         {"type": "text", "text": user_text},
@@ -38,7 +51,7 @@ def planner_payload(prompt: str, duration: int, style: str, language: str, *,
         }} for frame in frames],
     ]
     return {
-        "model": NVIDIA_STORY_MODEL if nvidia else STORY_MODEL,
+        "model": NVIDIA_STORY_MODEL if nvidia else model,
         "temperature": .65,
         "max_tokens": STORY_COMPLETION_TOKENS,
         "response_format": {
@@ -100,7 +113,15 @@ def parse_storyboard_reply(response: httpx.Response, *, prompt: str, duration: i
         raw = json.loads(text)
         if not isinstance(raw, dict):
             raise ValueError("storyboard must be an object")
-        storyboard = normalize_director_story(prepare_director_reply(raw, prompt=prompt), duration=duration)
+        lengths = scripted_scene_lengths(prompt, duration)
+        if lengths and isinstance(raw.get("scenes"), list) and len(raw["scenes"]) != len(lengths):
+            raise StoryboardReplyError(
+                f"The story planner combined or split your {len(lengths)} timed scenes. Retry to keep the scripted timing.",
+                "CARTOON_STORY_BEAT_TIMING",
+            )
+        storyboard = normalize_director_story(
+            prepare_director_reply(raw, prompt=prompt), duration=duration, scene_lengths=lengths,
+        )
         return direct_story(storyboard, prompt)
     except StoryboardReplyError:
         raise

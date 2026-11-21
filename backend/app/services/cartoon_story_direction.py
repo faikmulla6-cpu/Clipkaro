@@ -15,6 +15,18 @@ _PROP_DESCRIPTION = re.compile(
 )
 
 
+def scripted_scene_lengths(prompt: str, duration: int) -> tuple[int, ...]:
+    ranges = [(int(match[1]), int(match[2])) for match in _BEAT_RANGE.finditer(prompt)]
+    if not 2 <= len(ranges) <= 12 or ranges[-1][1] != duration:
+        return ()
+    boundary = 0
+    for start, end in ranges:
+        if start != boundary or end <= start:
+            return ()
+        boundary = end
+    return tuple(end - start for start, end in ranges)
+
+
 def _speech_key(text: str) -> str:
     # Normalize punctuation and apostrophes without stripping combining marks in
     # languages such as Hindi and Urdu.

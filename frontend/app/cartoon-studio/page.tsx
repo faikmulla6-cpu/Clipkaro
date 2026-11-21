@@ -43,6 +43,7 @@ type CartoonProject = {
   aspect_ratio: string;
   style: string;
   language: string;
+  text_model?: string;
   status: string;
   progress: number;
   stage: string;
@@ -56,10 +57,16 @@ type ProviderStatus = {
   storyboard_test_enabled?: boolean;
 };
 type PlannerProvider = "nvidia" | "openrouter";
+type ProjectPlanner = "glm" | "nemotron" | "nvidia";
 type StoryboardTest = { provider: PlannerProvider; model: string; storyboard: Storyboard };
 const PLANNER_NAMES: Record<PlannerProvider, string> = {
   nvidia: "NVIDIA Nemotron",
   openrouter: "OpenRouter GLM",
+};
+const PROJECT_PLANNER_NAMES: Record<string, string> = {
+  "z-ai/glm-5.3-flash": "GLM",
+  "nvidia/nemotron-3.5-super-vl": "NVIDIA Nemotron",
+  "nvidia/nemotron-3.5-super-vl-120b-a12b": "NVIDIA Nemotron (internal trial)",
 };
 type TTSModel = { id: string; name: string; voices: string[]; description: string };
 type TTSResponse = { models: TTSModel[]; default_model: string };
@@ -87,6 +94,7 @@ export default function CartoonStudioPage() {
   const [selected, setSelected] = useState<CartoonProject | null>(null);
   const [apiKey, setApiKey] = useState("");
   const [planner, setPlanner] = useState<PlannerProvider>("nvidia");
+  const [projectPlanner, setProjectPlanner] = useState<ProjectPlanner>("glm");
   const [nvidiaKey, setNvidiaKey] = useState("");
   const [testBusy, setTestBusy] = useState(false);
   const [testError, setTestError] = useState("");
@@ -250,7 +258,9 @@ export default function CartoonStudioPage() {
       body.set("language", language);
       body.set("tts_model", ttsModel);
       body.set("voice_id", voiceId);
-      if (reference) body.set("reference_video", reference);
+      body.set("story_planner", projectPlanner);
+      if (projectPlanner === "nvidia") body.set("nvidia_key", nvidiaKey.trim());
+      else if (reference) body.set("reference_video", reference);
       const project = await api<CartoonProject>("/cartoon-studio/projects", { method: "POST", body });
       mergeProject(project);
       setNotice("Your cartoon is queued. You can leave this page while it renders.");
@@ -375,6 +385,23 @@ export default function CartoonStudioPage() {
                   </select>
                 </label>
               </div>
+              <label className={styles.field}><span>Story planner</span>
+                <select value={projectPlanner} onChange={(event) => setProjectPlanner(event.target.value as ProjectPlanner)} disabled={busy}>
+                  <option value="glm">GLM via OpenRouter</option>
+                  <option value="nemotron">NVIDIA Nemotron via OpenRouter (paid)</option>
+                  {provider?.storyboard_test_enabled && <option value="nvidia">NVIDIA Nemotron (internal trial)</option>}
+                </select>
+                <small>{projectPlanner === "nvidia"
+                  ? "Use a fictional text prompt for internal evaluation. Your NVIDIA key is used once to plan this cartoon."
+                  : "Story planning uses your connected OpenRouter account and can consume credits."}</small>
+              </label>
+              {projectPlanner === "nvidia" && (
+                <label className={styles.field}><span>NVIDIA API key</span>
+                  <input type="password" value={nvidiaKey} onChange={(event) => setNvidiaKey(event.target.value)}
+                    placeholder="nvapi-…" autoComplete="off" spellCheck={false} required disabled={busy} />
+                  <small>Voice generation still uses your selected voice model. Keep this tab open until the project is queued.</small>
+                </label>
+              )}
               <label className={styles.field}>
                 <span>Voice model</span>
                 <select value={ttsModel} onChange={(event) => {setTtsModel(event.target.value);setVoiceId("");}} disabled={!connected || models.length === 0 || style === "cinematic-jannat"}>
@@ -401,14 +428,14 @@ export default function CartoonStudioPage() {
                 </select>
                 <small>Other characters keep their own assigned voices. Providers without word timestamps use audio alignment for captions.</small>
               </label>
-              <label className={styles.fileField}>
+              {projectPlanner !== "nvidia" && <label className={styles.fileField}>
                 <span>Optional reference video</span>
                 <input type="file" accept="video/mp4,video/quicktime,video/webm,video/x-matroska" onChange={(event) => setReference(event.target.files?.[0] || null)} />
                 <small>{reference ? reference.name : "Up to 50 MB. Used only to analyse visual style; not required."}</small>
-              </label>
-              <button className={styles.primaryButton} type="submit" disabled={!connected || busy || !ttsModel}>
+              </label>}
+              <button className={styles.primaryButton} type="submit" disabled={!connected || busy || !ttsModel || (projectPlanner === "nvidia" && !nvidiaKey.trim())}>
                 {busy ? <Loader2 className={styles.spin} size={18} /> : <WandSparkles size={18} />}
-                {busy ? "Please wait..." : "Create my cartoon"}
+                {busy ? (projectPlanner === "nvidia" ? "Planning with NVIDIA…" : "Please wait...") : "Create my cartoon"}
               </button>
               {!connected && <p className={styles.formHint}>Connect your own OpenRouter API key below to enable generation.</p>}
             </form>
@@ -438,7 +465,7 @@ export default function CartoonStudioPage() {
                 </form>
               )}
               <div className={styles.securityNote}><LockKeyhole size={15} /><span>Your key is encrypted at rest. ClipKaro's backend uses it for model discovery and generation, and never returns the key to your browser.</span></div>
-              <div className={styles.billingNote}><Volume2 size={15} /><span>GLM story planning and OpenRouter TTS use your OpenRouter account. The built-in Urdu voice uses the external Edge speech service and does not consume OpenRouter TTS credits. Video rendering runs on ClipKaro.</span></div>
+              <div className={styles.billingNote}><Volume2 size={15} /><span>Hosted story planners and OpenRouter voices use your OpenRouter account. The built-in Urdu voice uses Edge speech. Video rendering runs on ClipKaro.</span></div>
             </section>
 
             <section className={styles.stepsPanel}>
@@ -511,7 +538,9 @@ export default function CartoonStudioPage() {
         {selected && (
           <section className={styles.projectPanel}>
             <div className={styles.panelHead}>
-              <div><span className={styles.kicker}>03 · CURRENT PROJECT</span><h3>{selected.storyboard?.title || selected.title}</h3></div>
+              <div><span className={styles.kicker}>03 · CURRENT PROJECT</span><h3>{selected.storyboard?.title || selected.title}</h3>
+                {selected.text_model && <small>{PROJECT_PLANNER_NAMES[selected.text_model]}</small>}
+              </div>
               <span className={selected.status === "ready" ? styles.statusReady : selected.status === "failed" ? styles.statusFailed : styles.statusRunning}>
                 {selected.status === "ready" ? "Ready" : selected.status === "failed" ? "Failed" : "Rendering"}
               </span>

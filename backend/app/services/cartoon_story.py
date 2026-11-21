@@ -282,7 +282,7 @@ def prepare_director_reply(raw: dict, *, prompt: str = "") -> dict:
     return story
 
 
-def normalize_director_story(raw: dict, *, duration: int) -> dict:
+def normalize_director_story(raw: dict, *, duration: int, scene_lengths: tuple[int, ...] = ()) -> dict:
     """Reject dangling identities/unsupported verbs; normalize bounded numeric data."""
     if not 5 <= duration <= 120:
         raise StoryValidationError("Story duration must be between 5 and 120 seconds.")
@@ -318,7 +318,9 @@ def normalize_director_story(raw: dict, *, duration: int) -> dict:
     scenes, start = [], 0.0
     carried_layers: dict[str, dict] = {"present": {}, "memory": {}}
     for i, (source, weight) in enumerate(zip(source_scenes, weights)):
-        length = round(weight * scale, 4) if i < len(weights)-1 else round(duration-start, 4)
+        length = scene_lengths[i] if scene_lengths else (
+            round(weight * scale, 4) if i < len(weights)-1 else round(duration-start, 4)
+        )
         factor = length / weight
         carried = carried_layers["memory" if source.get("lighting")=="memory" else "present"]
         scene_ids = source.get("character_ids") or [c["id"] for c in characters]

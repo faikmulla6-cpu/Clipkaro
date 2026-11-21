@@ -20,7 +20,7 @@ from app.services.auth import current_user
 from app.services.cartoon_speech import SYSTEM_URDU_TTS_MODEL, system_urdu_tts_model_row
 from app.services.cartoon_story import resolve_cartoon_language
 from app.services.cartoon_story_planner import (
-    NVIDIA_STORY_MODEL, OPENROUTER_ROOT, STORY_MODEL, StoryboardReplyError,
+    NVIDIA_STORY_MODEL, OPENROUTER_ROOT, PROJECT_STORY_MODELS, STORY_MODEL, StoryboardReplyError,
     parse_storyboard_reply, planner_payload, request_storyboard,
 )
 from app.services.cartoon_security import (
@@ -44,7 +44,6 @@ async def _run_media_job(job_id: str) -> int:
     return await run_job(job_id)
 
 
-TEXT_MODEL = STORY_MODEL
 PREFERRED_TTS = [
     "hexgrad/kokoro-82m",
     "google/gemini-3.1-flash-tts-preview",
@@ -75,6 +74,15 @@ async def cartoon_studio_user(user: dict = Depends(current_user)) -> dict:
 def _storyboard_test_allowed(user: dict) -> bool:
     allowed = get_settings().cartoon_storyboard_test_user_ids.split(",")
     return str(user["id"]) in {value.strip() for value in allowed if value.strip()}
+
+
+def _nvidia_trial_key(user: dict, api_key: str) -> str:
+    if not _storyboard_test_allowed(user):
+        raise HTTPException(403, "NVIDIA trial rendering is limited to internal evaluation accounts.")
+    key = api_key.strip()
+    if not re.fullmatch(r"nvapi-[A-Za-z0-9_-]{14,480}", key):
+        raise HTTPException(422, "Enter an NVIDIA API key beginning with nvapi-.")
+    return key
 
 
 @router.get("/capabilities")
@@ -164,6 +172,7 @@ def _project_out(row: dict[str, Any], job: dict[str, Any] | None = None) -> dict
         "aspect_ratio": row.get("aspect_ratio") or "9:16",
         "style": row.get("style") or "2d-cartoon",
         "language": row.get("language") or "auto",
+        "text_model": row.get("text_model") or STORY_MODEL,
         "status": status,
         "progress": max(0, min(100, int(progress or 0))),
         "stage": stage,
@@ -221,11 +230,8 @@ async def test_storyboard(
         raise HTTPException(422, "Choose a supported story language and style.")
     if provider not in {"nvidia", "openrouter"}:
         raise HTTPException(422, "Choose NVIDIA Nemotron or OpenRouter GLM.")
-    label = "NVIDIA" if provider == "nvidia" else "OpenRouter"
     if provider == "nvidia":
-        key = nvidia_key.strip()
-        if not re.fullmatch(r"nvapi-[A-Za-z0-9_-]{14,480}", key):
-            raise HTTPException(422, "Enter an NVIDIA API key beginning with nvapi-.")
+        key = _nvidia_trial_key(user, nvidia_key)
     else:
         key = await _provider_key(user["id"])
         if not key:
@@ -233,11 +239,18 @@ async def test_storyboard(
     if not await consume_rate_limit(str(user["id"]), group="cartoon_storyboard_test", limit=12, window_seconds=3600):
         raise HTTPException(429, "You have reached the storyboard testing limit. Try again later.")
     duration = int(duration_seconds)
-    payload = planner_payload(prompt, duration, style, resolve_cartoon_language(language, prompt), provider=provider)
+    storyboard = await _plan_in_request(key, prompt, duration, style, resolve_cartoon_language(language, prompt), provider)
+    return {"provider": provider, "model": NVIDIA_STORY_MODEL if provider == "nvidia" else STORY_MODEL,
+            "storyboard": storyboard}
+
+
+async def _plan_in_request(key: str, prompt: str, duration: int, style: str, language: str, provider: str) -> dict:
+    label = "NVIDIA" if provider == "nvidia" else "OpenRouter"
+    payload = planner_payload(prompt, duration, style, language, provider=provider)
     try:
         upstream = await request_storyboard(key, payload, provider=provider, timeout=105)
     except (httpx.HTTPError, TimeoutError) as exc:
-        raise HTTPException(504, f"{label} did not complete the storyboard test. Try again shortly.") from exc
+        raise HTTPException(504, f"{label} did not complete the storyboard. Try again shortly.") from exc
     if upstream.status_code in {401, 403}:
         raise HTTPException(422, f"{label} rejected the key or denied access to this model.")
     if upstream.status_code in {402, 429}:
@@ -245,13 +258,11 @@ async def test_storyboard(
     if upstream.status_code == 202:
         raise HTTPException(503, f"{label} did not finish the storyboard within this request. Try again shortly.")
     if not upstream.is_success:
-        raise HTTPException(502, f"{label} could not complete the storyboard test.")
+        raise HTTPException(502, f"{label} could not complete the storyboard.")
     try:
-        storyboard = parse_storyboard_reply(upstream, prompt=prompt, duration=duration)
+        return parse_storyboard_reply(upstream, prompt=prompt, duration=duration)
     except StoryboardReplyError as exc:
         raise HTTPException(502, str(exc)) from exc
-    return {"provider": provider, "model": NVIDIA_STORY_MODEL if provider == "nvidia" else STORY_MODEL,
-            "storyboard": storyboard}
 
 
 @router.post("/providers/openrouter")
@@ -324,6 +335,8 @@ async def create_cartoon_project(
     language: str = Form("auto"),
     tts_model: str = Form(""),
     voice_id: str = Form(""),
+    story_planner: str = Form("glm"),
+    nvidia_key: str = Form(""),
     reference_video: UploadFile | None = File(default=None),
     user: dict = Depends(cartoon_studio_user),
 ) -> dict[str, Any]:
@@ -338,6 +351,13 @@ async def create_cartoon_project(
         raise HTTPException(422, "Choose a supported cartoon style.")
     if language not in ALLOWED_LANGUAGES:
         raise HTTPException(422, "Choose a supported story language.")
+    if story_planner not in PROJECT_STORY_MODELS:
+        raise HTTPException(422, "Choose a supported story planner.")
+    trial_key = None
+    if story_planner == "nvidia":
+        trial_key = _nvidia_trial_key(user, nvidia_key)
+        if reference_video is not None:
+            raise HTTPException(422, "NVIDIA trial rendering accepts a fictional text prompt only. Remove the reference video.")
     language = resolve_cartoon_language(language, prompt)
     api_key = await _provider_key(user["id"])
     if not api_key:
@@ -374,6 +394,9 @@ async def create_cartoon_project(
     selected_model = next(item for item in speech_models if item["id"] == tts_model)
     if voice_id and voice_id not in selected_model.get("supported_voices", []):
         raise HTTPException(422, "Choose a voice supported by the selected speech model.")
+    # Direct NVIDIA planning finishes before queueing so its key never has to
+    # cross the worker boundary. Rendering and retries reuse the saved plan.
+    storyboard = await _plan_in_request(trial_key, prompt, duration_seconds, style, language, "nvidia") if trial_key else {}
     project_id = str(uuid.uuid4())
     timestamp = _now()
     title = prompt[:64].strip()
@@ -417,10 +440,11 @@ async def create_cartoon_project(
                  id,user_id,title,prompt,duration_seconds,aspect_ratio,style,language,text_model,tts_model,
                  status,progress,stage,storyboard_json,assets_json,reference_key,reference_generation,
                  created_at,updated_at
-               ) VALUES (?,?,?,?,?,?,?,?,?,?,'queued',0,'queued','{}','{}',?,?,?,?)""",
+               ) VALUES (?,?,?,?,?,?,?,?,?,?,'queued',0,'queued',?,'{}',?,?,?,?)""",
             (
                 project_id, user["id"], title, prompt, duration_seconds, aspect_ratio, style, language,
-                TEXT_MODEL, tts_model, reference_key, reference_generation, timestamp, timestamp,
+                PROJECT_STORY_MODELS[story_planner], tts_model, json.dumps(storyboard, ensure_ascii=False),
+                reference_key, reference_generation, timestamp, timestamp,
             ),
         )
         try:
