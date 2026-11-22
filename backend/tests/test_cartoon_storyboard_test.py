@@ -67,6 +67,7 @@ async def test_internal_storyboard_test_uses_the_selected_provider_and_returns_n
         assert key == "nvapi-fake-unique-test-value"
         assert payload["model"] == planner.NVIDIA_STORY_MODEL
         assert isinstance(payload["messages"][1]["content"], str)
+        assert payload["reasoning_effort"] == "none"
         assert "provider" not in payload
         saved_key.assert_not_called()
     else:
@@ -260,6 +261,51 @@ async def test_worker_only_retries_transient_nvidia_planning_failures(
         pause.assert_awaited_once_with(1)
     else:
         pause.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("recovers", [True, False])
+async def test_nvidia_truncation_replans_the_same_timed_script_with_a_smaller_schema(monkeypatch, recovers):
+    from app.services import cartoon_job as worker
+
+    prompt = (
+        "The Wind Stole My Hat. 0–10 seconds Nora loses her hat. "
+        "10–20 seconds Nora finds a shivering dog. 20–30 seconds Nora shares the hat."
+    )
+    truncated = httpx.Response(200, json={
+        "choices": [{"finish_reason": "length", "message": {"content": '{"scenes":['}}],
+        "usage": {"completion_tokens": 16384, "completion_tokens_details": {"reasoning_tokens": 0}},
+    })
+    story = fixtures()["jannat"]
+    story["scenes"].pop(1)
+    completed = httpx.Response(200, json={
+        "choices": [{"finish_reason": "stop", "message": {"content": json.dumps(story)}}],
+    })
+    request = AsyncMock(side_effect=[truncated, completed if recovers else truncated])
+    monkeypatch.setattr(worker, "request_storyboard", request)
+
+    async def generate():
+        return await worker._generate_storyboard("nvapi-fixture", prompt, 30, "2d-cartoon", "en", [], provider="nvidia")
+
+    if recovers:
+        result = await generate()
+        assert [(scene["start"], scene["duration"]) for scene in result["scenes"]] == [(0, 10), (10, 10), (20, 10)]
+    else:
+        with pytest.raises(worker.CartoonJobError) as error:
+            await generate()
+        assert error.value.category == "CARTOON_STORY_TRUNCATED"
+
+    first, second = (call.args[1] for call in request.await_args_list)
+    scenes, compact_scenes = (
+        payload["response_format"]["json_schema"]["schema"]["properties"]["scenes"]
+        for payload in (first, second)
+    )
+    assert scenes["minItems"] == scenes["maxItems"] == compact_scenes["maxItems"] == 3
+    assert scenes["items"]["properties"]["actions"]["maxItems"] == 14
+    assert compact_scenes["items"]["properties"]["actions"]["maxItems"] == 8
+    assert first["messages"][1] == second["messages"][1]
+    assert first["model"] == second["model"] == planner.NVIDIA_STORY_MODEL
+    assert "exceeded the output budget" in second["messages"][0]["content"]
 
 
 def test_scripted_ranges_survive_both_planners_and_combined_scenes_are_rejected():

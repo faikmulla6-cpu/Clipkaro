@@ -24,7 +24,7 @@ from app.services.cartoon_timing import approximate_word_boundaries, build_episo
 from app.services.cartoon_story import StoryValidationError, resolve_cartoon_language
 from app.services.cartoon_security import decrypt_provider_key
 from app.services.cartoon_story_planner import (
-    NVIDIA_STORY_MODEL, OPENROUTER_ROOT, STORY_MODEL,
+    NVIDIA_STORY_MODEL, OPENROUTER_ROOT, REPAIRABLE_STORYBOARD_ERRORS, STORY_MODEL,
     StoryboardReplyError, parse_storyboard_reply, planner_payload, request_storyboard, storyboard_correction_payload,
 )
 from app.services.jobs import update_job, utcnow
@@ -338,9 +338,10 @@ async def _generate_storyboard(api_key: str, prompt: str, duration: int, style: 
         except RetryableStoryboardRequest:
             await asyncio.sleep(1)
         except StoryboardReplyError as exc:
-            if exc.category not in {"CARTOON_STORY_BEAT_TIMING", "CARTOON_STORY_DIALOGUE_SPEAKER"}:
+            if exc.category not in REPAIRABLE_STORYBOARD_ERRORS:
                 raise CartoonJobError(str(exc), category=exc.category) from exc
-            payload = storyboard_correction_payload(payload, exc.category)
+            logger.info("Retrying NVIDIA storyboard after validation: category=%s", exc.category)
+            payload = storyboard_correction_payload(payload, exc.category, str(exc))
     try:
         return await _read_storyboard(api_key, payload, prompt, duration, provider=provider, timeout=timeout)
     except StoryboardReplyError as exc:

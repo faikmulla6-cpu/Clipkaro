@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import copy
 import json
 import logging
 import re
@@ -22,6 +23,10 @@ PROJECT_STORY_MODELS = {
     "nvidia": NVIDIA_STORY_MODEL,
 }
 STORY_COMPLETION_TOKENS = 16_384
+REPAIRABLE_STORYBOARD_ERRORS = frozenset({
+    "CARTOON_STORY_BEAT_TIMING", "CARTOON_STORY_DIALOGUE_SPEAKER",
+    "CARTOON_STORY_TRUNCATED", "CARTOON_STORY_INVALID",
+})
 logger = logging.getLogger("clipkaro.cartoon")
 
 
@@ -34,7 +39,8 @@ class StoryboardReplyError(ValueError):
 def planner_payload(prompt: str, duration: int, style: str, language: str, *,
                     provider: str, frames: tuple[Path, ...] = ()) -> dict:
     user_text = director_prompt(duration, language, style, prompt)
-    if lengths := scripted_scene_lengths(prompt, duration):
+    lengths = scripted_scene_lengths(prompt, duration)
+    if lengths:
         user_text += (
             f"\nThe user's script specifies {len(lengths)} consecutive time ranges. Return exactly "
             f"{len(lengths)} scenes in order with durations {list(lengths)} seconds. Each scene must "
@@ -42,6 +48,18 @@ def planner_payload(prompt: str, duration: int, style: str, language: str, *,
             "and repeat the setting across scenes when the location stays the same."
         )
     nvidia = provider == "nvidia"
+    schema = director_response_schema()
+    if nvidia:
+        scenes = schema["properties"]["scenes"]
+        scenes["maxItems"] = len(lengths) or min(12, max(3, (duration + 7) // 8))
+        scenes["minItems"] = len(lengths) or 1
+        schema["properties"]["characters"].update(minItems=1, maxItems=4)
+        _limit_scene_detail(schema, compact=False)
+        user_text += (
+            "\nUse a short title and one-sentence summary. Keep each scene's data concise. "
+            "Use one action per meaningful beat and one to three camera keys. "
+            "Leave unused lists empty and avoid repeating actions or filling array limits."
+        )
     content = user_text if nvidia else [
         {"type": "text", "text": user_text},
         *[{"type": "image_url", "image_url": {
@@ -54,7 +72,7 @@ def planner_payload(prompt: str, duration: int, style: str, language: str, *,
         "max_tokens": STORY_COMPLETION_TOKENS,
         "response_format": {
             "type": "json_schema",
-            "json_schema": {"name": "clipkaro_storyboard", "strict": True, "schema": director_response_schema()},
+            "json_schema": {"name": "clipkaro_storyboard", "strict": True, "schema": schema},
         },
         "messages": [
             {"role": "system", "content": (
@@ -63,7 +81,7 @@ def planner_payload(prompt: str, duration: int, style: str, language: str, *,
             )},
             {"role": "user", "content": content},
         ],
-        **({"stream": False, "chat_template_kwargs": {"enable_thinking": False}} if nvidia else {
+        **({"stream": False, "reasoning_effort": "none"} if nvidia else {
             "reasoning": {"effort": "low", "exclude": True},
             "provider": {"require_parameters": True},
         }),
@@ -82,20 +100,42 @@ async def request_storyboard(api_key: str, payload: dict, *, provider: str, time
             return response
 
 
-def storyboard_correction_payload(payload: dict, category: str) -> dict:
+def _limit_scene_detail(schema: dict, *, compact: bool) -> None:
+    properties = schema["properties"]["scenes"]["items"]["properties"]
+    limits = {"character_ids": 4, "actors": 4, "props": 8, "actions": 14, "camera": 4, "speech": 8, "sounds": 8}
+    if compact:
+        limits.update(actions=8, camera=3, sounds=4)
+    for field, limit in limits.items():
+        properties[field]["maxItems"] = limit
+
+
+def storyboard_correction_payload(payload: dict, category: str, validation_message: str = "") -> dict:
     system, idea = payload["messages"]
-    guidance = (
-        "The first storyboard was rejected because a dialogue speaker was not visible in their scene. "
-        "Return a complete replacement. Keep the supplied script and timing. Use narrator only for narration. "
-        "Use the intended speaker's exact ID for each line of dialogue, declare the speaker in character_ids and actors "
-        "for that scene, and give the visible actor a speak action at the line's start."
-    ) if category == "CARTOON_STORY_DIALOGUE_SPEAKER" else (
-        "The first storyboard was rejected because its scene count did not match the explicit ranges. "
-        "Return a complete replacement. Make exactly one scene object for each requested range, "
-        "including when adjacent scenes share the same setting. Keep each line and action in its original range."
-    )
+    guidance = {
+        "CARTOON_STORY_DIALOGUE_SPEAKER": (
+            "The first storyboard was rejected because a dialogue speaker was not visible in their scene. "
+            "Use narrator only for narration. Use the speaker's exact ID, declare them in character_ids and actors, "
+            "and give the visible actor a speak action at the line's start."
+        ),
+        "CARTOON_STORY_BEAT_TIMING": (
+            "The first storyboard was rejected because its scene count did not match the explicit ranges. "
+            "Make exactly one scene object for each requested range, including adjacent scenes in the same setting. "
+            "Keep each line and action in its original range."
+        ),
+        "CARTOON_STORY_TRUNCATED": (
+            "The first storyboard exceeded the output budget. Produce a compact, complete JSON object. "
+            "Keep the key actions in each beat and remove repeated gestures, shots and sound cues."
+        ),
+        "CARTOON_STORY_INVALID": (
+            "The first storyboard failed validation. Fix this issue: " + validation_message
+        ),
+    }[category]
+    replacement = copy.deepcopy(payload)
+    if category in {"CARTOON_STORY_TRUNCATED", "CARTOON_STORY_INVALID"}:
+        _limit_scene_detail(replacement["response_format"]["json_schema"]["schema"], compact=True)
+    guidance += " Return a complete replacement preserving the supplied script, timing, dialogue and ending."
     correction = {**system, "content": system["content"] + " " + guidance}
-    return {**payload, "temperature": .2, "messages": [correction, idea]}
+    return {**replacement, "temperature": .2, "messages": [correction, idea]}
 
 
 def parse_storyboard_reply(response: httpx.Response, *, prompt: str, duration: int) -> dict:
