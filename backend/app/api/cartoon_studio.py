@@ -78,7 +78,7 @@ def _storyboard_test_allowed(user: dict) -> bool:
 
 def _nvidia_trial_key(user: dict, api_key: str) -> str:
     if not _storyboard_test_allowed(user):
-        raise HTTPException(403, "NVIDIA trial rendering is limited to internal evaluation accounts.")
+        raise HTTPException(403, "NVIDIA API rendering is enabled for preview evaluation accounts.")
     key = api_key.strip()
     if not re.fullmatch(r"nvapi-[A-Za-z0-9_-]{14,480}", key):
         raise HTTPException(422, "Enter an NVIDIA API key beginning with nvapi-.")
@@ -380,7 +380,7 @@ async def create_cartoon_project(
     if story_planner == "nvidia":
         trial_key = _nvidia_trial_key(user, nvidia_key)
         if reference_video is not None:
-            raise HTTPException(422, "NVIDIA trial rendering accepts a fictional text prompt only. Remove the reference video.")
+            raise HTTPException(422, "NVIDIA API rendering accepts a fictional text prompt only. Remove the reference video.")
     language = resolve_cartoon_language(language, prompt)
     api_key = await _provider_key(user["id"])
     if not api_key:

@@ -24,7 +24,7 @@ from app.services.cartoon_timing import approximate_word_boundaries, build_episo
 from app.services.cartoon_story import StoryValidationError, resolve_cartoon_language
 from app.services.cartoon_security import decrypt_provider_key
 from app.services.cartoon_story_planner import (
-    HOSTED_NEMOTRON_STORY_MODEL, NVIDIA_STORY_MODEL, OPENROUTER_ROOT, STORY_MODEL,
+    NVIDIA_STORY_MODEL, OPENROUTER_ROOT, STORY_MODEL,
     StoryboardReplyError, parse_storyboard_reply, planner_payload, request_storyboard,
 )
 from app.services.jobs import update_job, utcnow
@@ -324,8 +324,8 @@ async def _extract_reference_frames(job: dict, project: dict, scratch: Path, sto
 
 
 async def _generate_storyboard(api_key: str, prompt: str, duration: int, style: str, language: str,
-                               frames: list[Path], *, model: str = STORY_MODEL) -> dict[str, Any]:
-    payload = planner_payload(prompt, duration, style, language, provider="openrouter", frames=tuple(frames), model=model)
+                               frames: list[Path]) -> dict[str, Any]:
+    payload = planner_payload(prompt, duration, style, language, provider="openrouter", frames=tuple(frames))
     try:
         response = await request_storyboard(api_key, payload, provider="openrouter")
     except (httpx.HTTPError, TimeoutError) as exc:
@@ -557,13 +557,16 @@ async def run_cartoon_generation(job: dict[str, Any], scratch: Path, storage) ->
         if saved_model == NVIDIA_STORY_MODEL:
             raise CartoonJobError("The NVIDIA storyboard is missing. Create another cartoon with your NVIDIA key.",
                                   category="CARTOON_STORY_INVALID")
-        model = HOSTED_NEMOTRON_STORY_MODEL if saved_model == HOSTED_NEMOTRON_STORY_MODEL else STORY_MODEL
-        planner_name = "Nemotron" if model == HOSTED_NEMOTRON_STORY_MODEL else "GLM"
+        if saved_model == "nvidia/nemotron-3.5-super-vl":
+            raise CartoonJobError(
+                "This project used an older story planner. Create a new cartoon with GLM or NVIDIA API.",
+                category="CARTOON_STORY_PLANNER_UNAVAILABLE",
+            )
         frames = await _extract_reference_frames(job, project, scratch, storage)
-        await update_job(job["id"], 12, "story_planning", f"{planner_name} is writing the story and keeping characters consistent")
+        await update_job(job["id"], 12, "story_planning", "GLM is writing the story and keeping characters consistent")
         storyboard = await _generate_storyboard(
             api_key, str(project["prompt"]), int(project["duration_seconds"]),
-            str(project["style"]), str(project["language"]), frames, model=model,
+            str(project["style"]), str(project["language"]), frames,
         )
         await execute(
             "UPDATE cartoon_projects SET storyboard_json=?,progress=18,stage='story_ready',updated_at=? WHERE id=?",

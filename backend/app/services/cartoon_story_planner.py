@@ -17,10 +17,8 @@ OPENROUTER_ROOT = "https://openrouter.ai/api/v1"
 NVIDIA_ROOT = "https://integrate.api.nvidia.com/v1"
 STORY_MODEL = "z-ai/glm-5.3-flash"
 NVIDIA_STORY_MODEL = "nvidia/nemotron-3.5-super-vl-120b-a12b"
-HOSTED_NEMOTRON_STORY_MODEL = "nvidia/nemotron-3.5-super-vl"
 PROJECT_STORY_MODELS = {
     "glm": STORY_MODEL,
-    "nemotron": HOSTED_NEMOTRON_STORY_MODEL,
     "nvidia": NVIDIA_STORY_MODEL,
 }
 STORY_COMPLETION_TOKENS = 16_384
@@ -34,7 +32,7 @@ class StoryboardReplyError(ValueError):
 
 
 def planner_payload(prompt: str, duration: int, style: str, language: str, *,
-                    provider: str, frames: tuple[Path, ...] = (), model: str = STORY_MODEL) -> dict:
+                    provider: str, frames: tuple[Path, ...] = ()) -> dict:
     user_text = director_prompt(duration, language, style, prompt)
     if lengths := scripted_scene_lengths(prompt, duration):
         user_text += (
@@ -51,7 +49,7 @@ def planner_payload(prompt: str, duration: int, style: str, language: str, *,
         }} for frame in frames],
     ]
     return {
-        "model": NVIDIA_STORY_MODEL if nvidia else model,
+        "model": NVIDIA_STORY_MODEL if nvidia else STORY_MODEL,
         "temperature": .65,
         "max_tokens": STORY_COMPLETION_TOKENS,
         "response_format": {

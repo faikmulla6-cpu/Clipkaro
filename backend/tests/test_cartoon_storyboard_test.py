@@ -106,7 +106,7 @@ async def test_nvidia_key_is_sent_only_to_direct_nvidia_endpoint(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("selection,allowed,expected_status", [
-    ("glm", False, 200), ("nemotron", False, 200), ("nvidia", True, 200),
+    ("glm", False, 200), ("nemotron", False, 422), ("nvidia", True, 200),
     ("nvidia", False, 403), ("unexpected-model", True, 422),
 ])
 async def test_project_creation_queues_selected_planner_without_exposing_keys(
@@ -214,11 +214,12 @@ def test_scripted_ranges_survive_both_planners_and_combined_scenes_are_rejected(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("selection", ["glm", "nemotron", "nvidia"])
+@pytest.mark.parametrize("selection", ["glm", "nvidia", "legacy-hosted"])
 async def test_worker_uses_selected_model_and_passes_story_to_existing_renderer(monkeypatch, tmp_path, selection):
     from app.services import cartoon_job as worker, cartoon_story_job as director
 
-    model = planner.PROJECT_STORY_MODELS[selection]
+    model = ("nvidia/nemotron-3.5-super-vl" if selection == "legacy-hosted"
+             else planner.PROJECT_STORY_MODELS[selection])
     raw = fixtures()["garden"]
     storyboard = planner.normalize_director_story(raw, duration=15)
     project = {
@@ -239,6 +240,12 @@ async def test_worker_uses_selected_model_and_passes_story_to_existing_renderer(
     monkeypatch.setattr(director, "run_director_job", render := AsyncMock())
     job = {"id": "job", "user_id": "tester", "payload": {"cartoon_project_id": "cartoon"}}
     storage = object()
+    if selection == "legacy-hosted":
+        with pytest.raises(worker.CartoonJobError, match="older story planner"):
+            await worker.run_cartoon_generation(job, tmp_path, storage)
+        upstream.assert_not_awaited()
+        render.assert_not_awaited()
+        return
     await worker.run_cartoon_generation(job, tmp_path, storage)
 
     render.assert_awaited_once()

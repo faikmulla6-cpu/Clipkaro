@@ -57,16 +57,16 @@ type ProviderStatus = {
   storyboard_test_enabled?: boolean;
 };
 type PlannerProvider = "nvidia" | "openrouter";
-type ProjectPlanner = "glm" | "nemotron" | "nvidia";
+type ProjectPlanner = "glm" | "nvidia";
 type StoryboardTest = { provider: PlannerProvider; model: string; storyboard: Storyboard };
 const PLANNER_NAMES: Record<PlannerProvider, string> = {
-  nvidia: "NVIDIA Nemotron",
+  nvidia: "NVIDIA API",
   openrouter: "OpenRouter GLM",
 };
 const PROJECT_PLANNER_NAMES: Record<string, string> = {
   "z-ai/glm-5.3-flash": "GLM",
   "nvidia/nemotron-3.5-super-vl": "NVIDIA Nemotron",
-  "nvidia/nemotron-3.5-super-vl-120b-a12b": "NVIDIA Nemotron (internal trial)",
+  "nvidia/nemotron-3.5-super-vl-120b-a12b": "NVIDIA API",
 };
 type TTSModel = { id: string; name: string; voices: string[]; description: string };
 type TTSResponse = { models: TTSModel[]; default_model: string };
@@ -390,8 +390,7 @@ export default function CartoonStudioPage() {
               <label className={styles.field}><span>Story planner</span>
                 <select value={projectPlanner} onChange={(event) => setProjectPlanner(event.target.value as ProjectPlanner)} disabled={busy}>
                   <option value="glm">GLM via OpenRouter</option>
-                  <option value="nemotron">NVIDIA Nemotron via OpenRouter (paid)</option>
-                  {provider?.storyboard_test_enabled && <option value="nvidia">NVIDIA Nemotron (internal trial)</option>}
+                  {provider?.storyboard_test_enabled && <option value="nvidia">NVIDIA API</option>}
                 </select>
                 <small>{projectPlanner === "nvidia"
                   ? "Use a fictional text prompt for internal evaluation. NVIDIA may make one correction attempt to preserve your scene timings."
@@ -469,7 +468,7 @@ export default function CartoonStudioPage() {
                 </form>
               )}
               <div className={styles.securityNote}><LockKeyhole size={15} /><span>Your key is encrypted at rest. ClipKaro's backend uses it for model discovery and generation, and never returns the key to your browser.</span></div>
-              <div className={styles.billingNote}><Volume2 size={15} /><span>Hosted story planners and OpenRouter voices use your OpenRouter account. The built-in Urdu voice uses Edge speech. Video rendering runs on ClipKaro.</span></div>
+              <div className={styles.billingNote}><Volume2 size={15} /><span>GLM and OpenRouter voices use your OpenRouter account. The built-in Urdu voice uses Edge speech. Video rendering runs on ClipKaro.</span></div>
             </section>
 
             <section className={styles.stepsPanel}>
@@ -493,7 +492,7 @@ export default function CartoonStudioPage() {
               <div className={styles.fieldsTwo}>
                 <label className={styles.field}><span>Story planner</span>
                   <select value={planner} onChange={(event) => setPlanner(event.target.value as PlannerProvider)} disabled={testBusy}>
-                    <option value="nvidia">NVIDIA Nemotron</option>
+                    <option value="nvidia">NVIDIA API</option>
                     <option value="openrouter">OpenRouter GLM</option>
                   </select>
                 </label>
@@ -506,7 +505,7 @@ export default function CartoonStudioPage() {
                 )}
               </div>
               <p className={styles.projectPrompt}>{planner === "nvidia"
-                ? "NVIDIA trial access is for internal evaluation. Use fictional prompts without private information."
+                ? "Use fictional prompts without private information for preview evaluation."
                 : connected ? "This test uses your connected OpenRouter key and can consume planning credits."
                   : "Connect OpenRouter above to test GLM."}</p>
               <button className={styles.secondaryButton} type="submit"
