@@ -60,10 +60,11 @@ type ProviderStatus = {
 };
 type SavedProvider = { connected: boolean; masked_key: string; validated_at?: string | null };
 type PlannerProvider = "nvidia" | "openrouter";
-type ProjectPlanner = "glm" | "nvidia";
+type ProjectPlanner = "free" | "glm" | "nvidia";
 const PROVIDER_NAMES: Record<PlannerProvider, string> = { openrouter: "OpenRouter", nvidia: "NVIDIA API" };
 const EMPTY_PROVIDER: SavedProvider = { connected: false, masked_key: "" };
 const PROJECT_PLANNER_NAMES: Record<string, string> = {
+  "inclusionai/ling-3.2-flash:free": "Ling 3.2 Flash · Free planning",
   "z-ai/glm-5.3-flash": "GLM",
   "nvidia/nemotron-3.5-super-vl": "NVIDIA Nemotron",
   "nvidia/nemotron-3.5-super-vl-120b-a12b": "NVIDIA API",
@@ -93,7 +94,7 @@ export default function CartoonStudioPage() {
   const [projects, setProjects] = useState<CartoonProject[]>([]);
   const [selected, setSelected] = useState<CartoonProject | null>(null);
   const [apiKey, setApiKey] = useState("");
-  const [projectPlanner, setProjectPlanner] = useState<ProjectPlanner>("glm");
+  const [projectPlanner, setProjectPlanner] = useState<ProjectPlanner>("free");
   const [nvidiaKey, setNvidiaKey] = useState("");
   const [providerBusy, setProviderBusy] = useState<PlannerProvider | null>(null);
   const [providerFeedback, setProviderFeedback] = useState<{ provider: PlannerProvider; message: string; error: boolean } | null>(null);
@@ -357,9 +358,11 @@ export default function CartoonStudioPage() {
               </div>
               <label className={styles.field}><span>Story planner</span>
                 <select value={projectPlanner} onChange={(event) => setProjectPlanner(event.target.value as ProjectPlanner)} disabled={busy}>
-                  <option value="glm">GLM via OpenRouter</option>
+                  <option value="free">Ling 3.2 Flash · Free planning</option>
+                  <option value="glm">GLM via OpenRouter · Paid planning</option>
                   {nvidiaAvailable && <option value="nvidia">NVIDIA API</option>}
                 </select>
+                {projectPlanner === "free" && <small>Planning uses the free OpenRouter model. The selected voice model may use credits.</small>}
               </label>
               <label className={styles.field}>
                 <span>Voice model</span>
@@ -417,7 +420,7 @@ export default function CartoonStudioPage() {
                     <section className={styles.providerCard} key={name} aria-labelledby={`studio-key-${name}`}>
                       <div className={styles.providerCardHead}>
                         <div><h4 id={`studio-key-${name}`}>{PROVIDER_NAMES[name]}</h4>
-                          <p>{isNvidia ? "Nemotron story planning" : "GLM story planning and voice models"}</p>
+                          <p>{isNvidia ? "Nemotron story planning" : "Ling and GLM story planning, plus voice models"}</p>
                         </div>
                         {saved?.connected && <span className={styles.savedKey}><ShieldCheck size={13} aria-hidden="true" />{isNvidia ? "Saved" : "Connected"}</span>}
                       </div>

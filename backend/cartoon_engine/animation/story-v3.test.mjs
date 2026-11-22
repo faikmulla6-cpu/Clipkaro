@@ -50,3 +50,10 @@ test('a box lid opens before the item is visible and the pickup attaches it',()=
  assert.equal(engine.propState(scene,box,1.5).open,1);
  assert.equal(engine.propState(scene,book,4).held,'mira');
 });
+test('a held book opens to show its pages',()=>{
+ const story=structuredClone(stories.library),scene=story.scenes[0];
+ scene.actions.push({type:'open_book',character_id:'mira',target_id:'book',start:4,end:5});
+ assert.match(expand(engine.storyFrame(story,3.9,1080,1920)),/data-book-open=0/);
+ assert.match(expand(engine.storyFrame(story,4.5,1080,1920)),/data-book-open=0.5/);
+ assert.match(expand(engine.storyFrame(story,5.1,1080,1920)),/data-book-open=1/);
+});

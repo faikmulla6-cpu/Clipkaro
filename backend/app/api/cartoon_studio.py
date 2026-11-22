@@ -445,10 +445,6 @@ async def create_cartoon_project(
     api_key = await _provider_key(user["id"])
     if not api_key:
         raise HTTPException(409, "Add your OpenRouter API key before creating a cartoon.")
-    if not await consume_rate_limit(
-        str(user["id"]), group="cartoon_studio_create", limit=5, window_seconds=3600,
-    ):
-        raise HTTPException(429, "You have reached the Cartoon Studio creation limit. Try again later.")
     active = await fetch_one(
         "SELECT id FROM cartoon_projects WHERE user_id=? AND status IN ('queued','processing') LIMIT 1",
         (user["id"],),
@@ -604,10 +600,6 @@ async def retry_cartoon_project(
         raise HTTPException(409, "Reconnect your OpenRouter API key before retrying.")
     if row.get("text_model") == NVIDIA_STORY_MODEL and not _project_out(row)["storyboard"].get("scenes"):
         await _nvidia_key_for_request(user, "")
-    if not await consume_rate_limit(
-        str(user["id"]), group="cartoon_studio_create", limit=5, window_seconds=3600,
-    ):
-        raise HTTPException(429, "You have reached the Cartoon Studio retry limit. Try again later.")
     async with distributed_advisory_lock(f"cartoon-studio-create:{user['id']}"):
         active = await fetch_one(
             "SELECT id FROM cartoon_projects WHERE user_id=? AND status IN ('queued','processing') LIMIT 1",

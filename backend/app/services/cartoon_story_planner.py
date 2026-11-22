@@ -17,9 +17,11 @@ from .cartoon_story_direction import direct_story, scripted_scene_lengths
 OPENROUTER_ROOT = "https://openrouter.ai/api/v1"
 NVIDIA_ROOT = "https://integrate.api.nvidia.com/v1"
 STORY_MODEL = "z-ai/glm-5.3-flash"
+FREE_STORY_MODEL = "inclusionai/ling-3.2-flash:free"
 NVIDIA_STORY_MODEL = "nvidia/nemotron-3.5-super-vl-120b-a12b"
 PROJECT_STORY_MODELS = {
     "glm": STORY_MODEL,
+    "free": FREE_STORY_MODEL,
     "nvidia": NVIDIA_STORY_MODEL,
 }
 STORY_COMPLETION_TOKENS = 16_384
@@ -37,7 +39,7 @@ class StoryboardReplyError(ValueError):
 
 
 def planner_payload(prompt: str, duration: int, style: str, language: str, *,
-                    provider: str, frames: tuple[Path, ...] = ()) -> dict:
+                    provider: str, frames: tuple[Path, ...] = (), model: str | None = None) -> dict:
     user_text = director_prompt(duration, language, style, prompt)
     lengths = scripted_scene_lengths(prompt, duration)
     if lengths:
@@ -49,7 +51,7 @@ def planner_payload(prompt: str, duration: int, style: str, language: str, *,
         )
     nvidia = provider == "nvidia"
     schema = director_response_schema()
-    if nvidia:
+    if nvidia or model == FREE_STORY_MODEL:
         scenes = schema["properties"]["scenes"]
         scenes["maxItems"] = len(lengths) or min(12, max(3, (duration + 7) // 8))
         scenes["minItems"] = len(lengths) or 1
@@ -67,7 +69,7 @@ def planner_payload(prompt: str, duration: int, style: str, language: str, *,
         }} for frame in frames],
     ]
     return {
-        "model": NVIDIA_STORY_MODEL if nvidia else STORY_MODEL,
+        "model": NVIDIA_STORY_MODEL if nvidia else (model or STORY_MODEL),
         "temperature": .65,
         "max_tokens": STORY_COMPLETION_TOKENS,
         "response_format": {
@@ -82,7 +84,7 @@ def planner_payload(prompt: str, duration: int, style: str, language: str, *,
             {"role": "user", "content": content},
         ],
         **({"stream": False, "reasoning_effort": "none"} if nvidia else {
-            "reasoning": {"effort": "low", "exclude": True},
+            "reasoning": {"effort": "none" if model == FREE_STORY_MODEL else "low", "exclude": True},
             "provider": {"require_parameters": True},
         }),
     }

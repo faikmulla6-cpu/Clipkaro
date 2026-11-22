@@ -119,7 +119,7 @@ async def test_nvidia_key_is_sent_only_to_direct_nvidia_endpoint(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("selection,allowed,expected_status", [
-    ("glm", False, 200), ("nemotron", False, 422), ("nvidia", True, 200),
+    ("glm", False, 200), ("free", False, 200), ("nemotron", False, 422), ("nvidia", True, 200),
     ("nvidia", False, 403), ("unexpected-model", True, 422),
 ])
 async def test_project_creation_queues_selected_planner_without_exposing_keys(
@@ -134,7 +134,7 @@ async def test_project_creation_queues_selected_planner_without_exposing_keys(
     monkeypatch.setattr(studio, "_storyboard_test_allowed", lambda _: allowed)
     monkeypatch.setattr(studio, "_provider_key", AsyncMock(return_value="sk-or-fake-saved-test-value"))
     monkeypatch.setattr(studio, "_models", AsyncMock(return_value=[]))
-    monkeypatch.setattr(studio, "consume_rate_limit", AsyncMock(return_value=True))
+    monkeypatch.setattr(studio, "consume_rate_limit", previous_creation_cap := AsyncMock(return_value=False))
     monkeypatch.setattr(studio, "fetch_one", AsyncMock(return_value=None))
     monkeypatch.setattr(studio, "execute", execute := AsyncMock())
     monkeypatch.setattr(studio, "create_job", queue := AsyncMock(return_value="queued-job"))
@@ -157,6 +157,7 @@ async def test_project_creation_queues_selected_planner_without_exposing_keys(
             "tts_model": "system/edge-tts-urdu",
         })
     assert response.status_code == expected_status, response.text
+    previous_creation_cap.assert_not_awaited()
     assert key not in response.text
     if expected_status != 200:
         upstream.assert_not_awaited()
@@ -329,6 +330,45 @@ def test_scripted_ranges_survive_both_planners_and_combined_scenes_are_rejected(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("model", [planner.STORY_MODEL, planner.FREE_STORY_MODEL])
+async def test_openrouter_repairs_a_bad_storyboard_with_the_same_model(monkeypatch, model):
+    from app.services import cartoon_job as worker
+
+    response = httpx.Response(200, json={
+        "choices": [{"message": {"content": json.dumps(fixtures()["garden"])}}],
+    })
+    incomplete = httpx.Response(200, json={
+        "choices": [{"finish_reason": "length", "message": {"content": '{"scenes":['}}],
+    })
+    request = AsyncMock(side_effect=[incomplete, response])
+    monkeypatch.setattr(worker, "request_storyboard", request)
+
+    result = await worker._generate_storyboard(
+        "fixture-key", "A fox finds the lost ball.", 15, "2d-cartoon", "en", [], model=model,
+    )
+
+    assert result["scenes"]
+    first, second = (call.args[1] for call in request.await_args_list)
+    assert first["model"] == second["model"] == model
+    assert first["messages"][1] == second["messages"][1]
+    assert "exceeded the output budget" in second["messages"][0]["content"]
+    assert all("models" not in call.args[1] for call in request.await_args_list)
+
+
+def test_storyboard_repairs_a_box_opening_mislabeled_on_a_book():
+    story = fixtures()["library"]
+    scene = story["scenes"][0]
+    scene["actions"].append({
+        "type": "open_box", "character_id": "mira", "target_id": "book", "start": 4, "end": 5,
+    })
+    response = httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(story)}}]})
+    result = planner.parse_storyboard_reply(response, prompt="Mira opens the book.", duration=15)
+    action = next(action for action in result["scenes"][0]["actions"] if action["type"] == "open_book")
+    assert action["target_id"] == "book"
+    assert all(prop["type"] != "box" for prop in result["scenes"][0]["props"])
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("visible_speak_cue", [True, False])
 async def test_nvidia_recovers_dialogue_assigned_to_narrator(monkeypatch, visible_speak_cue):
     from copy import deepcopy
@@ -362,12 +402,12 @@ async def test_nvidia_recovers_dialogue_assigned_to_narrator(monkeypatch, visibl
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("selection", ["glm", "nvidia", "preset-nvidia", "legacy-hosted"])
+@pytest.mark.parametrize("selection", ["free", "glm", "nvidia", "preset-nvidia", "legacy-hosted"])
 async def test_worker_uses_selected_model_and_passes_story_to_existing_renderer(monkeypatch, tmp_path, selection):
     from app.services import cartoon_job as worker, cartoon_story_job as director
 
     model = ("nvidia/nemotron-3.5-super-vl" if selection == "legacy-hosted"
-             else planner.PROJECT_STORY_MODELS["glm" if selection == "glm" else "nvidia"])
+             else planner.PROJECT_STORY_MODELS["nvidia" if selection == "preset-nvidia" else selection])
     raw = fixtures()["garden"]
     storyboard = planner.normalize_director_story(raw, duration=15)
     project = {

@@ -30,8 +30,8 @@ export function actorState(scene:Item,actor:Item,t:number,index=0):Item {
     if(a.type==="wave"&&active)state.wave=Math.sin((t-a.start)*9)*28;
     if(a.type==="wag"&&active)state.tailWag=Math.sin((t-a.start)*12)*13*a.value;
     if(a.type==="jump"&&active)state.jump=Math.sin(Math.PI*p)*70;
-    if(["point","reach","pick_up","put_down","open_door","close_door","open_box"].includes(a.type)) {
-      if(active) {state.reach=Math.sin(Math.PI*p);state.target=a.target_id;}
+    if(["point","reach","pick_up","put_down","open_door","close_door","open_box","open_book"].includes(a.type)) {
+      if(active) {state.reach=Math.sin(Math.PI*p);state.target=a.target_id;state.reachAction=a.type;}
       if(a.type==="pick_up"&&p>.5)state.held=a.target_id;
       if(a.type==="put_down"&&p>.5)state.held=null;
     }
@@ -152,7 +152,7 @@ export function propState(scene:Item,prop:Item,t:number) {
   let open=prop.state==="open"?1:0,held:string|null=prop.holder_id||null;
   for(const a of scene.actions) if(a.target_id===prop.id&&a.start<=t) {
     const p=progress(t,a.start,a.end);
-    if(a.type==="open_door"||a.type==="open_box")open=p;
+    if(a.type==="open_door"||a.type==="open_box"||a.type==="open_book")open=p;
     if(a.type==="close_door")open=1-p;
     if(a.type==="pick_up"&&p>.5)held=a.character_id;
     if(a.type==="put_down"&&p>.5)held=null;
@@ -169,7 +169,14 @@ function Prop({prop,x,y,unit,open=0}:Item) {
     k==="table"?<><path d="M-100-122H100V-100H-100Z" fill={c} stroke={ink} stroke-width="3"/><path d="M-77-100L-86 0M77-100L86 0" stroke={c} stroke-width="13"/></>:
     k==="chair"?<><path d="M-51-175V-67H50V-175M-50-67V0M50-67V0" stroke={c} stroke-width="13" fill="none"/><path d="M-51-165H50V-99H-51Z" fill={c}/></>:
     k==="letter"?<><path d="M-30-42H30V0H-30Z" fill="#E9DCC5" stroke={ink} stroke-width="2"/><path d="M-30-42L0-18L30-42" fill="none" stroke="#A89483" stroke-width="2"/></>:
-    k==="book"?<><path d="M-28-60H27V0H-28Z" fill={c} stroke={ink} stroke-width="3"/><path d="M-19-52V-8M-9-47H16" stroke="#E5D7BC" stroke-width="3"/></>:
+    k==="book"?<g data-book-open={open}>
+      <path d="M-28-60H27V0H-28Z" fill={c} stroke={ink} stroke-width="3"/>
+      {open>0&&<><path d="M-24-55H23V-5H-24Z" fill="#F4E5C6"/><path d="M-15-45H15M-15-35H15M-15-25H10" stroke="#988A70" stroke-width="2"/></>}
+      <g transform={`translate(-28 0) scale(${1-2*open} 1)`}>
+        <path d="M0-60H55V0H0Z" fill={c} stroke={ink} stroke-width="3"/>
+        <path d="M8-52V-8M19-47H44" stroke="#E5D7BC" stroke-width="3"/>
+      </g>
+    </g>:
     k==="ball"?<><circle cy="-24" r="24" fill={c} stroke={ink} stroke-width="3"/><path d="M-24-24H24M0-48Q-20-24 0 0" stroke="#E5D7BC" fill="none" stroke-width="3"/></>:
     k==="pendant"?<><path d="M-12-34q-18-40 12-40t12 40L0-10Z" stroke="#C0BCA4" fill="none" stroke-width="3"/><path d="M0-26L12-12L0 2L-12-12Z" fill="#C0BCA4" stroke={ink} stroke-width="2"/></>:
     k==="lamp"?<><path d="M0 0V-111M-25 0H25" stroke="#B7B7AB" stroke-width="5"/><path d="M-48-110L-32-168H32L48-110Z" fill="#B6ACA1" stroke={ink} stroke-width="3"/></>:
@@ -263,7 +270,7 @@ function Scene({story,scene,t,w,h,opacity=1}:Item) {
         const mouth=mix(envelope[Math.floor(frame)]||0,envelope[Math.ceil(frame)]||0,frame%1);
         const word=speech?.words?.find((v:Item)=>t>=v.start_seconds&&t<v.end_seconds)?.text||"";
         const target=scene.props.find((p:Item)=>p.id===state.target),s=scale*state.scale*c?.appearance.body_scale;
-        if(target){
+        if(target&&!(state.reachAction==="open_book"&&held.get(target.id)?.held===state.character_id)){
           const anchor=propAnchor(scene,target,w,h,unit),tx=(anchor.x-state.x*w+(target.type==="door"?53*unit:0))/s,ty=(anchor.y-state.y*h-(target.type==="door"?173*unit:0))/s;
           state.crouch=state.reach*clamp((ty+140)/140);state.bodyOffset=60*state.crouch;state.bend=42*state.crouch;
           const angle=rad(state.bend),y=ty-state.bodyOffset+112;
@@ -274,7 +281,8 @@ function Scene({story,scene,t,w,h,opacity=1}:Item) {
             const {hand}=armPoints(state,1);
             const angle=rad(state.bend||0);
             return <Prop key={p.id} prop={p} x={state.x*w+(hand.x*Math.cos(angle)-(hand.y+112)*Math.sin(angle))*s}
-              y={state.y*h+(-112+hand.x*Math.sin(angle)+(hand.y+112)*Math.cos(angle)+(state.bodyOffset||0))*s} unit={s*.7}/>;
+              y={state.y*h+(-112+hand.x*Math.sin(angle)+(hand.y+112)*Math.cos(angle)+(state.bodyOffset||0))*s} unit={s*.7}
+              open={held.get(p.id)?.open}/>;
           })}</g>;
       })}
       <rect width={w} height={h} fill={`url(#${prefix}shade)`} opacity=".45"/>

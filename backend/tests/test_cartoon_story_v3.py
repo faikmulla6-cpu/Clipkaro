@@ -247,7 +247,7 @@ async def test_mocked_glm_response_enters_director_contract_without_network(monk
         )
         assert 'data-height="1350"' in files["index.html"]
 
-    post.assert_awaited_once()
+    assert post.await_count == (2 if case in errors else 1)
     payload = post.await_args.kwargs["json"]
     assert payload["model"] == job.STORY_MODEL
     assert payload["max_tokens"] == 16_384

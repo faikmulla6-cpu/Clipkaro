@@ -24,7 +24,7 @@ from app.services.cartoon_timing import approximate_word_boundaries, build_episo
 from app.services.cartoon_story import StoryValidationError, resolve_cartoon_language
 from app.services.cartoon_security import decrypt_provider_key
 from app.services.cartoon_story_planner import (
-    NVIDIA_STORY_MODEL, OPENROUTER_ROOT, REPAIRABLE_STORYBOARD_ERRORS, STORY_MODEL,
+    FREE_STORY_MODEL, NVIDIA_STORY_MODEL, OPENROUTER_ROOT, REPAIRABLE_STORYBOARD_ERRORS, STORY_MODEL,
     StoryboardReplyError, parse_storyboard_reply, planner_payload, request_storyboard, storyboard_correction_payload,
 )
 from app.services.jobs import update_job, utcnow
@@ -329,19 +329,20 @@ async def _extract_reference_frames(job: dict, project: dict, scratch: Path, sto
 
 
 async def _generate_storyboard(api_key: str, prompt: str, duration: int, style: str, language: str,
-                               frames: list[Path], *, provider: str = "openrouter") -> dict[str, Any]:
-    payload = planner_payload(prompt, duration, style, language, provider=provider, frames=tuple(frames))
+                               frames: list[Path], *, provider: str = "openrouter", model: str | None = None) -> dict[str, Any]:
+    payload = planner_payload(prompt, duration, style, language, provider=provider, frames=tuple(frames), model=model)
     timeout = 105 if provider == "nvidia" else 180
-    if provider == "nvidia":
-        try:
-            return await _read_storyboard(api_key, payload, prompt, duration, provider=provider, timeout=timeout)
-        except RetryableStoryboardRequest:
-            await asyncio.sleep(1)
-        except StoryboardReplyError as exc:
-            if exc.category not in REPAIRABLE_STORYBOARD_ERRORS:
-                raise CartoonJobError(str(exc), category=exc.category) from exc
-            logger.info("Retrying NVIDIA storyboard after validation: category=%s", exc.category)
-            payload = storyboard_correction_payload(payload, exc.category, str(exc))
+    try:
+        return await _read_storyboard(api_key, payload, prompt, duration, provider=provider, timeout=timeout)
+    except RetryableStoryboardRequest:
+        if provider != "nvidia":
+            raise
+        await asyncio.sleep(1)
+    except StoryboardReplyError as exc:
+        if exc.category not in REPAIRABLE_STORYBOARD_ERRORS:
+            raise CartoonJobError(str(exc), category=exc.category) from exc
+        logger.info("Retrying storyboard after validation: provider=%s category=%s", provider, exc.category)
+        payload = storyboard_correction_payload(payload, exc.category, str(exc))
     try:
         return await _read_storyboard(api_key, payload, prompt, duration, provider=provider, timeout=timeout)
     except StoryboardReplyError as exc:
@@ -612,11 +613,12 @@ async def run_cartoon_generation(job: dict[str, Any], scratch: Path, storage) ->
         provider = "nvidia" if nvidia else "openrouter"
         planner_key = await _worker_provider_key(job["user_id"], provider) if nvidia else api_key
         frames = [] if nvidia else await _extract_reference_frames(job, project, scratch, storage)
-        planner_name = "NVIDIA" if nvidia else "GLM"
+        planner_name = "NVIDIA" if nvidia else "Ling" if saved_model == FREE_STORY_MODEL else "GLM"
         await update_job(job["id"], 12, "story_planning", f"{planner_name} is writing the story and keeping characters consistent")
         storyboard = await _generate_storyboard(
             planner_key, str(project["prompt"]), int(project["duration_seconds"]),
             str(project["style"]), str(project["language"]), frames, provider=provider,
+            model=FREE_STORY_MODEL if saved_model == FREE_STORY_MODEL else None,
         )
         await execute(
             "UPDATE cartoon_projects SET storyboard_json=?,progress=18,stage='story_ready',updated_at=? WHERE id=?",

@@ -8,8 +8,8 @@ from typing import Any
 
 STORY_VERSION = 3
 ENVIRONMENTS = {"bedroom", "home", "forest", "garden", "city", "school", "beach", "space", "castle", "mountain", "desert", "workshop"}
-ACTIONS = {"idle", "sleep", "wake", "walk", "run", "sit", "stand", "turn", "look", "head", "blink", "wave", "wag", "point", "reach", "pick_up", "put_down", "open_door", "close_door", "open_box", "react", "jump", "speak"}
-OPENABLE_ACTIONS = {"open_door": "door", "close_door": "door", "open_box": "box"}
+ACTIONS = {"idle", "sleep", "wake", "walk", "run", "sit", "stand", "turn", "look", "head", "blink", "wave", "wag", "point", "reach", "pick_up", "put_down", "open_door", "close_door", "open_box", "open_book", "react", "jump", "speak"}
+OPENABLE_ACTIONS = {"open_door": "door", "close_door": "door", "open_box": "box", "open_book": "book"}
 BOX_CONTENTS = {"letter", "book", "pendant", "ball", "cup"}
 EXPRESSIONS = {"neutral", "happy", "sad", "scared", "surprised", "angry", "curious"}
 PROPS = {"door", "bed", "table", "chair", "letter", "book", "pendant", "ball", "box", "lamp", "cup", "tree"}
@@ -265,6 +265,13 @@ def prepare_director_reply(raw: dict, *, prompt: str = "") -> dict:
         )
         _repair_prop_supports(scene, previous_scene if same_location else {})
         actions = scene.get("actions") or []
+        book_ids = {
+            ident(prop.get("id")) for prop in (scene.get("props") or [])
+            if isinstance(prop, dict) and prop.get("id") and prop.get("type") == "book"
+        }
+        for action in actions:
+            if isinstance(action, dict) and action.get("type") == "open_box" and ident(action.get("target_id")) in book_ids:
+                action["type"] = "open_book"
         action_times = [action[key] for action in actions for key in ("start", "end")
                         if isinstance(action, dict) and key in action]
         # Require evidence that the whole action group uses video time.
@@ -390,8 +397,7 @@ def normalize_director_story(raw: dict, *, duration: int, scene_lengths: tuple[i
             if (item["type"] in {"pick_up", "put_down"} or openable_type) and target not in pids:
                 raise StoryValidationError("Object interaction requires a scene prop.")
             if openable_type and next(p for p in props if p["id"] == target)["type"] != openable_type:
-                message = "Door actions require a door prop." if openable_type == "door" else "Box actions require a box prop."
-                raise StoryValidationError(message)
+                raise StoryValidationError(f"{openable_type.capitalize()} actions require a {openable_type} prop.")
             actions.append({"type": item["type"], "character_id": cid, "start": round(at,4), "end": round(end,4),
                             "target_id": target, "to": point(item.get("to"), (.65,.82)) if item.get("to") else None,
                             "expression": item.get("expression") if item.get("expression") in EXPRESSIONS else "neutral",
@@ -489,6 +495,7 @@ Supported action types: {sorted(ACTIONS)}. Express story beats with the closest 
 For example, an envelope can be a letter prop. Suggest complex or offscreen events through sound, framing, and reaction.
 Persistent poses stay until changed.
 Use target_id for picking up/putting down props and opening/closing doors. Reaching/pickup actors must walk within .15 x of target first.
+Use open_book with the book's ID when a character opens a book. Use open_box only for a box.
 Stage the actor slightly to the side of a prop so their body does not block the reveal. Frame the box as it opens, then cut or move to the character's reaction.
 Only walk/run change position using "to". React sets expression; look/turn/head use value -1 to 1.
 Camera focus_id must refer to a visible actor or prop. Keep interactions in wide/medium shots so hands and props remain visible.
