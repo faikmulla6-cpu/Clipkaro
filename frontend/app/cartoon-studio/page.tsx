@@ -393,9 +393,8 @@ export default function CartoonStudioPage() {
               </label>}
               <button className={styles.primaryButton} type="submit" disabled={Boolean(missingProvider || busy || providerBusy || !ttsModel)}>
                 {busy ? <Loader2 className={styles.spin} size={18} /> : <WandSparkles size={18} />}
-                {busy ? (projectPlanner === "nvidia" ? "Planning with NVIDIA…" : "Please wait...") : "Create my cartoon"}
+                {busy ? "Queuing your cartoon…" : "Create my cartoon"}
               </button>
-              {busy && projectPlanner === "nvidia" && <p className={styles.formHint} role="status">Keep this tab open. Story planning can take up to two minutes before rendering starts.</p>}
               {createError && <div className={styles.alertError} role="alert"><AlertCircle size={17} />{createError}</div>}
               {missingProvider && <a className={styles.setupLink} href="#studio-api-keys">Connect your {missingProvider} key</a>}
             </form>

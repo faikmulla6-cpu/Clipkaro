@@ -179,7 +179,10 @@ async def test_project_creation_queues_selected_planner_without_exposing_keys(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("recovers", [True, False])
-async def test_nvidia_create_corrects_timing_only_once(monkeypatch, recovers):
+@pytest.mark.parametrize("in_worker", [True, False])
+async def test_nvidia_create_corrects_timing_only_once(monkeypatch, recovers, in_worker):
+    from app.services import cartoon_job as worker
+
     prompt = "0–10 seconds Jannat wakes up. 10–20 seconds She remembers. 20–30 seconds She looks at the door."
     valid = fixtures()["jannat"]
     valid["scenes"].pop(1)
@@ -189,18 +192,24 @@ async def test_nvidia_create_corrects_timing_only_once(monkeypatch, recovers):
         return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(story)}}]})
 
     request = AsyncMock(side_effect=[reply(merged), reply(valid if recovers else merged)])
-    monkeypatch.setattr(studio, "request_storyboard", request)
-    args = ("nvapi-fixture", prompt, 30, "2d-cartoon", "ur", "nvidia")
+    if in_worker:
+        monkeypatch.setattr(worker, "request_storyboard", request)
+        invoke = lambda: worker._generate_storyboard("nvapi-fixture", prompt, 30, "2d-cartoon", "ur", [], provider="nvidia")
+        expected_error = worker.CartoonJobError
+    else:
+        monkeypatch.setattr(studio, "request_storyboard", request)
+        invoke = lambda: studio._plan_in_request("nvapi-fixture", prompt, 30, "2d-cartoon", "ur", "nvidia", repair_timing=True)
+        expected_error = studio.HTTPException
     if recovers:
-        story = await studio._plan_in_request(*args, repair_timing=True)
+        story = await invoke()
         assert [scene["start"] for scene in story["scenes"]] == [0, 10, 20]
     else:
-        with pytest.raises(studio.HTTPException, match="No video was queued"):
-            await studio._plan_in_request(*args, repair_timing=True)
+        with pytest.raises(expected_error, match="wrong number of scenes|combined or split"):
+            await invoke()
 
     first, second = request.await_args_list
-    assert first.kwargs["timeout"] + second.kwargs["timeout"] == 105
-    assert first.args[0] == second.args[0] == args[0]
+    assert first.kwargs["timeout"] + second.kwargs["timeout"] == (170 if in_worker else 105)
+    assert first.args[0] == second.args[0] == "nvapi-fixture"
     assert first.args[1]["messages"][1] == second.args[1]["messages"][1]
     assert "first storyboard was rejected" in second.args[1]["messages"][0]["content"]
 
@@ -226,22 +235,23 @@ def test_scripted_ranges_survive_both_planners_and_combined_scenes_are_rejected(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("selection", ["glm", "nvidia", "legacy-hosted"])
+@pytest.mark.parametrize("selection", ["glm", "nvidia", "preset-nvidia", "legacy-hosted"])
 async def test_worker_uses_selected_model_and_passes_story_to_existing_renderer(monkeypatch, tmp_path, selection):
     from app.services import cartoon_job as worker, cartoon_story_job as director
 
     model = ("nvidia/nemotron-3.5-super-vl" if selection == "legacy-hosted"
-             else planner.PROJECT_STORY_MODELS[selection])
+             else planner.PROJECT_STORY_MODELS["glm" if selection == "glm" else "nvidia"])
     raw = fixtures()["garden"]
     storyboard = planner.normalize_director_story(raw, duration=15)
     project = {
         "id": "cartoon", "status": "queued", "language": "ur", "style": "2d-cartoon",
         "prompt": "A fox finds the lost ball.", "duration_seconds": 15, "text_model": model,
         "tts_model": "system/edge-tts-urdu", "assets_json": "{}",
-        "storyboard_json": json.dumps(storyboard if selection == "nvidia" else {}),
+        "storyboard_json": json.dumps(storyboard if selection == "preset-nvidia" else {}),
     }
-    monkeypatch.setattr(worker, "fetch_one", AsyncMock(side_effect=[project, {"api_key_ciphertext": "fixture"}]))
-    monkeypatch.setattr(worker, "decrypt_provider_key", lambda _: "test-openrouter-key")
+    credentials = [{"api_key_ciphertext": "test-openrouter-key"}, {"api_key_ciphertext": "test-nvidia-key"}]
+    monkeypatch.setattr(worker, "fetch_one", fetch := AsyncMock(side_effect=[project, *credentials]))
+    monkeypatch.setattr(worker, "decrypt_provider_key", lambda value: value)
     monkeypatch.setattr(worker, "execute", AsyncMock())
     monkeypatch.setattr(worker, "update_job", AsyncMock())
     monkeypatch.setattr(worker, "_openrouter_models", AsyncMock(return_value=[]))
@@ -263,9 +273,11 @@ async def test_worker_uses_selected_model_and_passes_story_to_existing_renderer(
     render.assert_awaited_once()
     assert render.await_args.args[2]["scenes"] == storyboard["scenes"]
     assert render.await_args.args[-3:] == (storage, "test-openrouter-key", "system/edge-tts-urdu")
-    if selection == "nvidia":
+    if selection == "preset-nvidia":
         upstream.assert_not_awaited()
     else:
         upstream.assert_awaited_once()
         key, payload = upstream.await_args.args
-        assert (key, payload["model"], upstream.await_args.kwargs["provider"]) == ("test-openrouter-key", model, "openrouter")
+        expected = "nvidia" if selection == "nvidia" else "openrouter"
+        assert (key, payload["model"], upstream.await_args.kwargs["provider"]) == (f"test-{expected}-key", model, expected)
+        assert fetch.await_args.args[1] == (job["user_id"], expected)

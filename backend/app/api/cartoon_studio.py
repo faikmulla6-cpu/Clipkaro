@@ -21,7 +21,7 @@ from app.services.cartoon_speech import SYSTEM_URDU_TTS_MODEL, system_urdu_tts_m
 from app.services.cartoon_story import resolve_cartoon_language
 from app.services.cartoon_story_planner import (
     NVIDIA_STORY_MODEL, OPENROUTER_ROOT, PROJECT_STORY_MODELS, STORY_MODEL, StoryboardReplyError,
-    parse_storyboard_reply, planner_payload, request_storyboard,
+    parse_storyboard_reply, planner_payload, request_storyboard, timing_correction_payload,
 )
 from app.services.cartoon_security import (
     CartoonCredentialError, decrypt_provider_key, encrypt_provider_key,
@@ -303,14 +303,7 @@ async def _plan_in_request(
         if not repair_timing or exc.category != "CARTOON_STORY_BEAT_TIMING":
             raise HTTPException(502, str(exc)) from exc
 
-    system, idea = payload["messages"]
-    correction = {**system, "content": system["content"] + " " + (
-        "The first storyboard was rejected because its scene count did not match the explicit ranges. "
-        "Return a complete replacement. Make exactly one scene object for each requested range, "
-        "including when adjacent scenes share the same setting. Keep each line and action in its original range."
-    )}
-    repair = {**payload, "temperature": .2, "messages": [correction, idea]}
-    upstream = await _request_plan(key, repair, provider, 40)
+    upstream = await _request_plan(key, timing_correction_payload(payload), provider, 40)
     try:
         return parse_storyboard_reply(upstream, prompt=prompt, duration=duration)
     except StoryboardReplyError as exc:
@@ -481,10 +474,10 @@ async def create_cartoon_project(
     selected_model = next(item for item in speech_models if item["id"] == tts_model)
     if voice_id and voice_id not in selected_model.get("supported_voices", []):
         raise HTTPException(422, "Choose a voice supported by the selected speech model.")
-    # Direct NVIDIA planning finishes before queueing so its key never has to
-    # cross the worker boundary. Rendering and retries reuse the saved plan.
+    # Saved-key planning belongs in the worker. Only old preview forms using
+    # a request-only key must finish planning before queueing.
     storyboard = {}
-    if trial_key:
+    if trial_key and nvidia_key.strip():
         storyboard = await _plan_in_request(
             trial_key, prompt, duration_seconds, style, language, "nvidia", repair_timing=True,
         )
@@ -606,6 +599,8 @@ async def retry_cartoon_project(
         raise HTTPException(409, "Only a failed cartoon can be retried.")
     if not await _provider_key(user["id"]):
         raise HTTPException(409, "Reconnect your OpenRouter API key before retrying.")
+    if row.get("text_model") == NVIDIA_STORY_MODEL and not _project_out(row)["storyboard"].get("scenes"):
+        await _nvidia_key_for_request(user, "")
     if not await consume_rate_limit(
         str(user["id"]), group="cartoon_studio_create", limit=5, window_seconds=3600,
     ):

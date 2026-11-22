@@ -82,6 +82,16 @@ async def request_storyboard(api_key: str, payload: dict, *, provider: str, time
             return response
 
 
+def timing_correction_payload(payload: dict) -> dict:
+    system, idea = payload["messages"]
+    correction = {**system, "content": system["content"] + " " + (
+        "The first storyboard was rejected because its scene count did not match the explicit ranges. "
+        "Return a complete replacement. Make exactly one scene object for each requested range, "
+        "including when adjacent scenes share the same setting. Keep each line and action in its original range."
+    )}
+    return {**payload, "temperature": .2, "messages": [correction, idea]}
+
+
 def parse_storyboard_reply(response: httpx.Response, *, prompt: str, duration: int) -> dict:
     try:
         reply = response.json()

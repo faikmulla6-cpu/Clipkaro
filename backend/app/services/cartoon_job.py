@@ -25,7 +25,7 @@ from app.services.cartoon_story import StoryValidationError, resolve_cartoon_lan
 from app.services.cartoon_security import decrypt_provider_key
 from app.services.cartoon_story_planner import (
     NVIDIA_STORY_MODEL, OPENROUTER_ROOT, STORY_MODEL,
-    StoryboardReplyError, parse_storyboard_reply, planner_payload, request_storyboard,
+    StoryboardReplyError, parse_storyboard_reply, planner_payload, request_storyboard, timing_correction_payload,
 )
 from app.services.jobs import update_job, utcnow
 from app.services.storage import validate_object_key
@@ -324,18 +324,59 @@ async def _extract_reference_frames(job: dict, project: dict, scratch: Path, sto
 
 
 async def _generate_storyboard(api_key: str, prompt: str, duration: int, style: str, language: str,
-                               frames: list[Path]) -> dict[str, Any]:
-    payload = planner_payload(prompt, duration, style, language, provider="openrouter", frames=tuple(frames))
+                               frames: list[Path], *, provider: str = "openrouter") -> dict[str, Any]:
+    payload = planner_payload(prompt, duration, style, language, provider=provider, frames=tuple(frames))
+    if provider == "nvidia":
+        try:
+            return await _read_storyboard(api_key, payload, prompt, duration, provider="nvidia", timeout=105)
+        except StoryboardReplyError as exc:
+            if exc.category != "CARTOON_STORY_BEAT_TIMING":
+                raise CartoonJobError(str(exc), category=exc.category) from exc
+        payload = timing_correction_payload(payload)
     try:
-        response = await request_storyboard(api_key, payload, provider="openrouter")
-    except (httpx.HTTPError, TimeoutError) as exc:
-        raise CartoonJobError("Could not reach OpenRouter while planning your cartoon.", category="CARTOON_PROVIDER_TEMPORARY") from exc
-    if response.status_code >= 400:
-        raise _provider_error(response, task="story planning")
-    try:
-        return parse_storyboard_reply(response, prompt=prompt, duration=duration)
+        return await _read_storyboard(api_key, payload, prompt, duration, provider=provider,
+                                      timeout=65 if provider == "nvidia" else 180)
     except StoryboardReplyError as exc:
         raise CartoonJobError(str(exc), category=exc.category) from exc
+
+
+async def _read_storyboard(api_key: str, payload: dict, prompt: str, duration: int, *,
+                           provider: str, timeout: int) -> dict[str, Any]:
+    label = "NVIDIA" if provider == "nvidia" else "OpenRouter"
+    try:
+        response = await request_storyboard(api_key, payload, provider=provider, timeout=timeout)
+    except (httpx.HTTPError, TimeoutError) as exc:
+        raise CartoonJobError(f"{label} did not finish planning your cartoon. Try again shortly.",
+                              category="CARTOON_PROVIDER_TEMPORARY") from exc
+    if provider == "nvidia":
+        if response.status_code in {401, 403}:
+            raise CartoonJobError("NVIDIA rejected the saved key or denied model access. Reconnect NVIDIA in API keys.",
+                                  category="CARTOON_PROVIDER_AUTH")
+        if response.status_code in {402, 429}:
+            raise CartoonJobError("NVIDIA reached an account credit or rate limit. Check your NVIDIA account and retry.",
+                                  category="CARTOON_PROVIDER_RATE_LIMIT")
+        if response.status_code == 202 or not response.is_success:
+            raise CartoonJobError("NVIDIA could not complete the storyboard. Try again shortly.",
+                                  category="CARTOON_PROVIDER_TEMPORARY")
+    if response.status_code >= 400:
+        raise _provider_error(response, task="story planning")
+    return parse_storyboard_reply(response, prompt=prompt, duration=duration)
+
+
+async def _worker_provider_key(user_id: str, provider: str) -> str:
+    label = "NVIDIA" if provider == "nvidia" else "OpenRouter"
+    credential = await fetch_one(
+        "SELECT api_key_ciphertext FROM cartoon_provider_credentials WHERE user_id=? AND provider=?",
+        (user_id, provider),
+    )
+    if not credential:
+        raise CartoonJobError(f"Connect your {label} API key in Cartoon Studio, then retry.",
+                              category="CARTOON_PROVIDER_MISSING")
+    try:
+        return decrypt_provider_key(str(credential["api_key_ciphertext"]))
+    except Exception as exc:
+        raise CartoonJobError(f"Reconnect your {label} API key in Cartoon Studio, then retry.",
+                              category="CARTOON_PROVIDER_AUTH") from exc
 
 
 def _apply_cinematic_jannat_storyboard(storyboard: dict[str, Any]) -> dict[str, Any]:
@@ -531,16 +572,7 @@ async def run_cartoon_generation(job: dict[str, Any], scratch: Path, storage) ->
             project.get("language") or "auto", project.get("prompt") or ""
         ),
     }
-    credential = await fetch_one(
-        "SELECT api_key_ciphertext FROM cartoon_provider_credentials WHERE user_id=? AND provider='openrouter'",
-        (job["user_id"],),
-    )
-    if not credential:
-        raise CartoonJobError("Connect your OpenRouter API key in Cartoon Studio before generating a video.", category="CARTOON_PROVIDER_MISSING")
-    try:
-        api_key = decrypt_provider_key(str(credential["api_key_ciphertext"]))
-    except Exception as exc:
-        raise CartoonJobError("Reconnect your OpenRouter API key securely, then retry.", category="CARTOON_PROVIDER_AUTH") from exc
+    api_key = await _worker_provider_key(job["user_id"], "openrouter")
 
     await execute(
         "UPDATE cartoon_projects SET status='processing',progress=5,stage='preparing',error=NULL,updated_at=? WHERE id=?",
@@ -554,19 +586,20 @@ async def run_cartoon_generation(job: dict[str, Any], scratch: Path, storage) ->
     storyboard = _loads(project.get("storyboard_json"), {})
     if not storyboard.get("scenes"):
         saved_model = project.get("text_model")
-        if saved_model == NVIDIA_STORY_MODEL:
-            raise CartoonJobError("The NVIDIA storyboard is missing. Create another cartoon with your NVIDIA key.",
-                                  category="CARTOON_STORY_INVALID")
         if saved_model == "nvidia/nemotron-3.5-super-vl":
             raise CartoonJobError(
                 "This project used an older story planner. Create a new cartoon with GLM or NVIDIA API.",
                 category="CARTOON_STORY_PLANNER_UNAVAILABLE",
             )
-        frames = await _extract_reference_frames(job, project, scratch, storage)
-        await update_job(job["id"], 12, "story_planning", "GLM is writing the story and keeping characters consistent")
+        nvidia = saved_model == NVIDIA_STORY_MODEL
+        provider = "nvidia" if nvidia else "openrouter"
+        planner_key = await _worker_provider_key(job["user_id"], provider) if nvidia else api_key
+        frames = [] if nvidia else await _extract_reference_frames(job, project, scratch, storage)
+        planner_name = "NVIDIA" if nvidia else "GLM"
+        await update_job(job["id"], 12, "story_planning", f"{planner_name} is writing the story and keeping characters consistent")
         storyboard = await _generate_storyboard(
-            api_key, str(project["prompt"]), int(project["duration_seconds"]),
-            str(project["style"]), str(project["language"]), frames,
+            planner_key, str(project["prompt"]), int(project["duration_seconds"]),
+            str(project["style"]), str(project["language"]), frames, provider=provider,
         )
         await execute(
             "UPDATE cartoon_projects SET storyboard_json=?,progress=18,stage='story_ready',updated_at=? WHERE id=?",

@@ -434,9 +434,9 @@ def test_saved_nvidia_key_is_reused_and_independently_disconnected(cartoon_api_c
         })
         assert created.status_code == 200 and key not in created.text
         project = created.json()
-        assert project["status"] == "queued" and project["storyboard"]["scenes"]
-        assert [call.args[0] for call in plan.await_args_list] == [key, key]
-        assert all(call.kwargs["provider"] == "nvidia" for call in plan.await_args_list)
+        assert project["status"] == "queued" and project["storyboard"] == {}
+        plan.assert_awaited_once()
+        assert plan.await_args.args[0] == key and plan.await_args.kwargs["provider"] == "nvidia"
     job_payload = asyncio.run(fetch_one("SELECT payload_json FROM job_payloads WHERE job_id=?", (project["job_id"],)))
     assert key not in job_payload["payload_json"]
     assert client.delete(endpoint, headers=csrf).status_code == 204

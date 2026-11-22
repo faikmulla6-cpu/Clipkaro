@@ -29,7 +29,6 @@
 .secondaryButton{background:#eff7e9;color:#20583c;border:1px solid #d7e7d0}
 .secondaryButton:hover:not(:disabled){background:#e4f1da}
 .primaryButton:disabled,.secondaryButton:disabled{opacity:.5;cursor:not-allowed}
-.formHint{margin:-7px 0 0;text-align:center;color:#7b887e;font-size:10px}
 .languageHint{padding:8px 10px;border-radius:9px;background:#fff7e8;color:#8b5c22!important;font-size:9px!important;line-height:1.45}
 .sideColumn{display:flex;flex-direction:column;gap:16px}
 .providerPanel{padding:21px;scroll-margin-top:24px}
