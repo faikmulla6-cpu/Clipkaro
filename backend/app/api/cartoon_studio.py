@@ -21,7 +21,7 @@ from app.services.cartoon_speech import SYSTEM_URDU_TTS_MODEL, system_urdu_tts_m
 from app.services.cartoon_story import resolve_cartoon_language
 from app.services.cartoon_story_planner import (
     NVIDIA_STORY_MODEL, OPENROUTER_ROOT, PROJECT_STORY_MODELS, STORY_MODEL, StoryboardReplyError,
-    parse_storyboard_reply, planner_payload, request_storyboard, timing_correction_payload,
+    parse_storyboard_reply, planner_payload, request_storyboard, storyboard_correction_payload,
 )
 from app.services.cartoon_security import (
     CartoonCredentialError, decrypt_provider_key, encrypt_provider_key,
@@ -303,7 +303,7 @@ async def _plan_in_request(
         if not repair_timing or exc.category != "CARTOON_STORY_BEAT_TIMING":
             raise HTTPException(502, str(exc)) from exc
 
-    upstream = await _request_plan(key, timing_correction_payload(payload), provider, 40)
+    upstream = await _request_plan(key, storyboard_correction_payload(payload, "CARTOON_STORY_BEAT_TIMING"), provider, 40)
     try:
         return parse_storyboard_reply(upstream, prompt=prompt, duration=duration)
     except StoryboardReplyError as exc:

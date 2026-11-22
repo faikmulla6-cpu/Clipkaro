@@ -25,7 +25,7 @@ from app.services.cartoon_story import StoryValidationError, resolve_cartoon_lan
 from app.services.cartoon_security import decrypt_provider_key
 from app.services.cartoon_story_planner import (
     NVIDIA_STORY_MODEL, OPENROUTER_ROOT, STORY_MODEL,
-    StoryboardReplyError, parse_storyboard_reply, planner_payload, request_storyboard, timing_correction_payload,
+    StoryboardReplyError, parse_storyboard_reply, planner_payload, request_storyboard, storyboard_correction_payload,
 )
 from app.services.jobs import update_job, utcnow
 from app.services.storage import validate_object_key
@@ -330,9 +330,9 @@ async def _generate_storyboard(api_key: str, prompt: str, duration: int, style: 
         try:
             return await _read_storyboard(api_key, payload, prompt, duration, provider="nvidia", timeout=105)
         except StoryboardReplyError as exc:
-            if exc.category != "CARTOON_STORY_BEAT_TIMING":
+            if exc.category not in {"CARTOON_STORY_BEAT_TIMING", "CARTOON_STORY_DIALOGUE_SPEAKER"}:
                 raise CartoonJobError(str(exc), category=exc.category) from exc
-        payload = timing_correction_payload(payload)
+            payload = storyboard_correction_payload(payload, exc.category)
     try:
         return await _read_storyboard(api_key, payload, prompt, duration, provider=provider,
                                       timeout=65 if provider == "nvidia" else 180)

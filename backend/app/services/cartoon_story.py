@@ -28,6 +28,10 @@ class StoryValidationError(ValueError):
     pass
 
 
+class DialogueSpeakerError(StoryValidationError):
+    pass
+
+
 def resolve_cartoon_language(language: str, prompt: str) -> str:
     """Honor explicit Roman Hindi or Hinglish when the form defaults to Hindi."""
     if language in {"hi", "auto"} and re.search(
@@ -421,14 +425,22 @@ def normalize_director_story(raw: dict, *, duration: int, scene_lengths: tuple[i
                 raise StoryValidationError("Speech must be structured.")
             track = "narration" if line.get("track") == "narration" else "dialogue"
             speaker = ident(line.get("speaker_id")) or (scene_ids[0] if track == "dialogue" else "narrator")
+            start_at = round(number(line.get("start"), .4, 0, weight) * factor, 4)
+            if track == "dialogue" and speaker == "narrator":
+                speaking = {
+                    action["character_id"] for action in actions
+                    if action["type"] == "speak" and action["start"] <= start_at < action["end"]
+                }
+                if len(speaking) == 1:
+                    speaker = next(iter(speaking))
+            if track == "dialogue" and speaker not in scene_ids:
+                raise DialogueSpeakerError("Dialogue must belong to a visible character.")
             if speaker != "narrator" and speaker not in scene_ids:
                 raise StoryValidationError("Speech references a missing character.")
-            if track == "dialogue" and speaker not in scene_ids:
-                raise StoryValidationError("Dialogue must belong to a visible character.")
             text = str(line.get("text") or "").strip()[:600]
             if text:
                 speech.append({"id": f"scene-{i+1}-line-{j+1}", "track": track, "speaker_id": speaker, "text": text,
-                               "start": round(number(line.get("start"), .4, 0, weight)*factor,4)})
+                               "start": start_at})
         sounds = []
         for sound in (source.get("sounds") or [])[:24]:
             if not isinstance(sound, dict) or sound.get("type") not in SOUNDS:
@@ -480,7 +492,7 @@ Use target_id for picking up/putting down props and opening/closing doors. Reach
 Stage the actor slightly to the side of a prop so their body does not block the reveal. Frame the box as it opens, then cut or move to the character's reaction.
 Only walk/run change position using "to". React sets expression; look/turn/head use value -1 to 1.
 Camera focus_id must refer to a visible actor or prop. Keep interactions in wide/medium shots so hands and props remain visible.
-For narration use speaker_id "narrator". For dialogue use the speaking character's exact ID.
+Use speaker_id "narrator" only on the narration track. For dialogue, put the speaker's exact ID in the scene's character_ids, include a visible actor for that ID, and align a speak action with the line. When a character is revealed at a door, stage them visibly before their dialogue starts.
 Sound types: {sorted(SOUNDS)}.
 Use only as many scenes as the story needs (typically 1-3 for a 15-second story). Keep a location for continuity when appropriate.
 Do not invent dialogue for silent beats. Include narration when the user requests it.

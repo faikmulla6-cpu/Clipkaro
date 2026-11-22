@@ -10,7 +10,7 @@ from pathlib import Path
 
 import httpx
 
-from .cartoon_story import StoryValidationError, director_prompt, director_response_schema, normalize_director_story, prepare_director_reply
+from .cartoon_story import DialogueSpeakerError, StoryValidationError, director_prompt, director_response_schema, normalize_director_story, prepare_director_reply
 from .cartoon_story_direction import direct_story, scripted_scene_lengths
 
 OPENROUTER_ROOT = "https://openrouter.ai/api/v1"
@@ -82,13 +82,19 @@ async def request_storyboard(api_key: str, payload: dict, *, provider: str, time
             return response
 
 
-def timing_correction_payload(payload: dict) -> dict:
+def storyboard_correction_payload(payload: dict, category: str) -> dict:
     system, idea = payload["messages"]
-    correction = {**system, "content": system["content"] + " " + (
+    guidance = (
+        "The first storyboard was rejected because a dialogue speaker was not visible in their scene. "
+        "Return a complete replacement. Keep the supplied script and timing. Use narrator only for narration. "
+        "Use the intended speaker's exact ID for each line of dialogue, declare the speaker in character_ids and actors "
+        "for that scene, and give the visible actor a speak action at the line's start."
+    ) if category == "CARTOON_STORY_DIALOGUE_SPEAKER" else (
         "The first storyboard was rejected because its scene count did not match the explicit ranges. "
         "Return a complete replacement. Make exactly one scene object for each requested range, "
         "including when adjacent scenes share the same setting. Keep each line and action in its original range."
-    )}
+    )
+    correction = {**system, "content": system["content"] + " " + guidance}
     return {**payload, "temperature": .2, "messages": [correction, idea]}
 
 
@@ -135,7 +141,8 @@ def parse_storyboard_reply(response: httpx.Response, *, prompt: str, duration: i
         raise
     except StoryValidationError as exc:
         logger.warning("Cartoon storyboard rejected: %s", exc)
-        raise StoryboardReplyError(f"The story planner produced an unsupported storyboard. {exc}") from exc
+        category = "CARTOON_STORY_DIALOGUE_SPEAKER" if isinstance(exc, DialogueSpeakerError) else "CARTOON_STORY_INVALID"
+        raise StoryboardReplyError(f"The story planner produced an unsupported storyboard. {exc}", category) from exc
     except (AttributeError, KeyError, IndexError, TypeError, ValueError) as exc:
         logger.warning("Cartoon planner response could not be read (%s)", type(exc).__name__)
         raise StoryboardReplyError("The story planner returned an unreadable response.") from exc

@@ -235,6 +235,39 @@ def test_scripted_ranges_survive_both_planners_and_combined_scenes_are_rejected(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("visible_speak_cue", [True, False])
+async def test_nvidia_recovers_dialogue_assigned_to_narrator(monkeypatch, visible_speak_cue):
+    from copy import deepcopy
+    from app.services import cartoon_job as worker
+
+    corrected = fixtures()["library"]
+    lines = corrected["scenes"][0]["speech"]
+    lines[1]["text"] = "Surprise!"
+    invalid = deepcopy(corrected)
+    scene = invalid["scenes"][0]
+    scene["speech"][1]["speaker_id"] = "narrator"
+    if visible_speak_cue:
+        scene["actions"].append({"type": "speak", "character_id": "arun", "start": 3, "end": 4})
+
+    def reply(story):
+        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(story)}}]})
+
+    upstream = AsyncMock(side_effect=[reply(invalid), reply(corrected)])
+    monkeypatch.setattr(worker, "request_storyboard", upstream)
+    result = await worker._generate_storyboard(
+        "nvapi-fixture", "Mira reads a book, then Arun says “Surprise!”", 15, "2d-cartoon", "en", [],
+        provider="nvidia",
+    )
+    line = result["scenes"][0]["speech"][1]
+    assert (line["speaker_id"], line["track"], line["text"]) == ("arun", "dialogue", "Surprise!")
+    assert upstream.await_count == (1 if visible_speak_cue else 2)
+    if not visible_speak_cue:
+        original, correction = (call.args[1]["messages"] for call in upstream.await_args_list)
+        assert original[1] == correction[1]
+        assert "dialogue speaker was not visible" in correction[0]["content"]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("selection", ["glm", "nvidia", "preset-nvidia", "legacy-hosted"])
 async def test_worker_uses_selected_model_and_passes_story_to_existing_renderer(monkeypatch, tmp_path, selection):
     from app.services import cartoon_job as worker, cartoon_story_job as director
