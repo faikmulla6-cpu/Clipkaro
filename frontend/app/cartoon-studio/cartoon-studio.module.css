@@ -32,16 +32,23 @@
 .formHint{margin:-7px 0 0;text-align:center;color:#7b887e;font-size:10px}
 .languageHint{padding:8px 10px;border-radius:9px;background:#fff7e8;color:#8b5c22!important;font-size:9px!important;line-height:1.45}
 .sideColumn{display:flex;flex-direction:column;gap:16px}
-.providerPanel{padding:21px}
-.providerPanel .panelHead{margin-bottom:15px}
-.providerPanel .panelHead>svg{color:#286a4b}
+.providerPanel{padding:21px;scroll-margin-top:24px}
+.providerPanel .panelHead{margin-bottom:16px;align-items:flex-start}
+.providerPanel .panelHead h3{margin-top:0}
+.providerPanel .panelHead p{margin:5px 0 0;color:#5f7165;font-size:11px;line-height:1.5}
+.keysIcon{display:grid;place-items:center;flex:0 0 39px;height:39px;border-radius:12px;background:#eff7e9;color:#286a4b}
+.providerList{display:grid;gap:10px}
+.providerCard{display:grid;gap:10px;min-width:0;padding:14px;border:1px solid #e0e8dc;border-radius:13px;background:#fafcf8}
+.providerCardHead,.savedKeyRow,.keyActions{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.providerCardHead h4{margin:0;color:#22362a;font-size:13px;font-weight:800}
+.providerCardHead p,.keyHelp,.keyError{margin:4px 0 0;color:#5f7165;font-size:11px;line-height:1.45}
+.savedKey{display:inline-flex;align-items:center;gap:4px;padding:4px 7px;border-radius:99px;background:#e8f4e3;color:#28613e;font-size:10px;font-weight:800}
+.savedKeyRow code{color:#45584a;font-size:11px;overflow-wrap:anywhere}
+.providerCard .secondaryButton{min-height:38px}
+.setupLink,.keyForm a{color:#286145;font-size:11px;font-weight:800;text-decoration:underline;text-underline-offset:3px}
+.setupLink{align-self:center}
+.keyError{color:#974c3e}
 .keyForm{display:flex;flex-direction:column;gap:12px}
-.keyForm a{color:#39734d;font-size:10px;font-weight:700;text-decoration:underline;text-underline-offset:3px}
-.connectedState{display:flex;align-items:center;gap:10px;padding:12px;border:1px solid #dbead3;border-radius:12px;background:#f7fbf3}
-.connectedIcon{width:34px;height:34px;display:grid;place-items:center;background:#e2f3d7;border-radius:10px;color:#3b7d43}
-.connectedState>div:nth-child(2){display:flex;flex-direction:column;gap:3px;min-width:0;flex:1}
-.connectedState strong{font-size:11px;color:#234a2d}
-.connectedState span{font-size:9px;color:#748276}
 .textButton{border:0;background:none;color:#a34b3b;font-size:10px;font-weight:800;cursor:pointer}
 .securityNote,.billingNote{display:flex;align-items:flex-start;gap:8px;margin-top:13px;color:#6f7d71;font-size:9px;line-height:1.5}
 .securityNote svg{flex:0 0 auto;color:#438253;margin-top:1px}

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -383,6 +384,66 @@ def test_cartoon_api_connects_byok_and_queues_private_project(cartoon_api_client
     assert job_payload and project["id"] in job_payload["payload_json"]
     assert key not in job_payload["payload_json"]
     assert discover.await_count == 3
+
+
+def test_saved_nvidia_key_is_reused_and_independently_disconnected(cartoon_api_client, monkeypatch):
+    import httpx
+    from story_v3_fixtures import fixtures
+
+    client = cartoon_api_client
+    prefix = "/api/v1/cartoon-studio"
+    email = "saved-nvidia@example.com"
+    assert client.post("/api/v1/auth/signup", json={
+        "name": "NVIDIA tester", "email": email, "password": "Secure123",
+    }).status_code == 201
+    user = asyncio.run(fetch_one("SELECT id FROM users WHERE email=?", (email,)))
+    user_id = user["id"]
+    asyncio.run(execute("UPDATE users SET cartoon_studio_access_override=1 WHERE id=?", (user_id,)))
+    csrf = {"X-CSRF-Token": client.cookies.get("csrf_token")}
+    key = "nvapi-test-nvidia-encrypted-connection"
+    endpoint = prefix + "/providers/nvidia"
+    assert client.post(endpoint, headers=csrf, json={"api_key": key}).status_code == 403
+    monkeypatch.setattr(get_settings(), "cartoon_storyboard_test_user_ids", user_id)
+    assert client.post(endpoint, json={"api_key": key}).status_code == 403
+
+    invalid = client.post(endpoint, headers=csrf, json={"api_key": [key]})
+    assert invalid.status_code == 422 and key not in invalid.text
+    connected = client.post(endpoint, headers=csrf, json={"api_key": key})
+    assert connected.status_code == 200 and key not in connected.text
+    assert connected.json()["connected"] is True and connected.json()["validated_at"] is None
+    nav = client.get(prefix + "/providers")
+    assert nav.json()["nvidia"] == connected.json()
+    assert key not in nav.text
+    assert nav.headers["cache-control"] == "no-store"
+    credential = asyncio.run(fetch_one(
+        "SELECT api_key_ciphertext FROM cartoon_provider_credentials WHERE user_id=? AND provider='nvidia'", (user_id,),
+    ))
+    assert credential["api_key_ciphertext"].startswith("v1:") and key not in credential["api_key_ciphertext"]
+
+    idea = {"prompt": "A fox finds the lost ball.", "duration_seconds": "15", "language": "ur"}
+    upstream = httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(fixtures()["garden"])}}]})
+    with patch("app.api.cartoon_studio._models", new=AsyncMock(return_value=[])), patch(
+        "app.api.cartoon_studio.request_storyboard", new=AsyncMock(return_value=upstream),
+    ) as plan:
+        assert client.post(prefix + "/providers/openrouter", headers=csrf,
+                           json={"api_key": "sk-or-test-separate-voice-provider"}).status_code == 200
+        tested = client.post(prefix + "/storyboard-test", headers=csrf, data={**idea, "provider": "nvidia"})
+        assert tested.status_code == 200 and key not in tested.text
+        created = client.post(prefix + "/projects", headers=csrf, data={
+            **idea, "story_planner": "nvidia", "tts_model": "system/edge-tts-urdu",
+        })
+        assert created.status_code == 200 and key not in created.text
+        project = created.json()
+        assert project["status"] == "queued" and project["storyboard"]["scenes"]
+        assert [call.args[0] for call in plan.await_args_list] == [key, key]
+        assert all(call.kwargs["provider"] == "nvidia" for call in plan.await_args_list)
+    job_payload = asyncio.run(fetch_one("SELECT payload_json FROM job_payloads WHERE job_id=?", (project["job_id"],)))
+    assert key not in job_payload["payload_json"]
+    assert client.delete(endpoint, headers=csrf).status_code == 204
+    remaining = client.get(prefix + "/providers").json()
+    assert not remaining["nvidia"]["connected"] and remaining["openrouter"]["connected"]
+    missing = client.post(prefix + "/storyboard-test", headers=csrf, data={**idea, "provider": "nvidia"})
+    assert missing.status_code == 409
 
 
 @pytest.mark.asyncio

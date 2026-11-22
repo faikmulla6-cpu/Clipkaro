@@ -53,9 +53,11 @@ type CartoonProject = {
   created_at?: string;
 };
 type ProviderStatus = {
-  openrouter: { connected: boolean; masked_key: string; validated_at?: string | null };
+  openrouter: SavedProvider;
+  nvidia?: SavedProvider;
   storyboard_test_enabled?: boolean;
 };
+type SavedProvider = { connected: boolean; masked_key: string; validated_at?: string | null };
 type PlannerProvider = "nvidia" | "openrouter";
 type ProjectPlanner = "glm" | "nvidia";
 type StoryboardTest = { provider: PlannerProvider; model: string; storyboard: Storyboard };
@@ -63,6 +65,8 @@ const PLANNER_NAMES: Record<PlannerProvider, string> = {
   nvidia: "NVIDIA API",
   openrouter: "OpenRouter GLM",
 };
+const PROVIDER_NAMES: Record<PlannerProvider, string> = { openrouter: "OpenRouter", nvidia: "NVIDIA API" };
+const EMPTY_PROVIDER: SavedProvider = { connected: false, masked_key: "" };
 const PROJECT_PLANNER_NAMES: Record<string, string> = {
   "z-ai/glm-5.3-flash": "GLM",
   "nvidia/nemotron-3.5-super-vl": "NVIDIA Nemotron",
@@ -96,6 +100,8 @@ export default function CartoonStudioPage() {
   const [planner, setPlanner] = useState<PlannerProvider>("nvidia");
   const [projectPlanner, setProjectPlanner] = useState<ProjectPlanner>("glm");
   const [nvidiaKey, setNvidiaKey] = useState("");
+  const [providerBusy, setProviderBusy] = useState<PlannerProvider | null>(null);
+  const [providerFeedback, setProviderFeedback] = useState<{ provider: PlannerProvider; message: string; error: boolean } | null>(null);
   const [testBusy, setTestBusy] = useState(false);
   const [testError, setTestError] = useState("");
   const [testResults, setTestResults] = useState<Partial<Record<PlannerProvider, StoryboardTest>>>({});
@@ -171,49 +177,50 @@ export default function CartoonStudioPage() {
   );
   const isRendering = selected?.status === "queued" || selected?.status === "processing";
   const connected = Boolean(provider?.openrouter.connected);
+  const nvidiaAvailable = Boolean(provider?.storyboard_test_enabled && provider?.nvidia);
+  const nvidiaConnected = Boolean(provider?.nvidia?.connected);
+  const missingProvider = projectPlanner === "nvidia" && !nvidiaConnected ? "NVIDIA API" : !connected ? "OpenRouter" : "";
 
-  async function connectProvider(event: FormEvent<HTMLFormElement>) {
+  async function connectProvider(event: FormEvent<HTMLFormElement>, name: PlannerProvider) {
     event.preventDefault();
-    if (!apiKey.trim() || busy) return;
-    setBusy(true);
-    setError("");
-    setNotice("");
+    const key = (name === "nvidia" ? nvidiaKey : apiKey).trim();
+    if (!key || busy || providerBusy) return;
+    setProviderBusy(name);
+    setProviderFeedback(null);
     try {
-      const saved = await postJSON<{ connected: boolean; masked_key: string; validated_at: string }>(
-        "/cartoon-studio/providers/openrouter",
-        { api_key: apiKey.trim() },
+      const saved = await postJSON<SavedProvider>(
+        "/cartoon-studio/providers/" + name,
+        { api_key: key },
       );
-      setProvider((current) => ({ ...current, openrouter: saved }));
-      setApiKey("");
-      await loadModels();
-      setNotice("OpenRouter connected securely. Your key is encrypted and never shown again.");
+      setProvider((current) => current && { ...current, [name]: saved });
+      if (name === "nvidia") setNvidiaKey("");
+      else setApiKey("");
+      setProviderFeedback({ provider: name, message: "Key saved securely.", error: false });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "OpenRouter could not be connected.");
+      setProviderFeedback({ provider: name, message: cause instanceof Error ? cause.message : "The API key could not be saved.", error: true });
     } finally {
-      setBusy(false);
+      setProviderBusy(null);
     }
   }
 
-  async function disconnectProvider() {
-    if (busy) return;
-    setBusy(true);
-    setError("");
+  async function disconnectProvider(name: PlannerProvider) {
+    if (busy || providerBusy) return;
+    setProviderBusy(name);
+    setProviderFeedback(null);
     try {
-      await deleteJSON("/cartoon-studio/providers/openrouter");
-      setProvider((current) => ({ ...current, openrouter: { connected: false, masked_key: "" } }));
-      setModels([]);
-      setTtsModel("");
-      setNotice("OpenRouter key disconnected.");
+      await deleteJSON("/cartoon-studio/providers/" + name);
+      setProvider((current) => current && { ...current, [name]: EMPTY_PROVIDER });
+      setProviderFeedback({ provider: name, message: "Key disconnected.", error: false });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The provider key could not be removed.");
+      setProviderFeedback({ provider: name, message: cause instanceof Error ? cause.message : "The API key could not be removed.", error: true });
     } finally {
-      setBusy(false);
+      setProviderBusy(null);
     }
   }
 
   async function runStoryboardTest(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (testBusy) return;
+    if (testBusy || (planner === "nvidia" ? !nvidiaConnected : !connected)) return;
     if (prompt.trim().length < 8) {
       setTestError("Enter your story in the Create a cartoon form above.");
       return;
@@ -226,7 +233,6 @@ export default function CartoonStudioPage() {
     body.set("duration_seconds", String(duration));
     body.set("language", language);
     body.set("style", style);
-    if (planner === "nvidia") body.set("nvidia_key", nvidiaKey.trim());
     const input = JSON.stringify([prompt.trim(), duration, language, style]);
     if (testedInput !== input) setTestResults({});
     try {
@@ -242,7 +248,7 @@ export default function CartoonStudioPage() {
 
   async function createCartoon(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy || !connected) return;
+    if (busy || providerBusy || missingProvider || !ttsModel) return;
     setCreateError("");
     if (prompt.trim().length < 8) {
       setCreateError("Describe your story in at least 8 characters.");
@@ -261,8 +267,7 @@ export default function CartoonStudioPage() {
       body.set("tts_model", ttsModel);
       body.set("voice_id", voiceId);
       body.set("story_planner", projectPlanner);
-      if (projectPlanner === "nvidia") body.set("nvidia_key", nvidiaKey.trim());
-      else if (reference) body.set("reference_video", reference);
+      if (projectPlanner !== "nvidia" && reference) body.set("reference_video", reference);
       const project = await api<CartoonProject>("/cartoon-studio/projects", { method: "POST", body });
       mergeProject(project);
       setNotice("Your cartoon is queued. You can leave this page while it renders.");
@@ -390,19 +395,9 @@ export default function CartoonStudioPage() {
               <label className={styles.field}><span>Story planner</span>
                 <select value={projectPlanner} onChange={(event) => setProjectPlanner(event.target.value as ProjectPlanner)} disabled={busy}>
                   <option value="glm">GLM via OpenRouter</option>
-                  {provider?.storyboard_test_enabled && <option value="nvidia">NVIDIA API</option>}
+                  {nvidiaAvailable && <option value="nvidia">NVIDIA API</option>}
                 </select>
-                <small>{projectPlanner === "nvidia"
-                  ? "Use a fictional text prompt for internal evaluation. NVIDIA may make one correction attempt to preserve your scene timings."
-                  : "Story planning uses your connected OpenRouter account and can consume credits."}</small>
               </label>
-              {projectPlanner === "nvidia" && (
-                <label className={styles.field}><span>NVIDIA API key</span>
-                  <input type="password" value={nvidiaKey} onChange={(event) => setNvidiaKey(event.target.value)}
-                    placeholder="nvapi-…" autoComplete="off" spellCheck={false} required disabled={busy} />
-                  <small>Voice generation still uses your selected voice model. Keep this tab open until the project is queued.</small>
-                </label>
-              )}
               <label className={styles.field}>
                 <span>Voice model</span>
                 <select value={ttsModel} onChange={(event) => {setTtsModel(event.target.value);setVoiceId("");}} disabled={!connected || models.length === 0 || style === "cinematic-jannat"}>
@@ -434,41 +429,71 @@ export default function CartoonStudioPage() {
                 <input type="file" accept="video/mp4,video/quicktime,video/webm,video/x-matroska" onChange={(event) => setReference(event.target.files?.[0] || null)} />
                 <small>{reference ? reference.name : "Up to 50 MB. Used only to analyse visual style; not required."}</small>
               </label>}
-              <button className={styles.primaryButton} type="submit" disabled={!connected || busy || !ttsModel || (projectPlanner === "nvidia" && !nvidiaKey.trim())}>
+              <button className={styles.primaryButton} type="submit" disabled={Boolean(missingProvider || busy || providerBusy || !ttsModel)}>
                 {busy ? <Loader2 className={styles.spin} size={18} /> : <WandSparkles size={18} />}
                 {busy ? (projectPlanner === "nvidia" ? "Planning with NVIDIA…" : "Please wait...") : "Create my cartoon"}
               </button>
               {busy && projectPlanner === "nvidia" && <p className={styles.formHint} role="status">Keep this tab open. Story planning can take up to two minutes before rendering starts.</p>}
               {createError && <div className={styles.alertError} role="alert"><AlertCircle size={17} />{createError}</div>}
-              {!connected && <p className={styles.formHint}>Connect your own OpenRouter API key below to enable generation.</p>}
+              {missingProvider && <a className={styles.setupLink} href="#studio-api-keys">Connect your {missingProvider} key</a>}
             </form>
           </section>
 
           <div className={styles.sideColumn}>
-            <section className={styles.providerPanel}>
+            <section className={styles.providerPanel} id="studio-api-keys" aria-labelledby="studio-api-keys-title">
               <div className={styles.panelHead}>
-                <div><span className={styles.kicker}>02 · YOUR AI ACCOUNT</span><h3>Connect OpenRouter</h3></div>
-                <KeyRound size={21} />
+                <div><h3 id="studio-api-keys-title">API keys</h3><p>Connect once and use your saved keys for every cartoon.</p></div>
+                <span className={styles.keysIcon}><KeyRound size={20} aria-hidden="true" /></span>
               </div>
-              {connected ? (
-                <div className={styles.connectedState}>
-                  <div className={styles.connectedIcon}><ShieldCheck size={22} /></div>
-                  <div><strong>Provider connected</strong><span>{provider?.openrouter.masked_key}</span></div>
-                  <button type="button" className={styles.textButton} onClick={disconnectProvider} disabled={busy}>Disconnect</button>
-                </div>
-              ) : (
-                <form onSubmit={connectProvider} className={styles.keyForm}>
-                  <label className={styles.field}><span>OpenRouter API key</span>
-                    <input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="sk-or-v1-..." autoComplete="off" minLength={20} required />
-                  </label>
-                  <button className={styles.secondaryButton} type="submit" disabled={busy || !apiKey.trim()}>
-                    {busy ? <Loader2 className={styles.spin} size={16} /> : <LockKeyhole size={16} />} Connect key
-                  </button>
-                  <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer">Get an API key from OpenRouter ↗</a>
-                </form>
-              )}
-              <div className={styles.securityNote}><LockKeyhole size={15} /><span>Your key is encrypted at rest. ClipKaro's backend uses it for model discovery and generation, and never returns the key to your browser.</span></div>
-              <div className={styles.billingNote}><Volume2 size={15} /><span>GLM and OpenRouter voices use your OpenRouter account. The built-in Urdu voice uses Edge speech. Video rendering runs on ClipKaro.</span></div>
+              <div className={styles.providerList}>
+                {(nvidiaAvailable ? (["openrouter", "nvidia"] as const) : (["openrouter"] as const)).map((name) => {
+                  const isNvidia = name === "nvidia";
+                  const key = isNvidia ? nvidiaKey : apiKey;
+                  const saved = provider?.[name];
+                  const feedback = providerFeedback?.provider === name ? providerFeedback : null;
+                  return (
+                    <section className={styles.providerCard} key={name} aria-labelledby={`studio-key-${name}`}>
+                      <div className={styles.providerCardHead}>
+                        <div><h4 id={`studio-key-${name}`}>{PROVIDER_NAMES[name]}</h4>
+                          <p>{isNvidia ? "Nemotron story planning" : "GLM story planning and voice models"}</p>
+                        </div>
+                        {saved?.connected && <span className={styles.savedKey}><ShieldCheck size={13} aria-hidden="true" />{isNvidia ? "Saved" : "Connected"}</span>}
+                      </div>
+                      {saved?.connected ? (
+                        <div className={styles.savedKeyRow}>
+                          <code>{saved.masked_key}</code>
+                          <button type="button" className={styles.textButton} aria-label={`Disconnect ${PROVIDER_NAMES[name]}`}
+                            onClick={() => void disconnectProvider(name)} disabled={busy || Boolean(providerBusy)}>
+                            {providerBusy === name ? "Disconnecting…" : "Disconnect"}
+                          </button>
+                        </div>
+                      ) : (
+                        <form onSubmit={(event) => void connectProvider(event, name)} className={styles.keyForm}>
+                          <label className={styles.field}><span>{isNvidia ? "NVIDIA API key" : "OpenRouter API key"}</span>
+                            <input type="password" value={key} onChange={(event) => (isNvidia ? setNvidiaKey : setApiKey)(event.target.value)}
+                              placeholder={isNvidia ? "nvapi-…" : "sk-or-v1-…"} autoComplete="off" spellCheck={false}
+                              minLength={20} maxLength={500} required disabled={Boolean(providerBusy)} />
+                          </label>
+                          <div className={styles.keyActions}>
+                            <button className={styles.secondaryButton} type="submit" disabled={!provider || busy || Boolean(providerBusy) || !key.trim()}>
+                              {providerBusy === name ? <Loader2 className={styles.spin} size={15} aria-hidden="true" /> : null}
+                              {isNvidia ? "Save key" : "Connect key"}
+                            </button>
+                            <a href={isNvidia ? "https://build.nvidia.com/nvidia/nemotron-3.5-super-vl-120b-a12b" : "https://openrouter.ai/keys"}
+                              target="_blank" rel="noreferrer">Get a key ↗</a>
+                          </div>
+                        </form>
+                      )}
+                      {isNvidia && <p className={styles.keyHelp}>NVIDIA checks access when you create. Use fictional prompts for preview evaluation.</p>}
+                      {feedback && <p className={feedback.error ? styles.keyError : styles.keyHelp}
+                        role={feedback.error ? "alert" : "status"}>{feedback.message}</p>}
+                    </section>
+                  );
+                })}
+              </div>
+              {provider?.storyboard_test_enabled && !nvidiaAvailable && <p className={styles.keyHelp}>NVIDIA key setup is unavailable on this backend.</p>}
+              <div className={styles.securityNote}><LockKeyhole size={15} aria-hidden="true" /><span>Saved keys are encrypted. Only masked values are shown here.</span></div>
+              <div className={styles.billingNote}><Volume2 size={15} aria-hidden="true" /><span>Voice models use OpenRouter. The built-in Urdu voice uses Edge speech.</span></div>
             </section>
 
             <section className={styles.stepsPanel}>
@@ -480,7 +505,7 @@ export default function CartoonStudioPage() {
           </div>
         </div>
 
-        {provider?.storyboard_test_enabled && (
+        {nvidiaAvailable && (
           <section className={styles.projectPanel} aria-labelledby="storyboard-test-title">
             <div className={styles.panelHead}>
               <div><h3 id="storyboard-test-title">Test storyboard planners</h3></div>
@@ -489,30 +514,22 @@ export default function CartoonStudioPage() {
               Uses the story, length, language and style above. This test generates a storyboard only.
             </p>
             <form onSubmit={runStoryboardTest} className={styles.form}>
-              <div className={styles.fieldsTwo}>
                 <label className={styles.field}><span>Story planner</span>
                   <select value={planner} onChange={(event) => setPlanner(event.target.value as PlannerProvider)} disabled={testBusy}>
                     <option value="nvidia">NVIDIA API</option>
                     <option value="openrouter">OpenRouter GLM</option>
                   </select>
                 </label>
-                {planner === "nvidia" && (
-                  <label className={styles.field}><span>NVIDIA API key</span>
-                    <input type="password" value={nvidiaKey} onChange={(event) => setNvidiaKey(event.target.value)}
-                      placeholder="nvapi-…" autoComplete="off" spellCheck={false} required disabled={testBusy} />
-                    <small>The key stays in this tab until you clear it or leave the page.</small>
-                  </label>
-                )}
-              </div>
               <p className={styles.projectPrompt}>{planner === "nvidia"
                 ? "Use fictional prompts without private information for preview evaluation."
                 : connected ? "This test uses your connected OpenRouter key and can consume planning credits."
                   : "Connect OpenRouter above to test GLM."}</p>
               <button className={styles.secondaryButton} type="submit"
-                disabled={testBusy || (planner === "nvidia" ? !nvidiaKey.trim() : !connected)}>
+                disabled={testBusy || (planner === "nvidia" ? !nvidiaConnected : !connected)}>
                 {testBusy && <Loader2 className={styles.spin} size={16} />}
                 {testBusy ? "Planning storyboard…" : "Test storyboard"}
               </button>
+              {planner === "nvidia" && !nvidiaConnected && <a className={styles.setupLink} href="#studio-api-keys">Connect your NVIDIA API key</a>}
               {testError && <div className={styles.alertError} role="alert">{testError}</div>}
             </form>
             <div className={styles.fieldsTwo} aria-live="polite">

@@ -13,7 +13,7 @@ async def init_cartoon_studio() -> None:
         await db.execute(
             """CREATE TABLE IF NOT EXISTS cartoon_provider_credentials (
                  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                 provider TEXT NOT NULL CHECK(provider IN ('openrouter')),
+                 provider TEXT NOT NULL CHECK(provider IN ('openrouter','nvidia')),
                  api_key_ciphertext TEXT NOT NULL,
                  api_key_masked TEXT NOT NULL,
                  api_key_fingerprint TEXT NOT NULL,
@@ -23,6 +23,18 @@ async def init_cartoon_studio() -> None:
                  PRIMARY KEY(user_id, provider)
                )"""
         )
+        cursor = await db.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='cartoon_provider_credentials'"
+        )
+        table = await cursor.fetchone()
+        sql = table[0] if table else ""
+        if sql and "'nvidia'" not in sql:
+            replacement = sql.replace("cartoon_provider_credentials", "cartoon_provider_credentials_new", 1)
+            replacement = replacement.replace("'openrouter'", "'openrouter','nvidia'")
+            await db.execute(replacement)
+            await db.execute("INSERT INTO cartoon_provider_credentials_new SELECT * FROM cartoon_provider_credentials")
+            await db.execute("DROP TABLE cartoon_provider_credentials")
+            await db.execute("ALTER TABLE cartoon_provider_credentials_new RENAME TO cartoon_provider_credentials")
         await db.execute(
             """CREATE TABLE IF NOT EXISTS cartoon_projects (
                  id TEXT PRIMARY KEY,

@@ -22,7 +22,8 @@ T = TypeVar("T")
 logger = logging.getLogger("clipkaro.database")
 _LOCK_MESSAGES = ("database is locked", "database table is locked", "database schema is locked")
 _LOCK_PRIMARY_CODES = {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}
-POSTGRES_SCHEMA_REVISION = "20261121_14"
+POSTGRES_SCHEMA_REVISION = "20261122_15"
+POSTGRES_PREVIOUS_SCHEMA_REVISION = "20261121_14"
 _postgres_pool: Any = None
 
 
@@ -1013,7 +1014,9 @@ async def init_db() -> None:
             revision = await connection.fetchval(
                 "SELECT version_num FROM alembic_version LIMIT 1"
             )
-        if revision != POSTGRES_SCHEMA_REVISION:
+        # The NVIDIA credential expansion is additive. Accept the previous
+        # revision during deployment, while the save route waits for the expansion.
+        if revision not in {POSTGRES_SCHEMA_REVISION, POSTGRES_PREVIOUS_SCHEMA_REVISION}:
             raise RuntimeError(
                 "PostgreSQL schema is not current. Run `alembic upgrade head` before starting ClipKaro."
             )

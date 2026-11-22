@@ -33,6 +33,8 @@ async def test_postgres_startup_accepts_the_actual_migration_head(monkeypatch):
     monkeypatch.setattr(database, "_get_postgres_pool", AsyncMock(return_value=SimpleNamespace(acquire=acquire)))
     await database.init_db()
     connection.fetchval.assert_awaited_once()
+    connection.fetchval.return_value = database.POSTGRES_PREVIOUS_SCHEMA_REVISION
+    await database.init_db()
     connection.fetchval.return_value = "outdated-revision"
     with pytest.raises(RuntimeError, match="schema is not current"):
         await database.init_db()
@@ -310,6 +312,32 @@ async def test_sqlite_ratio_migration_preserves_existing_rows(tmp_path,monkeypat
         await db.execute("INSERT INTO cartoon_projects VALUES ('new','owner','2026-11-21','4:5')")
         rows=await (await db.execute("SELECT id,aspect_ratio FROM cartoon_projects ORDER BY id")).fetchall()
         assert rows==[("existing","16:9"),("new","4:5")]
+
+
+@pytest.mark.asyncio
+async def test_sqlite_credential_migration_preserves_openrouter_keys(tmp_path, monkeypatch):
+    import aiosqlite
+    from types import SimpleNamespace
+    from app.services import cartoon_repository as repository
+
+    async with aiosqlite.connect(tmp_path / "provider-keys.sqlite") as db:
+        await db.execute(
+            "CREATE TABLE cartoon_provider_credentials("
+            "user_id TEXT NOT NULL, provider TEXT NOT NULL CHECK(provider IN ('openrouter')), "
+            "api_key_ciphertext TEXT NOT NULL, PRIMARY KEY(user_id,provider))"
+        )
+        await db.execute("INSERT INTO cartoon_provider_credentials VALUES ('owner','openrouter','encrypted-original')")
+
+        async def transaction(callback, **kwargs):
+            await callback(db)
+
+        monkeypatch.setattr(repository, "get_settings", lambda: SimpleNamespace(normalized_database_backend="sqlite"))
+        monkeypatch.setattr(repository, "run_in_transaction", transaction)
+        await repository.init_cartoon_studio()
+        await db.execute("INSERT INTO cartoon_provider_credentials VALUES ('owner','nvidia','encrypted-new')")
+        await repository.init_cartoon_studio()
+        async with db.execute("SELECT provider,api_key_ciphertext FROM cartoon_provider_credentials ORDER BY provider") as cursor:
+            assert await cursor.fetchall() == [("nvidia", "encrypted-new"), ("openrouter", "encrypted-original")]
 
 
 @pytest.mark.asyncio

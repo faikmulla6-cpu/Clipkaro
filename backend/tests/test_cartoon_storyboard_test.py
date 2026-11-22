@@ -17,13 +17,25 @@ COOKIES = {"csrf_token": "csrf-fixture"}
 
 
 @pytest.mark.asyncio
+async def test_postgres_nvidia_key_saving_waits_for_credential_migration(monkeypatch):
+    monkeypatch.setattr(studio, "get_settings", lambda: SimpleNamespace(normalized_database_backend="postgres"))
+    revision = AsyncMock(return_value={"version_num": "20261121_14"})
+    monkeypatch.setattr(studio, "fetch_one", revision)
+    assert not await studio._nvidia_storage_ready()
+    revision.return_value = {"version_num": studio.POSTGRES_SCHEMA_REVISION}
+    assert await studio._nvidia_storage_ready()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("provider", ["nvidia", "openrouter"])
 async def test_internal_storyboard_test_uses_the_selected_provider_and_returns_no_key(monkeypatch, provider):
     from app.services.auth import current_user
 
     user = {"id": "tester", "cartoon_studio_access_override": True}
     monkeypatch.setitem(app.dependency_overrides, current_user, lambda: user)
-    monkeypatch.setattr(studio, "get_settings", lambda: SimpleNamespace(cartoon_storyboard_test_user_ids=" tester "))
+    monkeypatch.setattr(studio, "get_settings", lambda: SimpleNamespace(
+        cartoon_storyboard_test_user_ids=" tester ", normalized_database_backend="sqlite",
+    ))
     monkeypatch.setattr(studio, "fetch_one", AsyncMock(return_value=None))
     monkeypatch.setattr(studio, "consume_rate_limit", AsyncMock(return_value=True))
     saved_key = AsyncMock(return_value="sk-or-fake-saved-test-value")

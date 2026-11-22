@@ -9,12 +9,12 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Response, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.config import get_settings
-from app.core.database import distributed_advisory_lock, execute, fetch_all, fetch_one
+from app.core.database import POSTGRES_SCHEMA_REVISION, distributed_advisory_lock, execute, fetch_all, fetch_one
 from app.services.distributed_rate_limit import consume_rate_limit
 from app.services.auth import current_user
 from app.services.cartoon_speech import SYSTEM_URDU_TTS_MODEL, system_urdu_tts_model_row
@@ -76,9 +76,12 @@ def _storyboard_test_allowed(user: dict) -> bool:
     return str(user["id"]) in {value.strip() for value in allowed if value.strip()}
 
 
-def _nvidia_trial_key(user: dict, api_key: str) -> str:
+def _require_nvidia_access(user: dict) -> None:
     if not _storyboard_test_allowed(user):
         raise HTTPException(403, "NVIDIA API rendering is enabled for preview evaluation accounts.")
+
+
+def _validate_nvidia_key(api_key: str) -> str:
     key = api_key.strip()
     if not re.fullmatch(r"nvapi-[A-Za-z0-9_-]{14,480}", key):
         raise HTTPException(422, "Enter an NVIDIA API key beginning with nvapi-.")
@@ -94,17 +97,29 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-async def _provider_key(user_id: str) -> str | None:
+async def _provider_key(user_id: str, provider: str = "openrouter") -> str | None:
     row = await fetch_one(
-        "SELECT api_key_ciphertext FROM cartoon_provider_credentials WHERE user_id=? AND provider='openrouter'",
-        (user_id,),
+        "SELECT api_key_ciphertext FROM cartoon_provider_credentials WHERE user_id=? AND provider=?",
+        (user_id, provider),
     )
     if not row:
         return None
     try:
         return decrypt_provider_key(str(row["api_key_ciphertext"]))
     except CartoonCredentialError as exc:
-        raise HTTPException(409, "Reconnect your OpenRouter API key securely before continuing.") from exc
+        label = "NVIDIA" if provider == "nvidia" else "OpenRouter"
+        raise HTTPException(409, f"Reconnect your {label} API key securely before continuing.") from exc
+
+
+async def _nvidia_key_for_request(user: dict, supplied: str) -> str:
+    _require_nvidia_access(user)
+    # Older preview forms still send a request-only key during rollout.
+    if supplied.strip():
+        return _validate_nvidia_key(supplied)
+    key = await _provider_key(user["id"], "nvidia")
+    if not key:
+        raise HTTPException(409, "Save your NVIDIA API key in API keys before continuing.")
+    return key
 
 
 async def _models(api_key: str, modality: str) -> list[dict[str, Any]]:
@@ -191,20 +206,36 @@ async def _owned_project(project_id: str, user_id: str) -> dict[str, Any]:
     return row
 
 
-@router.get("/providers")
-async def get_providers(user: dict = Depends(cartoon_studio_user)) -> dict[str, Any]:
+async def _provider_status(user_id: str, provider: str) -> dict[str, Any]:
     row = await fetch_one(
-        "SELECT api_key_masked,validated_at FROM cartoon_provider_credentials WHERE user_id=? AND provider='openrouter'",
-        (user["id"],),
+        "SELECT api_key_masked,validated_at FROM cartoon_provider_credentials WHERE user_id=? AND provider=?",
+        (user_id, provider),
     )
     return {
-        "storyboard_test_enabled": _storyboard_test_allowed(user),
-        "openrouter": {
-            "connected": bool(row),
-            "masked_key": row.get("api_key_masked") if row else "",
-            "validated_at": row.get("validated_at") if row else None,
-        }
+        "connected": bool(row),
+        "masked_key": row.get("api_key_masked") if row else "",
+        "validated_at": row.get("validated_at") if row and provider == "openrouter" else None,
     }
+
+
+async def _nvidia_storage_ready() -> bool:
+    if get_settings().normalized_database_backend != "postgres":
+        return True
+    row = await fetch_one("SELECT version_num FROM alembic_version LIMIT 1")
+    return bool(row and row["version_num"] == POSTGRES_SCHEMA_REVISION)
+
+
+@router.get("/providers")
+async def get_providers(response: Response, user: dict = Depends(cartoon_studio_user)) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store"
+    nvidia_enabled = _storyboard_test_allowed(user)
+    status = {
+        "storyboard_test_enabled": nvidia_enabled,
+        "openrouter": await _provider_status(user["id"], "openrouter"),
+    }
+    if nvidia_enabled and await _nvidia_storage_ready():
+        status["nvidia"] = await _provider_status(user["id"], "nvidia")
+    return status
 
 
 @router.post("/storyboard-test")
@@ -231,7 +262,7 @@ async def test_storyboard(
     if provider not in {"nvidia", "openrouter"}:
         raise HTTPException(422, "Choose NVIDIA Nemotron or OpenRouter GLM.")
     if provider == "nvidia":
-        key = _nvidia_trial_key(user, nvidia_key)
+        key = await _nvidia_key_for_request(user, nvidia_key)
     else:
         key = await _provider_key(user["id"])
         if not key:
@@ -295,6 +326,27 @@ async def save_openrouter_key(body: ProviderKeyRequest, user: dict = Depends(car
         raise HTTPException(422, "This does not look like an OpenRouter API key.")
     # Validate the key without making a billable generation request.
     await _models(key, "text")
+    return await _save_provider_key(user["id"], "openrouter", key)
+
+
+@router.post("/providers/nvidia")
+async def save_nvidia_key(request: Request, response: Response, user: dict = Depends(cartoon_studio_user)) -> dict:
+    _require_nvidia_access(user)
+    if not await _nvidia_storage_ready():
+        raise HTTPException(503, "NVIDIA key setup is temporarily unavailable. Try again shortly.")
+    response.headers["Cache-Control"] = "no-store"
+    # Keep credentials out of automatic validation errors. NVIDIA's public
+    # catalog endpoint cannot verify credentials and saving never runs inference.
+    try:
+        body = await request.json()
+    except (ValueError, UnicodeError):
+        raise HTTPException(422, "Enter an NVIDIA API key.") from None
+    if not isinstance(body, dict) or body.keys() != {"api_key"} or not isinstance(body["api_key"], str):
+        raise HTTPException(422, "Enter an NVIDIA API key.")
+    return await _save_provider_key(user["id"], "nvidia", _validate_nvidia_key(body["api_key"]))
+
+
+async def _save_provider_key(user_id: str, provider: str, key: str) -> dict[str, Any]:
     try:
         encrypted_key = encrypt_provider_key(key)
     except CartoonCredentialError as exc:
@@ -304,24 +356,36 @@ async def save_openrouter_key(body: ProviderKeyRequest, user: dict = Depends(car
         """INSERT INTO cartoon_provider_credentials(
              user_id,provider,api_key_ciphertext,api_key_masked,api_key_fingerprint,
              validated_at,created_at,updated_at
-           ) VALUES (?,'openrouter',?,?,?,?,?,?)
+           ) VALUES (?,?,?,?,?,?,?,?)
            ON CONFLICT(user_id,provider) DO UPDATE SET
              api_key_ciphertext=excluded.api_key_ciphertext,
              api_key_masked=excluded.api_key_masked,
              api_key_fingerprint=excluded.api_key_fingerprint,
              validated_at=excluded.validated_at,updated_at=excluded.updated_at""",
         (
-            user["id"], encrypted_key, mask_provider_key(key),
+            user_id, provider, encrypted_key, mask_provider_key(key),
             fingerprint_provider_key(key), timestamp, timestamp, timestamp,
         ),
     )
-    return {"connected": True, "masked_key": mask_provider_key(key), "validated_at": timestamp}
+    return {
+        "connected": True, "masked_key": mask_provider_key(key),
+        "validated_at": timestamp if provider == "openrouter" else None,
+    }
 
 
 @router.delete("/providers/openrouter", status_code=204)
 async def delete_openrouter_key(user: dict = Depends(cartoon_studio_user)) -> None:
     await execute(
         "DELETE FROM cartoon_provider_credentials WHERE user_id=? AND provider='openrouter'",
+        (user["id"],),
+    )
+
+
+@router.delete("/providers/nvidia", status_code=204)
+async def delete_nvidia_key(user: dict = Depends(cartoon_studio_user)) -> None:
+    # A former preview participant can still delete a previously saved key.
+    await execute(
+        "DELETE FROM cartoon_provider_credentials WHERE user_id=? AND provider='nvidia'",
         (user["id"],),
     )
 
@@ -378,7 +442,7 @@ async def create_cartoon_project(
         raise HTTPException(422, "Choose a supported story planner.")
     trial_key = None
     if story_planner == "nvidia":
-        trial_key = _nvidia_trial_key(user, nvidia_key)
+        trial_key = await _nvidia_key_for_request(user, nvidia_key)
         if reference_video is not None:
             raise HTTPException(422, "NVIDIA API rendering accepts a fictional text prompt only. Remove the reference video.")
     language = resolve_cartoon_language(language, prompt)

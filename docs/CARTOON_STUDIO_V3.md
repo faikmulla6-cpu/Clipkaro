@@ -89,9 +89,12 @@ and returns engine/source fingerprints and render verification without AI calls.
 
 ## Deployment and compatibility
 
-Legacy saved storyboards retain the existing pipeline. New GLM plans use V3.
-Deploy the existing backend/modal_app.py configuration and apply migration
-20261121_14. Hostinger must merge/build this feature into
+Legacy saved storyboards retain the existing pipeline. GLM and NVIDIA plans use V3.
+Deploy the compatible backend/modal_app.py build first, then apply migration
+20261122_15 to enable saved NVIDIA keys. The migration preserves existing keys.
+If reverting to a backend that requires 20261121_14, downgrade the Alembic
+revision before rolling back. The widened constraint and saved keys are retained.
+Hostinger must merge/build this feature into
 work/secure-smart-layout-v2-20261018, never main.
 The authenticated /api/v1/cartoon-studio/capabilities endpoint identifies the V3 API.
 The separate Modal preflight verifies the worker; a frontend page loading or a
