@@ -6,7 +6,7 @@ import html
 import json
 import re
 from .cartoon_story import RATIOS, StoryValidationError, normalize_director_story, resolve_cartoon_language
-from .cartoon_timing import normalize_word_boundaries, build_karaoke_caption_markup
+from .cartoon_timing import SPEECH_LINE_CAPTION_SOURCE, normalize_word_boundaries, build_karaoke_caption_markup
 from .roman_hindi import DEVANAGARI, romanize_hindi
 
 
@@ -71,14 +71,26 @@ def schedule_speech(
         for (line, asset, filename, duration), latest_start in zip(measured, reversed(latest_starts)):
             start = max(cursor, min(line["start"], latest_start))
             boundaries = asset.get("word_boundaries") or []
-            if not boundaries:
-                raise StoryValidationError("Speech requires provider word timestamps or audio-derived alignment; estimated scene timings are not accepted.")
-            local_words = normalize_word_boundaries(boundaries,audio_duration=duration,global_start=start,speaker_id=line["speaker_id"],track=line["track"])
-            if not local_words:
-                raise StoryValidationError("Speech word timestamps are empty or outside the measured audio.")
-            caption_words = _roman_caption_words(local_words, line["text"]) if language == "hinglish" else local_words
+            local_words = []
+            timing_source = asset.get("timing_source", "tts_word_boundary")
+            if boundaries:
+                local_words = normalize_word_boundaries(boundaries,audio_duration=duration,global_start=start,speaker_id=line["speaker_id"],track=line["track"])
+                if not local_words:
+                    raise StoryValidationError("Speech word timestamps are empty or outside the measured audio.")
+                caption_words = _roman_caption_words(local_words, line["text"]) if language == "hinglish" else local_words
+            else:
+                window = asset.get("caption_window")
+                if timing_source != SPEECH_LINE_CAPTION_SOURCE or not window or not 0 <= window[0] < window[1] <= duration:
+                    raise StoryValidationError("Speech requires word timestamps or a detected speech window for captions.")
+                text = line["text"]
+                if language == "hinglish" and DEVANAGARI.search(text):
+                    text = romanize_hindi(text)
+                caption_words = [{
+                    "text": text, "speaker_id": line["speaker_id"], "track": line["track"],
+                    "start_seconds": start + window[0], "end_seconds": start + window[1],
+                }]
             global_words = [{**w,"start_seconds":round(w["start_seconds"]+scene["start"],4),"end_seconds":round(w["end_seconds"]+scene["start"],4),
-                             "source":asset.get("timing_source","tts_word_boundary")} for w in caption_words]
+                             "source":timing_source} for w in caption_words]
             words.extend(global_words)
             audio.append({"start":start,"duration":duration,"speaker_id":line["speaker_id"],"track":line["track"],"words":local_words,"envelope":asset.get("lip_envelope") or []})
             tracks.append({"track":line["track"],"filename":filename,"start_seconds":scene["start"]+start,"duration_seconds":duration,
@@ -136,7 +148,12 @@ const tl=gsap.timeline({{paused:true}});tl.to(clock,{{time:{duration},duration:{
 {caption_js}
 draw(0);window.__timelines.main=tl;
 </script></body></html>"""
+    timeline = {
+        "tracks": [*tracks, *extras],
+        "words": [item for item in words if item["source"] != SPEECH_LINE_CAPTION_SOURCE],
+        "caption_lines": [item for item in words if item["source"] == SPEECH_LINE_CAPTION_SOURCE],
+    }
     return {"index.html":root,"storyboard.json":json.dumps(story,ensure_ascii=False,indent=2),
-            "audio-timeline.json":json.dumps({"tracks":[*tracks,*extras],"words":words},ensure_ascii=False,indent=2),
+            "audio-timeline.json":json.dumps(timeline,ensure_ascii=False,indent=2),
             "hyperframes.json":json.dumps({"paths":{"blocks":"compositions","assets":"assets"},"media":{"autoProxy":True}}),
             "meta.json":json.dumps({"id":str(project.get("id") or "story-v3"),"name":story["title"],"engine_version":"story-v3"})}

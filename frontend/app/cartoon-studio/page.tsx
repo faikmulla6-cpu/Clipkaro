@@ -50,6 +50,7 @@ type CartoonProject = {
   error?: string | null;
   storyboard?: Storyboard;
   editable_available?: boolean;
+  line_timed_captions?: boolean;
   created_at?: string;
 };
 type ProviderStatus = {
@@ -483,6 +484,9 @@ export default function CartoonStudioPage() {
               <small>Keep this tab open to watch progress, or return later from Recent projects.</small>
             </div>}
             {selected.error && <div className={styles.projectError}><AlertCircle size={16} />{selected.error}</div>}
+            {selected.status === "ready" && selected.line_timed_captions && (
+              <p className={styles.projectPrompt}>Some captions are synced by spoken line because word-level timing was unavailable.</p>
+            )}
             {activeCharacters.length > 0 && <div className={styles.characters}>
               <div className={styles.sectionTitle}><strong>Characters and their voices</strong><small>Saved voice identities</small></div>
               <div className={styles.characterGrid}>

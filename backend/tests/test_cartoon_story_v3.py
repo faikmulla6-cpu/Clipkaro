@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 from app.services.cartoon_story import normalize_director_story, StoryValidationError, RATIOS, director_prompt, prepare_director_reply
 from app.services.cartoon_story_render import _roman_caption_words, build_story_project, schedule_speech
+from app.services.cartoon_timing import SPEECH_LINE_CAPTION_SOURCE
 from story_v3_fixtures import fixtures, meera_with_invalid_prop_support
 
 
@@ -106,6 +107,22 @@ def test_missing_narration_and_oversized_or_untimed_speech_cannot_silently_rende
     with pytest.raises(StoryValidationError,match="does not fit"):schedule_speech(s,a)
     a=audio_for(s);a[0]["word_boundaries"]=[]
     with pytest.raises(StoryValidationError,match="word timestamps"):schedule_speech(s,a)
+
+
+def test_detected_speech_window_exports_a_full_line_without_word_highlighting():
+    s = story()
+    assets = audio_for(s)
+    assets[0].update(word_boundaries=[], timing_source=SPEECH_LINE_CAPTION_SOURCE, caption_window=(.2, 1.5))
+    files = build_story_project({"duration_seconds": 30}, s, assets)
+    timeline = json.loads(files["audio-timeline.json"])
+    first_track = timeline["tracks"][0]
+    caption = timeline["caption_lines"][0]
+    assert caption["text"] == s["scenes"][0]["speech"][0]["text"]
+    assert caption["start_seconds"] == pytest.approx(first_track["start_seconds"] + .2)
+    assert caption["end_seconds"] == pytest.approx(first_track["start_seconds"] + 1.5)
+    assert len(timeline["words"]) == len(assets) - 1
+    assert 'tl.set("#story-phrase-1-word-1"' not in files["index.html"]
+    assert 'tl.set("#story-phrase-2-word-1"' in files["index.html"]
 
 
 @pytest.mark.parametrize("ratio",RATIOS)
@@ -344,8 +361,10 @@ async def test_sqlite_credential_migration_preserves_openrouter_keys(tmp_path, m
 async def test_failed_alignment_retry_reuses_paid_speech_instead_of_regenerating(tmp_path,monkeypatch):
     from types import SimpleNamespace
     from app.services import cartoon_story_job as pipeline, cartoon_job as worker, jobs
+    from app.services import cartoon_audio
     from app.core import database
     raw=fixtures()["garden"];raw["characters"][0]["voice_id"]="saved-test-voice"
+    raw["scenes"][1]["speech"] = []
     updates=[]
     async def execute(sql,args):
         updates.append(json.loads(args[0]))
@@ -370,3 +389,20 @@ async def test_failed_alignment_retry_reuses_paid_speech_instead_of_regenerating
     with pytest.raises(StoryValidationError,match="alignment"):
         await pipeline.run_director_job({"id":"job","user_id":"owner"},project,raw,tmp_path,Storage(),"fake-not-a-key","test-tts")
     assert speech.await_count==1
+
+    monkeypatch.setattr(pipeline, "detect_speech_regions", lambda path: [{"start": .1, "end": 1.8}])
+    monkeypatch.setattr(cartoon_audio, "build_lip_envelope", AsyncMock(return_value=[0, .8, 0]))
+    store = Storage()
+    download = AsyncMock(side_effect=store.download)
+    monkeypatch.setattr(store, "download", download)
+    # Stop before rendering when the cached clip reaches the audio timeline.
+    def stop_after_schedule(story, assets):
+        assert assets[0]["caption_window"] == (.1, 1.8)
+        assert assets[0]["timing_source"] == SPEECH_LINE_CAPTION_SOURCE
+        raise RuntimeError("stop after scheduling")
+
+    monkeypatch.setattr(pipeline, "schedule_speech", stop_after_schedule)
+    with pytest.raises(RuntimeError, match="stop after scheduling"):
+        await pipeline.run_director_job({"id": "job", "user_id": "owner"}, project, raw, tmp_path, store, "fake-not-a-key", "test-tts")
+    download.assert_awaited_once()
+    assert speech.await_count == 1

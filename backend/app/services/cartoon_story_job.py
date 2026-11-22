@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -12,7 +13,10 @@ from pathlib import Path
 from .cartoon_story import StoryValidationError, normalize_director_story, RATIOS
 from .cartoon_story_render import build_story_project, schedule_speech
 from .cartoon_story_score import build_story_stems
-from .cartoon_timing import normalize_word_boundaries
+from .cartoon_timing import SPEECH_LINE_CAPTION_SOURCE
+from .speech_activity import detect_speech_regions
+
+logger = logging.getLogger("clipkaro.cartoon")
 
 
 async def audio_alignment(path: Path, language: str) -> list[dict]:
@@ -25,6 +29,7 @@ async def audio_alignment(path: Path, language: str) -> list[dict]:
             generated_dialogue=True,
         )
     except (RuntimeError, OSError, ValueError) as exc:
+        logger.warning("Cartoon word alignment failed: reason=%s", type(exc).__name__)
         raise StoryValidationError(
             "ClipKaro could not align the generated speech for captions. The voice is saved for retry."
         ) from exc
@@ -39,6 +44,19 @@ async def audio_alignment(path: Path, language: str) -> list[dict]:
     if not output:
         raise StoryValidationError("The speech provider has no word timestamps and audio alignment returned no words. Choose a word-timed voice.")
     return output
+
+
+async def speech_caption_window(path: Path, duration: float) -> tuple[float, float] | None:
+    try:
+        regions = await asyncio.to_thread(detect_speech_regions, path)
+    except (RuntimeError, OSError) as exc:
+        logger.warning("Cartoon caption speech detection failed: reason=%s", type(exc).__name__)
+        return None
+    if not regions:
+        return None
+    start = max(0.0, regions[0]["start"])
+    end = min(duration, regions[-1]["end"])
+    return (start, end) if end - start >= .08 else None
 
 
 async def run_director_job(job: dict, project: dict, storyboard: dict, project_dir: Path, storage, api_key: str, tts_model: str) -> None:
@@ -82,14 +100,22 @@ async def run_director_job(job: dict, project: dict, storyboard: dict, project_d
             # Save billable speech before alignment; a failed alignment retry must not buy it again.
             await execute("UPDATE cartoon_projects SET assets_json=?,updated_at=? WHERE id=?",(json.dumps(saved,ensure_ascii=False),utcnow(),project["id"]))
         timing_source=record.get("timing_source","tts_word_boundary") if meta else "tts_word_boundary"
+        caption_window = None
         if not boundaries:
-            boundaries=await audio_alignment(path,str(project.get("language") or "auto"))
-            timing_source="audio_asr_alignment"
+            try:
+                boundaries=await audio_alignment(path,str(project.get("language") or "auto"))
+                timing_source="audio_asr_alignment"
+            except StoryValidationError:
+                caption_window = await speech_caption_window(path, duration)
+                if caption_window is None:
+                    raise
+                timing_source = SPEECH_LINE_CAPTION_SOURCE
         envelope=await build_lip_envelope(path)
         record.update(word_boundaries=boundaries,timing_source=timing_source)
         saved[line["id"]]=record
         await execute("UPDATE cartoon_projects SET assets_json=?,updated_at=? WHERE id=?",(json.dumps(saved,ensure_ascii=False),utcnow(),project["id"]))
-        audio.append({"id":line["id"],"filename":path.name,"duration":duration,"word_boundaries":boundaries,"lip_envelope":envelope,"timing_source":timing_source})
+        audio.append({"id":line["id"],"filename":path.name,"duration":duration,"word_boundaries":boundaries,
+                      "lip_envelope":envelope,"timing_source":timing_source,"caption_window":caption_window})
     scheduled,tracks,words=schedule_speech(story,audio)
     stems=await asyncio.to_thread(build_story_stems,audio_dir,scheduled,tracks)
     engine,cli,gsap=worker._engine_paths();node=shutil.which("node") or shutil.which("nodejs")
@@ -126,6 +152,7 @@ async def run_director_job(job: dict, project: dict, storyboard: dict, project_d
     root=f"users/{job['user_id']}/cartoons/{project['id']}"
     editable=await storage.upload(archive,root+"/editable-project.zip",content_type="application/zip")
     saved["_editable"]={"key":root+"/editable-project.zip","generation":editable.generation}
+    saved["_line_timed_captions"] = any(asset["caption_window"] is not None for asset in audio)
     stored=await storage.upload(output,root+"/final.mp4",content_type="video/mp4")
     await execute("""UPDATE cartoon_projects SET status='ready',progress=100,stage='ready',output_key=?,
         output_generation=?,error=NULL,storyboard_json=?,assets_json=?,updated_at=? WHERE id=?""",

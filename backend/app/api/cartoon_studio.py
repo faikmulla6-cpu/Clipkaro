@@ -166,9 +166,11 @@ def _project_out(row: dict[str, Any], job: dict[str, Any] | None = None) -> dict
         storyboard = {}
 
     try:
-        editable_available = bool(json.loads(str(row.get("assets_json") or "{}")).get("_editable"))
-    except (ValueError, TypeError, AttributeError):
-        editable_available = False
+        assets = json.loads(str(row.get("assets_json") or "{}"))
+        if not isinstance(assets, dict):
+            assets = {}
+    except (ValueError, TypeError):
+        assets = {}
     job = job or {}
     job_status = str(job.get("status") or row.get("job_status") or "")
     project_status = str(row.get("status") or "queued")
@@ -193,7 +195,8 @@ def _project_out(row: dict[str, Any], job: dict[str, Any] | None = None) -> dict
         "stage": stage,
         "error": error,
         "storyboard": storyboard if isinstance(storyboard, dict) else {},
-        "editable_available": editable_available,
+        "editable_available": bool(assets.get("_editable")),
+        "line_timed_captions": assets.get("_line_timed_captions") is True,
         "created_at": row.get("created_at"),
         "updated_at": row.get("updated_at"),
     }
