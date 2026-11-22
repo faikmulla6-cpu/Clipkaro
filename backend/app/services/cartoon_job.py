@@ -80,6 +80,11 @@ class CartoonJobError(RuntimeError):
         self.category = category
 
 
+class RetryableStoryboardRequest(CartoonJobError):
+    def __init__(self, message: str) -> None:
+        super().__init__(message, category="CARTOON_PROVIDER_TEMPORARY")
+
+
 def _loads(value: Any, fallback: Any) -> Any:
     try:
         result = json.loads(str(value or ""))
@@ -326,16 +331,18 @@ async def _extract_reference_frames(job: dict, project: dict, scratch: Path, sto
 async def _generate_storyboard(api_key: str, prompt: str, duration: int, style: str, language: str,
                                frames: list[Path], *, provider: str = "openrouter") -> dict[str, Any]:
     payload = planner_payload(prompt, duration, style, language, provider=provider, frames=tuple(frames))
+    timeout = 105 if provider == "nvidia" else 180
     if provider == "nvidia":
         try:
-            return await _read_storyboard(api_key, payload, prompt, duration, provider="nvidia", timeout=105)
+            return await _read_storyboard(api_key, payload, prompt, duration, provider=provider, timeout=timeout)
+        except RetryableStoryboardRequest:
+            await asyncio.sleep(1)
         except StoryboardReplyError as exc:
             if exc.category not in {"CARTOON_STORY_BEAT_TIMING", "CARTOON_STORY_DIALOGUE_SPEAKER"}:
                 raise CartoonJobError(str(exc), category=exc.category) from exc
             payload = storyboard_correction_payload(payload, exc.category)
     try:
-        return await _read_storyboard(api_key, payload, prompt, duration, provider=provider,
-                                      timeout=65 if provider == "nvidia" else 180)
+        return await _read_storyboard(api_key, payload, prompt, duration, provider=provider, timeout=timeout)
     except StoryboardReplyError as exc:
         raise CartoonJobError(str(exc), category=exc.category) from exc
 
@@ -345,7 +352,13 @@ async def _read_storyboard(api_key: str, payload: dict, prompt: str, duration: i
     label = "NVIDIA" if provider == "nvidia" else "OpenRouter"
     try:
         response = await request_storyboard(api_key, payload, provider=provider, timeout=timeout)
-    except (httpx.HTTPError, TimeoutError) as exc:
+    except (httpx.TimeoutException, TimeoutError, httpx.NetworkError, httpx.RemoteProtocolError) as exc:
+        logger.warning("Cartoon planner request failed: provider=%s reason=%s timeout_seconds=%d",
+                       provider, type(exc).__name__, timeout)
+        raise RetryableStoryboardRequest(
+            f"{label} did not finish planning your cartoon. Try again shortly."
+        ) from exc
+    except httpx.HTTPError as exc:
         raise CartoonJobError(f"{label} did not finish planning your cartoon. Try again shortly.",
                               category="CARTOON_PROVIDER_TEMPORARY") from exc
     if provider == "nvidia":
@@ -355,6 +368,9 @@ async def _read_storyboard(api_key: str, payload: dict, prompt: str, duration: i
         if response.status_code in {402, 429}:
             raise CartoonJobError("NVIDIA reached an account credit or rate limit. Check your NVIDIA account and retry.",
                                   category="CARTOON_PROVIDER_RATE_LIMIT")
+        if response.status_code in {500, 502, 503, 504}:
+            logger.warning("Cartoon planner request failed: provider=nvidia status=%d", response.status_code)
+            raise RetryableStoryboardRequest("NVIDIA could not complete the storyboard. Try again shortly.")
         if response.status_code == 202 or not response.is_success:
             raise CartoonJobError("NVIDIA could not complete the storyboard. Try again shortly.",
                                   category="CARTOON_PROVIDER_TEMPORARY")

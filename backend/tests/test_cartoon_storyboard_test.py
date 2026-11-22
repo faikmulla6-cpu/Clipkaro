@@ -208,10 +208,58 @@ async def test_nvidia_create_corrects_timing_only_once(monkeypatch, recovers, in
             await invoke()
 
     first, second = request.await_args_list
-    assert first.kwargs["timeout"] + second.kwargs["timeout"] == (170 if in_worker else 105)
+    if in_worker:
+        assert first.kwargs["timeout"] == second.kwargs["timeout"] == 105
+    else:
+        assert first.kwargs["timeout"] + second.kwargs["timeout"] == 105
     assert first.args[0] == second.args[0] == "nvapi-fixture"
     assert first.args[1]["messages"][1] == second.args[1]["messages"][1]
     assert "first storyboard was rejected" in second.args[1]["messages"][0]["content"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("provider", "first_failure", "second_failure", "attempts", "error_category"),
+    [
+        ("nvidia", TimeoutError(), None, 2, None),
+        ("nvidia", httpx.ReadError("connection lost"), None, 2, None),
+        ("nvidia", httpx.Response(503), None, 2, None),
+        ("nvidia", TimeoutError(), TimeoutError(), 2, "CARTOON_PROVIDER_TEMPORARY"),
+        ("nvidia", httpx.Response(401), None, 1, "CARTOON_PROVIDER_AUTH"),
+        ("nvidia", httpx.Response(429), None, 1, "CARTOON_PROVIDER_RATE_LIMIT"),
+        ("openrouter", TimeoutError(), None, 1, "CARTOON_PROVIDER_TEMPORARY"),
+    ],
+)
+async def test_worker_only_retries_transient_nvidia_planning_failures(
+    monkeypatch, provider, first_failure, second_failure, attempts, error_category,
+):
+    from app.services import cartoon_job as worker
+
+    response = httpx.Response(200, json={
+        "choices": [{"message": {"content": json.dumps(fixtures()["garden"])}}],
+    })
+    request = AsyncMock(side_effect=[first_failure, second_failure or response])
+    monkeypatch.setattr(worker, "request_storyboard", request)
+    pause = AsyncMock()
+    monkeypatch.setattr(worker.asyncio, "sleep", pause)
+
+    async def generate():
+        return await worker._generate_storyboard(
+            "fixture-key", "A fox finds the lost ball.", 15, "2d-cartoon", "en", [], provider=provider,
+        )
+
+    if error_category:
+        with pytest.raises(worker.CartoonJobError) as error:
+            await generate()
+        assert error.value.category == error_category
+    else:
+        assert (await generate())["scenes"]
+    assert request.await_count == attempts
+    if attempts == 2:
+        assert request.await_args_list[0] == request.await_args_list[1]
+        pause.assert_awaited_once_with(1)
+    else:
+        pause.assert_not_awaited()
 
 
 def test_scripted_ranges_survive_both_planners_and_combined_scenes_are_rejected():
