@@ -60,11 +60,6 @@ type ProviderStatus = {
 type SavedProvider = { connected: boolean; masked_key: string; validated_at?: string | null };
 type PlannerProvider = "nvidia" | "openrouter";
 type ProjectPlanner = "glm" | "nvidia";
-type StoryboardTest = { provider: PlannerProvider; model: string; storyboard: Storyboard };
-const PLANNER_NAMES: Record<PlannerProvider, string> = {
-  nvidia: "NVIDIA API",
-  openrouter: "OpenRouter GLM",
-};
 const PROVIDER_NAMES: Record<PlannerProvider, string> = { openrouter: "OpenRouter", nvidia: "NVIDIA API" };
 const EMPTY_PROVIDER: SavedProvider = { connected: false, masked_key: "" };
 const PROJECT_PLANNER_NAMES: Record<string, string> = {
@@ -97,15 +92,10 @@ export default function CartoonStudioPage() {
   const [projects, setProjects] = useState<CartoonProject[]>([]);
   const [selected, setSelected] = useState<CartoonProject | null>(null);
   const [apiKey, setApiKey] = useState("");
-  const [planner, setPlanner] = useState<PlannerProvider>("nvidia");
   const [projectPlanner, setProjectPlanner] = useState<ProjectPlanner>("glm");
   const [nvidiaKey, setNvidiaKey] = useState("");
   const [providerBusy, setProviderBusy] = useState<PlannerProvider | null>(null);
   const [providerFeedback, setProviderFeedback] = useState<{ provider: PlannerProvider; message: string; error: boolean } | null>(null);
-  const [testBusy, setTestBusy] = useState(false);
-  const [testError, setTestError] = useState("");
-  const [testResults, setTestResults] = useState<Partial<Record<PlannerProvider, StoryboardTest>>>({});
-  const [testedInput, setTestedInput] = useState("");
   const [prompt, setPrompt] = useState("");
   const [duration, setDuration] = useState(30);
   const [ratio, setRatio] = useState("9:16");
@@ -215,34 +205,6 @@ export default function CartoonStudioPage() {
       setProviderFeedback({ provider: name, message: cause instanceof Error ? cause.message : "The API key could not be removed.", error: true });
     } finally {
       setProviderBusy(null);
-    }
-  }
-
-  async function runStoryboardTest(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (testBusy || (planner === "nvidia" ? !nvidiaConnected : !connected)) return;
-    if (prompt.trim().length < 8) {
-      setTestError("Enter your story in the Create a cartoon form above.");
-      return;
-    }
-    setTestBusy(true);
-    setTestError("");
-    const body = new FormData();
-    body.set("provider", planner);
-    body.set("prompt", prompt.trim());
-    body.set("duration_seconds", String(duration));
-    body.set("language", language);
-    body.set("style", style);
-    const input = JSON.stringify([prompt.trim(), duration, language, style]);
-    if (testedInput !== input) setTestResults({});
-    try {
-      const result = await api<StoryboardTest>("/cartoon-studio/storyboard-test", { method: "POST", body });
-      setTestResults((current) => ({ ...current, [result.provider]: result }));
-      setTestedInput(input);
-    } catch (cause) {
-      setTestError(cause instanceof Error ? cause.message : "Storyboard testing failed. Try again shortly.");
-    } finally {
-      setTestBusy(false);
     }
   }
 
@@ -504,56 +466,6 @@ export default function CartoonStudioPage() {
             </section>
           </div>
         </div>
-
-        {nvidiaAvailable && (
-          <section className={styles.projectPanel} aria-labelledby="storyboard-test-title">
-            <div className={styles.panelHead}>
-              <div><h3 id="storyboard-test-title">Test storyboard planners</h3></div>
-            </div>
-            <p className={styles.projectPrompt}>
-              Uses the story, length, language and style above. This test generates a storyboard only.
-            </p>
-            <form onSubmit={runStoryboardTest} className={styles.form}>
-                <label className={styles.field}><span>Story planner</span>
-                  <select value={planner} onChange={(event) => setPlanner(event.target.value as PlannerProvider)} disabled={testBusy}>
-                    <option value="nvidia">NVIDIA API</option>
-                    <option value="openrouter">OpenRouter GLM</option>
-                  </select>
-                </label>
-              <p className={styles.projectPrompt}>{planner === "nvidia"
-                ? "Use fictional prompts without private information for preview evaluation."
-                : connected ? "This test uses your connected OpenRouter key and can consume planning credits."
-                  : "Connect OpenRouter above to test GLM."}</p>
-              <button className={styles.secondaryButton} type="submit"
-                disabled={testBusy || (planner === "nvidia" ? !nvidiaConnected : !connected)}>
-                {testBusy && <Loader2 className={styles.spin} size={16} />}
-                {testBusy ? "Planning storyboard…" : "Test storyboard"}
-              </button>
-              {planner === "nvidia" && !nvidiaConnected && <a className={styles.setupLink} href="#studio-api-keys">Connect your NVIDIA API key</a>}
-              {testError && <div className={styles.alertError} role="alert">{testError}</div>}
-            </form>
-            <div className={styles.fieldsTwo} aria-live="polite">
-              {Object.values(testResults).map((result) => (
-                <div className={styles.scenes} key={result.provider}>
-                  <div className={styles.sectionTitle}><strong>{PLANNER_NAMES[result.provider]}</strong><small>{result.model}</small></div>
-                  <p className={styles.projectPrompt}>{result.storyboard.title} · {result.storyboard.summary}</p>
-                  {(result.storyboard.scenes || []).map((scene, index) => (
-                    <div key={scene.id} className={styles.sceneRow}>
-                      <span className={styles.sceneNumber}>{index + 1}</span>
-                      <div>
-                        <strong>{scene.scene_title} · {scene.start ?? 0}–{(scene.start ?? 0) + (scene.duration ?? 0)}s</strong>
-                        <small>{(scene.actions || []).map((action) => action.type.replaceAll("_", " ")).join(" · ")}</small>
-                        {(scene.speech || []).map((line, lineIndex) => (
-                          <p key={lineIndex}>{line.speaker_id} · “{line.text}”</p>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
 
         {selected && (
           <section className={styles.projectPanel}>
