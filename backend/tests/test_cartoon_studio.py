@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -107,6 +108,14 @@ def test_voice_selection_uses_model_specific_gendered_presets():
     assert _voice_for({"voice_type": "female"}, ["en_paul_neutral", "gb_jane_curious"]) == "gb_jane_curious"
     assert _voice_for({"voice_type": "child"}, ["am_puck", "hf_alpha"]) == "hf_alpha"
     assert _voice_for({"voice_type": "male"}, ["am_adam", "hm_omega"], "hi") == "hm_omega"
+    assert _voice_for({"voice_type": "female"}, ["george", "sarah"], "hinglish",
+                      saved_voice="george", strict=True) == "sarah"
+    assert _voice_for({"voice_type": "female"}, ["Puck", "Kore", "Zephyr"], "hinglish",
+                      saved_voice="Zephyr", strict=True) == "Zephyr"
+    assert _voice_for({"voice_type": "female"}, ["Puck", "kore"], "hinglish",
+                      strict=True) == "kore"
+    with pytest.raises(CartoonJobError, match="known female voice"):
+        _voice_for({"voice_type": "female"}, ["george"], "hinglish", strict=True)
     assert _voice_for({"voice_type": "female"}, ["af_heart", "hf_alpha"], "hi") == "hf_alpha"
 
 
@@ -338,20 +347,28 @@ def test_cartoon_api_connects_byok_and_queues_private_project(cartoon_api_client
 
         available = client.get("/api/v1/cartoon-studio/tts-models")
         assert available.status_code == 200, available.text
-        assert available.json()["default_model"] == tts_model
-        assert [model["id"] for model in available.json()["models"]] == [tts_model, "system/edge-tts-urdu"]
+        assert available.json()["default_model"] == "system/kokoro-82m"
+        assert [model["id"] for model in available.json()["models"]] == [
+            "system/kokoro-82m", "system/edge-tts-urdu", "system/edge-tts-regional",
+        ]
+        assert "hf_alpha" in available.json()["models"][0]["voices_by_language"]["hi"]
 
-        created = client.post(
+        selection = {
+            "prompt": "A little fox finds a glowing map in the forest",
+            "duration_seconds": "15",
+            "aspect_ratio": "9:16",
+            "style": "2d-cartoon",
+            "language": "hi",
+        }
+        rejected = client.post(
             "/api/v1/cartoon-studio/projects",
             headers=csrf,
-            data={
-                "prompt": "A little fox finds a glowing map in the forest",
-                "duration_seconds": "15",
-                "aspect_ratio": "9:16",
-                "style": "2d-cartoon",
-                "language": "hi",
-                "tts_model": tts_model,
-            },
+            data={**selection, "tts_model": tts_model},
+        )
+        assert rejected.status_code == 422
+        created = client.post(
+            "/api/v1/cartoon-studio/projects", headers=csrf,
+            data={**selection, "voice_id": "hf_alpha"},
         )
         assert created.status_code == 200, created.text
         project = created.json()
@@ -374,7 +391,81 @@ def test_cartoon_api_connects_byok_and_queues_private_project(cartoon_api_client
     assert job and job["kind"] == "cartoon_generate" and job["status"] == "queued"
     assert job_payload and project["id"] in job_payload["payload_json"]
     assert key not in job_payload["payload_json"]
-    assert discover.await_count == 3
+    saved_project = asyncio.run(fetch_one("SELECT * FROM cartoon_projects WHERE id=?", (project["id"],)))
+    assert saved_project["tts_model"] == "system/kokoro-82m"
+    assert json.loads(saved_project["assets_json"])["_preferred_voice"] == "hf_alpha"
+    path = "/api/v1/cartoon-studio/projects/" + project["id"]
+    assert "caption_timeline" not in client.get(path).json()
+    cue = {"id": "line-one", "speaker": "Fox", "text": "I found it!", "start_seconds": 1.2, "end_seconds": 2.8}
+    asyncio.run(execute("UPDATE cartoon_projects SET status='ready',output_key=?,assets_json=? WHERE id=?", (
+        f"users/{user['id']}/cartoons/{project['id']}/final.mp4",
+        json.dumps({"_caption_timeline": [cue], "_editable": {"key": "private.zip"}}), project["id"],
+    )))
+    assert client.get(path).json()["caption_timeline"] == [cue]
+    assert "caption_timeline" not in client.get("/api/v1/cartoon-studio/projects").json()[0]
+    assert client.get(path + "/download").status_code == 200
+    assert client.get(path + "/editable").status_code == 404
+    assert client.get(path + "/editable-file").status_code == 404
+    discover.assert_awaited_once()
+
+
+def test_saved_nvidia_key_is_reused_and_independently_disconnected(cartoon_api_client, monkeypatch):
+    import httpx
+    from story_v3_fixtures import fixtures
+
+    client = cartoon_api_client
+    prefix = "/api/v1/cartoon-studio"
+    email = "saved-nvidia@example.com"
+    assert client.post("/api/v1/auth/signup", json={
+        "name": "NVIDIA tester", "email": email, "password": "Secure123",
+    }).status_code == 201
+    user = asyncio.run(fetch_one("SELECT id FROM users WHERE email=?", (email,)))
+    user_id = user["id"]
+    asyncio.run(execute("UPDATE users SET cartoon_studio_access_override=1 WHERE id=?", (user_id,)))
+    csrf = {"X-CSRF-Token": client.cookies.get("csrf_token")}
+    key = "nvapi-test-nvidia-encrypted-connection"
+    endpoint = prefix + "/providers/nvidia"
+    assert client.post(endpoint, headers=csrf, json={"api_key": key}).status_code == 403
+    monkeypatch.setattr(get_settings(), "cartoon_storyboard_test_user_ids", user_id)
+    assert client.post(endpoint, json={"api_key": key}).status_code == 403
+
+    invalid = client.post(endpoint, headers=csrf, json={"api_key": [key]})
+    assert invalid.status_code == 422 and key not in invalid.text
+    connected = client.post(endpoint, headers=csrf, json={"api_key": key})
+    assert connected.status_code == 200 and key not in connected.text
+    assert connected.json()["connected"] is True and connected.json()["validated_at"] is None
+    nav = client.get(prefix + "/providers")
+    assert nav.json()["nvidia"] == connected.json()
+    assert key not in nav.text
+    assert nav.headers["cache-control"] == "no-store"
+    credential = asyncio.run(fetch_one(
+        "SELECT api_key_ciphertext FROM cartoon_provider_credentials WHERE user_id=? AND provider='nvidia'", (user_id,),
+    ))
+    assert credential["api_key_ciphertext"].startswith("v1:") and key not in credential["api_key_ciphertext"]
+
+    idea = {"prompt": "A fox finds the lost ball.", "duration_seconds": "15", "language": "ur"}
+    upstream = httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(fixtures()["garden"])}}]})
+    with patch("app.api.cartoon_studio._models", new=AsyncMock(return_value=[])), patch(
+        "app.api.cartoon_studio.request_storyboard", new=AsyncMock(return_value=upstream),
+    ) as plan:
+        assert client.get(prefix + "/tts-models").status_code == 200
+        tested = client.post(prefix + "/storyboard-test", headers=csrf, data={**idea, "provider": "nvidia"})
+        assert tested.status_code == 200 and key not in tested.text
+        created = client.post(prefix + "/projects", headers=csrf, data={
+            **idea, "story_planner": "nvidia",
+        })
+        assert created.status_code == 200 and key not in created.text
+        project = created.json()
+        assert project["status"] == "queued" and project["storyboard"] == {}
+        plan.assert_awaited_once()
+        assert plan.await_args.args[0] == key and plan.await_args.kwargs["provider"] == "nvidia"
+    job_payload = asyncio.run(fetch_one("SELECT payload_json FROM job_payloads WHERE job_id=?", (project["job_id"],)))
+    assert key not in job_payload["payload_json"]
+    assert client.delete(endpoint, headers=csrf).status_code == 204
+    remaining = client.get(prefix + "/providers").json()
+    assert not remaining["nvidia"]["connected"] and not remaining["openrouter"]["connected"]
+    missing = client.post(prefix + "/storyboard-test", headers=csrf, data={**idea, "provider": "nvidia"})
+    assert missing.status_code == 409
 
 
 @pytest.mark.asyncio

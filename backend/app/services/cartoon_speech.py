@@ -6,6 +6,11 @@ from typing import Any
 
 
 SYSTEM_URDU_TTS_MODEL = "system/edge-tts-urdu"
+SYSTEM_REGIONAL_TTS_MODEL = "system/edge-tts-regional"
+SYSTEM_EDGE_TTS_MODELS = {SYSTEM_URDU_TTS_MODEL, SYSTEM_REGIONAL_TTS_MODEL}
+KOKORO_TTS_MODEL = "hexgrad/kokoro-82m"
+SYSTEM_KOKORO_TTS_MODEL = "system/kokoro-82m"
+KOKORO_VOICES = {"en": ["af_heart", "af_bella", "am_adam"], "hi": ["hf_alpha", "hf_beta", "hm_omega", "hm_psi"]}
 EDGE_VOICES = {
     "ur": {
         "female": "ur-PK-UzmaNeural",
@@ -21,6 +26,11 @@ EDGE_VOICES = {
         "child": "hi-IN-SwaraNeural",
         "elder": "hi-IN-SwaraNeural",
     },
+    "mr": {
+        "female": "mr-IN-AarohiNeural",
+        "male": "mr-IN-ManoharNeural",
+        "neutral": "mr-IN-AarohiNeural",
+    },
     "en": {
         "female": "en-US-JennyNeural",
         "male": "en-US-GuyNeural",
@@ -31,13 +41,54 @@ EDGE_VOICES = {
 }
 
 
+def cartoon_tts_for_language(model: str, language: str) -> str:
+    if language == "ur" and model in {"", KOKORO_TTS_MODEL}:
+        return SYSTEM_URDU_TTS_MODEL
+    return model
+
+
 def system_urdu_tts_model_row() -> dict[str, Any]:
     return {
         "id": SYSTEM_URDU_TTS_MODEL,
-        "name": "System Urdu Female Voice Â· Word-timed",
+        "name": "Built-in Urdu voices",
         "supported_voices": ["ur-PK-UzmaNeural", "ur-PK-AsadNeural"],
+        "languages": ["ur"],
         "description": "Built-in Urdu voices with native word timestamps for synchronized captions. Uses the external Edge speech service; availability can vary.",
     }
+
+
+def built_in_voice_models() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": SYSTEM_KOKORO_TTS_MODEL,
+            "name": "Built-in Kokoro",
+            "supported_voices": [voice for voices in KOKORO_VOICES.values() for voice in voices],
+            "voices_by_language": KOKORO_VOICES,
+            "languages": list(KOKORO_VOICES),
+            "description": "English and Hindi voices generated on ClipKaro's render worker.",
+        },
+        system_urdu_tts_model_row(),
+        {
+            "id": SYSTEM_REGIONAL_TTS_MODEL,
+            "name": "Built-in Hinglish and Marathi voices",
+            "languages": ["hinglish", "mr"],
+            "voices_by_language": {
+                language: list(dict.fromkeys(EDGE_VOICES[locale].values()))
+                for language, locale in (("hinglish", "hi"), ("mr", "mr"))
+            },
+            "description": "Built-in speech for Hinglish and Marathi.",
+        },
+    ]
+
+
+def built_in_voice_selection(model: str, language: str) -> str:
+    if not model or model == KOKORO_TTS_MODEL:
+        if language == "ur":
+            return SYSTEM_URDU_TTS_MODEL
+        if language in {"hinglish", "mr"}:
+            return SYSTEM_REGIONAL_TTS_MODEL
+        return SYSTEM_KOKORO_TTS_MODEL
+    return model
 
 
 def system_voice_for(language: str, voice_type: str = "neutral") -> str | None:
@@ -98,5 +149,5 @@ async def synthesize_edge_tts(
                 await asyncio.sleep(0.8 * (attempt + 1))
 
     raise RuntimeError(
-        "The system speech service could not reliably generate this voice. Retry or choose an OpenRouter TTS provider."
+        "The built-in speech service could not generate this voice. Please retry shortly."
     ) from last_error

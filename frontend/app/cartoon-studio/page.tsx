@@ -3,7 +3,7 @@
 import { AppShell } from "@/components/AppShell";
 import { api, deleteJSON, postJSON } from "@/lib/api";
 import {
-  AlertCircle, Check, Clapperboard, Clock3, Download, KeyRound, Loader2,
+  AlertCircle, Check, ChevronDown, Clapperboard, Clock3, Download, KeyRound, Loader2,
   LockKeyhole, Play, RefreshCw, ShieldCheck, Sparkles, Volume2, WandSparkles,
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
@@ -24,12 +24,23 @@ type Scene = {
   action: string;
   dialogue: string;
   speaker_id: string;
+  start?: number;
+  duration?: number;
+  actions?: {type: string; character_id: string; start: number; end: number}[];
+  speech?: {track: string; text: string; speaker_id: string}[];
 };
 type Storyboard = {
   title?: string;
   summary?: string;
   characters?: Character[];
   scenes?: Scene[];
+};
+type CaptionCue = {
+  id: string;
+  speaker: string;
+  text: string;
+  start_seconds: number;
+  end_seconds: number;
 };
 type CartoonProject = {
   id: string;
@@ -39,18 +50,34 @@ type CartoonProject = {
   aspect_ratio: string;
   style: string;
   language: string;
+  text_model?: string;
   status: string;
   progress: number;
   stage: string;
   error?: string | null;
   storyboard?: Storyboard;
+  caption_timeline?: CaptionCue[] | null;
+  line_timed_captions?: boolean;
   created_at?: string;
 };
 type ProviderStatus = {
-  openrouter: { connected: boolean; masked_key: string; validated_at?: string | null };
+  openrouter: SavedProvider;
+  nvidia?: SavedProvider;
+  storyboard_test_enabled?: boolean;
 };
-type TTSModel = { id: string; name: string; voices: string[]; description: string };
-type TTSResponse = { models: TTSModel[]; default_model: string };
+type SavedProvider = { connected: boolean; masked_key: string; validated_at?: string | null };
+type PlannerProvider = "nvidia" | "openrouter";
+type ProjectPlanner = "free" | "glm" | "nvidia";
+const PROVIDER_NAMES: Record<PlannerProvider, string> = { openrouter: "OpenRouter", nvidia: "NVIDIA API" };
+const EMPTY_PROVIDER: SavedProvider = { connected: false, masked_key: "" };
+const PROJECT_PLANNER_NAMES: Record<string, string> = {
+  "inclusionai/ling-3.2-flash:free": "Ling 3.2 Flash · Free planning",
+  "z-ai/glm-5.3-flash": "GLM",
+  "nvidia/nemotron-3.5-super-vl": "NVIDIA Nemotron",
+  "nvidia/nemotron-3.5-super-vl-120b-a12b": "NVIDIA API",
+};
+type TTSModel = { id: string; voices: string[]; languages: string[]; voices_by_language?: Record<string, string[]> };
+type TTSResponse = { models: TTSModel[] };
 
 const STAGE_LABELS: Record<string, string> = {
   queued: "Waiting in queue",
@@ -66,13 +93,24 @@ const STAGE_LABELS: Record<string, string> = {
   failed: "Needs attention",
 };
 
+function formatCueTime(seconds: number) {
+  const milliseconds = Math.round(seconds * 1000);
+  const minutes = String(Math.floor(milliseconds / 60000)).padStart(2, "0");
+  const wholeSeconds = String(Math.floor(milliseconds / 1000) % 60).padStart(2, "0");
+  return minutes + ":" + wholeSeconds + "." + String(milliseconds % 1000).padStart(3, "0");
+}
+
 export default function CartoonStudioPage() {
   const [provider, setProvider] = useState<ProviderStatus | null>(null);
   const [models, setModels] = useState<TTSModel[]>([]);
-  const [ttsModel, setTtsModel] = useState("");
+  const [requestedVoiceId, setVoiceId] = useState("");
   const [projects, setProjects] = useState<CartoonProject[]>([]);
   const [selected, setSelected] = useState<CartoonProject | null>(null);
   const [apiKey, setApiKey] = useState("");
+  const [projectPlanner, setProjectPlanner] = useState<ProjectPlanner>("free");
+  const [nvidiaKey, setNvidiaKey] = useState("");
+  const [providerBusy, setProviderBusy] = useState<PlannerProvider | null>(null);
+  const [providerFeedback, setProviderFeedback] = useState<{ provider: PlannerProvider; message: string; error: boolean } | null>(null);
   const [prompt, setPrompt] = useState("");
   const [duration, setDuration] = useState(30);
   const [ratio, setRatio] = useState("9:16");
@@ -83,6 +121,7 @@ export default function CartoonStudioPage() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [createError, setCreateError] = useState("");
 
   const mergeProject = useCallback((project: CartoonProject) => {
     setSelected(project);
@@ -92,7 +131,6 @@ export default function CartoonStudioPage() {
   const loadModels = useCallback(async () => {
     const response = await api<TTSResponse>("/cartoon-studio/tts-models");
     setModels(response.models || []);
-    setTtsModel((current) => current || response.default_model || response.models?.[0]?.id || "");
   }, []);
 
   useEffect(() => {
@@ -117,15 +155,10 @@ export default function CartoonStudioPage() {
   }, []);
 
   useEffect(() => {
-    if (!provider?.openrouter.connected) {
-      setModels([]);
-      setTtsModel("");
-      return;
-    }
     loadModels().catch((cause) => {
       setError(cause instanceof Error ? cause.message : "Voice models could not be loaded.");
     });
-  }, [provider?.openrouter.connected, loadModels]);
+  }, [loadModels]);
 
   useEffect(() => {
     if (!selected || (selected.status !== "queued" && selected.status !== "processing")) return;
@@ -143,51 +176,59 @@ export default function CartoonStudioPage() {
   );
   const isRendering = selected?.status === "queued" || selected?.status === "processing";
   const connected = Boolean(provider?.openrouter.connected);
+  const selectedVoiceModel = models.find(model => model.languages?.includes(language)
+    ?? (model.id === "system/edge-tts-urdu" && language === "ur"));
+  const voiceChoices = selectedVoiceModel?.voices_by_language?.[language] || selectedVoiceModel?.voices || [];
+  const voiceId = voiceChoices.includes(requestedVoiceId) ? requestedVoiceId : "";
+  const nvidiaAvailable = Boolean(provider?.storyboard_test_enabled && provider?.nvidia);
+  const nvidiaConnected = Boolean(provider?.nvidia?.connected);
+  const missingProvider = projectPlanner === "nvidia"
+    ? (nvidiaConnected ? "" : "NVIDIA API")
+    : (connected ? "" : "OpenRouter");
 
-  async function connectProvider(event: FormEvent<HTMLFormElement>) {
+  async function connectProvider(event: FormEvent<HTMLFormElement>, name: PlannerProvider) {
     event.preventDefault();
-    if (!apiKey.trim() || busy) return;
-    setBusy(true);
-    setError("");
-    setNotice("");
+    const key = (name === "nvidia" ? nvidiaKey : apiKey).trim();
+    if (!key || busy || providerBusy) return;
+    setProviderBusy(name);
+    setProviderFeedback(null);
     try {
-      const saved = await postJSON<{ connected: boolean; masked_key: string; validated_at: string }>(
-        "/cartoon-studio/providers/openrouter",
-        { api_key: apiKey.trim() },
+      const saved = await postJSON<SavedProvider>(
+        "/cartoon-studio/providers/" + name,
+        { api_key: key },
       );
-      setProvider({ openrouter: saved });
-      setApiKey("");
-      await loadModels();
-      setNotice("OpenRouter connected securely. Your key is encrypted and never shown again.");
+      setProvider((current) => current && { ...current, [name]: saved });
+      if (name === "nvidia") setNvidiaKey("");
+      else setApiKey("");
+      setProviderFeedback({ provider: name, message: "Key saved securely.", error: false });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "OpenRouter could not be connected.");
+      setProviderFeedback({ provider: name, message: cause instanceof Error ? cause.message : "The API key could not be saved.", error: true });
     } finally {
-      setBusy(false);
+      setProviderBusy(null);
     }
   }
 
-  async function disconnectProvider() {
-    if (busy) return;
-    setBusy(true);
-    setError("");
+  async function disconnectProvider(name: PlannerProvider) {
+    if (busy || providerBusy) return;
+    setProviderBusy(name);
+    setProviderFeedback(null);
     try {
-      await deleteJSON("/cartoon-studio/providers/openrouter");
-      setProvider({ openrouter: { connected: false, masked_key: "" } });
-      setModels([]);
-      setTtsModel("");
-      setNotice("OpenRouter key disconnected.");
+      await deleteJSON("/cartoon-studio/providers/" + name);
+      setProvider((current) => current && { ...current, [name]: EMPTY_PROVIDER });
+      setProviderFeedback({ provider: name, message: "Key disconnected.", error: false });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The provider key could not be removed.");
+      setProviderFeedback({ provider: name, message: cause instanceof Error ? cause.message : "The API key could not be removed.", error: true });
     } finally {
-      setBusy(false);
+      setProviderBusy(null);
     }
   }
 
   async function createCartoon(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy || !connected) return;
+    if (busy || providerBusy || missingProvider) return;
+    setCreateError("");
     if (prompt.trim().length < 8) {
-      setError("Describe your story in at least 8 characters.");
+      setCreateError("Describe your story in at least 8 characters.");
       return;
     }
     setBusy(true);
@@ -200,14 +241,15 @@ export default function CartoonStudioPage() {
       body.set("aspect_ratio", ratio);
       body.set("style", style);
       body.set("language", language);
-      body.set("tts_model", ttsModel);
-      if (reference) body.set("reference_video", reference);
+      body.set("voice_id", voiceId);
+      body.set("story_planner", projectPlanner);
+      if (projectPlanner !== "nvidia" && reference) body.set("reference_video", reference);
       const project = await api<CartoonProject>("/cartoon-studio/projects", { method: "POST", body });
       mergeProject(project);
       setNotice("Your cartoon is queued. You can leave this page while it renders.");
       setReference(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Cartoon generation could not start.");
+      setCreateError(cause instanceof Error ? cause.message : "Cartoon generation could not start.");
     } finally {
       setBusy(false);
     }
@@ -262,7 +304,7 @@ export default function CartoonStudioPage() {
           <div>
             <span className={styles.eyebrow}><Sparkles size={13} /> CARTOON STUDIO · BETA</span>
             <h2>Give your story <em>a voice.</em></h2>
-            <p>Describe a scene. GLM plans the story, each character gets a saved voice, and HyperFrames builds the animation without generating a new image for every frame.</p>
+            <p>Choose a story planner and describe your scene. Each character gets a saved voice, and HyperFrames builds the animation.</p>
           </div>
           <div className={styles.heroMark}><Clapperboard size={32} /><span>2D<br />ANIMATION</span></div>
         </div>
@@ -291,15 +333,16 @@ export default function CartoonStudioPage() {
               </label>
               <div className={styles.fieldsTwo}>
                 <label className={styles.field}><span>Video length</span>
-                  <select value={duration} onChange={(event) => setDuration(Number(event.target.value))} disabled={style === "cinematic-jannat"}>
+                  <select value={duration} onChange={(event) => setDuration(Number(event.target.value))}>
                     <option value={15}>15 seconds</option><option value={30}>30 seconds</option>
                     <option value={45}>45 seconds</option><option value={60}>60 seconds</option>
                   </select>
                 </label>
                 <label className={styles.field}><span>Aspect ratio</span>
-                  <select value={ratio} onChange={(event) => setRatio(event.target.value)} disabled={style === "cinematic-jannat"}>
+                  <select value={ratio} onChange={(event) => setRatio(event.target.value)}>
                     <option value="9:16">9:16 · Reels / Shorts</option>
                     <option value="16:9">16:9 · YouTube</option><option value="1:1">1:1 · Square</option>
+                    <option value="4:5">4:5 · Portrait posts</option>
                   </select>
                 </label>
                 <label className={styles.field}><span>Animation style</span>
@@ -307,17 +350,14 @@ export default function CartoonStudioPage() {
                     const nextStyle = event.target.value;
                     setStyle(nextStyle);
                     if (nextStyle === "cinematic-jannat") {
-                      setDuration(30);
-                      setRatio("16:9");
                       setLanguage("ur");
-                      setTtsModel("system/edge-tts-urdu");
                     }
                   }}>
                     <option value="2d-cartoon">2D Cartoon</option><option value="storybook">Storybook</option>
                     <option value="anime-inspired">Anime-inspired</option><option value="flat-vector">Flat vector</option><option value="cinematic-jannat">Jannat cinematic (reference)</option>
                   </select>
                   {style === "cinematic-jannat" && (
-                    <small className={styles.languageHint}>Uses the reference Jannat rig and moonlit bedroom, with separate Urdu narration, dialogue, original suspense score and bedroom foley. Locks 30 seconds, 16:9 and the word-timed female voice.</small>
+                    <small className={styles.languageHint}>A suspense storytelling preset with consistent characters, timed movement and Urdu word-timed voices. Supports every aspect ratio.</small>
                   )}
                 </label>
                 <label className={styles.field}><span>Story language</span>
@@ -327,63 +367,90 @@ export default function CartoonStudioPage() {
                   </select>
                 </label>
               </div>
-              <label className={styles.field}>
-                <span>Voice model</span>
-                <select value={ttsModel} onChange={(event) => setTtsModel(event.target.value)} disabled={!connected || models.length === 0 || style === "cinematic-jannat"}>
-                  {models.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}
+              <label className={styles.field}><span>Story planner</span>
+                <select value={projectPlanner} onChange={(event) => setProjectPlanner(event.target.value as ProjectPlanner)} disabled={busy}>
+                  <option value="free">Ling 3.2 Flash · Free planning</option>
+                  <option value="glm">GLM via OpenRouter · Paid planning</option>
+                  {nvidiaAvailable && <option value="nvidia">NVIDIA API</option>}
                 </select>
-                <small>{connected ? (models.find((model) => model.id === ttsModel)?.description || "Every character keeps its assigned voice across the scenes in this project.") : "Connect your OpenRouter key to load available voice models."}</small>
-                {connected && language === "ur" && ttsModel === "system/edge-tts-urdu" && (
-                  <small className={styles.languageHint}>Uses the built-in Urdu voice and captures native word timestamps for synchronized captions. Voice service availability may vary.</small>
-                )}
-                {connected && language === "ur" && ttsModel !== "system/edge-tts-urdu" && (
-                  <small className={styles.languageHint}>This speech model does not return native word timings; captions will use estimated alignment. Choose System Urdu Female for word-timed captions.</small>
-                )}
-                {connected && language === "mr" && ttsModel === "hexgrad/kokoro-82m" && (
-                  <small className={styles.languageHint}>Kokoro lists Hindi and English among its supported languages, but not Marathi. Choose Gemini 3.1 Flash TTS for broader language coverage.</small>
-                )}
-                {connected && language === "hinglish" && ttsModel === "hexgrad/kokoro-82m" && (
-                  <small className={styles.languageHint}>For mixed Hindi-English narration, Gemini 3.1 Flash TTS may handle language switching more reliably.</small>
-                )}
+                {projectPlanner === "free" && <small>Planning uses the free OpenRouter model.</small>}
               </label>
-              <label className={styles.fileField}>
+              {voiceChoices.length > 0 && <label className={styles.field}><span>Narrator / lead voice</span>
+                <select value={voiceId} onChange={(event) => setVoiceId(event.target.value)}>
+                  <option value="">Match the character automatically</option>
+                  {voiceChoices.map(voice => <option key={voice} value={voice}>{voice}</option>)}
+                </select>
+                <small>ClipKaro voices the other characters and syncs the captions automatically.</small>
+              </label>}
+              {projectPlanner !== "nvidia" && <label className={styles.fileField}>
                 <span>Optional reference video</span>
                 <input type="file" accept="video/mp4,video/quicktime,video/webm,video/x-matroska" onChange={(event) => setReference(event.target.files?.[0] || null)} />
                 <small>{reference ? reference.name : "Up to 50 MB. Used only to analyse visual style; not required."}</small>
-              </label>
-              <button className={styles.primaryButton} type="submit" disabled={!connected || busy || !ttsModel}>
+              </label>}
+              <button className={styles.primaryButton} type="submit" disabled={Boolean(missingProvider || busy || providerBusy)}>
                 {busy ? <Loader2 className={styles.spin} size={18} /> : <WandSparkles size={18} />}
-                {busy ? "Please wait..." : "Create my cartoon"}
+                {busy ? "Queuing your cartoon…" : "Create my cartoon"}
               </button>
-              {!connected && <p className={styles.formHint}>Connect your own OpenRouter API key below to enable generation.</p>}
+              {createError && <div className={styles.alertError} role="alert"><AlertCircle size={17} />{createError}</div>}
+              {missingProvider && <a className={styles.setupLink} href="#studio-api-keys">Connect your {missingProvider} key</a>}
             </form>
           </section>
 
           <div className={styles.sideColumn}>
-            <section className={styles.providerPanel}>
+            <section className={styles.providerPanel} id="studio-api-keys" aria-labelledby="studio-api-keys-title">
               <div className={styles.panelHead}>
-                <div><span className={styles.kicker}>02 · YOUR AI ACCOUNT</span><h3>Connect OpenRouter</h3></div>
-                <KeyRound size={21} />
+                <div><h3 id="studio-api-keys-title">API keys</h3><p>Connect once and use your saved keys for every cartoon.</p></div>
+                <span className={styles.keysIcon}><KeyRound size={20} aria-hidden="true" /></span>
               </div>
-              {connected ? (
-                <div className={styles.connectedState}>
-                  <div className={styles.connectedIcon}><ShieldCheck size={22} /></div>
-                  <div><strong>Provider connected</strong><span>{provider?.openrouter.masked_key}</span></div>
-                  <button type="button" className={styles.textButton} onClick={disconnectProvider} disabled={busy}>Disconnect</button>
-                </div>
-              ) : (
-                <form onSubmit={connectProvider} className={styles.keyForm}>
-                  <label className={styles.field}><span>OpenRouter API key</span>
-                    <input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="sk-or-v1-..." autoComplete="off" minLength={20} required />
-                  </label>
-                  <button className={styles.secondaryButton} type="submit" disabled={busy || !apiKey.trim()}>
-                    {busy ? <Loader2 className={styles.spin} size={16} /> : <LockKeyhole size={16} />} Connect key
-                  </button>
-                  <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer">Get an API key from OpenRouter ↗</a>
-                </form>
-              )}
-              <div className={styles.securityNote}><LockKeyhole size={15} /><span>Your key is encrypted at rest. ClipKaro's backend uses it for model discovery and generation, and never returns the key to your browser.</span></div>
-              <div className={styles.billingNote}><Volume2 size={15} /><span>GLM story planning and OpenRouter TTS use your OpenRouter account. The built-in Urdu voice uses the external Edge speech service and does not consume OpenRouter TTS credits. Video rendering runs on ClipKaro.</span></div>
+              <div className={styles.providerList}>
+                {(nvidiaAvailable ? (["openrouter", "nvidia"] as const) : (["openrouter"] as const)).map((name) => {
+                  const isNvidia = name === "nvidia";
+                  const key = isNvidia ? nvidiaKey : apiKey;
+                  const saved = provider?.[name];
+                  const feedback = providerFeedback?.provider === name ? providerFeedback : null;
+                  return (
+                    <section className={styles.providerCard} key={name} aria-labelledby={`studio-key-${name}`}>
+                      <div className={styles.providerCardHead}>
+                        <div><h4 id={`studio-key-${name}`}>{PROVIDER_NAMES[name]}</h4>
+                          <p>{isNvidia ? "Nemotron story planning" : "Ling and GLM story planning"}</p>
+                        </div>
+                        {saved?.connected && <span className={styles.savedKey}><ShieldCheck size={13} aria-hidden="true" />{isNvidia ? "Saved" : "Connected"}</span>}
+                      </div>
+                      {saved?.connected ? (
+                        <div className={styles.savedKeyRow}>
+                          <code>{saved.masked_key}</code>
+                          <button type="button" className={styles.textButton} aria-label={`Disconnect ${PROVIDER_NAMES[name]}`}
+                            onClick={() => void disconnectProvider(name)} disabled={busy || Boolean(providerBusy)}>
+                            {providerBusy === name ? "Disconnecting…" : "Disconnect"}
+                          </button>
+                        </div>
+                      ) : (
+                        <form onSubmit={(event) => void connectProvider(event, name)} className={styles.keyForm}>
+                          <label className={styles.field}><span>{isNvidia ? "NVIDIA API key" : "OpenRouter API key"}</span>
+                            <input type="password" value={key} onChange={(event) => (isNvidia ? setNvidiaKey : setApiKey)(event.target.value)}
+                              placeholder={isNvidia ? "nvapi-…" : "sk-or-v1-…"} autoComplete="off" spellCheck={false}
+                              minLength={20} maxLength={500} required disabled={Boolean(providerBusy)} />
+                          </label>
+                          <div className={styles.keyActions}>
+                            <button className={styles.secondaryButton} type="submit" disabled={!provider || busy || Boolean(providerBusy) || !key.trim()}>
+                              {providerBusy === name ? <Loader2 className={styles.spin} size={15} aria-hidden="true" /> : null}
+                              {isNvidia ? "Save key" : "Connect key"}
+                            </button>
+                            <a href={isNvidia ? "https://build.nvidia.com/nvidia/nemotron-3.5-super-vl-120b-a12b" : "https://openrouter.ai/keys"}
+                              target="_blank" rel="noreferrer">Get a key ↗</a>
+                          </div>
+                        </form>
+                      )}
+                      {isNvidia && <p className={styles.keyHelp}>NVIDIA checks access when you create. Use fictional prompts for preview evaluation.</p>}
+                      {feedback && <p className={feedback.error ? styles.keyError : styles.keyHelp}
+                        role={feedback.error ? "alert" : "status"}>{feedback.message}</p>}
+                    </section>
+                  );
+                })}
+              </div>
+              {provider?.storyboard_test_enabled && !nvidiaAvailable && <p className={styles.keyHelp}>NVIDIA key setup is unavailable on this backend.</p>}
+              <div className={styles.securityNote}><LockKeyhole size={15} aria-hidden="true" /><span>Saved keys are encrypted. Only masked values are shown here.</span></div>
+              <div className={styles.billingNote}><Volume2 size={15} aria-hidden="true" /><span>Built-in voices need no speech API key.</span></div>
             </section>
 
             <section className={styles.stepsPanel}>
@@ -398,7 +465,9 @@ export default function CartoonStudioPage() {
         {selected && (
           <section className={styles.projectPanel}>
             <div className={styles.panelHead}>
-              <div><span className={styles.kicker}>03 · CURRENT PROJECT</span><h3>{selected.storyboard?.title || selected.title}</h3></div>
+              <div><span className={styles.kicker}>03 · CURRENT PROJECT</span><h3>{selected.storyboard?.title || selected.title}</h3>
+                {selected.text_model && <small>{PROJECT_PLANNER_NAMES[selected.text_model]}</small>}
+              </div>
               <span className={selected.status === "ready" ? styles.statusReady : selected.status === "failed" ? styles.statusFailed : styles.statusRunning}>
                 {selected.status === "ready" ? "Ready" : selected.status === "failed" ? "Failed" : "Rendering"}
               </span>
@@ -410,6 +479,9 @@ export default function CartoonStudioPage() {
               <small>Keep this tab open to watch progress, or return later from Recent projects.</small>
             </div>}
             {selected.error && <div className={styles.projectError}><AlertCircle size={16} />{selected.error}</div>}
+            {selected.status === "ready" && selected.line_timed_captions && (
+              <p className={styles.projectPrompt}>Some captions are synced by spoken line because word-level timing was unavailable.</p>
+            )}
             {activeCharacters.length > 0 && <div className={styles.characters}>
               <div className={styles.sectionTitle}><strong>Characters and their voices</strong><small>Saved voice identities</small></div>
               <div className={styles.characterGrid}>
@@ -425,7 +497,10 @@ export default function CartoonStudioPage() {
               <div className={styles.sectionTitle}><strong>Storyboard</strong><small>{selected.storyboard.scenes.length} scenes</small></div>
               {selected.storyboard.scenes.map((scene, index) => <div className={styles.sceneRow} key={scene.id}>
                 <span className={styles.sceneNumber}>{String(index + 1).padStart(2, "0")}</span>
-                <div><strong>{scene.scene_title}</strong><small>{scene.action}</small><p>“{scene.dialogue}”</p></div>
+                <div><strong>{scene.scene_title || scene.environment}{scene.duration ? " · " + scene.duration + "s" : ""}</strong>
+                  <small>{scene.actions?.map(action => action.start.toFixed(1) + "–" + action.end.toFixed(1) + "s: " + action.type.replaceAll("_", " ")).join(" · ") || scene.action}</small>
+                  {scene.speech?.map((line,index) => <p key={index}>{line.track === "narration" ? "Narrator" : line.speaker_id}: “{line.text}”</p>)}
+                  {!scene.speech && scene.dialogue && <p>“{scene.dialogue}”</p>}</div>
               </div>)}
             </div> : null}
             <div className={styles.projectActions}>
@@ -433,6 +508,23 @@ export default function CartoonStudioPage() {
               {selected.status === "failed" && <button className={styles.secondaryButton} type="button" onClick={retryProject} disabled={busy}><RefreshCw size={16} /> Retry project</button>}
               {isRendering && <span><Loader2 className={styles.spin} size={15} /> Rendering in the background</span>}
             </div>
+            {selected.status === "ready" && !!selected.caption_timeline?.length && (
+              <details key={selected.id} className={styles.captionTimeline}>
+                <summary>
+                  <span><Clock3 size={17} aria-hidden="true" /> Caption Timeline</span>
+                  <ChevronDown size={16} aria-hidden="true" />
+                </summary>
+                <p>Want a different voice? Use these captions and times to add your own realistic voice to this cartoon.</p>
+                <ol>
+                  {selected.caption_timeline.map(cue => (
+                    <li key={cue.id}>
+                      <span className={styles.cueTime}>{formatCueTime(cue.start_seconds)} – {formatCueTime(cue.end_seconds)}</span>
+                      <div><strong>{cue.speaker}</strong><span dir="auto">{cue.text}</span></div>
+                    </li>
+                  ))}
+                </ol>
+              </details>
+            )}
           </section>
         )}
 

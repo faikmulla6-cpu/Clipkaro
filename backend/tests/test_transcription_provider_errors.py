@@ -62,3 +62,37 @@ def test_auto_hindi_foreign_script_retries_with_explicit_hindi(monkeypatch: pyte
     language, segments = asyncio.run(transcription._transcribe_api_impl(tmp_path / "source.mp4", "auto"))
     assert language == "hi" and segments
     assert hints == ["auto", "hi"]
+
+
+@pytest.mark.asyncio
+async def test_generated_cartoon_line_uses_api_timestamps_below_source_minimum(monkeypatch, tmp_path):
+    from shutil import copyfile
+    from unittest.mock import AsyncMock
+    from app.services.cartoon_story_job import audio_alignment
+
+    fixture = Path(__file__).resolve().parents[1] / "cartoon_engine/fixtures/story-v3/audio/library-scene-1-line-1.mp3"
+    audio = tmp_path / "dialogue.mp3"
+    copyfile(fixture, audio)
+    settings = transcription.get_settings().model_copy(
+        update={"transcription_backend": "faster-whisper", "asr_mode": "api"}
+    )
+    monkeypatch.setattr(transcription, "get_settings", lambda: settings)
+    words = [
+        {"word": "अरुण", "start": .2, "end": .7},
+        {"word": "देखो", "start": .8, "end": 1.3},
+    ]
+    segments = [{"start": .2, "end": 1.3, "text": "अरुण देखो", "words": words}]
+    response = asr_providers._normalise(
+        {"language": "hi", "text": "अरुण देखो", "segments": segments},
+        "groq", "fixture", 3, .1, 1,
+    )
+    provider = AsyncMock(return_value=response)
+    monkeypatch.setattr(transcription, "transcribe_api", provider)
+
+    with pytest.raises(RuntimeError, match="too little|quality verification"):
+        await transcription.transcribe(audio, language_hint="hi")
+    boundaries = await audio_alignment(audio, "hinglish")
+    assert [word["offset"] for word in boundaries] == [2_000_000, 8_000_000]
+    assert all(word["text"].isascii() for word in boundaries)
+    assert provider.await_count == 2
+    assert not audio.with_suffix(".asr.flac").exists()

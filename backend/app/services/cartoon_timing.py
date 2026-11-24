@@ -5,6 +5,7 @@ import re
 from typing import Any, Iterable
 
 TICKS_PER_SECOND = 10_000_000
+SPEECH_LINE_CAPTION_SOURCE = "speech_activity_line"
 
 
 def normalize_word_boundaries(
@@ -110,7 +111,8 @@ def group_caption_phrases(
         current_end = max((float(item.get("end_seconds") or token_start) for item in current), default=token_start)
         gap_seconds = max(0.0, token_start - current_end)
         should_break = bool(current) and (
-            len(current) >= max_words
+            word.get("source") == SPEECH_LINE_CAPTION_SOURCE
+            or len(current) >= max_words
             or current_chars + len(token) + 1 > max_chars
             or token_end - current_start > max_duration
             or gap_seconds > 0.65
@@ -121,7 +123,7 @@ def group_caption_phrases(
             current_chars = 0
         current.append(word)
         current_chars += len(token) + (1 if len(current) > 1 else 0)
-        if re.search(r"[.!?\u061f\u06d4\u060c,:;]$", token):
+        if word.get("source") == SPEECH_LINE_CAPTION_SOURCE or re.search(r"[.!?\u061f\u06d4\u060c,:;]$", token):
             phrases.append(current)
             current = []
             current_chars = 0
@@ -144,6 +146,7 @@ def group_caption_phrases(
             and gap_seconds <= 0.65
             and len(merged) <= max_words
             and merged_chars <= max_chars
+            and all(word.get("source") != SPEECH_LINE_CAPTION_SOURCE for word in merged)
         ):
             phrases[index] = merged
             del phrases[index + 1]
@@ -158,6 +161,7 @@ def build_karaoke_caption_markup(
     overlay_id: str = "captions",
     rtl: bool = False,
     bottom_percent: int = 36,
+    strict_timing: bool = False,
 ) -> tuple[str, str]:
     """Build safe timed phrase markup and scene-local GSAP word-highlight instructions."""
     phrases = group_caption_phrases(words)
@@ -169,13 +173,15 @@ def build_karaoke_caption_markup(
             continue
         phrase_start = min(float(word["start_seconds"]) for word in phrase)
         phrase_end = max(float(word["end_seconds"]) for word in phrase)
-        duration = max(phrase_end - phrase_start, 0.5 + 0.3 * len(phrase))
+        duration = max(.025, phrase_end-phrase_start) if strict_timing else max(phrase_end - phrase_start, 0.5 + 0.3 * len(phrase))
         phrase_id = f"{overlay_id}-phrase-{phrase_index + 1}"
         spans = []
         for word_index, word in enumerate(phrase):
             word_id = f"{phrase_id}-word-{word_index + 1}"
             token = html.escape(str(word.get("text") or ""), quote=True)
             spans.append(f'<span id="{word_id}" class="caption-word">{token}</span>')
+            if word.get("source") == SPEECH_LINE_CAPTION_SOURCE:
+                continue
             word_start = max(0.0, float(word["start_seconds"]))
             word_end = max(word_start + 0.025, float(word["end_seconds"]))
             timeline.append(

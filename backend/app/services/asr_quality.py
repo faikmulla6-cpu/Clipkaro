@@ -39,12 +39,12 @@ def segment_quality(segment: dict[str, Any], language: str = "") -> dict[str, An
             "word_confidence": round(confidence, 3), "foreign_script_ratio": round(foreign, 3)}
 
 
-def assess_transcript(segments: list[dict[str, Any]], language: str = "") -> dict[str, Any]:
+def assess_transcript(segments: list[dict[str, Any]], language: str = "", *, min_clean_seconds: float = 20.0) -> dict[str, Any]:
     results = [segment_quality(s, language) for s in segments]
     accepted = [s for s, q in zip(segments, results) if q["accepted"]]
     clean_duration = sum(max(0, float(s["end"]) - float(s["start"])) for s in accepted)
     total_duration = sum(max(0, float(s["end"]) - float(s["start"])) for s in segments)
     flags = sorted({f for q in results for f in q["flags"]})
-    return {"accepted": bool(accepted) and clean_duration >= 20 and clean_duration / max(total_duration, .01) >= .4,
+    return {"accepted": bool(accepted) and clean_duration >= min_clean_seconds and clean_duration / max(total_duration, .01) >= .4,
             "segments": accepted, "flags": flags, "clean_duration": clean_duration,
             "speech_coverage": clean_duration / max(total_duration, .01)}

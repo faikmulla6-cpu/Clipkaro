@@ -12,6 +12,7 @@ RATIOS = {
     "9:16": (1080, 1920, "portrait"),
     "16:9": (1920, 1080, "landscape"),
     "1:1": (1080, 1080, "square"),
+    "4:5": (1080, 1350, "portrait"),
 }
 PALETTES = {
     "forest": ("#9BE4CF", "#D8F5C6", "#4F9B70", "#245C46"),
@@ -257,6 +258,9 @@ def build_cartoon_project(
     storyboard: dict[str, Any],
     audio_assets: list[dict[str, Any]],
 ) -> dict[str, str]:
+    if storyboard.get("schema_version") == 3:
+        from app.services.cartoon_story_render import build_story_project
+        return build_story_project(project, storyboard, audio_assets)
     duration = int(project["duration_seconds"])
     ratio = str(project.get("aspect_ratio") or "9:16")
     width, height, resolution = RATIOS.get(ratio, RATIOS["9:16"])
