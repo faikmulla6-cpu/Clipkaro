@@ -40,7 +40,6 @@ export function AppShell({ children, title, subtitle, action, compactBalance = f
 
   if(loading || !user) return <div className="screen-loader"><div className="loader-mark">✦</div><p>Opening your studio…</p></div>;
   const nav=(items:ReadonlyArray<readonly [string,string,typeof Home]>)=>items.map(([label,href,Icon])=><Link key={href} href={href} className={path===href||path.startsWith(`${href}/`)?"active":""} onClick={()=>setOpen(false)}><Icon size={18}/><span>{label}</span></Link>);
-  const visibleStudio = user.cartoon_studio_access_override ? studio : studio.filter(([label])=>label!=="Cartoon Studio");
   const minutesLeft=usage?Math.max(0,usage.processing_minutes_remaining):0;
   const legacySourceProjects=usage?.short_unit==="source_projects";
   const noticeKind=usage && minutesLeft<=0.1 ? "minutes" : usage && usageShortRemaining(usage)<=0 ? "shorts" : null;
@@ -66,7 +65,7 @@ export function AppShell({ children, title, subtitle, action, compactBalance = f
     <aside id="workspace-navigation" className={`sidebar ${open?"sidebar-open":""}`} aria-label="Workspace navigation">
       <div className="side-top"><Logo/><button type="button" className="icon-btn mobile-only app-menu-button" onClick={()=>setOpen(false)} aria-label="Close workspace menu"><X size={20}/></button></div>
       <Link href="/upload" className="new-project"><Plus size={17}/> Create new Short</Link>
-      <nav className="side-nav"><p className="nav-label">Workspace</p>{nav(workspace)}<p className="nav-label">Creator studio</p>{nav(visibleStudio)}{user.role==="admin"&&<><p className="nav-label">Internal</p><Link href="/admin" className={path==="/admin"?"active":""}><ServerCog size={18}/><span>Admin queue</span></Link></>}<p className="nav-label">Account</p><Link href="/pricing" className={path==="/pricing"?"active":""}><CreditCard size={18}/><span>Plans & billing</span></Link><Link href="/account" className={path==="/account"?"active":""}><Settings size={18}/><span>Settings</span></Link></nav>
+      <nav className="side-nav"><p className="nav-label">Workspace</p>{nav(workspace)}<p className="nav-label">Creator studio</p>{nav(studio)}{user.role==="admin"&&<><p className="nav-label">Internal</p><Link href="/admin" className={path==="/admin"?"active":""}><ServerCog size={18}/><span>Admin queue</span></Link></>}<p className="nav-label">Account</p><Link href="/pricing" className={path==="/pricing"?"active":""}><CreditCard size={18}/><span>Plans & billing</span></Link><Link href="/account" className={path==="/account"?"active":""}><Settings size={18}/><span>Settings</span></Link></nav>
       {noticeKind && !dismissedNotice && <aside className="ck-allowance-notice" role="status">
         <button type="button" className="ck-notice-close" aria-label="Dismiss balance warning" onClick={closeAllowanceNotice}><X size={14}/></button>
         <AlertCircle size={19} className="text-[#bb512d]"/>
