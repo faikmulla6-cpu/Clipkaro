@@ -17,7 +17,7 @@ from app.core.config import get_settings
 from app.core.database import POSTGRES_SCHEMA_REVISION, distributed_advisory_lock, execute, fetch_all, fetch_one
 from app.services.distributed_rate_limit import consume_rate_limit
 from app.services.auth import current_user
-from app.services.cartoon_speech import SYSTEM_URDU_TTS_MODEL, cartoon_tts_for_language, system_urdu_tts_model_row
+from app.services.cartoon_speech import CAPTIONS_ONLY_MODEL, SYSTEM_URDU_TTS_MODEL, built_in_voice_models, built_in_voice_selection
 from app.services.cartoon_story import resolve_cartoon_language
 from app.services.cartoon_story_planner import (
     NVIDIA_STORY_MODEL, OPENROUTER_ROOT, PROJECT_STORY_MODELS, STORY_MODEL, StoryboardReplyError,
@@ -44,16 +44,6 @@ async def _run_media_job(job_id: str) -> int:
     return await run_job(job_id)
 
 
-PREFERRED_TTS = [
-    "hexgrad/kokoro-82m",
-    "google/gemini-3.1-flash-tts-preview",
-    "x-ai/grok-voice-tts-1.0",
-    "mistralai/voxtral-mini-tts-2603",
-    "microsoft/mai-voice-2",
-    "deepgram/aura-2",
-    "minimax/speech-2.8-turbo",
-    SYSTEM_URDU_TTS_MODEL,
-]
 ALLOWED_DURATIONS = {15, 30, 45, 60}
 ALLOWED_RATIOS = {"9:16", "16:9", "1:1", "4:5"}
 ALLOWED_STYLES = {"2d-cartoon", "storybook", "anime-inspired", "flat-vector", "cinematic-jannat"}
@@ -149,16 +139,6 @@ async def _models(api_key: str, modality: str) -> list[dict[str, Any]]:
         raise HTTPException(502, "OpenRouter returned an unreadable model list.")
 
 
-def _models_with_preset_voices(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    models = [
-        item for item in rows
-        if isinstance(item.get("supported_voices"), list)
-        and any(str(voice).strip() for voice in item["supported_voices"])
-    ]
-    models.append(system_urdu_tts_model_row())
-    return models
-
-
 def _project_out(row: dict[str, Any], job: dict[str, Any] | None = None) -> dict[str, Any]:
     try:
         storyboard = json.loads(str(row.get("storyboard_json") or "{}"))
@@ -196,6 +176,7 @@ def _project_out(row: dict[str, Any], job: dict[str, Any] | None = None) -> dict
         "error": error,
         "storyboard": storyboard if isinstance(storyboard, dict) else {},
         "editable_available": bool(assets.get("_editable")),
+        "voiceover_kit_available": assets.get("_voiceover_kit") is True,
         "line_timed_captions": assets.get("_line_timed_captions") is True,
         "created_at": row.get("created_at"),
         "updated_at": row.get("updated_at"),
@@ -388,23 +369,10 @@ async def delete_nvidia_key(user: dict = Depends(cartoon_studio_user)) -> None:
 
 @router.get("/tts-models")
 async def list_tts_models(user: dict = Depends(cartoon_studio_user)) -> dict[str, Any]:
-    key = await _provider_key(user["id"])
-    if not key:
-        raise HTTPException(409, "Connect your OpenRouter API key first.")
-    rows = _models_with_preset_voices(await _models(key, "speech"))
-    by_id = {str(item.get("id")): item for item in rows if item.get("id")}
-    ordered = [by_id.pop(model_id) for model_id in PREFERRED_TTS if model_id in by_id]
-    ordered.extend(sorted(by_id.values(), key=lambda item: str(item.get("name") or ""))[:12])
-    models = []
-    for item in ordered[:15]:
-        models.append({
-            "id": item.get("id"),
-            "name": item.get("name") or item.get("id"),
-            "voices": item.get("supported_voices") or [],
-            "description": str(item.get("description") or "")[:220],
-        })
-    if not models:
-        raise HTTPException(503, "No speech models are currently available for this OpenRouter account.")
+    models = [
+        {**item, "voices": item.get("supported_voices", [])}
+        for item in built_in_voice_models()
+    ]
     return {"models": models, "default_model": models[0]["id"]}
 
 
@@ -442,8 +410,7 @@ async def create_cartoon_project(
         if reference_video is not None:
             raise HTTPException(422, "NVIDIA API rendering accepts a fictional text prompt only. Remove the reference video.")
     language = resolve_cartoon_language(language, prompt)
-    api_key = await _provider_key(user["id"])
-    if not api_key:
+    if story_planner != "nvidia" and not await _provider_key(user["id"]):
         raise HTTPException(409, "Add your OpenRouter API key before creating a cartoon.")
     active = await fetch_one(
         "SELECT id FROM cartoon_projects WHERE user_id=? AND status IN ('queued','processing') LIMIT 1",
@@ -451,33 +418,23 @@ async def create_cartoon_project(
     )
     if active:
         raise HTTPException(409, "You already have a cartoon rendering. Wait for it to finish before starting another.")
-    compatible_tts_model = cartoon_tts_for_language(tts_model, language)
+    compatible_tts_model = built_in_voice_selection(tts_model, language)
     if compatible_tts_model != tts_model:
         tts_model, voice_id = compatible_tts_model, ""
-    speech_models = (
-        [system_urdu_tts_model_row()] if tts_model == SYSTEM_URDU_TTS_MODEL
-        else _models_with_preset_voices(await _models(api_key, "speech"))
-    )
-    speech_ids = {str(item.get("id")) for item in speech_models}
-    if not tts_model:
-        tts_model = next((item for item in PREFERRED_TTS if item in speech_ids), "")
-        if not tts_model and speech_models:
-            tts_model = str(speech_models[0].get("id") or "")
-    if not tts_model or tts_model not in speech_ids:
-        raise HTTPException(422, "Select a currently available text-to-speech model.")
-    if tts_model == SYSTEM_URDU_TTS_MODEL and language != "ur":
-        raise HTTPException(422, "Select Urdu as the story language to use the word-timed system Urdu voice.")
+    selected_model = next((item for item in built_in_voice_models() if item["id"] == tts_model), None)
+    if not selected_model or language not in selected_model["languages"]:
+        raise HTTPException(422, "Choose a built-in voice for the story language or select captions only.")
 
     if style == "cinematic-jannat" and (
-        language != "ur" or tts_model != SYSTEM_URDU_TTS_MODEL
+        language != "ur" or tts_model not in {SYSTEM_URDU_TTS_MODEL, CAPTIONS_ONLY_MODEL}
     ):
         raise HTTPException(
             422,
-            "The Jannat story preset uses Urdu and the System Urdu word-timed voice.",
+            "The Jannat story preset uses Urdu with the built-in Urdu voice or captions only.",
         )
 
-    selected_model = next(item for item in speech_models if item["id"] == tts_model)
-    if voice_id and voice_id not in selected_model.get("supported_voices", []):
+    voice_choices = selected_model.get("voices_by_language", {}).get(language, selected_model.get("supported_voices", []))
+    if voice_id and voice_id not in voice_choices:
         raise HTTPException(422, "Choose a voice supported by the selected speech model.")
     # Saved-key planning belongs in the worker. Only old preview forms using
     # a request-only key must finish planning before queueing.
@@ -602,10 +559,11 @@ async def retry_cartoon_project(
     row = await _owned_project(project_id, user["id"])
     if row.get("status") != "failed":
         raise HTTPException(409, "Only a failed cartoon can be retried.")
-    if not await _provider_key(user["id"]):
-        raise HTTPException(409, "Reconnect your OpenRouter API key before retrying.")
-    if row.get("text_model") == NVIDIA_STORY_MODEL and not _project_out(row)["storyboard"].get("scenes"):
-        await _nvidia_key_for_request(user, "")
+    if not _project_out(row)["storyboard"].get("scenes"):
+        if row.get("text_model") == NVIDIA_STORY_MODEL:
+            await _nvidia_key_for_request(user, "")
+        elif not await _provider_key(user["id"]):
+            raise HTTPException(409, "Reconnect your OpenRouter API key before retrying.")
     async with distributed_advisory_lock(f"cartoon-studio-create:{user['id']}"):
         active = await fetch_one(
             "SELECT id FROM cartoon_projects WHERE user_id=? AND status IN ('queued','processing') LIMIT 1",

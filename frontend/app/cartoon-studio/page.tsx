@@ -50,6 +50,7 @@ type CartoonProject = {
   error?: string | null;
   storyboard?: Storyboard;
   editable_available?: boolean;
+  voiceover_kit_available?: boolean;
   line_timed_captions?: boolean;
   created_at?: string;
 };
@@ -69,7 +70,7 @@ const PROJECT_PLANNER_NAMES: Record<string, string> = {
   "nvidia/nemotron-3.5-super-vl": "NVIDIA Nemotron",
   "nvidia/nemotron-3.5-super-vl-120b-a12b": "NVIDIA API",
 };
-type TTSModel = { id: string; name: string; voices: string[]; description: string };
+type TTSModel = { id: string; name: string; voices: string[]; languages: string[]; voices_by_language?: Record<string, string[]>; description: string };
 type TTSResponse = { models: TTSModel[]; default_model: string };
 
 const STAGE_LABELS: Record<string, string> = {
@@ -143,15 +144,10 @@ export default function CartoonStudioPage() {
   }, []);
 
   useEffect(() => {
-    if (!provider?.openrouter.connected) {
-      setModels([]);
-      setTtsModel("");
-      return;
-    }
     loadModels().catch((cause) => {
       setError(cause instanceof Error ? cause.message : "Voice models could not be loaded.");
     });
-  }, [provider?.openrouter.connected, loadModels]);
+  }, [loadModels]);
 
   useEffect(() => {
     if (!selected || (selected.status !== "queued" && selected.status !== "processing")) return;
@@ -169,17 +165,19 @@ export default function CartoonStudioPage() {
   );
   const isRendering = selected?.status === "queued" || selected?.status === "processing";
   const connected = Boolean(provider?.openrouter.connected);
-  const voiceModels = models.filter(model => language === "ur"
-    ? model.id !== "hexgrad/kokoro-82m"
-    : model.id !== "system/edge-tts-urdu");
+  const voiceModels = models.filter(model => model.languages?.includes(language)
+    ?? (model.id === "system/edge-tts-urdu" && language === "ur"));
   const selectedVoiceModel = voiceModels.find(model => model.id === requestedTtsModel)
     || (language === "ur" ? voiceModels.find(model => model.id === "system/edge-tts-urdu") : undefined)
     || voiceModels[0];
   const ttsModel = selectedVoiceModel?.id || "";
-  const voiceId = selectedVoiceModel?.voices.includes(requestedVoiceId) ? requestedVoiceId : "";
+  const voiceChoices = selectedVoiceModel?.voices_by_language?.[language] || selectedVoiceModel?.voices || [];
+  const voiceId = voiceChoices.includes(requestedVoiceId) ? requestedVoiceId : "";
   const nvidiaAvailable = Boolean(provider?.storyboard_test_enabled && provider?.nvidia);
   const nvidiaConnected = Boolean(provider?.nvidia?.connected);
-  const missingProvider = projectPlanner === "nvidia" && !nvidiaConnected ? "NVIDIA API" : !connected ? "OpenRouter" : "";
+  const missingProvider = projectPlanner === "nvidia"
+    ? (nvidiaConnected ? "" : "NVIDIA API")
+    : (connected ? "" : "OpenRouter");
 
   async function connectProvider(event: FormEvent<HTMLFormElement>, name: PlannerProvider) {
     event.preventDefault();
@@ -370,34 +368,22 @@ export default function CartoonStudioPage() {
                   <option value="glm">GLM via OpenRouter · Paid planning</option>
                   {nvidiaAvailable && <option value="nvidia">NVIDIA API</option>}
                 </select>
-                {projectPlanner === "free" && <small>Planning uses the free OpenRouter model. The selected voice model may use credits.</small>}
+                {projectPlanner === "free" && <small>Planning uses the free OpenRouter model.</small>}
               </label>
               <label className={styles.field}>
                 <span>Voice model</span>
-                <select value={ttsModel} onChange={(event) => {setTtsModel(event.target.value);setVoiceId("");}} disabled={!connected || voiceModels.length === 0 || style === "cinematic-jannat"}>
+                <select value={ttsModel} onChange={(event) => {setTtsModel(event.target.value);setVoiceId("");}} disabled={voiceModels.length === 0}>
                   {voiceModels.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}
                 </select>
-                <small>{connected ? (selectedVoiceModel?.description || "Every character keeps its assigned voice across the scenes in this project.") : "Connect your OpenRouter key to load available voice models."}</small>
-                {connected && language === "ur" && ttsModel === "system/edge-tts-urdu" && (
-                  <small className={styles.languageHint}>Uses the built-in Urdu voice and captures native word timestamps for synchronized captions. Voice service availability may vary.</small>
-                )}
-                {connected && language === "ur" && ttsModel !== "system/edge-tts-urdu" && (
-                  <small className={styles.languageHint}>This speech model does not return native word timings; captions will use estimated alignment. Choose System Urdu Female for word-timed captions.</small>
-                )}
-                {connected && language === "mr" && ttsModel === "hexgrad/kokoro-82m" && (
-                  <small className={styles.languageHint}>Kokoro lists Hindi and English among its supported languages, but not Marathi. Choose Gemini 3.1 Flash TTS for broader language coverage.</small>
-                )}
-                {connected && language === "hinglish" && ttsModel === "hexgrad/kokoro-82m" && (
-                  <small className={styles.languageHint}>For mixed Hindi-English narration, Gemini 3.1 Flash TTS may handle language switching more reliably.</small>
-                )}
+                <small>{selectedVoiceModel?.description}</small>
               </label>
-              <label className={styles.field}><span>Narrator / lead voice</span>
-                <select value={voiceId} onChange={(event) => setVoiceId(event.target.value)} disabled={!connected}>
+              {voiceChoices.length > 0 && <label className={styles.field}><span>Narrator / lead voice</span>
+                <select value={voiceId} onChange={(event) => setVoiceId(event.target.value)}>
                   <option value="">Match the character automatically</option>
-                  {(selectedVoiceModel?.voices || []).map(voice => <option key={voice} value={voice}>{voice}</option>)}
+                  {voiceChoices.map(voice => <option key={voice} value={voice}>{voice}</option>)}
                 </select>
                 <small>Other characters keep their own assigned voices. Providers without word timestamps use audio alignment for captions.</small>
-              </label>
+              </label>}
               {projectPlanner !== "nvidia" && <label className={styles.fileField}>
                 <span>Optional reference video</span>
                 <input type="file" accept="video/mp4,video/quicktime,video/webm,video/x-matroska" onChange={(event) => setReference(event.target.files?.[0] || null)} />
@@ -428,7 +414,7 @@ export default function CartoonStudioPage() {
                     <section className={styles.providerCard} key={name} aria-labelledby={`studio-key-${name}`}>
                       <div className={styles.providerCardHead}>
                         <div><h4 id={`studio-key-${name}`}>{PROVIDER_NAMES[name]}</h4>
-                          <p>{isNvidia ? "Nemotron story planning" : "Ling and GLM story planning, plus voice models"}</p>
+                          <p>{isNvidia ? "Nemotron story planning" : "Ling and GLM story planning"}</p>
                         </div>
                         {saved?.connected && <span className={styles.savedKey}><ShieldCheck size={13} aria-hidden="true" />{isNvidia ? "Saved" : "Connected"}</span>}
                       </div>
@@ -466,7 +452,7 @@ export default function CartoonStudioPage() {
               </div>
               {provider?.storyboard_test_enabled && !nvidiaAvailable && <p className={styles.keyHelp}>NVIDIA key setup is unavailable on this backend.</p>}
               <div className={styles.securityNote}><LockKeyhole size={15} aria-hidden="true" /><span>Saved keys are encrypted. Only masked values are shown here.</span></div>
-              <div className={styles.billingNote}><Volume2 size={15} aria-hidden="true" /><span>Voice models use OpenRouter. The built-in Urdu voice uses Edge speech.</span></div>
+              <div className={styles.billingNote}><Volume2 size={15} aria-hidden="true" /><span>Built-in voices need no speech API key.</span></div>
             </section>
 
             <section className={styles.stepsPanel}>
@@ -519,9 +505,12 @@ export default function CartoonStudioPage() {
                   {!scene.speech && scene.dialogue && <p>“{scene.dialogue}”</p>}</div>
               </div>)}
             </div> : null}
+            {selected.status === "ready" && selected.voiceover_kit_available && (
+              <p className={styles.projectPrompt}>To add your own voice, download the caption timeline. Generate the lines in a service such as ElevenLabs, then place each clip at its listed time in your editor.</p>
+            )}
             <div className={styles.projectActions}>
               {selected.status === "ready" && <><button className={styles.primaryButton} type="button" onClick={() => downloadProject()}><Download size={17} /> Download MP4</button>
-                {selected.editable_available && <button className={styles.secondaryButton} type="button" onClick={() => downloadProject(true)}><Download size={17} /> Editable project</button>}</>}
+                {selected.editable_available && <button className={styles.secondaryButton} type="button" onClick={() => downloadProject(true)}><Download size={17} /> {selected.voiceover_kit_available ? "Editable project & caption timeline" : "Editable project"}</button>}</>}
               {selected.status === "failed" && <button className={styles.secondaryButton} type="button" onClick={retryProject} disabled={busy}><RefreshCw size={16} /> Retry project</button>}
               {isRendering && <span><Loader2 className={styles.spin} size={15} /> Rendering in the background</span>}
             </div>

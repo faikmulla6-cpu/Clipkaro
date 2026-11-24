@@ -347,20 +347,28 @@ def test_cartoon_api_connects_byok_and_queues_private_project(cartoon_api_client
 
         available = client.get("/api/v1/cartoon-studio/tts-models")
         assert available.status_code == 200, available.text
-        assert available.json()["default_model"] == tts_model
-        assert [model["id"] for model in available.json()["models"]] == [tts_model, "system/edge-tts-urdu"]
+        assert available.json()["default_model"] == "system/kokoro-82m"
+        assert [model["id"] for model in available.json()["models"]] == [
+            "system/kokoro-82m", "system/edge-tts-urdu", "system/captions-only",
+        ]
+        assert "hf_alpha" in available.json()["models"][0]["voices_by_language"]["hi"]
 
-        created = client.post(
+        selection = {
+            "prompt": "A little fox finds a glowing map in the forest",
+            "duration_seconds": "15",
+            "aspect_ratio": "9:16",
+            "style": "2d-cartoon",
+            "language": "hi",
+        }
+        rejected = client.post(
             "/api/v1/cartoon-studio/projects",
             headers=csrf,
-            data={
-                "prompt": "A little fox finds a glowing map in the forest",
-                "duration_seconds": "15",
-                "aspect_ratio": "9:16",
-                "style": "2d-cartoon",
-                "language": "hi",
-                "tts_model": tts_model,
-            },
+            data={**selection, "tts_model": tts_model},
+        )
+        assert rejected.status_code == 422
+        created = client.post(
+            "/api/v1/cartoon-studio/projects", headers=csrf,
+            data={**selection, "tts_model": "system/kokoro-82m"},
         )
         assert created.status_code == 200, created.text
         project = created.json()
@@ -383,7 +391,7 @@ def test_cartoon_api_connects_byok_and_queues_private_project(cartoon_api_client
     assert job and job["kind"] == "cartoon_generate" and job["status"] == "queued"
     assert job_payload and project["id"] in job_payload["payload_json"]
     assert key not in job_payload["payload_json"]
-    assert discover.await_count == 3
+    discover.assert_awaited_once()
 
 
 def test_saved_nvidia_key_is_reused_and_independently_disconnected(cartoon_api_client, monkeypatch):
@@ -425,12 +433,11 @@ def test_saved_nvidia_key_is_reused_and_independently_disconnected(cartoon_api_c
     with patch("app.api.cartoon_studio._models", new=AsyncMock(return_value=[])), patch(
         "app.api.cartoon_studio.request_storyboard", new=AsyncMock(return_value=upstream),
     ) as plan:
-        assert client.post(prefix + "/providers/openrouter", headers=csrf,
-                           json={"api_key": "sk-or-test-separate-voice-provider"}).status_code == 200
+        assert client.get(prefix + "/tts-models").status_code == 200
         tested = client.post(prefix + "/storyboard-test", headers=csrf, data={**idea, "provider": "nvidia"})
         assert tested.status_code == 200 and key not in tested.text
         created = client.post(prefix + "/projects", headers=csrf, data={
-            **idea, "story_planner": "nvidia", "tts_model": "system/edge-tts-urdu",
+            **idea, "story_planner": "nvidia", "tts_model": "system/captions-only",
         })
         assert created.status_code == 200 and key not in created.text
         project = created.json()
@@ -441,7 +448,7 @@ def test_saved_nvidia_key_is_reused_and_independently_disconnected(cartoon_api_c
     assert key not in job_payload["payload_json"]
     assert client.delete(endpoint, headers=csrf).status_code == 204
     remaining = client.get(prefix + "/providers").json()
-    assert not remaining["nvidia"]["connected"] and remaining["openrouter"]["connected"]
+    assert not remaining["nvidia"]["connected"] and not remaining["openrouter"]["connected"]
     missing = client.post(prefix + "/storyboard-test", headers=csrf, data={**idea, "provider": "nvidia"})
     assert missing.status_code == 409
 

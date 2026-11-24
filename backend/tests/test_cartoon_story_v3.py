@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock
 import pytest
 from app.services.cartoon_story import normalize_director_story, StoryValidationError, RATIOS, director_prompt, prepare_director_reply
-from app.services.cartoon_story_render import _roman_caption_words, build_story_project, schedule_speech
+from app.services.cartoon_story_render import _roman_caption_words, build_story_project, caption_guide_assets, schedule_speech
 from app.services.cartoon_timing import SPEECH_LINE_CAPTION_SOURCE
 from story_v3_fixtures import fixtures, meera_with_invalid_prop_support
 
@@ -123,6 +123,27 @@ def test_detected_speech_window_exports_a_full_line_without_word_highlighting():
     assert len(timeline["words"]) == len(assets) - 1
     assert 'tl.set("#story-phrase-1-word-1"' not in files["index.html"]
     assert 'tl.set("#story-phrase-2-word-1"' in files["index.html"]
+
+
+def test_captions_only_exports_dialogue_cues_and_retains_background_audio():
+    s = story()
+    original = s["scenes"][0]["speech"][0]
+    original["start"] = 1
+    original["text"] = "Hello there."
+    files = build_story_project(
+        {"duration_seconds": 30, "captions_only": True, "audio_tracks": [
+            {"track": "music", "filename": "music.wav", "start_seconds": 0, "duration_seconds": 30},
+        ]},
+        s, caption_guide_assets(s),
+    )
+    timeline = json.loads(files["audio-timeline.json"])
+    assert [track["track"] for track in timeline["tracks"]] == ["music"]
+    assert timeline["caption_lines"][0]["start_seconds"] == pytest.approx(1)
+    assert timeline["caption_lines"][0]["end_seconds"] == pytest.approx(1.8)
+    assert files["captions.srt"].startswith("1\n00:00:01,000 --> 00:00:01,800\nHello there.")
+    assert "00:00:01.000 --> 00:00:01.800  Narrator\nHello there." in files["voiceover-guide.txt"]
+    assert "ElevenLabs" in files["voiceover-guide.txt"]
+    assert "assets/audio/music.wav" in files["index.html"]
 
 
 @pytest.mark.parametrize("ratio",RATIOS)

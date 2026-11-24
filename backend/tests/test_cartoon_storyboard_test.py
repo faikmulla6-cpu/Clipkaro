@@ -419,8 +419,9 @@ async def test_worker_uses_selected_model_and_passes_story_to_existing_renderer(
         "assets_json": json.dumps({"_preferred_voice": "hf_alpha"}),
         "storyboard_json": json.dumps(storyboard if selection == "preset-nvidia" else {}),
     }
-    credentials = [{"api_key_ciphertext": "test-openrouter-key"}, {"api_key_ciphertext": "test-nvidia-key"}]
-    monkeypatch.setattr(worker, "fetch_one", fetch := AsyncMock(side_effect=[project, *credentials]))
+    provider = "nvidia" if selection == "nvidia" else "openrouter"
+    credential = {"api_key_ciphertext": f"test-{provider}-key"}
+    monkeypatch.setattr(worker, "fetch_one", fetch := AsyncMock(side_effect=[project, credential]))
     monkeypatch.setattr(worker, "decrypt_provider_key", lambda value: value)
     monkeypatch.setattr(worker, "execute", AsyncMock())
     monkeypatch.setattr(worker, "update_job", AsyncMock())
@@ -442,14 +443,17 @@ async def test_worker_uses_selected_model_and_passes_story_to_existing_renderer(
 
     render.assert_awaited_once()
     assert render.await_args.args[2]["scenes"] == storyboard["scenes"]
-    assert render.await_args.args[-3:] == (storage, "test-openrouter-key", "system/edge-tts-urdu")
+    speech_key = "" if selection in {"nvidia", "preset-nvidia"} else "test-openrouter-key"
+    assert render.await_args.args[-3:] == (storage, speech_key, "system/edge-tts-urdu")
     voice_catalog.assert_not_awaited()
     assert render.await_args.args[2]["characters"][0]["voice_id"] in {"ur-PK-UzmaNeural", "ur-PK-AsadNeural"}
     if selection == "preset-nvidia":
         upstream.assert_not_awaited()
+        assert fetch.await_count == 1
     else:
         upstream.assert_awaited_once()
         key, payload = upstream.await_args.args
         expected = "nvidia" if selection == "nvidia" else "openrouter"
         assert (key, payload["model"], upstream.await_args.kwargs["provider"]) == (f"test-{expected}-key", model, expected)
         assert fetch.await_args.args[1] == (job["user_id"], expected)
+        assert fetch.await_count == 2

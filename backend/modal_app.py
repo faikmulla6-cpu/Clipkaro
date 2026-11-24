@@ -82,6 +82,7 @@ media_image = (
         "ca-certificates",
         "gnupg",
         "ffmpeg",
+        "espeak-ng",
         "libass9",
         "tesseract-ocr",
         "fonts-noto-core",
@@ -127,6 +128,18 @@ media_image = (
     )
     .pip_install_from_requirements("requirements.txt")
     .pip_install("numpy==2.1.3", "opencv-python-headless==4.11.0.86")
+    .pip_install("torch==2.8.0+cpu", extra_index_url="https://download.pytorch.org/whl/cpu")
+    .pip_install(
+        "kokoro==0.9.4", "misaki[en]==0.9.4", "transformers==4.57.6",
+        "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
+    )
+    .run_commands(
+        "python -c 'from huggingface_hub import snapshot_download; "
+        "snapshot_download(\"hexgrad/Kokoro-82M\", revision=\"f3ff3571791e39611d31c381e3a41a3af07b4987\", "
+        "local_dir=\"/opt/clipkaro/kokoro\", allow_patterns=[\"config.json\", \"kokoro-v1_0.pth\", "
+        "\"voices/af_heart.pt\", \"voices/af_bella.pt\", \"voices/am_adam.pt\", \"voices/hf_alpha.pt\", "
+        "\"voices/hf_beta.pt\", \"voices/hm_omega.pt\", \"voices/hm_psi.pt\"])'"
+    )
     # copy=True is required because workdir/env are additional image steps.
     .add_local_dir(".", "/root/clipkaro", ignore=SOURCE_IGNORE, copy=True)
     .workdir("/root/clipkaro")
@@ -267,8 +280,20 @@ def cartoon_story_v3_preflight() -> dict:
     import json
     import tempfile
     from pathlib import Path
+    from app.services.cartoon_kokoro import synthesize_kokoro
     from scripts.cartoon_story_v3_qualification import qualify
     output = Path(tempfile.mkdtemp(prefix="cartoon-story-v3-"))
+    voice_seconds = {}
+    for voice, line in (("af_heart", "Let's play in the garden."), ("hf_alpha", "चलो बगीचे में खेलते हैं।")):
+        audio_path = output / f"{voice}.mp3"
+        asyncio.run(synthesize_kokoro(line, voice, audio_path))
+        duration = float(subprocess.check_output([
+            "ffprobe", "-v", "error", "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1", str(audio_path),
+        ]))
+        if not .5 <= duration <= 8:
+            raise RuntimeError(f"Unexpected Kokoro duration for {voice}: {duration}")
+        voice_seconds[voice] = duration
     qualify("library", "4:5", output)
     source = Path("/root/clipkaro/cartoon_engine/animation/StoryEngine.tsx")
     return {
@@ -277,6 +302,7 @@ def cartoon_story_v3_preflight() -> dict:
         "verification": json.loads((output / "verification.json").read_text()),
         "sample_sha256": hashlib.sha256((output / "sample.mp4").read_bytes()).hexdigest(),
         "ai_provider_calls": 0,
+        "kokoro_voice_seconds": voice_seconds,
     }
 
 

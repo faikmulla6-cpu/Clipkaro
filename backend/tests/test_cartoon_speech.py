@@ -16,7 +16,7 @@ def test_system_urdu_voice_mapping_and_model_descriptor():
     assert system_voice_for("ur", "male") == "ur-PK-AsadNeural"
     row = system_urdu_tts_model_row()
     assert row["id"] == SYSTEM_URDU_TTS_MODEL
-    assert "Word-timed" in row["name"]
+    assert row["name"] == "Built-in Urdu voices"
     assert "ur-PK-UzmaNeural" in row["supported_voices"]
 
 
