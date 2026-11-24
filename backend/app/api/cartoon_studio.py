@@ -17,8 +17,9 @@ from app.core.config import get_settings
 from app.core.database import POSTGRES_SCHEMA_REVISION, distributed_advisory_lock, execute, fetch_all, fetch_one
 from app.services.distributed_rate_limit import consume_rate_limit
 from app.services.auth import current_user
-from app.services.cartoon_speech import CAPTIONS_ONLY_MODEL, SYSTEM_URDU_TTS_MODEL, built_in_voice_models, built_in_voice_selection
+from app.services.cartoon_speech import SYSTEM_URDU_TTS_MODEL, built_in_voice_models, built_in_voice_selection
 from app.services.cartoon_story import resolve_cartoon_language
+from app.services.cartoon_story_render import saved_caption_timeline
 from app.services.cartoon_story_planner import (
     NVIDIA_STORY_MODEL, OPENROUTER_ROOT, PROJECT_STORY_MODELS, STORY_MODEL, StoryboardReplyError,
     parse_storyboard_reply, planner_payload, request_storyboard, storyboard_correction_payload,
@@ -139,7 +140,9 @@ async def _models(api_key: str, modality: str) -> list[dict[str, Any]]:
         raise HTTPException(502, "OpenRouter returned an unreadable model list.")
 
 
-def _project_out(row: dict[str, Any], job: dict[str, Any] | None = None) -> dict[str, Any]:
+def _project_out(
+    row: dict[str, Any], job: dict[str, Any] | None = None, *, include_timeline: bool = False,
+) -> dict[str, Any]:
     try:
         storyboard = json.loads(str(row.get("storyboard_json") or "{}"))
     except (TypeError, ValueError, json.JSONDecodeError):
@@ -160,7 +163,7 @@ def _project_out(row: dict[str, Any], job: dict[str, Any] | None = None) -> dict
     message = job.get("message") or row.get("job_message")
     error = row.get("error") or (message if status == "failed" else None)
 
-    return {
+    result = {
         "id": row["id"],
         "job_id": row.get("job_id"),
         "title": row.get("title") or "Cartoon story",
@@ -175,12 +178,17 @@ def _project_out(row: dict[str, Any], job: dict[str, Any] | None = None) -> dict
         "stage": stage,
         "error": error,
         "storyboard": storyboard if isinstance(storyboard, dict) else {},
-        "editable_available": bool(assets.get("_editable")),
-        "voiceover_kit_available": assets.get("_voiceover_kit") is True,
         "line_timed_captions": assets.get("_line_timed_captions") is True,
         "created_at": row.get("created_at"),
         "updated_at": row.get("updated_at"),
     }
+    if include_timeline and status == "ready":
+        timeline = assets.get("_caption_timeline")
+        result["caption_timeline"] = timeline if isinstance(timeline, list) else saved_caption_timeline(
+            result["storyboard"], assets, duration=result["duration_seconds"],
+            language=resolve_cartoon_language(result["language"], result["prompt"]),
+        )
+    return result
 
 
 async def _owned_project(project_id: str, user_id: str) -> dict[str, Any]:
@@ -409,6 +417,7 @@ async def create_cartoon_project(
         trial_key = await _nvidia_key_for_request(user, nvidia_key)
         if reference_video is not None:
             raise HTTPException(422, "NVIDIA API rendering accepts a fictional text prompt only. Remove the reference video.")
+    requested_language = language
     language = resolve_cartoon_language(language, prompt)
     if story_planner != "nvidia" and not await _provider_key(user["id"]):
         raise HTTPException(409, "Add your OpenRouter API key before creating a cartoon.")
@@ -419,18 +428,19 @@ async def create_cartoon_project(
     if active:
         raise HTTPException(409, "You already have a cartoon rendering. Wait for it to finish before starting another.")
     compatible_tts_model = built_in_voice_selection(tts_model, language)
-    if compatible_tts_model != tts_model:
-        tts_model, voice_id = compatible_tts_model, ""
+    if requested_language != language or (tts_model and tts_model != compatible_tts_model):
+        voice_id = ""
+    tts_model = compatible_tts_model
     selected_model = next((item for item in built_in_voice_models() if item["id"] == tts_model), None)
     if not selected_model or language not in selected_model["languages"]:
-        raise HTTPException(422, "Choose a built-in voice for the story language or select captions only.")
+        raise HTTPException(422, "Choose a built-in voice for the story language.")
 
     if style == "cinematic-jannat" and (
-        language != "ur" or tts_model not in {SYSTEM_URDU_TTS_MODEL, CAPTIONS_ONLY_MODEL}
+        language != "ur" or tts_model != SYSTEM_URDU_TTS_MODEL
     ):
         raise HTTPException(
             422,
-            "The Jannat story preset uses Urdu with the built-in Urdu voice or captions only.",
+            "The Jannat story preset uses Urdu with the built-in Urdu voice.",
         )
 
     voice_choices = selected_model.get("voices_by_language", {}).get(language, selected_model.get("supported_voices", []))
@@ -547,7 +557,7 @@ async def list_cartoon_projects(user: dict = Depends(cartoon_studio_user)) -> li
 async def get_cartoon_project(project_id: str, user: dict = Depends(cartoon_studio_user)) -> dict[str, Any]:
     row = await _owned_project(project_id, user["id"])
     job = await event_payload(str(row.get("job_id") or "")) if row.get("job_id") else None
-    return _project_out(row, job)
+    return _project_out(row, job, include_timeline=True)
 
 
 @router.post("/projects/{project_id}/retry")
@@ -591,41 +601,6 @@ async def retry_cartoon_project(
         raise HTTPException(503, "Cartoon rendering service is temporarily unavailable.") from exc
     updated = await _owned_project(project_id, user["id"])
     return _project_out(updated)
-
-
-@router.get("/projects/{project_id}/editable")
-async def cartoon_editable_url(project_id: str, user: dict = Depends(cartoon_studio_user)) -> dict:
-    row = await _owned_project(project_id, user["id"])
-    try:
-        saved = json.loads(row.get("assets_json") or "{}").get("_editable", {})
-    except (ValueError, TypeError, AttributeError):
-        saved = {}
-    if row.get("status") != "ready" or not saved.get("key"):
-        raise HTTPException(409, "This project has no V3 editable package.")
-    key = validate_object_key(saved["key"], expected_prefix=f"users/{user['id']}/cartoons/{project_id}")
-    if object_storage_provider_name() in {"gcs", "s3"}:
-        url = await get_storage_provider().signed_download_url(key, filename=f"clipkaro-editable-{project_id}.zip", ttl_seconds=600)
-        return {"url": url, "expires_in": 600}
-    return {"url": f"{get_settings().api_prefix}/cartoon-studio/projects/{project_id}/editable-file", "expires_in": 0}
-
-
-@router.get("/projects/{project_id}/editable-file")
-async def cartoon_editable_file(project_id: str, user: dict = Depends(cartoon_studio_user)):
-    if object_storage_provider_name() in {"gcs", "s3"}:
-        raise HTTPException(404, "Use the editable download URL.")
-    row = await _owned_project(project_id, user["id"])
-    try:
-        saved = json.loads(row.get("assets_json") or "{}").get("_editable", {})
-    except (ValueError, TypeError, AttributeError):
-        saved = {}
-    if row.get("status") != "ready" or not saved.get("key"):
-        raise HTTPException(409, "Editable assets are unavailable.")
-    key = validate_object_key(saved["key"], expected_prefix=f"users/{user['id']}/cartoons/{project_id}")
-    root = get_settings().storage_root.resolve()
-    path = (root / key).resolve()
-    if root not in path.parents or not path.is_file():
-        raise HTTPException(404, "Editable assets are unavailable.")
-    return FileResponse(path, media_type="application/zip", filename=f"clipkaro-editable-{project_id}.zip")
 
 
 @router.get("/projects/{project_id}/download")

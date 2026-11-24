@@ -38,6 +38,12 @@ def resolve_cartoon_language(language: str, prompt: str) -> str:
         r"\broman(?:[- ]script)?[- ]+(?:hindi|hinglish)\b", prompt, re.IGNORECASE
     ):
         return "hinglish"
+    if language == "auto":
+        if re.search(r"[\u0600-\u06FF]", prompt):
+            return "ur"
+        if re.search(r"[\u0900-\u097F]", prompt):
+            return "hi"
+        return "en"
     return language
 
 

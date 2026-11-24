@@ -50,7 +50,7 @@ def schedule_speech(
             if not asset:
                 raise StoryValidationError("A planned narration or dialogue line has no audio asset.")
             filename = str(asset.get("filename") or "")
-            if not asset.get("guide_only") and not re.fullmatch(r"[A-Za-z0-9_-]+\.(mp3|wav|m4a)", filename):
+            if not re.fullmatch(r"[A-Za-z0-9_-]+\.(mp3|wav|m4a)", filename):
                 raise StoryValidationError("Speech asset filename is invalid.")
             duration = float(asset["duration"])
             if not 0 < duration < 120:
@@ -93,68 +93,54 @@ def schedule_speech(
                              "source":timing_source} for w in caption_words]
             words.extend(global_words)
             audio.append({"line_id":line["id"],"start":start,"duration":duration,"speaker_id":line["speaker_id"],"track":line["track"],"words":local_words,"envelope":asset.get("lip_envelope") or []})
-            if not asset.get("guide_only"):
-                tracks.append({"track":line["track"],"filename":filename,"start_seconds":scene["start"]+start,"duration_seconds":duration,
-                               "volume":1,"fade_in_seconds":.025,"fade_out_seconds":.06})
+            tracks.append({"track":line["track"],"filename":filename,"start_seconds":scene["start"]+start,"duration_seconds":duration,
+                           "volume":1,"fade_in_seconds":.025,"fade_out_seconds":.06})
             cursor=start+duration+.2
         scene["audio"]=audio
     return result, tracks, sorted(words,key=lambda w:w["start_seconds"])
 
 
-def caption_guide_assets(story: dict) -> list[dict]:
-    """Assign editable cue durations for a render with no recorded voice."""
-    assets = []
-    for scene in story["scenes"]:
-        lines = scene["speech"]
-        if not lines:
-            continue
-        requested = [max(.65, len(line["text"].split()) / 2.5) for line in lines]
-        available = scene["duration"] - .06 - .2 * (len(lines) - 1)
-        if available < .15 * len(lines):
-            raise StoryValidationError("The scene has too many lines to create separate caption cues.")
-        scale = min(1.0, available / sum(requested))
-        for line, seconds in zip(lines, requested):
-            seconds *= scale
-            assets.append({"id": line["id"], "guide_only": True, "duration": seconds,
-                           "caption_window": (0, seconds), "timing_source": SPEECH_LINE_CAPTION_SOURCE})
-    return assets
-
-
-def _srt_time(seconds: float) -> str:
-    minutes, milliseconds = divmod(round(seconds * 1000), 60000)
-    hours, minutes = divmod(minutes, 60)
-    seconds, milliseconds = divmod(milliseconds, 1000)
-    return f"{hours:02}:{minutes:02}:{seconds:02},{milliseconds:03}"
-
-
-def voiceover_files(story: dict, *, captions_only: bool) -> dict[str, str]:
-    """Make editor cue points from the exact global slots used by the rendered story."""
+def caption_timeline(story: dict, *, language: str) -> list[dict]:
+    """Expose each recorded line and its placement in the finished cartoon."""
     captions = []
     people = {item["id"]: item["name"] for item in story["characters"]}
-    guide = [
-        "ClipKaro voiceover guide",
-        "Generate each line separately with your chosen voice provider, such as ElevenLabs.",
-        "Keep the same voice for each character. Place the clip at the listed start and fit it before the listed end.",
-        "Captions are already visible in the MP4. Import captions.srt only if you need a separate subtitle track.",
-    ]
-    if captions_only:
-        guide.append("This MP4 already includes music and sound effects. Add your speech clips over that audio.")
-    else:
-        guide.append("Mute the MP4 audio. To keep its background audio, import music.wav, ambience.wav and sfx.wav from assets/audio at 00:00.")
-    guide.extend(["All times are relative to the start of the video.", ""])
     for scene in story["scenes"]:
         lines = {line["id"]: line for line in scene["speech"]}
         for cue in scene["audio"]:
             line = lines[cue["line_id"]]
             text = " ".join(line["text"].split())
+            if language == "hinglish" and DEVANAGARI.search(text):
+                text = romanize_hindi(text)
             start = scene["start"] + cue["start"]
-            span = f"{_srt_time(start)} --> {_srt_time(start + cue['duration'])}"
-            captions.append(f"{len(captions) + 1}\n{span}\n{text}")
-            name = people.get(line["speaker_id"], "Narrator") if line["track"] == "dialogue" else "Narrator"
-            guide.append(f"{span.replace(',', '.')}  {name}\n{text}\n")
-    if not captions:
-        guide.append("This story has no spoken lines.")
-    return {"captions.srt": "\n\n".join(captions) + ("\n" if captions else ""), "voiceover-guide.txt": "\n".join(guide) + "\n"}
+            captions.append({
+                "id": line["id"],
+                "speaker": "Narrator" if line["track"] == "narration" else people[line["speaker_id"]],
+                "text": text,
+                "start_seconds": round(start, 4),
+                "end_seconds": round(start + cue["duration"], 4),
+            })
+    return captions
+
+
+def saved_caption_timeline(story: dict, assets: dict, *, duration: int, language: str) -> list[dict] | None:
+    """Reconstruct timing for completed V3 projects made before caption timelines were saved."""
+    if story.get("schema_version") != 3:
+        return None
+    try:
+        normalized = normalize_director_story(story, duration=duration)
+        clips = []
+        for scene in normalized["scenes"]:
+            for line in scene["speech"]:
+                line_id = line["id"]
+                seconds = float(assets[line_id]["duration"])
+                clips.append({
+                    "id": line_id, "filename": line_id + ".mp3", "duration": seconds,
+                    "timing_source": SPEECH_LINE_CAPTION_SOURCE, "caption_window": (0, seconds),
+                })
+        scheduled, _, _ = schedule_speech(normalized, clips, language=language)
+        return caption_timeline(scheduled, language=language)
+    except (StoryValidationError, KeyError, TypeError, ValueError):
+        return None
 
 
 def build_story_project(project: dict, storyboard: dict, audio_assets: list[dict]) -> dict[str,str]:
@@ -213,5 +199,4 @@ draw(0);window.__timelines.main=tl;
     return {"index.html":root,"storyboard.json":json.dumps(story,ensure_ascii=False,indent=2),
             "audio-timeline.json":json.dumps(timeline,ensure_ascii=False,indent=2),
             "hyperframes.json":json.dumps({"paths":{"blocks":"compositions","assets":"assets"},"media":{"autoProxy":True}}),
-            "meta.json":json.dumps({"id":str(project.get("id") or "story-v3"),"name":story["title"],"engine_version":"story-v3"}),
-            **voiceover_files(story, captions_only=bool(project.get("captions_only")))}
+            "meta.json":json.dumps({"id":str(project.get("id") or "story-v3"),"name":story["title"],"engine_version":"story-v3"})}

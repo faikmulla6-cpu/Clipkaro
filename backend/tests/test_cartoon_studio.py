@@ -349,7 +349,7 @@ def test_cartoon_api_connects_byok_and_queues_private_project(cartoon_api_client
         assert available.status_code == 200, available.text
         assert available.json()["default_model"] == "system/kokoro-82m"
         assert [model["id"] for model in available.json()["models"]] == [
-            "system/kokoro-82m", "system/edge-tts-urdu", "system/captions-only",
+            "system/kokoro-82m", "system/edge-tts-urdu", "system/edge-tts-regional",
         ]
         assert "hf_alpha" in available.json()["models"][0]["voices_by_language"]["hi"]
 
@@ -368,7 +368,7 @@ def test_cartoon_api_connects_byok_and_queues_private_project(cartoon_api_client
         assert rejected.status_code == 422
         created = client.post(
             "/api/v1/cartoon-studio/projects", headers=csrf,
-            data={**selection, "tts_model": "system/kokoro-82m"},
+            data={**selection, "voice_id": "hf_alpha"},
         )
         assert created.status_code == 200, created.text
         project = created.json()
@@ -391,6 +391,21 @@ def test_cartoon_api_connects_byok_and_queues_private_project(cartoon_api_client
     assert job and job["kind"] == "cartoon_generate" and job["status"] == "queued"
     assert job_payload and project["id"] in job_payload["payload_json"]
     assert key not in job_payload["payload_json"]
+    saved_project = asyncio.run(fetch_one("SELECT * FROM cartoon_projects WHERE id=?", (project["id"],)))
+    assert saved_project["tts_model"] == "system/kokoro-82m"
+    assert json.loads(saved_project["assets_json"])["_preferred_voice"] == "hf_alpha"
+    path = "/api/v1/cartoon-studio/projects/" + project["id"]
+    assert "caption_timeline" not in client.get(path).json()
+    cue = {"id": "line-one", "speaker": "Fox", "text": "I found it!", "start_seconds": 1.2, "end_seconds": 2.8}
+    asyncio.run(execute("UPDATE cartoon_projects SET status='ready',output_key=?,assets_json=? WHERE id=?", (
+        f"users/{user['id']}/cartoons/{project['id']}/final.mp4",
+        json.dumps({"_caption_timeline": [cue], "_editable": {"key": "private.zip"}}), project["id"],
+    )))
+    assert client.get(path).json()["caption_timeline"] == [cue]
+    assert "caption_timeline" not in client.get("/api/v1/cartoon-studio/projects").json()[0]
+    assert client.get(path + "/download").status_code == 200
+    assert client.get(path + "/editable").status_code == 404
+    assert client.get(path + "/editable-file").status_code == 404
     discover.assert_awaited_once()
 
 
@@ -437,7 +452,7 @@ def test_saved_nvidia_key_is_reused_and_independently_disconnected(cartoon_api_c
         tested = client.post(prefix + "/storyboard-test", headers=csrf, data={**idea, "provider": "nvidia"})
         assert tested.status_code == 200 and key not in tested.text
         created = client.post(prefix + "/projects", headers=csrf, data={
-            **idea, "story_planner": "nvidia", "tts_model": "system/captions-only",
+            **idea, "story_planner": "nvidia",
         })
         assert created.status_code == 200 and key not in created.text
         project = created.json()

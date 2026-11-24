@@ -7,12 +7,11 @@ import logging
 import os
 import shutil
 import subprocess
-import zipfile
 from pathlib import Path
 
-from .cartoon_story import StoryValidationError, normalize_director_story, RATIOS
-from .cartoon_speech import CAPTIONS_ONLY_MODEL, SYSTEM_KOKORO_TTS_MODEL
-from .cartoon_story_render import build_story_project, caption_guide_assets, schedule_speech
+from .cartoon_story import StoryValidationError, normalize_director_story, RATIOS, resolve_cartoon_language
+from .cartoon_speech import SYSTEM_EDGE_TTS_MODELS, SYSTEM_KOKORO_TTS_MODEL
+from .cartoon_story_render import build_story_project, caption_timeline, schedule_speech
 from .cartoon_story_score import build_story_stems
 from .cartoon_timing import SPEECH_LINE_CAPTION_SOURCE
 from .speech_activity import detect_speech_regions
@@ -76,9 +75,9 @@ async def run_director_job(job: dict, project: dict, storyboard: dict, project_d
     if preferred_voice and story["characters"][0]["voice_id"] == preferred_voice:
         story["narrator_voice_id"]=preferred_voice
     audio_dir=project_dir/"assets"/"audio";audio_dir.mkdir(parents=True,exist_ok=True)
-    captions_only = tts_model == CAPTIONS_ONLY_MODEL
-    audio = caption_guide_assets(story) if captions_only else []
-    lines = [] if captions_only else [line for scene in story["scenes"] for line in scene["speech"]]
+    language = resolve_cartoon_language(project.get("language") or "auto", project.get("prompt") or "")
+    audio = []
+    lines = [line for scene in story["scenes"] for line in scene["speech"]]
     for i,line in enumerate(lines):
         character=next((c for c in story["characters"] if c["id"]==line["speaker_id"]),story["characters"][0])
         voice=story.get("narrator_voice_id",character["voice_id"]) if line["track"]=="narration" else character["voice_id"]
@@ -104,10 +103,10 @@ async def run_director_job(job: dict, project: dict, storyboard: dict, project_d
         timing_source=record.get("timing_source","tts_word_boundary") if meta else "tts_word_boundary"
         caption_window = None
         if not boundaries:
-            if tts_model == SYSTEM_KOKORO_TTS_MODEL:
+            if tts_model == SYSTEM_KOKORO_TTS_MODEL or tts_model in SYSTEM_EDGE_TTS_MODELS:
                 caption_window = await speech_caption_window(path, duration)
                 if caption_window is None:
-                    raise StoryValidationError("The built-in voice produced no detectable speech. Select captions only to add your own voice.")
+                    raise StoryValidationError("The built-in voice produced no detectable speech. Retry the cartoon to regenerate this line.")
                 timing_source = SPEECH_LINE_CAPTION_SOURCE
             else:
                 try:
@@ -124,14 +123,14 @@ async def run_director_job(job: dict, project: dict, storyboard: dict, project_d
         await execute("UPDATE cartoon_projects SET assets_json=?,updated_at=? WHERE id=?",(json.dumps(saved,ensure_ascii=False),utcnow(),project["id"]))
         audio.append({"id":line["id"],"filename":path.name,"duration":duration,"word_boundaries":boundaries,
                       "lip_envelope":envelope,"timing_source":timing_source,"caption_window":caption_window})
-    scheduled,tracks,words=schedule_speech(story,audio)
+    scheduled,tracks,_=schedule_speech(story,audio,language=language)
     stems=await asyncio.to_thread(build_story_stems,audio_dir,scheduled,tracks)
     engine,cli,gsap=worker._engine_paths();node=shutil.which("node") or shutil.which("nodejs")
     bundle=engine/"dist"/"animation.js"
     if not node or not cli.is_file() or not bundle.is_file():
         raise worker.CartoonJobError("Deploy the V3 animation bundle on the media worker.",category="CARTOON_RENDERER_UNAVAILABLE")
     shutil.copy2(bundle,project_dir/"assets"/"animation.js");shutil.copy2(gsap,project_dir/"assets"/"gsap.min.js")
-    files=build_story_project({**project,"audio_tracks":stems,"captions_only":captions_only},story,audio)
+    files=build_story_project({**project,"audio_tracks":stems},story,audio)
     for name,content in files.items():(project_dir/name).write_text(content,encoding="utf-8")
     env=os.environ.copy()
     headless=Path("/etc/hyperframes-headless-shell-path")
@@ -148,20 +147,9 @@ async def run_director_job(job: dict, project: dict, storyboard: dict, project_d
     if abs(float(metadata["duration"])-project["duration_seconds"])>.15 or int(metadata["width"])!=expected_w or int(metadata["height"])!=expected_h:
         raise worker.CartoonJobError("Rendered dimensions or duration differ from the selected format.",category="CARTOON_RENDER_DURATION_INVALID")
     await asyncio.to_thread(verify_render_audio,output,bool(lines))
-    # Export local editable HTML, native timing and every independent stem, without provider credentials.
-    archive=project_dir/"editable-project.zip"
-    with zipfile.ZipFile(archive,"w",zipfile.ZIP_DEFLATED) as z:
-        for name in files:z.write(project_dir/name,name)
-        for path in (project_dir/"assets").rglob("*"):
-            if path.is_file():z.write(path,path.relative_to(project_dir))
-        for path in (engine/"animation").glob("*"):
-            if path.suffix in {".tsx",".js"}:z.write(path,"animation-source/"+path.name)
-        z.write(engine/"ANIMATION-NOTICES.md","ANIMATION-NOTICES.md")
     root=f"users/{job['user_id']}/cartoons/{project['id']}"
-    editable=await storage.upload(archive,root+"/editable-project.zip",content_type="application/zip")
-    saved["_editable"]={"key":root+"/editable-project.zip","generation":editable.generation}
-    saved["_line_timed_captions"] = not captions_only and any(asset["caption_window"] is not None for asset in audio)
-    saved["_voiceover_kit"] = True
+    saved["_line_timed_captions"] = any(asset["caption_window"] is not None for asset in audio)
+    saved["_caption_timeline"] = caption_timeline(scheduled, language=language)
     stored=await storage.upload(output,root+"/final.mp4",content_type="video/mp4")
     await execute("""UPDATE cartoon_projects SET status='ready',progress=100,stage='ready',output_key=?,
         output_generation=?,error=NULL,storyboard_json=?,assets_json=?,updated_at=? WHERE id=?""",

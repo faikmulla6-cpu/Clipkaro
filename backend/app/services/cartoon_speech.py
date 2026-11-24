@@ -6,9 +6,10 @@ from typing import Any
 
 
 SYSTEM_URDU_TTS_MODEL = "system/edge-tts-urdu"
+SYSTEM_REGIONAL_TTS_MODEL = "system/edge-tts-regional"
+SYSTEM_EDGE_TTS_MODELS = {SYSTEM_URDU_TTS_MODEL, SYSTEM_REGIONAL_TTS_MODEL}
 KOKORO_TTS_MODEL = "hexgrad/kokoro-82m"
 SYSTEM_KOKORO_TTS_MODEL = "system/kokoro-82m"
-CAPTIONS_ONLY_MODEL = "system/captions-only"
 KOKORO_VOICES = {"en": ["af_heart", "af_bella", "am_adam"], "hi": ["hf_alpha", "hf_beta", "hm_omega", "hm_psi"]}
 EDGE_VOICES = {
     "ur": {
@@ -24,6 +25,11 @@ EDGE_VOICES = {
         "neutral": "hi-IN-SwaraNeural",
         "child": "hi-IN-SwaraNeural",
         "elder": "hi-IN-SwaraNeural",
+    },
+    "mr": {
+        "female": "mr-IN-AarohiNeural",
+        "male": "mr-IN-ManoharNeural",
+        "neutral": "mr-IN-AarohiNeural",
     },
     "en": {
         "female": "en-US-JennyNeural",
@@ -63,10 +69,14 @@ def built_in_voice_models() -> list[dict[str, Any]]:
         },
         system_urdu_tts_model_row(),
         {
-            "id": CAPTIONS_ONLY_MODEL,
-            "name": "Captions only · Add your own voice",
-            "languages": ["en", "hi", "ur", "mr", "hinglish", "auto"],
-            "description": "Keep music and sound effects. Download the script and cue times to add speech in your editor.",
+            "id": SYSTEM_REGIONAL_TTS_MODEL,
+            "name": "Built-in Hinglish and Marathi voices",
+            "languages": ["hinglish", "mr"],
+            "voices_by_language": {
+                language: list(dict.fromkeys(EDGE_VOICES[locale].values()))
+                for language, locale in (("hinglish", "hi"), ("mr", "mr"))
+            },
+            "description": "Built-in speech for Hinglish and Marathi.",
         },
     ]
 
@@ -75,7 +85,9 @@ def built_in_voice_selection(model: str, language: str) -> str:
     if not model or model == KOKORO_TTS_MODEL:
         if language == "ur":
             return SYSTEM_URDU_TTS_MODEL
-        return SYSTEM_KOKORO_TTS_MODEL if language in KOKORO_VOICES else CAPTIONS_ONLY_MODEL
+        if language in {"hinglish", "mr"}:
+            return SYSTEM_REGIONAL_TTS_MODEL
+        return SYSTEM_KOKORO_TTS_MODEL
     return model
 
 
@@ -137,5 +149,5 @@ async def synthesize_edge_tts(
                 await asyncio.sleep(0.8 * (attempt + 1))
 
     raise RuntimeError(
-        "The system speech service could not reliably generate this voice. Retry or choose an OpenRouter TTS provider."
+        "The built-in speech service could not generate this voice. Please retry shortly."
     ) from last_error

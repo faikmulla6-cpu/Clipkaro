@@ -18,8 +18,8 @@ from app.core.config import get_settings
 from app.core.database import execute, fetch_one
 from app.services.cartoon_renderer import build_cartoon_project
 from app.services.cartoon_speech import (
-    CAPTIONS_ONLY_MODEL, KOKORO_TTS_MODEL, SYSTEM_KOKORO_TTS_MODEL, SYSTEM_URDU_TTS_MODEL,
-    built_in_voice_models, built_in_voice_selection, cartoon_tts_for_language, synthesize_edge_tts,
+    KOKORO_TTS_MODEL, SYSTEM_EDGE_TTS_MODELS, SYSTEM_KOKORO_TTS_MODEL, SYSTEM_URDU_TTS_MODEL,
+    built_in_voice_models, built_in_voice_selection, cartoon_tts_for_language, synthesize_edge_tts, system_voice_for,
 )
 from app.services.cartoon_audio import build_lip_envelope
 from app.services.cartoon_score import build_jannat_audio_stems
@@ -168,6 +168,9 @@ def _voice_for(
         preferences = hindi_preferences.get(voice_type, hindi_preferences["neutral"])
     else:
         preferences = VOICE_PREFERENCES.get(voice_type, VOICE_PREFERENCES["neutral"])
+    if language in {"mr", "hinglish"}:
+        system_voice = system_voice_for("hi" if language == "hinglish" else language, voice_type)
+        preferences = [system_voice, *preferences] if system_voice else preferences
     available = {voice.casefold(): voice for voice in voices}
     general = VOICE_PREFERENCES.get(voice_type, VOICE_PREFERENCES["neutral"])
     if voice_type in {"male", "female"}:
@@ -443,7 +446,7 @@ async def _tts_audio(
             return await synthesize_kokoro(text, voice, output)
         except RuntimeError as exc:
             raise CartoonJobError(str(exc), category="CARTOON_TTS_SYSTEM_FAILED") from exc
-    if model == SYSTEM_URDU_TTS_MODEL:
+    if model in SYSTEM_EDGE_TTS_MODELS:
         try:
             return await synthesize_edge_tts(text, voice, output, rate=rate, volume=volume, pitch=pitch)
         except RuntimeError as exc:
@@ -645,7 +648,7 @@ async def run_cartoon_generation(job: dict[str, Any], scratch: Path, storage) ->
 
     tts_model = cartoon_tts_for_language(str(project.get("tts_model") or KOKORO_TTS_MODEL), project["language"])
     built_in = {row["id"]: row for row in built_in_voice_models()}
-    if storyboard.get("schema_version") == 3 and tts_model not in built_in:
+    if tts_model == "system/captions-only" or (storyboard.get("schema_version") == 3 and tts_model not in built_in):
         tts_model = built_in_voice_selection("", project["language"])
     model_row = built_in.get(tts_model)
     if model_row is None:
@@ -655,16 +658,13 @@ async def run_cartoon_generation(job: dict[str, Any], scratch: Path, storage) ->
     if not model_row:
         raise CartoonJobError("The selected text-to-speech model is no longer available. Refresh the voice model list and retry.", category="CARTOON_TTS_MODEL_UNAVAILABLE")
     voices = model_row.get("voices_by_language", {}).get(project["language"], model_row.get("supported_voices", []))
-    if not voices and tts_model != CAPTIONS_ONLY_MODEL:
+    if not voices:
         raise CartoonJobError(
             "The selected speech model no longer provides preset voices. Refresh the voice model list and retry.",
             category="CARTOON_TTS_VOICES_UNAVAILABLE",
         )
     preferred_voice = _loads(project.get("assets_json"), {}).get("_preferred_voice")
     for index, character in enumerate(storyboard.get("characters", [])):
-        if tts_model == CAPTIONS_ONLY_MODEL:
-            character.pop("voice_id", None)
-            continue
         character["voice_id"] = (
             preferred_voice if index == 0 and preferred_voice in voices
             else _voice_for(

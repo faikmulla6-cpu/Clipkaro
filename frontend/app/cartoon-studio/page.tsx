@@ -3,7 +3,7 @@
 import { AppShell } from "@/components/AppShell";
 import { api, deleteJSON, postJSON } from "@/lib/api";
 import {
-  AlertCircle, Check, Clapperboard, Clock3, Download, KeyRound, Loader2,
+  AlertCircle, Check, ChevronDown, Clapperboard, Clock3, Download, KeyRound, Loader2,
   LockKeyhole, Play, RefreshCw, ShieldCheck, Sparkles, Volume2, WandSparkles,
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
@@ -35,6 +35,13 @@ type Storyboard = {
   characters?: Character[];
   scenes?: Scene[];
 };
+type CaptionCue = {
+  id: string;
+  speaker: string;
+  text: string;
+  start_seconds: number;
+  end_seconds: number;
+};
 type CartoonProject = {
   id: string;
   title: string;
@@ -49,8 +56,7 @@ type CartoonProject = {
   stage: string;
   error?: string | null;
   storyboard?: Storyboard;
-  editable_available?: boolean;
-  voiceover_kit_available?: boolean;
+  caption_timeline?: CaptionCue[] | null;
   line_timed_captions?: boolean;
   created_at?: string;
 };
@@ -70,8 +76,8 @@ const PROJECT_PLANNER_NAMES: Record<string, string> = {
   "nvidia/nemotron-3.5-super-vl": "NVIDIA Nemotron",
   "nvidia/nemotron-3.5-super-vl-120b-a12b": "NVIDIA API",
 };
-type TTSModel = { id: string; name: string; voices: string[]; languages: string[]; voices_by_language?: Record<string, string[]>; description: string };
-type TTSResponse = { models: TTSModel[]; default_model: string };
+type TTSModel = { id: string; voices: string[]; languages: string[]; voices_by_language?: Record<string, string[]> };
+type TTSResponse = { models: TTSModel[] };
 
 const STAGE_LABELS: Record<string, string> = {
   queued: "Waiting in queue",
@@ -87,10 +93,16 @@ const STAGE_LABELS: Record<string, string> = {
   failed: "Needs attention",
 };
 
+function formatCueTime(seconds: number) {
+  const milliseconds = Math.round(seconds * 1000);
+  const minutes = String(Math.floor(milliseconds / 60000)).padStart(2, "0");
+  const wholeSeconds = String(Math.floor(milliseconds / 1000) % 60).padStart(2, "0");
+  return minutes + ":" + wholeSeconds + "." + String(milliseconds % 1000).padStart(3, "0");
+}
+
 export default function CartoonStudioPage() {
   const [provider, setProvider] = useState<ProviderStatus | null>(null);
   const [models, setModels] = useState<TTSModel[]>([]);
-  const [requestedTtsModel, setTtsModel] = useState("");
   const [requestedVoiceId, setVoiceId] = useState("");
   const [projects, setProjects] = useState<CartoonProject[]>([]);
   const [selected, setSelected] = useState<CartoonProject | null>(null);
@@ -119,7 +131,6 @@ export default function CartoonStudioPage() {
   const loadModels = useCallback(async () => {
     const response = await api<TTSResponse>("/cartoon-studio/tts-models");
     setModels(response.models || []);
-    setTtsModel((current) => current || response.default_model || response.models?.[0]?.id || "");
   }, []);
 
   useEffect(() => {
@@ -165,12 +176,8 @@ export default function CartoonStudioPage() {
   );
   const isRendering = selected?.status === "queued" || selected?.status === "processing";
   const connected = Boolean(provider?.openrouter.connected);
-  const voiceModels = models.filter(model => model.languages?.includes(language)
+  const selectedVoiceModel = models.find(model => model.languages?.includes(language)
     ?? (model.id === "system/edge-tts-urdu" && language === "ur"));
-  const selectedVoiceModel = voiceModels.find(model => model.id === requestedTtsModel)
-    || (language === "ur" ? voiceModels.find(model => model.id === "system/edge-tts-urdu") : undefined)
-    || voiceModels[0];
-  const ttsModel = selectedVoiceModel?.id || "";
   const voiceChoices = selectedVoiceModel?.voices_by_language?.[language] || selectedVoiceModel?.voices || [];
   const voiceId = voiceChoices.includes(requestedVoiceId) ? requestedVoiceId : "";
   const nvidiaAvailable = Boolean(provider?.storyboard_test_enabled && provider?.nvidia);
@@ -218,7 +225,7 @@ export default function CartoonStudioPage() {
 
   async function createCartoon(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy || providerBusy || missingProvider || !ttsModel) return;
+    if (busy || providerBusy || missingProvider) return;
     setCreateError("");
     if (prompt.trim().length < 8) {
       setCreateError("Describe your story in at least 8 characters.");
@@ -234,7 +241,6 @@ export default function CartoonStudioPage() {
       body.set("aspect_ratio", ratio);
       body.set("style", style);
       body.set("language", language);
-      body.set("tts_model", ttsModel);
       body.set("voice_id", voiceId);
       body.set("story_planner", projectPlanner);
       if (projectPlanner !== "nvidia" && reference) body.set("reference_video", reference);
@@ -277,11 +283,11 @@ export default function CartoonStudioPage() {
     }
   }
 
-  async function downloadProject(editable = false) {
+  async function downloadProject() {
     if (!selected || selected.status !== "ready") return;
     setError("");
     try {
-      const result = await api<{ url: string }>("/cartoon-studio/projects/" + selected.id + (editable ? "/editable" : "/download"));
+      const result = await api<{ url: string }>("/cartoon-studio/projects/" + selected.id + "/download");
       window.location.assign(result.url);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The MP4 could not be downloaded.");
@@ -345,7 +351,6 @@ export default function CartoonStudioPage() {
                     setStyle(nextStyle);
                     if (nextStyle === "cinematic-jannat") {
                       setLanguage("ur");
-                      setTtsModel("system/edge-tts-urdu");
                     }
                   }}>
                     <option value="2d-cartoon">2D Cartoon</option><option value="storybook">Storybook</option>
@@ -370,26 +375,19 @@ export default function CartoonStudioPage() {
                 </select>
                 {projectPlanner === "free" && <small>Planning uses the free OpenRouter model.</small>}
               </label>
-              <label className={styles.field}>
-                <span>Voice model</span>
-                <select value={ttsModel} onChange={(event) => {setTtsModel(event.target.value);setVoiceId("");}} disabled={voiceModels.length === 0}>
-                  {voiceModels.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}
-                </select>
-                <small>{selectedVoiceModel?.description}</small>
-              </label>
               {voiceChoices.length > 0 && <label className={styles.field}><span>Narrator / lead voice</span>
                 <select value={voiceId} onChange={(event) => setVoiceId(event.target.value)}>
                   <option value="">Match the character automatically</option>
                   {voiceChoices.map(voice => <option key={voice} value={voice}>{voice}</option>)}
                 </select>
-                <small>Other characters keep their own assigned voices. Providers without word timestamps use audio alignment for captions.</small>
+                <small>ClipKaro voices the other characters and syncs the captions automatically.</small>
               </label>}
               {projectPlanner !== "nvidia" && <label className={styles.fileField}>
                 <span>Optional reference video</span>
                 <input type="file" accept="video/mp4,video/quicktime,video/webm,video/x-matroska" onChange={(event) => setReference(event.target.files?.[0] || null)} />
                 <small>{reference ? reference.name : "Up to 50 MB. Used only to analyse visual style; not required."}</small>
               </label>}
-              <button className={styles.primaryButton} type="submit" disabled={Boolean(missingProvider || busy || providerBusy || !ttsModel)}>
+              <button className={styles.primaryButton} type="submit" disabled={Boolean(missingProvider || busy || providerBusy)}>
                 {busy ? <Loader2 className={styles.spin} size={18} /> : <WandSparkles size={18} />}
                 {busy ? "Queuing your cartoon…" : "Create my cartoon"}
               </button>
@@ -505,15 +503,28 @@ export default function CartoonStudioPage() {
                   {!scene.speech && scene.dialogue && <p>“{scene.dialogue}”</p>}</div>
               </div>)}
             </div> : null}
-            {selected.status === "ready" && selected.voiceover_kit_available && (
-              <p className={styles.projectPrompt}>To add your own voice, download the caption timeline. Generate the lines in a service such as ElevenLabs, then place each clip at its listed time in your editor.</p>
-            )}
             <div className={styles.projectActions}>
-              {selected.status === "ready" && <><button className={styles.primaryButton} type="button" onClick={() => downloadProject()}><Download size={17} /> Download MP4</button>
-                {selected.editable_available && <button className={styles.secondaryButton} type="button" onClick={() => downloadProject(true)}><Download size={17} /> {selected.voiceover_kit_available ? "Editable project & caption timeline" : "Editable project"}</button>}</>}
+              {selected.status === "ready" && <button className={styles.primaryButton} type="button" onClick={downloadProject}><Download size={17} /> Download MP4</button>}
               {selected.status === "failed" && <button className={styles.secondaryButton} type="button" onClick={retryProject} disabled={busy}><RefreshCw size={16} /> Retry project</button>}
               {isRendering && <span><Loader2 className={styles.spin} size={15} /> Rendering in the background</span>}
             </div>
+            {selected.status === "ready" && !!selected.caption_timeline?.length && (
+              <details key={selected.id} className={styles.captionTimeline}>
+                <summary>
+                  <span><Clock3 size={17} aria-hidden="true" /> Caption Timeline</span>
+                  <ChevronDown size={16} aria-hidden="true" />
+                </summary>
+                <p>Want a different voice? Use these captions and times to add your own realistic voice to this cartoon.</p>
+                <ol>
+                  {selected.caption_timeline.map(cue => (
+                    <li key={cue.id}>
+                      <span className={styles.cueTime}>{formatCueTime(cue.start_seconds)} – {formatCueTime(cue.end_seconds)}</span>
+                      <div><strong>{cue.speaker}</strong><span dir="auto">{cue.text}</span></div>
+                    </li>
+                  ))}
+                </ol>
+              </details>
+            )}
           </section>
         )}
 

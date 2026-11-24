@@ -65,4 +65,4 @@ async def synthesize_kokoro(text: str, voice: str, output: Path) -> list[dict]:
         return await asyncio.to_thread(_render, text, voice, output)
     except (ImportError, OSError, RuntimeError, subprocess.SubprocessError) as exc:
         output.unlink(missing_ok=True)
-        raise RuntimeError("ClipKaro could not generate this built-in voice. You can render with captions only.") from exc
+        raise RuntimeError("ClipKaro could not generate this built-in voice. Please retry shortly.") from exc

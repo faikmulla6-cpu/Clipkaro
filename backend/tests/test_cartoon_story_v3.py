@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock
 import pytest
 from app.services.cartoon_story import normalize_director_story, StoryValidationError, RATIOS, director_prompt, prepare_director_reply
-from app.services.cartoon_story_render import _roman_caption_words, build_story_project, caption_guide_assets, schedule_speech
+from app.services.cartoon_story_render import _roman_caption_words, build_story_project, caption_timeline, saved_caption_timeline, schedule_speech
 from app.services.cartoon_timing import SPEECH_LINE_CAPTION_SOURCE
 from story_v3_fixtures import fixtures, meera_with_invalid_prop_support
 
@@ -125,25 +125,27 @@ def test_detected_speech_window_exports_a_full_line_without_word_highlighting():
     assert 'tl.set("#story-phrase-2-word-1"' in files["index.html"]
 
 
-def test_captions_only_exports_dialogue_cues_and_retains_background_audio():
+def test_caption_card_uses_real_speech_slots_after_timing_adjustments():
     s = story()
-    original = s["scenes"][0]["speech"][0]
-    original["start"] = 1
-    original["text"] = "Hello there."
-    files = build_story_project(
-        {"duration_seconds": 30, "captions_only": True, "audio_tracks": [
-            {"track": "music", "filename": "music.wav", "start_seconds": 0, "duration_seconds": 30},
-        ]},
-        s, caption_guide_assets(s),
-    )
-    timeline = json.loads(files["audio-timeline.json"])
-    assert [track["track"] for track in timeline["tracks"]] == ["music"]
-    assert timeline["caption_lines"][0]["start_seconds"] == pytest.approx(1)
-    assert timeline["caption_lines"][0]["end_seconds"] == pytest.approx(1.8)
-    assert files["captions.srt"].startswith("1\n00:00:01,000 --> 00:00:01,800\nHello there.")
-    assert "00:00:01.000 --> 00:00:01.800  Narrator\nHello there." in files["voiceover-guide.txt"]
-    assert "ElevenLabs" in files["voiceover-guide.txt"]
-    assert "assets/audio/music.wav" in files["index.html"]
+    scene = s["scenes"][0]
+    scene["speech"][0].update(start=5.5, text="Hello there.")
+    scene["speech"].append({"id": "second", "track": "dialogue", "speaker_id": "jannat",
+                            "text": "Kaun hai?", "start": 6.5})
+    s = normalize_director_story(s, duration=30)
+    assets = audio_for(s)
+    scheduled, tracks, _ = schedule_speech(s, assets)
+    cues = caption_timeline(scheduled, language="ur")
+    assert cues[0]["speaker"] == "Narrator"
+    assert cues[0]["text"] == "Hello there."
+    assert cues[1]["speaker"] == s["characters"][0]["name"]
+    assert cues[0]["start_seconds"] < 5.5
+    for cue, track in zip(cues, tracks, strict=True):
+        assert cue["start_seconds"] == pytest.approx(track["start_seconds"], abs=.0001)
+        assert cue["end_seconds"] == pytest.approx(track["start_seconds"] + track["duration_seconds"], abs=.0001)
+
+    records = {asset["id"]: {"duration": asset["duration"]} for asset in assets}
+    assert saved_caption_timeline(s, records, duration=30, language="ur") == cues
+    assert saved_caption_timeline(s, {}, duration=30, language="ur") is None
 
 
 @pytest.mark.parametrize("ratio",RATIOS)
@@ -417,7 +419,7 @@ async def test_failed_alignment_retry_reuses_paid_speech_instead_of_regenerating
     download = AsyncMock(side_effect=store.download)
     monkeypatch.setattr(store, "download", download)
     # Stop before rendering when the cached clip reaches the audio timeline.
-    def stop_after_schedule(story, assets):
+    def stop_after_schedule(story, assets, *, language):
         assert assets[0]["caption_window"] == (.1, 1.8)
         assert assets[0]["timing_source"] == SPEECH_LINE_CAPTION_SOURCE
         raise RuntimeError("stop after scheduling")
