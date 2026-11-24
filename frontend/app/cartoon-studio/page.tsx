@@ -200,7 +200,7 @@ export default function CartoonStudioPage() {
       body.set("language", language);
       body.set("voice_id", voiceId);
       body.set("story_planner", projectPlanner);
-      if (projectPlanner !== "nvidia" && reference) body.set("reference_video", reference);
+      if (reference) body.set("reference_video", reference);
       const project = await api<CartoonProject>("/cartoon-studio/projects", { method: "POST", body });
       projectRequest.current += 1;
       showProject(project);
@@ -356,14 +356,15 @@ export default function CartoonStudioPage() {
                 </button>
                 {createError && <div className={styles.alertError} role="alert"><AlertCircle size={17} />{createError}</div>}
                 {provider && missingProvider && <button className={styles.setupLink} type="button" onClick={openAdvanced}>Connect a planner key</button>}
-                {projectPlanner !== "nvidia" && <details className={styles.referencePanel}>
+                <details className={styles.referencePanel}>
                   <summary>Reference video {reference ? "added" : "(optional)"}<ChevronDown size={15} aria-hidden="true" /></summary>
                   <label className={styles.fileField}>
                     <span>Choose a reference video</span>
                     <input ref={referenceInputRef} type="file" accept="video/mp4,video/quicktime,video/webm,video/x-matroska" onChange={event => setReference(event.target.files?.[0] || null)} />
-                    <small>{reference ? reference.name : "Up to 50 MB. Used to analyse visual style."}</small>
+                    {reference && <small>{reference.name}</small>}
+                    <small>Up to 50 MB and 90 seconds. {projectPlanner === "nvidia" ? "NVIDIA" : "OpenRouter"} receives a few frames to guide the visual style.</small>
                   </label>
-                </details>}
+                </details>
               </form>
             </section>
 

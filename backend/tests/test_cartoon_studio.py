@@ -440,7 +440,8 @@ def test_cartoon_api_connects_byok_and_queues_private_project(cartoon_api_client
     assert client.get(path + "/download").status_code == 404
 
 
-def test_regular_account_uses_saved_nvidia_key_and_can_disconnect(cartoon_api_client):
+@pytest.mark.parametrize("with_reference", [False, True])
+def test_regular_account_uses_saved_nvidia_key_and_can_disconnect(cartoon_api_client, with_reference):
     client = cartoon_api_client
     prefix = "/api/v1/cartoon-studio"
     email = "saved-nvidia@example.com"
@@ -475,11 +476,14 @@ def test_regular_account_uses_saved_nvidia_key_and_can_disconnect(cartoon_api_cl
         assert tested.status_code == 403 and key not in tested.text
         created = client.post(prefix + "/projects", headers=csrf, data={
             **idea, "story_planner": "nvidia",
-        })
+        }, files={"reference_video": ("style.mp4", b"reference fixture", "video/mp4")} if with_reference else None)
         assert created.status_code == 200 and key not in created.text
         project = created.json()
         assert project["status"] == "queued" and project["storyboard"] == {}
         plan.assert_not_awaited()
+    saved_project = asyncio.run(fetch_one("SELECT reference_key FROM cartoon_projects WHERE id=?", (project["id"],)))
+    expected_reference = f"quarantine/{user_id}/cartoon-references/{project['id']}.mp4" if with_reference else None
+    assert saved_project["reference_key"] == expected_reference
     job_payload = asyncio.run(fetch_one("SELECT payload_json FROM job_payloads WHERE job_id=?", (project["job_id"],)))
     assert key not in job_payload["payload_json"]
     assert client.delete(endpoint, headers=csrf).status_code == 204

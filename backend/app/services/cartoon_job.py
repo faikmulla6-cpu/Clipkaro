@@ -627,7 +627,7 @@ async def run_cartoon_generation(job: dict[str, Any], scratch: Path, storage) ->
         planner_key = await _worker_provider_key(job["user_id"], provider)
         if not nvidia:
             api_key = planner_key
-        frames = [] if nvidia else await _extract_reference_frames(job, project, scratch, storage)
+        frames = await _extract_reference_frames(job, project, scratch, storage)
         planner_name = "NVIDIA" if nvidia else "Ling" if saved_model == FREE_STORY_MODEL else "GLM"
         await update_job(job["id"], 12, "story_planning", f"{planner_name} is writing the story and keeping characters consistent")
         storyboard = await _generate_storyboard(

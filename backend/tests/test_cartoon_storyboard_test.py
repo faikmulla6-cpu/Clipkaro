@@ -404,8 +404,11 @@ async def test_nvidia_recovers_dialogue_assigned_to_narrator(monkeypatch, visibl
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("selection", ["free", "glm", "nvidia", "preset-nvidia", "legacy-hosted"])
-async def test_worker_uses_selected_model_and_passes_story_to_existing_renderer(monkeypatch, tmp_path, selection):
+@pytest.mark.parametrize("selection,with_reference", [
+    ("free", False), ("glm", False), ("nvidia", False), ("nvidia", True),
+    ("preset-nvidia", False), ("legacy-hosted", False),
+])
+async def test_worker_uses_selected_model_and_passes_story_to_existing_renderer(monkeypatch, tmp_path, selection, with_reference):
     from app.services import cartoon_job as worker, cartoon_story_job as director
 
     model = ("nvidia/nemotron-3.5-super-vl" if selection == "legacy-hosted"
@@ -426,7 +429,12 @@ async def test_worker_uses_selected_model_and_passes_story_to_existing_renderer(
     monkeypatch.setattr(worker, "execute", AsyncMock())
     monkeypatch.setattr(worker, "update_job", AsyncMock())
     monkeypatch.setattr(worker, "_openrouter_models", voice_catalog := AsyncMock(return_value=[]))
-    monkeypatch.setattr(worker, "_extract_reference_frames", AsyncMock(return_value=[]))
+    frames = []
+    if with_reference:
+        frame = tmp_path / "frame.jpg"
+        frame.write_bytes(b"fake jpeg")
+        frames.append(frame)
+    monkeypatch.setattr(worker, "_extract_reference_frames", extract := AsyncMock(return_value=frames))
     monkeypatch.setattr(worker, "request_storyboard", upstream := AsyncMock(return_value=httpx.Response(200, json={
         "choices": [{"finish_reason": "stop", "message": {"content": json.dumps(raw)}}],
     })))
@@ -449,11 +457,21 @@ async def test_worker_uses_selected_model_and_passes_story_to_existing_renderer(
     assert render.await_args.args[2]["characters"][0]["voice_id"] in {"ur-PK-UzmaNeural", "ur-PK-AsadNeural"}
     if selection == "preset-nvidia":
         upstream.assert_not_awaited()
+        extract.assert_not_awaited()
         assert fetch.await_count == 1
     else:
         upstream.assert_awaited_once()
         key, payload = upstream.await_args.args
         expected = "nvidia" if selection == "nvidia" else "openrouter"
         assert (key, payload["model"], upstream.await_args.kwargs["provider"]) == (f"test-{expected}-key", model, expected)
+        extract.assert_awaited_once()
+        content = payload["messages"][1]["content"]
+        if with_reference:
+            assert content[0]["type"] == "text" and "reference frames" in content[0]["text"]
+            assert content[1:] == [
+                {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,ZmFrZSBqcGVn"}},
+            ]
+        elif selection == "nvidia":
+            assert isinstance(content, str)
         assert fetch.await_args.args[1] == (job["user_id"], expected)
         assert fetch.await_count == 2
