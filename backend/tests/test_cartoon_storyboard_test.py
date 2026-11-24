@@ -154,7 +154,8 @@ async def test_project_creation_queues_selected_planner_without_exposing_keys(
         response = await client.post("/api/v1/cartoon-studio/projects", data={
             "prompt": "A fox finds the lost ball.", "story_planner": selection,
             "nvidia_key": key, "language": "ur", "duration_seconds": "15",
-            "tts_model": "system/edge-tts-urdu",
+            "tts_model": "hexgrad/kokoro-82m" if selection == "free" else "system/edge-tts-urdu",
+            "voice_id": "hf_alpha" if selection == "free" else "",
         })
     assert response.status_code == expected_status, response.text
     previous_creation_cap.assert_not_awaited()
@@ -166,6 +167,7 @@ async def test_project_creation_queues_selected_planner_without_exposing_keys(
         return
     values = execute.await_args_list[0].args[1]
     assert values[8] == planner.PROJECT_STORY_MODELS[selection]
+    assert values[9] == "system/edge-tts-urdu"
     queue.assert_awaited_once_with(user["id"], "cartoon_generate", payload={"cartoon_project_id": values[0]})
     dispatch.assert_awaited_once()
     assert key not in str(execute.await_args_list)
@@ -413,7 +415,8 @@ async def test_worker_uses_selected_model_and_passes_story_to_existing_renderer(
     project = {
         "id": "cartoon", "status": "queued", "language": "ur", "style": "2d-cartoon",
         "prompt": "A fox finds the lost ball.", "duration_seconds": 15, "text_model": model,
-        "tts_model": "system/edge-tts-urdu", "assets_json": "{}",
+        "tts_model": "hexgrad/kokoro-82m" if selection == "preset-nvidia" else "system/edge-tts-urdu",
+        "assets_json": json.dumps({"_preferred_voice": "hf_alpha"}),
         "storyboard_json": json.dumps(storyboard if selection == "preset-nvidia" else {}),
     }
     credentials = [{"api_key_ciphertext": "test-openrouter-key"}, {"api_key_ciphertext": "test-nvidia-key"}]
@@ -421,7 +424,7 @@ async def test_worker_uses_selected_model_and_passes_story_to_existing_renderer(
     monkeypatch.setattr(worker, "decrypt_provider_key", lambda value: value)
     monkeypatch.setattr(worker, "execute", AsyncMock())
     monkeypatch.setattr(worker, "update_job", AsyncMock())
-    monkeypatch.setattr(worker, "_openrouter_models", AsyncMock(return_value=[]))
+    monkeypatch.setattr(worker, "_openrouter_models", voice_catalog := AsyncMock(return_value=[]))
     monkeypatch.setattr(worker, "_extract_reference_frames", AsyncMock(return_value=[]))
     monkeypatch.setattr(worker, "request_storyboard", upstream := AsyncMock(return_value=httpx.Response(200, json={
         "choices": [{"finish_reason": "stop", "message": {"content": json.dumps(raw)}}],
@@ -440,6 +443,8 @@ async def test_worker_uses_selected_model_and_passes_story_to_existing_renderer(
     render.assert_awaited_once()
     assert render.await_args.args[2]["scenes"] == storyboard["scenes"]
     assert render.await_args.args[-3:] == (storage, "test-openrouter-key", "system/edge-tts-urdu")
+    voice_catalog.assert_not_awaited()
+    assert render.await_args.args[2]["characters"][0]["voice_id"] in {"ur-PK-UzmaNeural", "ur-PK-AsadNeural"}
     if selection == "preset-nvidia":
         upstream.assert_not_awaited()
     else:

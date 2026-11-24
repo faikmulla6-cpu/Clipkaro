@@ -17,7 +17,7 @@ import httpx
 from app.core.config import get_settings
 from app.core.database import execute, fetch_one
 from app.services.cartoon_renderer import build_cartoon_project
-from app.services.cartoon_speech import SYSTEM_URDU_TTS_MODEL, system_urdu_tts_model_row, synthesize_edge_tts
+from app.services.cartoon_speech import KOKORO_TTS_MODEL, SYSTEM_URDU_TTS_MODEL, cartoon_tts_for_language, system_urdu_tts_model_row, synthesize_edge_tts
 from app.services.cartoon_audio import build_lip_envelope
 from app.services.cartoon_score import build_jannat_audio_stems
 from app.services.cartoon_timing import approximate_word_boundaries, build_episode_lip_envelope, normalize_word_boundaries
@@ -631,9 +631,11 @@ async def run_cartoon_generation(job: dict[str, Any], scratch: Path, storage) ->
             (json.dumps(storyboard, separators=(",", ":"), ensure_ascii=False), utcnow(), project_id),
         )
 
-    tts_model = str(project.get("tts_model") or "hexgrad/kokoro-82m")
-    tts_models = await _openrouter_models(api_key, "speech")
-    tts_models.append(system_urdu_tts_model_row())
+    tts_model = cartoon_tts_for_language(str(project.get("tts_model") or KOKORO_TTS_MODEL), project["language"])
+    tts_models = (
+        [system_urdu_tts_model_row()] if tts_model == SYSTEM_URDU_TTS_MODEL
+        else await _openrouter_models(api_key, "speech")
+    )
     model_row = next((row for row in tts_models if row.get("id") == tts_model), None)
     if not model_row:
         raise CartoonJobError("The selected text-to-speech model is no longer available. Refresh the voice model list and retry.", category="CARTOON_TTS_MODEL_UNAVAILABLE")
@@ -657,8 +659,8 @@ async def run_cartoon_generation(job: dict[str, Any], scratch: Path, storage) ->
     # Persist the character-to-voice assignment before making any billable TTS
     # calls. Retries therefore keep the same character voice IDs.
     await execute(
-        "UPDATE cartoon_projects SET storyboard_json=?,progress=18,stage='story_ready',updated_at=? WHERE id=?",
-        (json.dumps(storyboard, separators=(",", ":"), ensure_ascii=False), utcnow(), project_id),
+        "UPDATE cartoon_projects SET storyboard_json=?,tts_model=?,progress=18,stage='story_ready',updated_at=? WHERE id=?",
+        (json.dumps(storyboard, separators=(",", ":"), ensure_ascii=False), tts_model, utcnow(), project_id),
     )
     if storyboard.get("schema_version") == 3:
         from app.services.cartoon_story_job import run_director_job

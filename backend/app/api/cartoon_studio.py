@@ -17,7 +17,7 @@ from app.core.config import get_settings
 from app.core.database import POSTGRES_SCHEMA_REVISION, distributed_advisory_lock, execute, fetch_all, fetch_one
 from app.services.distributed_rate_limit import consume_rate_limit
 from app.services.auth import current_user
-from app.services.cartoon_speech import SYSTEM_URDU_TTS_MODEL, system_urdu_tts_model_row
+from app.services.cartoon_speech import SYSTEM_URDU_TTS_MODEL, cartoon_tts_for_language, system_urdu_tts_model_row
 from app.services.cartoon_story import resolve_cartoon_language
 from app.services.cartoon_story_planner import (
     NVIDIA_STORY_MODEL, OPENROUTER_ROOT, PROJECT_STORY_MODELS, STORY_MODEL, StoryboardReplyError,
@@ -451,7 +451,13 @@ async def create_cartoon_project(
     )
     if active:
         raise HTTPException(409, "You already have a cartoon rendering. Wait for it to finish before starting another.")
-    speech_models = _models_with_preset_voices(await _models(api_key, "speech"))
+    compatible_tts_model = cartoon_tts_for_language(tts_model, language)
+    if compatible_tts_model != tts_model:
+        tts_model, voice_id = compatible_tts_model, ""
+    speech_models = (
+        [system_urdu_tts_model_row()] if tts_model == SYSTEM_URDU_TTS_MODEL
+        else _models_with_preset_voices(await _models(api_key, "speech"))
+    )
     speech_ids = {str(item.get("id")) for item in speech_models}
     if not tts_model:
         tts_model = next((item for item in PREFERRED_TTS if item in speech_ids), "")

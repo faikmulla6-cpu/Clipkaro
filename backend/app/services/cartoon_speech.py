@@ -6,6 +6,7 @@ from typing import Any
 
 
 SYSTEM_URDU_TTS_MODEL = "system/edge-tts-urdu"
+KOKORO_TTS_MODEL = "hexgrad/kokoro-82m"
 EDGE_VOICES = {
     "ur": {
         "female": "ur-PK-UzmaNeural",
@@ -29,6 +30,12 @@ EDGE_VOICES = {
         "elder": "en-US-JennyNeural",
     },
 }
+
+
+def cartoon_tts_for_language(model: str, language: str) -> str:
+    if language == "ur" and model in {"", KOKORO_TTS_MODEL}:
+        return SYSTEM_URDU_TTS_MODEL
+    return model
 
 
 def system_urdu_tts_model_row() -> dict[str, Any]:

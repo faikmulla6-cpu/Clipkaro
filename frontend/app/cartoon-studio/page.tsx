@@ -89,8 +89,8 @@ const STAGE_LABELS: Record<string, string> = {
 export default function CartoonStudioPage() {
   const [provider, setProvider] = useState<ProviderStatus | null>(null);
   const [models, setModels] = useState<TTSModel[]>([]);
-  const [ttsModel, setTtsModel] = useState("");
-  const [voiceId, setVoiceId] = useState("");
+  const [requestedTtsModel, setTtsModel] = useState("");
+  const [requestedVoiceId, setVoiceId] = useState("");
   const [projects, setProjects] = useState<CartoonProject[]>([]);
   const [selected, setSelected] = useState<CartoonProject | null>(null);
   const [apiKey, setApiKey] = useState("");
@@ -169,6 +169,14 @@ export default function CartoonStudioPage() {
   );
   const isRendering = selected?.status === "queued" || selected?.status === "processing";
   const connected = Boolean(provider?.openrouter.connected);
+  const voiceModels = models.filter(model => language === "ur"
+    ? model.id !== "hexgrad/kokoro-82m"
+    : model.id !== "system/edge-tts-urdu");
+  const selectedVoiceModel = voiceModels.find(model => model.id === requestedTtsModel)
+    || (language === "ur" ? voiceModels.find(model => model.id === "system/edge-tts-urdu") : undefined)
+    || voiceModels[0];
+  const ttsModel = selectedVoiceModel?.id || "";
+  const voiceId = selectedVoiceModel?.voices.includes(requestedVoiceId) ? requestedVoiceId : "";
   const nvidiaAvailable = Boolean(provider?.storyboard_test_enabled && provider?.nvidia);
   const nvidiaConnected = Boolean(provider?.nvidia?.connected);
   const missingProvider = projectPlanner === "nvidia" && !nvidiaConnected ? "NVIDIA API" : !connected ? "OpenRouter" : "";
@@ -366,10 +374,10 @@ export default function CartoonStudioPage() {
               </label>
               <label className={styles.field}>
                 <span>Voice model</span>
-                <select value={ttsModel} onChange={(event) => {setTtsModel(event.target.value);setVoiceId("");}} disabled={!connected || models.length === 0 || style === "cinematic-jannat"}>
-                  {models.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}
+                <select value={ttsModel} onChange={(event) => {setTtsModel(event.target.value);setVoiceId("");}} disabled={!connected || voiceModels.length === 0 || style === "cinematic-jannat"}>
+                  {voiceModels.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}
                 </select>
-                <small>{connected ? (models.find((model) => model.id === ttsModel)?.description || "Every character keeps its assigned voice across the scenes in this project.") : "Connect your OpenRouter key to load available voice models."}</small>
+                <small>{connected ? (selectedVoiceModel?.description || "Every character keeps its assigned voice across the scenes in this project.") : "Connect your OpenRouter key to load available voice models."}</small>
                 {connected && language === "ur" && ttsModel === "system/edge-tts-urdu" && (
                   <small className={styles.languageHint}>Uses the built-in Urdu voice and captures native word timestamps for synchronized captions. Voice service availability may vary.</small>
                 )}
@@ -386,7 +394,7 @@ export default function CartoonStudioPage() {
               <label className={styles.field}><span>Narrator / lead voice</span>
                 <select value={voiceId} onChange={(event) => setVoiceId(event.target.value)} disabled={!connected}>
                   <option value="">Match the character automatically</option>
-                  {(models.find(model => model.id === ttsModel)?.voices || []).map(voice => <option key={voice} value={voice}>{voice}</option>)}
+                  {(selectedVoiceModel?.voices || []).map(voice => <option key={voice} value={voice}>{voice}</option>)}
                 </select>
                 <small>Other characters keep their own assigned voices. Providers without word timestamps use audio alignment for captions.</small>
               </label>
