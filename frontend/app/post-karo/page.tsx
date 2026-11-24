@@ -29,13 +29,14 @@ type ExportRow = {
   resolution?: string; aspect_ratio?: string; created_at: string; expires_at?: string;
 };
 type Draft = {
-  id: string; export_id: string; revision: number;
+  id: string; export_id: string | null; cartoon_project_id?: string | null; revision: number;
   instagram_enabled: boolean; instagram_caption: string; instagram_hashtags: string[];
   youtube_enabled: boolean; youtube_title: string; youtube_description: string;
   youtube_tags: string[]; youtube_visibility: "public" | "unlisted" | "private";
+  youtube_audience?: "kids" | "general" | null;
   scheduled_for?: string | null; timezone: string; updated_at?: string;
   export?: {
-    id: string; clip_id: string; title: string; project_title: string;
+    id: string; clip_id?: string; title: string; project_title: string;
     download_url: string; expires_at?: string; resolution?: string; aspect_ratio?: string;
   };
 };
@@ -44,7 +45,7 @@ type PlatformResult = {
   error?: string; message?: string;
 };
 type Publication = {
-  id: string; export_id: string; draft_id: string; draft_revision: number;
+  id: string; export_id: string | null; draft_id: string; draft_revision: number;
   request_id: string; job_id?: string | null; mode: "now" | "schedule"; status: string;
   scheduled_for?: string | null; provider_post_id?: string | null;
   platform_results: PlatformResult[]; snapshot: Record<string, unknown>;
@@ -55,6 +56,7 @@ type DraftFields = {
   instagram_enabled: boolean; instagram_caption: string; instagram_hashtags: string[];
   youtube_enabled: boolean; youtube_title: string; youtube_description: string;
   youtube_tags: string[]; youtube_visibility: Draft["youtube_visibility"]; timezone: string;
+  youtube_audience?: Draft["youtube_audience"];
 };
 
 const terminalStatuses = new Set(["scheduled", "published", "partial", "failed"]);
@@ -68,6 +70,7 @@ function fieldsOf(draft: Draft): DraftFields {
     youtube_description: draft.youtube_description,
     youtube_tags: draft.youtube_tags,
     youtube_visibility: draft.youtube_visibility,
+    ...(draft.cartoon_project_id ? { youtube_audience: draft.youtube_audience } : {}),
     timezone: draft.timezone,
   };
 }
@@ -101,6 +104,9 @@ function PostKaroPageInner() {
   const search = useSearchParams();
   const router = useRouter();
   const returnExport = search.get("export") || "";
+  const returnCartoon = search.get("cartoon") || "";
+  const returnSource = returnCartoon || returnExport;
+  const sourceLabel = returnCartoon ? "cartoon" : "Short";
   const [status, setStatus] = useState<PostKaroStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState("");
@@ -112,6 +118,7 @@ function PostKaroPageInner() {
   const [publications, setPublications] = useState<Publication[]>([]);
   const [tab, setTab] = useState<"publish" | "scheduled" | "history">("publish");
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [cartoonPreviewUrl, setCartoonPreviewUrl] = useState("");
   const draftRef = useRef<Draft | null>(null);
   const revisionRef = useRef(1);
   const lastSavedSignatureRef = useRef("");
@@ -119,6 +126,7 @@ function PostKaroPageInner() {
   const saveTimerRef = useRef<number | null>(null);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [composerLoading, setComposerLoading] = useState(false);
+  const draftRequestRef = useRef(0);
   const [mode, setMode] = useState<"now" | "schedule">("now");
   const [scheduledFor, setScheduledFor] = useState("");
   const [confirming, setConfirming] = useState(false);
@@ -128,11 +136,13 @@ function PostKaroPageInner() {
 
   useEffect(() => { draftRef.current = draft; }, [draft]);
   useEffect(() => {
-    if (!returnExport && draftRef.current) {
+    if (!returnSource && draftRef.current) {
+      draftRequestRef.current += 1;
       setDraft(null);
       draftRef.current = null;
+      setComposerLoading(false);
     }
-  }, [returnExport]);
+  }, [returnSource]);
   useEffect(() => () => {
     if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
     if (pollTimerRef.current !== null) window.clearTimeout(pollTimerRef.current);
@@ -166,13 +176,19 @@ function PostKaroPageInner() {
   }, []);
   useEffect(() => { if (status?.ready) void loadWorkspace(); }, [status?.ready, loadWorkspace]);
 
-  const loadDraft = useCallback(async (exportId: string) => {
-    if (!exportId) return;
+  const loadDraft = useCallback(async (sourceId: string, cartoon = false) => {
+    if (!sourceId) return;
+    const request = ++draftRequestRef.current;
     setComposerLoading(true);
     setPageError("");
     try {
-      const path = "/post-karo/drafts/from-export/" + encodeURIComponent(exportId);
+      const path = (cartoon ? "/post-karo/drafts/from-cartoon/" : "/post-karo/drafts/from-export/") + encodeURIComponent(sourceId);
       const prepared = await postJSON<Draft>(path, {});
+      const preview = prepared.cartoon_project_id
+        ? await api<{ url: string }>("/cartoon-studio/projects/" + encodeURIComponent(prepared.cartoon_project_id) + "/download")
+        : null;
+      if (request !== draftRequestRef.current) return;
+      setCartoonPreviewUrl(preview?.url || "");
       setDraft(prepared);
       draftRef.current = prepared;
       revisionRef.current = prepared.revision;
@@ -180,14 +196,14 @@ function PostKaroPageInner() {
       setSaveState("saved");
       setPublication(null);
     } catch (cause) {
-      setPageError(cause instanceof Error ? cause.message : "Post Karo could not prepare this Short.");
+      if (request === draftRequestRef.current) setPageError(cause instanceof Error ? cause.message : "Post Karo could not prepare this video.");
     } finally {
-      setComposerLoading(false);
+      if (request === draftRequestRef.current) setComposerLoading(false);
     }
   }, []);
   useEffect(() => {
-    if (status?.ready && returnExport) void loadDraft(returnExport);
-  }, [status?.ready, returnExport, loadDraft]);
+    if (status?.ready && returnSource) void loadDraft(returnSource, !!returnCartoon);
+  }, [status?.ready, returnSource, returnCartoon, loadDraft]);
   async function testConnection() {
     if (!apiKey.trim() || testing) return;
     setTesting(true);
@@ -206,7 +222,8 @@ function PostKaroPageInner() {
     setConnecting(platform);
     setPageError("");
     try {
-      const suffix = returnExport ? "?return_export=" + encodeURIComponent(returnExport) : "";
+      const suffix = returnCartoon ? "?return_cartoon=" + encodeURIComponent(returnCartoon)
+        : returnExport ? "?return_export=" + encodeURIComponent(returnExport) : "";
       const target = "/post-karo/connect/" + platform + suffix;
       const result = await api<{ auth_url: string }>(target, { method: "POST" });
       window.location.assign(result.auth_url);
@@ -242,6 +259,21 @@ function PostKaroPageInner() {
   }
   function updateDraft(patch: Partial<Draft>) {
     setDraft(current => current ? { ...current, ...patch } : current);
+  }
+
+  async function downloadDraftVideo() {
+    const current = draftRef.current;
+    if (!current) return;
+    if (current.export_id) {
+      downloadExport(current.export_id);
+    } else if (current.cartoon_project_id) {
+      try {
+        const result = await api<{ url: string }>("/cartoon-studio/projects/" + encodeURIComponent(current.cartoon_project_id) + "/download");
+        window.location.assign(result.url);
+      } catch (cause) {
+        setPageError(cause instanceof Error ? cause.message : "The cartoon MP4 could not be downloaded.");
+      }
+    }
   }
 
   function enqueueSave(fields: DraftFields): Promise<Draft> {
@@ -296,7 +328,7 @@ function PostKaroPageInner() {
   }, [
     draft?.instagram_enabled, draft?.instagram_caption, draft?.instagram_hashtags,
     draft?.youtube_enabled, draft?.youtube_title, draft?.youtube_description,
-    draft?.youtube_tags, draft?.youtube_visibility, draft?.timezone,
+    draft?.youtube_tags, draft?.youtube_visibility, draft?.youtube_audience, draft?.timezone,
   ]);
 
   async function flushLatestDraft(): Promise<number> {
@@ -316,7 +348,7 @@ function PostKaroPageInner() {
     if (!draftRef.current) return;
     if (nextMode === "schedule" && !scheduledFor) {
       setMode("schedule");
-      setPageError("Choose when you want this Short to publish.");
+      setPageError("Choose when you want this video to publish.");
       return;
     }
     setPageError("");
@@ -449,36 +481,39 @@ function PostKaroPageInner() {
           <div className={styles.stepRail}><span>03</span>{stepTwoDone ? <SuccessOrb small/> : <LockKeyhole size={19}/>}</div>
           <div className={styles.stepBody}>
             <small>STEP 3</small><h3>You’re ready to Post Karo</h3>
-            {stepTwoDone ? <div className={styles.readyMoment}><SuccessOrb/><div><b>Publishing setup complete.</b><p>Keep clipping. Your connected account is ready whenever your next Short is.</p>{returnExport ? <button className="primary-btn" onClick={() => void loadDraft(returnExport)}>Continue with my Short <ArrowRight size={15}/></button> : <Link href="/exports" className="primary-btn">Choose a finished Short <ArrowRight size={15}/></Link>}</div></div> : <p>Complete the steps above to unlock direct publishing.</p>}
+            {stepTwoDone ? <div className={styles.readyMoment}><SuccessOrb/><div><b>Publishing setup complete.</b><p>Your connected account is ready to publish.</p>{returnSource ? <button className="primary-btn" onClick={() => void loadDraft(returnSource, !!returnCartoon)}>Continue with my {sourceLabel} <ArrowRight size={15}/></button> : <Link href="/exports" className="primary-btn">Choose a finished Short <ArrowRight size={15}/></Link>}</div></div> : <p>Complete the steps above to unlock direct publishing.</p>}
           </div>
         </motion.section>
       </div>
     </AppShell>;
   }
 
-  if (composerLoading || (returnExport && !draft)) {
-    return <AppShell title="Post Karo" subtitle="Preparing your exact finished Short.">
-      {pageError ? <div className="empty-state"><div className="empty-icon"><FileVideo/></div><h3>Could not prepare this Short</h3><p>{pageError}</p><Link href="/exports" className="primary-btn">Back to exports</Link></div> : <div className="screen-loader inline"><Loader2 className="spin" size={25}/><p>Preparing your publishing draft…</p></div>}
+  if (composerLoading || (returnSource && returnSource !== (returnCartoon ? draft?.cartoon_project_id : draft?.export_id))) {
+    return <AppShell title="Post Karo" subtitle={"Preparing your finished " + sourceLabel + "."}>
+      {pageError ? <div className="empty-state"><div className="empty-icon"><FileVideo/></div><h3>Could not prepare this {sourceLabel}</h3><p>{pageError}</p><Link href={returnCartoon ? "/cartoon-studio" : "/exports"} className="primary-btn">{returnCartoon ? "Back to Cartoon Studio" : "Back to exports"}</Link></div> : <div className="screen-loader inline"><Loader2 className="spin" size={25}/><p>Preparing your publishing draft…</p></div>}
     </AppShell>;
   }
   if (draft) {
+    const isCartoon = !!draft.cartoon_project_id;
+    const videoLabel = isCartoon ? "cartoon" : "Short";
+    const needsAudience = isCartoon && draft.youtube_enabled && !draft.youtube_audience;
     return <AppShell title="Post Karo" subtitle={draft.export?.title || "Review exactly what will publish."} action={<div className={styles.saveSignal} data-state={saveState}>{saveState === "saving" ? <Loader2 className="spin" size={13}/> : saveState === "error" ? <span>!</span> : <Check size={13}/>} {saveState === "saving" ? "Saving…" : saveState === "error" ? "Save needs attention" : "Saved"}</div>}>
       {pageError && <div className="floating-error">{pageError}</div>}
       <div className={styles.composer}>
         <section className={styles.previewColumn}>
-          <div className={styles.previewTop}><span><Sparkles size={13}/> FINISHED SHORT</span><b>{draft.export?.aspect_ratio || "9:16"}</b></div>
-          <div className={styles.phoneFrame}><video src={API_URL + "/exports/" + draft.export_id + "/download"} controls playsInline preload="metadata"/></div>
-          <div className={styles.previewMeta}><div><b>{draft.export?.title || "ClipKaro Short"}</b><span>{draft.export?.project_title} · {draft.export?.resolution || "Ready"}</span></div><button className="secondary-btn small" onClick={() => downloadExport(draft.export_id)}><Download size={14}/> Download MP4</button></div>
+          <div className={styles.previewTop}><span><Sparkles size={13}/> {isCartoon ? "FINISHED CARTOON" : "FINISHED SHORT"}</span><b>{draft.export?.aspect_ratio || "9:16"}</b></div>
+          <div className={styles.phoneFrame}><video src={isCartoon ? cartoonPreviewUrl : API_URL + "/exports/" + draft.export_id + "/download"} controls playsInline preload="metadata" aria-label={"Finished " + videoLabel + " preview"}/></div>
+          <div className={styles.previewMeta}><div><b>{draft.export?.title || ("ClipKaro " + videoLabel)}</b><span>{draft.export?.project_title} · {draft.export?.resolution || "Ready"}</span></div><button className="secondary-btn small" onClick={() => void downloadDraftVideo()}><Download size={14}/> Download MP4</button></div>
           <div className={styles.ownershipNote}><ShieldCheck size={15}/><span>Your finished MP4 stays downloadable whether you publish with Post Karo or not.</span></div>
         </section>
         <section className={styles.composeColumn}>
-          <div className={styles.composeIntro}><div><span className={styles.eyebrow}>DESTINATIONS</span><h2>Where should this Short go?</h2><p>Select one or both. Each platform keeps its own editable copy.</p></div><span className={styles.destinationCount}>{selectedCount} selected</span></div>
+          <div className={styles.composeIntro}><div><span className={styles.eyebrow}>DESTINATIONS</span><h2>Where should this {videoLabel} go?</h2><p>Select one or both. Each platform keeps its own editable copy.</p></div><span className={styles.destinationCount}>{selectedCount} selected</span></div>
           <div className={styles.destinationCards}>
             <DestinationToggle platform="instagram" account={instagram} selected={draft.instagram_enabled} onChange={value => updateDraft({ instagram_enabled: value })}/>
             <DestinationToggle platform="youtube" account={youtube} selected={draft.youtube_enabled} onChange={value => updateDraft({ youtube_enabled: value })}/>
           </div>
           <AnimatePresence initial={false}>
-            {draft.instagram_enabled && <motion.div className={styles.editorCard} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
+            {draft.instagram_enabled && <motion.div key="instagram" className={styles.editorCard} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
               <div className={styles.editorCardHead}><div className={styles.instagramIcon}><Instagram size={19}/></div><div><b>Instagram Reels</b><span>{accountLabel(instagram)}</span></div><small>Editable</small></div>
               <label>Caption <span>AI suggested · creator controlled</span></label>
               <textarea value={draft.instagram_caption} maxLength={2200} onChange={event => updateDraft({ instagram_caption: event.target.value })} placeholder="Write the Reel caption…"/>
@@ -486,7 +521,7 @@ function PostKaroPageInner() {
               <label>Hashtags</label>
               <input value={draft.instagram_hashtags.join(" ")} onChange={event => updateDraft({ instagram_hashtags: parseTags(event.target.value) })} placeholder="#creator #shorts"/>
             </motion.div>}
-            {draft.youtube_enabled && <motion.div className={styles.editorCard} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
+            {draft.youtube_enabled && <motion.div key="youtube" className={styles.editorCard} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
               <div className={styles.editorCardHead}><div className={styles.youtubeIcon}><Youtube size={19}/></div><div><b>YouTube Shorts</b><span>{accountLabel(youtube)}</span></div><small>Editable</small></div>
               <label>Title <span>Required</span></label>
               <input value={draft.youtube_title} maxLength={100} onChange={event => updateDraft({ youtube_title: event.target.value })} placeholder="Your Short title"/>
@@ -495,6 +530,14 @@ function PostKaroPageInner() {
               <textarea value={draft.youtube_description} maxLength={5000} onChange={event => updateDraft({ youtube_description: event.target.value })} placeholder="Describe this Short…"/>
               <div className={styles.counter}>{draft.youtube_description.length}/5000</div>
               <div className={styles.twoFields}><div><label>Tags</label><input value={draft.youtube_tags.join(", ")} onChange={event => updateDraft({ youtube_tags: parseTags(event.target.value) })} placeholder="creator, shorts"/></div><div><label>Visibility</label><select value={draft.youtube_visibility} onChange={event => updateDraft({ youtube_visibility: event.target.value as Draft["youtube_visibility"] })}><option value="public">Public</option><option value="unlisted">Unlisted</option><option value="private">Private</option></select></div></div>
+              {isCartoon && <>
+                <label htmlFor="cartoon-youtube-audience">YouTube audience <span>Required</span></label>
+                <select id="cartoon-youtube-audience" value={draft.youtube_audience || ""} onChange={event => updateDraft({ youtube_audience: event.target.value as Draft["youtube_audience"] })}>
+                  <option value="" disabled>Choose an audience</option>
+                  <option value="kids">Yes, made for kids</option>
+                  <option value="general">No, not made for kids</option>
+                </select>
+              </>}
             </motion.div>}
           </AnimatePresence>
           {!selectedCount && <div className={styles.chooseNotice}><Send size={18}/><div><b>Choose a destination</b><span>Select Instagram, YouTube, or both before continuing.</span></div></div>}
@@ -507,7 +550,7 @@ function PostKaroPageInner() {
       </div>
       <div className={styles.stickyBar}>
         <div><span>{selectedCount ? String(selectedCount) + " destination" + (selectedCount > 1 ? "s" : "") + " selected" : "Choose a destination"}</span><small>{saveState === "saving" ? "Finishing your latest save…" : "Your latest saved revision is what gets published."}</small></div>
-        <button className="primary-btn" disabled={!selectedCount || publishing || saveState === "error"} onClick={() => void openConfirmation(mode)}>{publishing ? <Loader2 className="spin" size={15}/> : mode === "schedule" ? <CalendarClock size={15}/> : <Send size={15}/>} {mode === "schedule" ? "Review schedule" : "Review & Post"}</button>
+        <button className="primary-btn" disabled={!selectedCount || needsAudience || publishing || saveState === "error"} onClick={() => void openConfirmation(mode)}>{publishing ? <Loader2 className="spin" size={15}/> : mode === "schedule" ? <CalendarClock size={15}/> : <Send size={15}/>} {mode === "schedule" ? "Review schedule" : "Review & Post"}</button>
       </div>
       <AnimatePresence>
         {confirming && <motion.div className={styles.modalBackdrop} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
@@ -515,14 +558,14 @@ function PostKaroPageInner() {
             <div className={styles.confirmIcon}><Send/></div><span className={styles.eyebrow}>FINAL CHECK</span><h2>{mode === "schedule" ? "Ready to schedule?" : "Ready to Post Karo?"}</h2><p>ClipKaro will publish the exact saved copy shown below.</p>
             <div className={styles.confirmTargets}>
               {draft.instagram_enabled && <div><Instagram/><span><b>Instagram Reels</b><small>{accountLabel(instagram)}</small><em>{draft.instagram_caption.slice(0, 92) || "No caption"}</em></span><CheckCircle2/></div>}
-              {draft.youtube_enabled && <div><Youtube/><span><b>YouTube Shorts</b><small>{accountLabel(youtube)} · {draft.youtube_visibility}</small><em>{draft.youtube_title || "Untitled"}</em></span><CheckCircle2/></div>}
+              {draft.youtube_enabled && <div><Youtube/><span><b>YouTube Shorts</b><small>{accountLabel(youtube)} · {draft.youtube_visibility}{isCartoon && (draft.youtube_audience === "kids" ? " · Made for kids" : " · Not made for kids")}</small><em>{draft.youtube_title || "Untitled"}</em></span><CheckCircle2/></div>}
             </div>
             {mode === "schedule" && <div className={styles.confirmSchedule}><CalendarClock size={16}/> {scheduledFor || "Choose a date and time"}</div>}
-            <div className={styles.modalActions}><button className="secondary-btn" disabled={publishing} onClick={() => setConfirming(false)}>Back to edit</button><button className="primary-btn" disabled={publishing || (mode === "schedule" && !scheduledFor)} onClick={() => void confirmPublish()}>{publishing ? <Loader2 className="spin" size={15}/> : <Send size={15}/>} {publishing ? "Starting safely…" : mode === "schedule" ? "Schedule Short" : "Post now"}</button></div>
+            <div className={styles.modalActions}><button className="secondary-btn" disabled={publishing} onClick={() => setConfirming(false)}>Back to edit</button><button className="primary-btn" disabled={publishing || (mode === "schedule" && !scheduledFor)} onClick={() => void confirmPublish()}>{publishing ? <Loader2 className="spin" size={15}/> : <Send size={15}/>} {publishing ? "Starting safely…" : mode === "schedule" ? "Schedule " + videoLabel : "Post now"}</button></div>
           </motion.div>
         </motion.div>}
       </AnimatePresence>
-      <AnimatePresence>{publication && <PublicationOverlay publication={publication} onClose={() => { setPublication(null); if (terminalStatuses.has(publication.status)) router.replace("/post-karo"); }}/>}</AnimatePresence>
+      <AnimatePresence>{publication && <PublicationOverlay publication={publication} onDownload={() => void downloadDraftVideo()} onClose={() => { setPublication(null); if (terminalStatuses.has(publication.status)) router.replace("/post-karo"); }}/>}</AnimatePresence>
     </AppShell>;
   }
   return <AppShell title="Post Karo" subtitle="Your publishing connection is ready.">
@@ -577,7 +620,7 @@ function PublicationList({ items, emptyTitle, emptyCopy }: { items: Publication[
     <div className={styles.resultChips}>{item.platform_results?.map((result, index) => <span key={String(result.platform) + String(index)}>{platformIcon(result.platform || "", 13)} {result.platform || "platform"} · {result.status || "processing"}</span>)}</div>
   </article>)}</div>;
 }
-function PublicationOverlay({ publication, onClose }: { publication: Publication; onClose: () => void }) {
+function PublicationOverlay({ publication, onClose, onDownload }: { publication: Publication; onClose: () => void; onDownload: () => void }) {
   const terminal = terminalStatuses.has(publication.status);
   const success = publication.status === "published" || publication.status === "scheduled";
   const partial = publication.status === "partial";
@@ -599,7 +642,7 @@ function PublicationOverlay({ publication, onClose }: { publication: Publication
         return <div key={String(result.platform) + String(index)}>{platformIcon(result.platform || "", 20)}<span><b>{result.platform === "instagram" ? "Instagram Reels" : "YouTube Shorts"}</b><small>{result.status || "processing"}{result.error ? " · " + result.error : ""}</small></span>{okay ? <CheckCircle2 className={styles.connectedCheck}/> : result.status === "failed" ? <strong>!</strong> : <Loader2 className="spin"/>}{url && <a href={url} target="_blank" rel="noreferrer">View <ExternalLink size={11}/></a>}</div>;
       })}</div>
       {publication.error && <div className={styles.publicationError}>{publication.error}</div>}
-      {terminal && <div className={styles.modalActions}><button className="secondary-btn" onClick={() => downloadExport(publication.export_id)}><Download size={14}/> Download MP4</button><button className="primary-btn" onClick={onClose}>Done <Check size={14}/></button></div>}
+      {terminal && <div className={styles.modalActions}><button className="secondary-btn" onClick={onDownload}><Download size={14}/> Download MP4</button><button className="primary-btn" onClick={onClose}>Done <Check size={14}/></button></div>}
     </motion.div>
   </motion.div>;
 }

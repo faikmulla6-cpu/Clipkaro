@@ -13,7 +13,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 from fastapi.responses import FileResponse
 
 from app.core.config import get_settings
-from app.core.database import POSTGRES_SCHEMA_REVISION, distributed_advisory_lock, execute, fetch_all, fetch_one
+from app.core.database import POSTGRES_PREVIOUS_SCHEMA_REVISION, POSTGRES_SCHEMA_REVISION, distributed_advisory_lock, execute, fetch_all, fetch_one
 from app.services.distributed_rate_limit import consume_rate_limit
 from app.services.auth import current_user
 from app.services.cartoon_speech import SYSTEM_URDU_TTS_MODEL, built_in_voice_models, built_in_voice_selection
@@ -198,7 +198,7 @@ async def _nvidia_storage_ready() -> bool:
     if get_settings().normalized_database_backend != "postgres":
         return True
     row = await fetch_one("SELECT version_num FROM alembic_version LIMIT 1")
-    return bool(row and row["version_num"] == POSTGRES_SCHEMA_REVISION)
+    return bool(row and row["version_num"] in {POSTGRES_SCHEMA_REVISION, POSTGRES_PREVIOUS_SCHEMA_REVISION})
 
 
 @router.get("/providers")

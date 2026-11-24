@@ -12,6 +12,10 @@ function PostKaroCallbackPageInner() {
   const started = useRef(false);
   const [error, setError] = useState("");
   const returnExport = search.get("return_export") || "";
+  const returnCartoon = search.get("return_cartoon") || "";
+  const destination = "/post-karo" + (returnCartoon
+    ? "?cartoon=" + encodeURIComponent(returnCartoon)
+    : returnExport ? "?export=" + encodeURIComponent(returnExport) : "");
   const oauthError = search.get("error") || "";
 
   useEffect(() => {
@@ -24,20 +28,19 @@ function PostKaroCallbackPageInner() {
     void (async () => {
       try {
         await postJSON("/post-karo/accounts/sync", {});
-        const suffix = returnExport ? "?export=" + encodeURIComponent(returnExport) + "&connected=1" : "?connected=1";
-        router.replace("/post-karo" + suffix);
+        router.replace(destination + (returnCartoon || returnExport ? "&" : "?") + "connected=1");
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "ClipKaro could not finish this social connection.");
       }
     })();
-  }, [oauthError, returnExport, router]);
+  }, [oauthError, destination, returnCartoon, returnExport, router]);
 
   return <AppShell title="Post Karo" subtitle="Finishing your secure social connection.">
     <div className="empty-state">
       <div className="empty-icon">{error ? <span>!</span> : <Loader2 className="spin"/>}</div>
       <h3>{error ? "Connection needs attention" : "Finishing your connection…"}</h3>
       <p>{error || "ClipKaro is checking the account Zernio just authorised. You will return to Post Karo automatically."}</p>
-      {error && <button className="primary-btn" onClick={() => router.replace(returnExport ? "/post-karo?export=" + encodeURIComponent(returnExport) : "/post-karo")}><CheckCircle2 size={15}/> Back to Post Karo</button>}
+      {error && <button className="primary-btn" onClick={() => router.replace(destination)}><CheckCircle2 size={15}/> Back to Post Karo</button>}
     </div>
   </AppShell>;
 }

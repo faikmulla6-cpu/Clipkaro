@@ -12,12 +12,13 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.core.config import get_settings
-from app.core.database import execute, fetch_all, fetch_one, run_in_transaction
+from app.core.database import POSTGRES_SCHEMA_REVISION, execute, fetch_all, fetch_one, run_in_transaction
 from app.services.auth import current_user
 from app.services.jobs import create_job, dispatch_job, utcnow
 from app.services.post_karo import (
     PostKaroProviderError,
     ZernioClient,
+    cartoon_publish_source,
     _expired,
     _post_response,
     decrypt_api_key,
@@ -55,6 +56,7 @@ class DraftPatchRequest(BaseModel):
     youtube_description: str | None = Field(default=None, max_length=5000)
     youtube_tags: list[str] | None = Field(default=None, max_length=30)
     youtube_visibility: Literal["public", "unlisted", "private"] | None = None
+    youtube_audience: Literal["kids", "general"] | None = None
     scheduled_for: str | None = Field(default=None, max_length=80)
     timezone: str | None = Field(default=None, min_length=1, max_length=80)
 
@@ -135,6 +137,7 @@ def _draft_out(row: dict[str, Any], export: dict[str, Any] | None = None) -> dic
     result = {
         "id": row["id"],
         "export_id": row["export_id"],
+        "cartoon_project_id": row.get("cartoon_project_id"),
         "revision": int(row.get("revision") or 1),
         "instagram_enabled": bool(row.get("instagram_enabled")),
         "instagram_caption": row.get("instagram_caption") or "",
@@ -144,6 +147,7 @@ def _draft_out(row: dict[str, Any], export: dict[str, Any] | None = None) -> dic
         "youtube_description": row.get("youtube_description") or "",
         "youtube_tags": _loads_list(row.get("youtube_tags")),
         "youtube_visibility": row.get("youtube_visibility") or "public",
+        "youtube_audience": row.get("youtube_audience"),
         "scheduled_for": row.get("scheduled_for"),
         "timezone": row.get("timezone") or "Asia/Kolkata",
         "updated_at": row.get("updated_at"),
@@ -274,12 +278,15 @@ async def delete_connection(user: dict = Depends(current_user)) -> Response:
 async def connect_platform(
     platform: str,
     return_export: str | None = None,
+    return_cartoon: str | None = None,
     user: dict = Depends(current_user),
 ) -> dict[str, str]:
     _require_eligible(user)
     platform = platform.strip().lower()
     if platform not in SUPPORTED:
         raise HTTPException(404, "This platform is not available in Post Karo yet.")
+    if return_export and return_cartoon:
+        raise HTTPException(422, "Choose one video to publish.")
     connection = await _connection(str(user["id"]))
     if not connection:
         raise HTTPException(409, "Activate your SIMPLE connection first.")
@@ -290,6 +297,9 @@ async def connect_platform(
         if return_export:
             await _export_context(return_export, str(user["id"]))
             query["return_export"] = return_export
+        if return_cartoon:
+            await _cartoon_context(return_cartoon, str(user["id"]))
+            query["return_cartoon"] = return_cartoon
         redirect_url = urljoin(base, "post-karo/callback") + "?" + urlencode(query)
         auth_url = await ZernioClient(api_key).connect_url(
             platform, str(connection["profile_id"]), redirect_url,
@@ -331,6 +341,42 @@ async def _export_context(export_id: str, user_id: str) -> dict[str, Any]:
     return row
 
 
+async def _cartoon_context(project_id: str, user_id: str) -> dict[str, Any]:
+    try:
+        return await cartoon_publish_source(project_id, user_id)
+    except PostKaroProviderError as exc:
+        raise _provider_error(exc) from exc
+
+
+def _public_source(source: dict[str, Any], *, cartoon: bool = False) -> dict[str, Any]:
+    source_id = source["id"]
+    if cartoon:
+        return {
+            "id": source_id,
+            "title": source.get("title") or "ClipKaro Cartoon",
+            "project_title": "Cartoon Studio",
+            "download_url": f"/api/v1/cartoon-studio/projects/{source_id}/download",
+            "aspect_ratio": source["aspect_ratio"],
+        }
+    return {
+        "id": source_id,
+        "clip_id": source["clip_id"],
+        "title": source.get("clip_title") or "ClipKaro Short",
+        "project_title": source.get("project_title") or "Project",
+        "download_url": f"/api/v1/exports/{source_id}/download",
+        "expires_at": source.get("expires_at"),
+        "resolution": source.get("resolution"),
+        "aspect_ratio": source.get("aspect_ratio"),
+    }
+
+
+async def _draft_source(draft: dict[str, Any], user_id: str) -> dict[str, Any]:
+    cartoon_id = draft.get("cartoon_project_id")
+    if cartoon_id:
+        return _public_source(await _cartoon_context(str(cartoon_id), user_id), cartoon=True)
+    return _public_source(await _export_context(str(draft["export_id"]), user_id))
+
+
 def _prefill_from_pack(pack_row: dict[str, Any] | None, clip_id: str) -> dict[str, Any]:
     if not pack_row:
         return {}
@@ -351,28 +397,37 @@ def _prefill_from_pack(pack_row: dict[str, Any] | None, clip_id: str) -> dict[st
 async def draft_from_export(export_id: str, user: dict = Depends(current_user)) -> dict[str, Any]:
     _require_eligible(user)
     export = await _export_context(export_id, str(user["id"]))
-    existing = await fetch_one(
-        "SELECT * FROM post_karo_drafts WHERE user_id=? AND export_id=?",
-        (user["id"], export_id),
-    )
-    public_export = {
-        "id": export["id"],
-        "clip_id": export["clip_id"],
-        "title": export.get("clip_title") or "ClipKaro Short",
-        "project_title": export.get("project_title") or "Project",
-        "download_url": f"/api/v1/exports/{export_id}/download",
-        "expires_at": export.get("expires_at"),
-        "resolution": export.get("resolution"),
-        "aspect_ratio": export.get("aspect_ratio"),
-    }
+    return await _prepare_draft(export, user)
+
+
+@router.post("/drafts/from-cartoon/{project_id}", status_code=201)
+async def draft_from_cartoon(project_id: str, user: dict = Depends(current_user)) -> dict[str, Any]:
+    _require_eligible(user)
+    if get_settings().normalized_database_backend == "postgres":
+        revision = await fetch_one("SELECT version_num FROM alembic_version LIMIT 1")
+        if not revision or revision["version_num"] != POSTGRES_SCHEMA_REVISION:
+            raise HTTPException(503, "Cartoon publishing is temporarily unavailable. Try again later.")
+    cartoon = await _cartoon_context(project_id, str(user["id"]))
+    return await _prepare_draft(cartoon, user, cartoon=True)
+
+
+async def _prepare_draft(source: dict[str, Any], user: dict[str, Any], *, cartoon: bool = False) -> dict[str, Any]:
+    source_column = "cartoon_project_id" if cartoon else "export_id"
+    source_id = source["id"]
+    lookup = f"SELECT * FROM post_karo_drafts WHERE user_id=? AND {source_column}=?"
+    source_params = (user["id"], source_id)
+    existing = await fetch_one(lookup, source_params)
+    public_export = _public_source(source, cartoon=cartoon)
     if existing:
         return _draft_out(existing, public_export)
 
-    pack_row = await fetch_one(
-        "SELECT payload_json FROM content_packs WHERE project_id=? AND status='ready'",
-        (export["project_id"],),
-    )
-    prefill = _prefill_from_pack(pack_row, str(export["clip_id"]))
+    prefill = {}
+    if not cartoon:
+        pack_row = await fetch_one(
+            "SELECT payload_json FROM content_packs WHERE project_id=? AND status='ready'",
+            (source["project_id"],),
+        )
+        prefill = _prefill_from_pack(pack_row, str(source["clip_id"]))
     instagram = prefill.get("instagram_reels") if isinstance(prefill.get("instagram_reels"), dict) else {}
     youtube = prefill.get("youtube_shorts") if isinstance(prefill.get("youtube_shorts"), dict) else {}
     titles = youtube.get("titles") if isinstance(youtube.get("titles"), list) else []
@@ -383,27 +438,27 @@ async def draft_from_export(export_id: str, user: dict = Depends(current_user)) 
     }
     prefs = await fetch_one("SELECT timezone FROM user_preferences WHERE user_id=?", (user["id"],))
     timestamp = utcnow()
-    draft_id = str(uuid.uuid4())
     await execute(
-        """INSERT INTO post_karo_drafts(
-             id,user_id,export_id,revision,instagram_enabled,instagram_caption,instagram_hashtags,
+        f"""INSERT INTO post_karo_drafts(
+             id,user_id,{source_column},revision,instagram_enabled,instagram_caption,instagram_hashtags,
              youtube_enabled,youtube_title,youtube_description,youtube_tags,youtube_visibility,
              scheduled_for,timezone,created_at,updated_at
-           ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+           ON CONFLICT(user_id,{source_column}) DO NOTHING""",
         (
-            draft_id, user["id"], export_id, 1, int("instagram" in ready),
+            str(uuid.uuid4()), user["id"], source_id, 1, int("instagram" in ready),
             str(instagram.get("caption") or "")[:2200],
             json.dumps(instagram.get("hashtags") or [], ensure_ascii=False),
             int("youtube" in ready),
-            str((titles[0] if titles else export.get("clip_title")) or "ClipKaro Short")[:100],
+            str((titles[0] if titles else public_export["title"]) or "ClipKaro Short")[:100],
             str(youtube.get("description") or "")[:5000],
             json.dumps(youtube.get("hashtags") or [], ensure_ascii=False),
             "public", None, (prefs or {}).get("timezone") or "Asia/Kolkata", timestamp, timestamp,
         ),
     )
-    row = await fetch_one("SELECT * FROM post_karo_drafts WHERE id=?", (draft_id,))
+    row = await fetch_one(lookup, source_params)
     if not row:
-        raise HTTPException(500, "Post Karo could not prepare this Short.")
+        raise HTTPException(500, "Post Karo could not prepare this video.")
     return _draft_out(row, public_export)
 
 
@@ -444,6 +499,7 @@ def _draft_snapshot(row: dict[str, Any]) -> dict[str, Any]:
         "youtube_description": row.get("youtube_description") or "",
         "youtube_tags": _loads_list(row.get("youtube_tags")),
         "youtube_visibility": row.get("youtube_visibility") or "public",
+        **({"youtube_audience": row.get("youtube_audience")} if row.get("cartoon_project_id") else {}),
         "timezone": row.get("timezone") or "Asia/Kolkata",
     }
 
@@ -498,6 +554,8 @@ async def update_draft(
         revision = int(current.get("revision") or 1)
         if revision != body.expected_revision:
             raise HTTPException(409, "This Post Karo draft changed in another tab. Refresh before posting.")
+        if "youtube_audience" in values and not current.get("cartoon_project_id"):
+            raise HTTPException(422, "YouTube audience is editable for Cartoon Studio drafts.")
         if values:
             columns = ",".join(f"{key}=?" for key in values)
             await db.execute(
@@ -523,17 +581,7 @@ async def get_draft(draft_id: str, user: dict = Depends(current_user)) -> dict[s
     )
     if not row:
         raise HTTPException(404, "Post Karo draft not found.")
-    export = await _export_context(str(row["export_id"]), str(user["id"]))
-    public_export = {
-        "id": export["id"], "clip_id": export["clip_id"],
-        "title": export.get("clip_title") or "ClipKaro Short",
-        "project_title": export.get("project_title") or "Project",
-        "download_url": f"/api/v1/exports/{export['id']}/download",
-        "expires_at": export.get("expires_at"),
-        "resolution": export.get("resolution"),
-        "aspect_ratio": export.get("aspect_ratio"),
-    }
-    return _draft_out(row, public_export)
+    return _draft_out(row, await _draft_source(row, str(user["id"])))
 
 
 @router.post("/drafts/{draft_id}/publish", status_code=202)
@@ -569,9 +617,11 @@ async def publish_draft(
         raise HTTPException(404, "Post Karo draft not found.")
     if int(draft.get("revision") or 1) != body.expected_revision:
         raise HTTPException(409, "Your latest edits are not saved yet. Save them before posting.")
-    await _export_context(str(draft["export_id"]), str(user["id"]))
+    await _draft_source(draft, str(user["id"]))
     snapshot = _draft_snapshot(draft)
     _validate_publish_snapshot(snapshot, accounts)
+    if draft.get("cartoon_project_id") and snapshot["youtube_enabled"] and not snapshot.get("youtube_audience"):
+        raise HTTPException(422, "Choose whether this cartoon is made for kids before posting to YouTube.")
 
     snapshot["timezone"] = body.timezone
     snapshot["scheduled_for"] = scheduled_for

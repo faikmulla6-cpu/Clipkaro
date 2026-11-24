@@ -3,6 +3,7 @@ import json
 import uuid
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from fastapi.testclient import TestClient
@@ -22,6 +23,7 @@ from app.services.post_karo import (
     decrypt_api_key,
     encrypt_api_key,
     mask_api_key,
+    run_publication_job,
     sync_supported_accounts,
     validate_api_key_shape,
 )
@@ -98,6 +100,27 @@ def seed_ready_export() -> None:
         ("pk-export", "pk-clip", "demo-user", "test-export.mp4", "1080p", "9:16",
          "kinetic", 0, "ready", 100, None, created, expires),
     ))
+
+
+def seed_cartoon(*, aspect_ratio="9:16", status="ready") -> str:
+    project_id = str(uuid.uuid4())
+    output_key = f"users/demo-user/cartoons/{project_id}/final.mp4"
+    timestamp = datetime.now(timezone.utc).isoformat()
+    source = get_settings().storage_root / output_key
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"finished cartoon video")
+    asyncio.run(execute(
+        """INSERT INTO cartoon_projects(
+             id,user_id,title,prompt,duration_seconds,aspect_ratio,style,language,text_model,tts_model,
+             status,output_key,output_generation,created_at,updated_at
+           ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (
+            project_id, "demo-user", "Pip finds a gift", "A robot finds a gift.", 30, aspect_ratio,
+            "2d-cartoon", "en", "planner", "voice", status, output_key, str(source.stat().st_mtime_ns),
+            timestamp, timestamp,
+        ),
+    ))
+    return project_id
 
 
 def synthetic_zernio_key() -> str:
@@ -234,6 +257,7 @@ def test_post_karo_is_strictly_user_scoped(client: TestClient):
     created = client.post("/api/v1/post-karo/drafts/from-export/pk-export")
     assert created.status_code == 201
     draft_id = created.json()["id"]
+    cartoon_id = seed_cartoon()
 
     status = client.get("/api/v1/post-karo/status")
     assert status.status_code == 200
@@ -264,7 +288,69 @@ def test_post_karo_is_strictly_user_scoped(client: TestClient):
         "/api/v1/post-karo/drafts/from-export/pk-export",
         json={},
     ).status_code == 404
+    assert client.post(f"/api/v1/post-karo/drafts/from-cartoon/{cartoon_id}").status_code == 404
     assert client.get("/api/v1/post-karo/publications").json() == []
+
+
+def test_cartoon_post_karo_uses_finished_mp4_after_confirmation(client: TestClient):
+    login_demo(client)
+    seed_connection()
+    project_id = seed_cartoon()
+    base = "/api/v1/post-karo"
+    with patch.object(ZernioClient, "connect_url", new=AsyncMock(return_value="https://zernio.example/connect")) as connect:
+        callback = client.post(f"{base}/connect/youtube", params={"return_cartoon": project_id})
+        assert callback.status_code == 200
+        assert parse_qs(urlsplit(connect.await_args.args[2]).query)["return_cartoon"] == [project_id]
+
+    created = client.post(f"{base}/drafts/from-cartoon/{project_id}")
+    assert created.status_code == 201, created.text
+    draft = created.json()
+    assert draft["cartoon_project_id"] == project_id
+    assert draft["export_id"] is None
+    assert draft["youtube_title"] == "Pip finds a gift"
+    assert client.post(f"{base}/drafts/from-cartoon/{project_id}").json()["id"] == draft["id"]
+    draft_path = f"{base}/drafts/{draft['id']}"
+    assert client.get(draft_path).json()["export"]["id"] == project_id
+    assert client.get(f"{base}/publications").json() == []
+
+    request = {"expected_revision": 1, "request_id": str(uuid.uuid4()), "mode": "now"}
+    assert client.post(draft_path + "/publish", json=request).status_code == 422
+    saved = client.patch(draft_path, json={"expected_revision": 1, "youtube_audience": "kids"})
+    assert saved.status_code == 200, saved.text
+    request["expected_revision"] = saved.json()["revision"]
+    with patch("app.api.post_karo.dispatch_job", new=AsyncMock()) as dispatch:
+        published = client.post(draft_path + "/publish", json=request)
+        assert published.status_code == 202, published.text
+        publication = published.json()
+        assert client.post(draft_path + "/publish", json=request).json()["id"] == publication["id"]
+        dispatch.assert_awaited_once()
+
+    async def upload(source):
+        assert source.read_bytes() == b"finished cartoon video"
+        return "https://media.example/cartoon.mp4"
+
+    with (
+        patch.object(ZernioClient, "upload_media", new=AsyncMock(side_effect=upload)) as uploaded,
+        patch.object(ZernioClient, "create_post", new=AsyncMock(return_value=(201, {
+            "post": {"_id": "test-publication", "status": "published"},
+        }))) as post,
+    ):
+        asyncio.run(run_publication_job(publication["job_id"], publication["id"]))
+        uploaded.assert_awaited_once()
+        post.assert_awaited_once()
+        payload = post.await_args.args[0]
+        assert payload["mediaItems"] == [{"type": "video", "url": "https://media.example/cartoon.mp4"}]
+        youtube = next(item for item in payload["platforms"] if item["platform"] == "youtube")
+        assert youtube["platformSpecificData"]["madeForKids"] is True
+    assert client.get(f"{base}/publications/{publication['id']}").json()["status"] == "published"
+    assert asyncio.run(fetch_all("SELECT id FROM exports")) == []
+
+
+def test_cartoon_post_karo_rejects_unready_and_non_vertical_projects(client: TestClient):
+    login_demo(client)
+    base = "/api/v1/post-karo/drafts/from-cartoon/"
+    assert client.post(base + seed_cartoon(status="queued")).status_code == 409
+    assert client.post(base + seed_cartoon(aspect_ratio="16:9")).status_code == 422
 
 
 def test_post_karo_is_available_on_every_clipkaro_plan():
