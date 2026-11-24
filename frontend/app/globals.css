@@ -327,3 +327,37 @@
 @media(max-width:1200px){.ck-credit-ribbon{flex-wrap:wrap}.ck-ribbon-title{flex-basis:100%}.ck-balance-card{max-width:none}}
 @media(max-width:650px){.ck-credit-ribbon{padding:14px 17px;gap:9px}.ck-ribbon-title{flex-basis:100%}.ck-balance-card{min-width:0;flex-basis:100%}.ck-balance-detail strong{font-size:17px}}
 @media(prefers-reduced-motion:reduce){.ck-balance-card,.ck-allowance-notice{animation:none;transition:none}}
+
+.app-main-compact-balance { min-width: 0; }
+.app-main-compact-balance .app-header { height: 60px; min-height: 60px; }
+.app-main-compact-balance .page-content { padding-top: 16px; }
+.app-main-compact-balance .ck-credit-ribbon {
+  display: grid;
+  grid-template-columns: max-content repeat(2, minmax(0, 240px));
+  align-items: center;
+  gap: 8px;
+  padding-block: 7px;
+}
+.app-main-compact-balance .ck-ribbon-title { min-width: 0; padding-right: 6px; }
+.app-main-compact-balance .ck-balance-card {
+  min-width: 0;
+  max-width: none;
+  gap: 7px;
+  border-radius: 10px;
+  padding: 4px 6px;
+  box-shadow: none;
+}
+.app-main-compact-balance .ck-balance-card:hover { transform: none; box-shadow: none; }
+.app-main-compact-balance .ck-credit-icon { width: 29px; height: 29px; border-radius: 8px; }
+.app-main-compact-balance .ck-credit-icon svg { width: 14px; }
+.app-main-compact-balance .ck-balance-detail { gap: 1px; }
+.app-main-compact-balance .ck-balance-detail strong { font-size: 13px; white-space: normal; }
+.app-main-compact-balance .ck-balance-card button { min-height: 30px; padding-inline: 7px; }
+@media (max-width: 900px) {
+  .app-main-compact-balance .ck-credit-ribbon { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .app-main-compact-balance .ck-ribbon-title { grid-column: 1 / -1; }
+}
+@media (max-width: 450px) {
+  .app-main-compact-balance .ck-credit-icon { display: none; }
+  .app-main-compact-balance .ck-balance-card button svg { display: none; }
+}

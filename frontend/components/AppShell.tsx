@@ -11,7 +11,13 @@ import { CreditTopupDialog } from "./CreditTopupDialog";
 const workspace = [["Overview","/dashboard",Home],["Upload video","/upload",Upload],["Projects","/projects",FolderKanban],["Exports","/exports",Video],["Post Karo","/post-karo",Send],["Analytics","/analytics",BarChart3],["Creator Pulse","/creator-pulse",Activity],["Content calendar","/calendar",CalendarDays]] as const;
 const studio = [["Cartoon Studio","/cartoon-studio",Clapperboard],["Content Packs","/content-packs",FileText],["Templates","/templates",LayoutTemplate],["Brand kit","/brand",Palette]] as const;
 
-export function AppShell({ children, title, subtitle, action }: { children: React.ReactNode; title: string; subtitle?: string; action?: React.ReactNode }) {
+export function AppShell({ children, title, subtitle, action, compactBalance = false }: {
+  children: React.ReactNode;
+  title: string;
+  subtitle?: string;
+  action?: React.ReactNode;
+  compactBalance?: boolean;
+}) {
   const path=usePathname(); const [open,setOpen]=useState(false); const {user,loading,logout}=useAuth(); const [usage,setUsage]=useState<Usage|null>(null);
   const [purchase,setPurchase]=useState<"minutes"|"shorts"|null>(null);
   const [dismissedNotice,setDismissedNotice]=useState(false);
@@ -71,17 +77,17 @@ export function AppShell({ children, title, subtitle, action }: { children: Reac
       <div className="side-footer"><Link href="/help"><CircleHelp size={18}/> Help centre</Link><div className="profile-chip"><div className="avatar">{user.name.slice(0,2).toUpperCase()}</div><div><b>{user.name}</b><span>{user.plan==="mini_pass"&&usage?.pass_exhausted?"mini pass expired":`${user.plan} plan`}</span></div><button className="logout-icon" title="Sign out" aria-label="Sign out" onClick={logout}><LogOut size={15}/></button></div></div>
     </aside>
     {open&&<button type="button" className="sidebar-backdrop" onClick={()=>setOpen(false)} aria-label="Close workspace navigation"/>}
-    <main className="app-main">
+    <main className={compactBalance ? "app-main app-main-compact-balance" : "app-main"}>
       <header className="app-header">
         <button type="button" className="icon-btn mobile-only app-menu-button" onClick={()=>setOpen(true)} aria-label="Open workspace menu" aria-controls="workspace-navigation" aria-expanded={open}><Menu size={21}/></button>
         <div><h1>{title}</h1>{subtitle&&<p>{subtitle}</p>}</div>
         <div className="header-actions">{action}<div className="header-icon" title="No new notifications" aria-label="No new notifications"><Bell size={17}/></div><div className="status-live"><span/> Live</div></div>
       </header>
       {usage && <section aria-label="Available creation credits" className="ck-credit-ribbon">
-        <div className="ck-ribbon-title"><span className="ck-ribbon-kicker">YOUR STUDIO BALANCE</span><p>More creative room, on your terms.</p></div>
+        <div className="ck-ribbon-title"><span className="ck-ribbon-kicker">YOUR STUDIO BALANCE</span>{!compactBalance && <p>More creative room, on your terms.</p>}</div>
         <div className="ck-balance-card ck-balance-minutes">
           <div className="ck-credit-icon"><Clock3 size={18}/></div>
-          <div className="ck-balance-detail"><strong>{minutesLeft.toLocaleString(undefined,{maximumFractionDigits:1})}<small> min available</small></strong><span>Karo Minutes · ₹3 / min</span></div>
+          <div className="ck-balance-detail"><strong>{minutesLeft.toLocaleString(undefined,{maximumFractionDigits:1})}<small>{compactBalance ? " min" : " min available"}</small></strong><span>{compactBalance ? "Karo Minutes · ₹3/min" : "Karo Minutes · ₹3 / min"}</span></div>
           <button type="button" onClick={()=>setPurchase("minutes")} aria-label="Add Karo Minutes">Add <Plus size={13}/></button>
         </div>
         <div className="ck-balance-card ck-balance-shorts">
