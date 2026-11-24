@@ -13,7 +13,6 @@ import { animationStyles, type CartoonProject, isRendering, projectTitle, Projec
 type ProviderStatus = {
   openrouter: SavedProvider;
   nvidia?: SavedProvider;
-  storyboard_test_enabled?: boolean;
 };
 type SavedProvider = { connected: boolean; masked_key: string; validated_at?: string | null };
 type PlannerProvider = "nvidia" | "openrouter";
@@ -138,7 +137,7 @@ export default function CartoonStudioPage() {
     ?? (model.id === "system/edge-tts-urdu" && language === "ur"));
   const voiceChoices = selectedVoiceModel?.voices_by_language?.[language] || selectedVoiceModel?.voices || [];
   const voiceId = voiceChoices.includes(requestedVoiceId) ? requestedVoiceId : "";
-  const nvidiaAvailable = Boolean(provider?.storyboard_test_enabled && provider?.nvidia);
+  const nvidiaAvailable = Boolean(provider?.nvidia);
   const nvidiaConnected = Boolean(provider?.nvidia?.connected);
   const missingProvider = projectPlanner === "nvidia"
     ? (nvidiaConnected ? "" : "NVIDIA API")
@@ -271,7 +270,7 @@ export default function CartoonStudioPage() {
       <div className={styles.page}>
         <div className={styles.hero}>
           <div>
-            <span className={styles.eyebrow}><Sparkles size={13} /> CARTOON STUDIO · BETA</span>
+            <span className={styles.eyebrow}><Sparkles size={13} /> CARTOON STUDIO</span>
             <h2>Give your story <em>a voice.</em></h2>
             <p>Turn your story into a cartoon with character voices and synced captions.</p>
           </div>
@@ -413,14 +412,13 @@ export default function CartoonStudioPage() {
                             </div>
                           </form>
                         )}
-                        {isNvidia && <p className={styles.keyHelp}>NVIDIA checks access when you create. Use fictional prompts for preview evaluation.</p>}
+                        {isNvidia && <p className={styles.keyHelp}>NVIDIA checks access when you create a cartoon.</p>}
                         {feedback && <p className={feedback.error ? styles.keyError : styles.keyHelp}
                           role={feedback.error ? "alert" : "status"}>{feedback.message}</p>}
                       </section>
                     );
                   })}
                 </div>
-                {provider?.storyboard_test_enabled && !nvidiaAvailable && <p className={styles.keyHelp}>NVIDIA key setup is unavailable on this backend.</p>}
                 <div className={styles.securityNote}><LockKeyhole size={15} aria-hidden="true" /><span>Saved keys are encrypted. Only masked values are shown here.</span></div>
                 <div className={styles.billingNote}><Volume2 size={15} aria-hidden="true" /><span>Built-in voices need no speech API key.</span></div>
               </div>

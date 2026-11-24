@@ -104,6 +104,10 @@ def test_signup_token_is_hashed_compute_is_blocked_then_verification_unlocks(cli
     blocked = client.post("/api/v1/projects/upload", headers=_csrf(client))
     assert blocked.status_code == 403
     assert blocked.json()["code"] == "EMAIL_VERIFICATION_REQUIRED"
+    for path in ("/cartoon-studio/projects", "/cartoon-studio/projects/fixture/retry"):
+        cartoon = client.post("/api/v1" + path, headers=_csrf(client))
+        assert cartoon.status_code == 403
+        assert cartoon.json()["code"] == "EMAIL_VERIFICATION_REQUIRED"
 
     verified = client.post("/api/v1/auth/verify-email", json={"token": raw_token})
     assert verified.status_code == 200, verified.text

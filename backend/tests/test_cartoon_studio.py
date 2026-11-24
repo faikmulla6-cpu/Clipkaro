@@ -278,8 +278,11 @@ def cartoon_api_client(tmp_path):
         _auth_requests.clear()
 
 
-def test_cartoon_api_denies_accounts_without_explicit_access(cartoon_api_client):
+def test_cartoon_api_opens_to_regular_accounts_and_requires_sign_in(cartoon_api_client):
     client = cartoon_api_client
+    prefix = "/api/v1/cartoon-studio"
+    for route in ("providers", "projects", "tts-models"):
+        assert client.get(f"{prefix}/{route}").status_code == 401
     signup = client.post(
         "/api/v1/auth/signup",
         json={
@@ -290,9 +293,14 @@ def test_cartoon_api_denies_accounts_without_explicit_access(cartoon_api_client)
     )
     assert signup.status_code == 201, signup.text
     assert signup.json()["user"]["cartoon_studio_access_override"] is False
-    response = client.get("/api/v1/cartoon-studio/providers")
-    assert response.status_code == 403
-    assert "beta access is not enabled" in response.json()["detail"].lower()
+    providers = client.get(prefix + "/providers")
+    assert providers.status_code == 200
+    assert providers.headers["cache-control"] == "no-store"
+    assert providers.json()["openrouter"]["connected"] is False
+    assert providers.json()["nvidia"]["connected"] is False
+    assert providers.json()["storyboard_test_enabled"] is False
+    assert client.get(prefix + "/projects").json() == []
+    assert client.get(prefix + "/tts-models").status_code == 200
 
 
 def test_cartoon_api_connects_byok_and_queues_private_project(cartoon_api_client):
@@ -306,13 +314,9 @@ def test_cartoon_api_connects_byok_and_queues_private_project(cartoon_api_client
         },
     )
     assert signup.status_code == 201, signup.text
-    asyncio.run(execute(
-        "UPDATE users SET cartoon_studio_access_override=1 WHERE email=?",
-        ("cartoon-api@example.com",),
-    ))
     access = client.get("/api/v1/auth/me")
     assert access.status_code == 200, access.text
-    assert access.json()["cartoon_studio_access_override"] is True
+    assert access.json()["cartoon_studio_access_override"] is False
     csrf = {"X-CSRF-Token": client.cookies.get("csrf_token")}
     key = "sk-or-test-cartoon-api-key-with-sufficient-length"
     tts_model = "google/gemini-3.1-flash-tts-preview"
@@ -408,11 +412,16 @@ def test_cartoon_api_connects_byok_and_queues_private_project(cartoon_api_client
     assert client.get(path + "/editable-file").status_code == 404
     discover.assert_awaited_once()
 
+    assert client.post("/api/v1/auth/signup", json={
+        "name": "Another Creator", "email": "cartoon-other@example.com", "password": "Secure123",
+    }).status_code == 201
+    assert client.get("/api/v1/cartoon-studio/projects").json() == []
+    assert client.get("/api/v1/cartoon-studio/providers").json()["openrouter"]["connected"] is False
+    assert client.get(path).status_code == 404
+    assert client.get(path + "/download").status_code == 404
 
-def test_saved_nvidia_key_is_reused_and_independently_disconnected(cartoon_api_client, monkeypatch):
-    import httpx
-    from story_v3_fixtures import fixtures
 
+def test_regular_account_uses_saved_nvidia_key_and_can_disconnect(cartoon_api_client):
     client = cartoon_api_client
     prefix = "/api/v1/cartoon-studio"
     email = "saved-nvidia@example.com"
@@ -421,12 +430,9 @@ def test_saved_nvidia_key_is_reused_and_independently_disconnected(cartoon_api_c
     }).status_code == 201
     user = asyncio.run(fetch_one("SELECT id FROM users WHERE email=?", (email,)))
     user_id = user["id"]
-    asyncio.run(execute("UPDATE users SET cartoon_studio_access_override=1 WHERE id=?", (user_id,)))
     csrf = {"X-CSRF-Token": client.cookies.get("csrf_token")}
     key = "nvapi-test-nvidia-encrypted-connection"
     endpoint = prefix + "/providers/nvidia"
-    assert client.post(endpoint, headers=csrf, json={"api_key": key}).status_code == 403
-    monkeypatch.setattr(get_settings(), "cartoon_storyboard_test_user_ids", user_id)
     assert client.post(endpoint, json={"api_key": key}).status_code == 403
 
     invalid = client.post(endpoint, headers=csrf, json={"api_key": [key]})
@@ -444,27 +450,23 @@ def test_saved_nvidia_key_is_reused_and_independently_disconnected(cartoon_api_c
     assert credential["api_key_ciphertext"].startswith("v1:") and key not in credential["api_key_ciphertext"]
 
     idea = {"prompt": "A fox finds the lost ball.", "duration_seconds": "15", "language": "ur"}
-    upstream = httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(fixtures()["garden"])}}]})
-    with patch("app.api.cartoon_studio._models", new=AsyncMock(return_value=[])), patch(
-        "app.api.cartoon_studio.request_storyboard", new=AsyncMock(return_value=upstream),
-    ) as plan:
+    with patch("app.api.cartoon_studio.request_storyboard", new=AsyncMock()) as plan:
         assert client.get(prefix + "/tts-models").status_code == 200
         tested = client.post(prefix + "/storyboard-test", headers=csrf, data={**idea, "provider": "nvidia"})
-        assert tested.status_code == 200 and key not in tested.text
+        assert tested.status_code == 403 and key not in tested.text
         created = client.post(prefix + "/projects", headers=csrf, data={
             **idea, "story_planner": "nvidia",
         })
         assert created.status_code == 200 and key not in created.text
         project = created.json()
         assert project["status"] == "queued" and project["storyboard"] == {}
-        plan.assert_awaited_once()
-        assert plan.await_args.args[0] == key and plan.await_args.kwargs["provider"] == "nvidia"
+        plan.assert_not_awaited()
     job_payload = asyncio.run(fetch_one("SELECT payload_json FROM job_payloads WHERE job_id=?", (project["job_id"],)))
     assert key not in job_payload["payload_json"]
     assert client.delete(endpoint, headers=csrf).status_code == 204
     remaining = client.get(prefix + "/providers").json()
     assert not remaining["nvidia"]["connected"] and not remaining["openrouter"]["connected"]
-    missing = client.post(prefix + "/storyboard-test", headers=csrf, data={**idea, "provider": "nvidia"})
+    missing = client.post(prefix + "/projects", headers=csrf, data={**idea, "story_planner": "nvidia"})
     assert missing.status_code == 409
 
 

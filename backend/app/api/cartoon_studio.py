@@ -56,20 +56,9 @@ class ProviderKeyRequest(BaseModel):
     api_key: str = Field(min_length=20, max_length=500)
 
 
-async def cartoon_studio_user(user: dict = Depends(current_user)) -> dict:
-    if not bool(user.get("cartoon_studio_access_override")):
-        raise HTTPException(403, "Cartoon Studio beta access is not enabled for this account.")
-    return user
-
-
 def _storyboard_test_allowed(user: dict) -> bool:
     allowed = get_settings().cartoon_storyboard_test_user_ids.split(",")
     return str(user["id"]) in {value.strip() for value in allowed if value.strip()}
-
-
-def _require_nvidia_access(user: dict) -> None:
-    if not _storyboard_test_allowed(user):
-        raise HTTPException(403, "NVIDIA API rendering is enabled for preview evaluation accounts.")
 
 
 def _validate_nvidia_key(api_key: str) -> str:
@@ -80,7 +69,7 @@ def _validate_nvidia_key(api_key: str) -> str:
 
 
 @router.get("/capabilities")
-async def cartoon_capabilities(user: dict = Depends(cartoon_studio_user)) -> dict:
+async def cartoon_capabilities(user: dict = Depends(current_user)) -> dict:
     return {"engine_version": "story-v3", "storyboard_version": 3, "aspect_ratios": ["9:16", "16:9", "1:1", "4:5"]}
 
 
@@ -103,9 +92,10 @@ async def _provider_key(user_id: str, provider: str = "openrouter") -> str | Non
 
 
 async def _nvidia_key_for_request(user: dict, supplied: str) -> str:
-    _require_nvidia_access(user)
-    # Older preview forms still send a request-only key during rollout.
+    # Keep request-only credentials confined to the existing internal test flow.
     if supplied.strip():
+        if not _storyboard_test_allowed(user):
+            raise HTTPException(403, "Save your NVIDIA API key in API Keys & Advanced Settings.")
         return _validate_nvidia_key(supplied)
     key = await _provider_key(user["id"], "nvidia")
     if not key:
@@ -218,14 +208,13 @@ async def _nvidia_storage_ready() -> bool:
 
 
 @router.get("/providers")
-async def get_providers(response: Response, user: dict = Depends(cartoon_studio_user)) -> dict[str, Any]:
+async def get_providers(response: Response, user: dict = Depends(current_user)) -> dict[str, Any]:
     response.headers["Cache-Control"] = "no-store"
-    nvidia_enabled = _storyboard_test_allowed(user)
     status = {
-        "storyboard_test_enabled": nvidia_enabled,
+        "storyboard_test_enabled": _storyboard_test_allowed(user),
         "openrouter": await _provider_status(user["id"], "openrouter"),
     }
-    if nvidia_enabled and await _nvidia_storage_ready():
+    if await _nvidia_storage_ready():
         status["nvidia"] = await _provider_status(user["id"], "nvidia")
     return status
 
@@ -239,7 +228,7 @@ async def test_storyboard(
     style: str = Form("2d-cartoon"),
     provider: str = Form("openrouter"),
     nvidia_key: str = Form(""),
-    user: dict = Depends(cartoon_studio_user),
+    user: dict = Depends(current_user),
 ) -> dict:
     if not _storyboard_test_allowed(user):
         raise HTTPException(403, "Storyboard testing is not enabled for this account.")
@@ -305,7 +294,7 @@ async def _plan_in_request(
 
 
 @router.post("/providers/openrouter")
-async def save_openrouter_key(body: ProviderKeyRequest, user: dict = Depends(cartoon_studio_user)) -> dict[str, Any]:
+async def save_openrouter_key(body: ProviderKeyRequest, user: dict = Depends(current_user)) -> dict[str, Any]:
     key = body.api_key.strip()
     if not key.startswith("sk-or-"):
         raise HTTPException(422, "This does not look like an OpenRouter API key.")
@@ -315,8 +304,7 @@ async def save_openrouter_key(body: ProviderKeyRequest, user: dict = Depends(car
 
 
 @router.post("/providers/nvidia")
-async def save_nvidia_key(request: Request, response: Response, user: dict = Depends(cartoon_studio_user)) -> dict:
-    _require_nvidia_access(user)
+async def save_nvidia_key(request: Request, response: Response, user: dict = Depends(current_user)) -> dict:
     if not await _nvidia_storage_ready():
         raise HTTPException(503, "NVIDIA key setup is temporarily unavailable. Try again shortly.")
     response.headers["Cache-Control"] = "no-store"
@@ -359,7 +347,7 @@ async def _save_provider_key(user_id: str, provider: str, key: str) -> dict[str,
 
 
 @router.delete("/providers/openrouter", status_code=204)
-async def delete_openrouter_key(user: dict = Depends(cartoon_studio_user)) -> None:
+async def delete_openrouter_key(user: dict = Depends(current_user)) -> None:
     await execute(
         "DELETE FROM cartoon_provider_credentials WHERE user_id=? AND provider='openrouter'",
         (user["id"],),
@@ -367,8 +355,7 @@ async def delete_openrouter_key(user: dict = Depends(cartoon_studio_user)) -> No
 
 
 @router.delete("/providers/nvidia", status_code=204)
-async def delete_nvidia_key(user: dict = Depends(cartoon_studio_user)) -> None:
-    # A former preview participant can still delete a previously saved key.
+async def delete_nvidia_key(user: dict = Depends(current_user)) -> None:
     await execute(
         "DELETE FROM cartoon_provider_credentials WHERE user_id=? AND provider='nvidia'",
         (user["id"],),
@@ -376,7 +363,7 @@ async def delete_nvidia_key(user: dict = Depends(cartoon_studio_user)) -> None:
 
 
 @router.get("/tts-models")
-async def list_tts_models(user: dict = Depends(cartoon_studio_user)) -> dict[str, Any]:
+async def list_tts_models(user: dict = Depends(current_user)) -> dict[str, Any]:
     models = [
         {**item, "voices": item.get("supported_voices", [])}
         for item in built_in_voice_models()
@@ -397,7 +384,7 @@ async def create_cartoon_project(
     story_planner: str = Form("glm"),
     nvidia_key: str = Form(""),
     reference_video: UploadFile | None = File(default=None),
-    user: dict = Depends(cartoon_studio_user),
+    user: dict = Depends(current_user),
 ) -> dict[str, Any]:
     prompt = " ".join(prompt.split()).strip()
     if not 8 <= len(prompt) <= 3000:
@@ -416,7 +403,7 @@ async def create_cartoon_project(
     if story_planner == "nvidia":
         trial_key = await _nvidia_key_for_request(user, nvidia_key)
         if reference_video is not None:
-            raise HTTPException(422, "NVIDIA API rendering accepts a fictional text prompt only. Remove the reference video.")
+            raise HTTPException(422, "NVIDIA planning uses a text prompt. Remove the reference video or choose another planner.")
     requested_language = language
     language = resolve_cartoon_language(language, prompt)
     if story_planner != "nvidia" and not await _provider_key(user["id"]):
@@ -542,7 +529,7 @@ async def create_cartoon_project(
 
 
 @router.get("/projects")
-async def list_cartoon_projects(user: dict = Depends(cartoon_studio_user)) -> list[dict[str, Any]]:
+async def list_cartoon_projects(user: dict = Depends(current_user)) -> list[dict[str, Any]]:
     rows = await fetch_all(
         """SELECT p.*,j.status AS job_status,j.progress AS job_progress,
                   j.stage AS job_stage,j.message AS job_message
@@ -554,7 +541,7 @@ async def list_cartoon_projects(user: dict = Depends(cartoon_studio_user)) -> li
 
 
 @router.get("/projects/{project_id}")
-async def get_cartoon_project(project_id: str, user: dict = Depends(cartoon_studio_user)) -> dict[str, Any]:
+async def get_cartoon_project(project_id: str, user: dict = Depends(current_user)) -> dict[str, Any]:
     row = await _owned_project(project_id, user["id"])
     job = await event_payload(str(row.get("job_id") or "")) if row.get("job_id") else None
     return _project_out(row, job, include_timeline=True)
@@ -564,7 +551,7 @@ async def get_cartoon_project(project_id: str, user: dict = Depends(cartoon_stud
 async def retry_cartoon_project(
     project_id: str,
     background_tasks: BackgroundTasks,
-    user: dict = Depends(cartoon_studio_user),
+    user: dict = Depends(current_user),
 ) -> dict[str, Any]:
     row = await _owned_project(project_id, user["id"])
     if row.get("status") != "failed":
@@ -604,7 +591,7 @@ async def retry_cartoon_project(
 
 
 @router.get("/projects/{project_id}/download")
-async def cartoon_download_url(project_id: str, user: dict = Depends(cartoon_studio_user)) -> dict[str, Any]:
+async def cartoon_download_url(project_id: str, user: dict = Depends(current_user)) -> dict[str, Any]:
     row = await _owned_project(project_id, user["id"])
     if row.get("status") != "ready" or not row.get("output_key"):
         raise HTTPException(409, "This cartoon is not ready to download yet.")
@@ -622,7 +609,7 @@ async def cartoon_download_url(project_id: str, user: dict = Depends(cartoon_stu
 
 
 @router.get("/projects/{project_id}/file")
-async def download_cartoon_file(project_id: str, user: dict = Depends(cartoon_studio_user)) -> FileResponse:
+async def download_cartoon_file(project_id: str, user: dict = Depends(current_user)) -> FileResponse:
     row = await _owned_project(project_id, user["id"])
     if row.get("status") != "ready" or not row.get("output_key"):
         raise HTTPException(409, "This cartoon is not ready to download yet.")
