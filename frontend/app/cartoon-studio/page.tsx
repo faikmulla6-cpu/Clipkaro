@@ -3,63 +3,13 @@
 import { AppShell } from "@/components/AppShell";
 import { api, deleteJSON, postJSON } from "@/lib/api";
 import {
-  AlertCircle, Check, ChevronDown, Clapperboard, Clock3, Download, KeyRound, Loader2,
-  LockKeyhole, Play, RefreshCw, ShieldCheck, Sparkles, Volume2, WandSparkles,
+  AlertCircle, Check, ChevronDown, Clapperboard, KeyRound, Loader2,
+  LockKeyhole, Play, ShieldCheck, Sparkles, Volume2, WandSparkles, X,
 } from "lucide-react";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import styles from "./cartoon-studio.module.css";
+import { animationStyles, type CartoonProject, isRendering, projectTitle, ProjectStatus, StudioProject, StyleArtwork, styleLabel, voiceLabel } from "./studio-project";
 
-type Character = {
-  id: string;
-  name: string;
-  role: string;
-  species?: string;
-  voice_id?: string;
-  appearance?: { shirt_color?: string; hair_color?: string; skin_color?: string };
-};
-type Scene = {
-  id: string;
-  scene_title: string;
-  environment: string;
-  action: string;
-  dialogue: string;
-  speaker_id: string;
-  start?: number;
-  duration?: number;
-  actions?: {type: string; character_id: string; start: number; end: number}[];
-  speech?: {track: string; text: string; speaker_id: string}[];
-};
-type Storyboard = {
-  title?: string;
-  summary?: string;
-  characters?: Character[];
-  scenes?: Scene[];
-};
-type CaptionCue = {
-  id: string;
-  speaker: string;
-  text: string;
-  start_seconds: number;
-  end_seconds: number;
-};
-type CartoonProject = {
-  id: string;
-  title: string;
-  prompt: string;
-  duration_seconds: number;
-  aspect_ratio: string;
-  style: string;
-  language: string;
-  text_model?: string;
-  status: string;
-  progress: number;
-  stage: string;
-  error?: string | null;
-  storyboard?: Storyboard;
-  caption_timeline?: CaptionCue[] | null;
-  line_timed_captions?: boolean;
-  created_at?: string;
-};
 type ProviderStatus = {
   openrouter: SavedProvider;
   nvidia?: SavedProvider;
@@ -70,35 +20,13 @@ type PlannerProvider = "nvidia" | "openrouter";
 type ProjectPlanner = "free" | "glm" | "nvidia";
 const PROVIDER_NAMES: Record<PlannerProvider, string> = { openrouter: "OpenRouter", nvidia: "NVIDIA API" };
 const EMPTY_PROVIDER: SavedProvider = { connected: false, masked_key: "" };
-const PROJECT_PLANNER_NAMES: Record<string, string> = {
-  "inclusionai/ling-3.2-flash:free": "Ling 3.2 Flash · Free planning",
-  "z-ai/glm-5.3-flash": "GLM",
-  "nvidia/nemotron-3.5-super-vl": "NVIDIA Nemotron",
-  "nvidia/nemotron-3.5-super-vl-120b-a12b": "NVIDIA API",
+const STORY_PLANNERS: Record<ProjectPlanner, { label: string; hint: string }> = {
+  free: { label: "Quick · Free", hint: "A quick starting point for everyday stories." },
+  glm: { label: "Detailed · Paid", hint: "Use this for stories with more direction. Your provider charges for planning." },
+  nvidia: { label: "Detailed · NVIDIA", hint: "Use your NVIDIA account to plan a text-only story." },
 };
 type TTSModel = { id: string; voices: string[]; languages: string[]; voices_by_language?: Record<string, string[]> };
 type TTSResponse = { models: TTSModel[] };
-
-const STAGE_LABELS: Record<string, string> = {
-  queued: "Waiting in queue",
-  preparing: "Preparing your project",
-  story_planning: "Writing your story",
-  story_ready: "Story and characters ready",
-  voice_generation: "Creating character voices",
-  animating: "Building character animation",
-  checking: "Checking scenes",
-  rendering: "Rendering your video",
-  uploading: "Saving your MP4",
-  ready: "Ready to download",
-  failed: "Needs attention",
-};
-
-function formatCueTime(seconds: number) {
-  const milliseconds = Math.round(seconds * 1000);
-  const minutes = String(Math.floor(milliseconds / 60000)).padStart(2, "0");
-  const wholeSeconds = String(Math.floor(milliseconds / 1000) % 60).padStart(2, "0");
-  return minutes + ":" + wholeSeconds + "." + String(milliseconds % 1000).padStart(3, "0");
-}
 
 export default function CartoonStudioPage() {
   const [provider, setProvider] = useState<ProviderStatus | null>(null);
@@ -122,11 +50,23 @@ export default function CartoonStudioPage() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [createError, setCreateError] = useState("");
+  const [libraryFilter, setLibraryFilter] = useState<"recent" | "failed">("recent");
+  const advancedRef = useRef<HTMLDetailsElement>(null);
+  const advancedSummaryRef = useRef<HTMLElement>(null);
+  const referenceInputRef = useRef<HTMLInputElement>(null);
+  const projectRequest = useRef(0);
 
-  const mergeProject = useCallback((project: CartoonProject) => {
-    setSelected(project);
-    setProjects((current) => [project, ...current.filter((item) => item.id !== project.id)]);
+  const updateProject = useCallback((project: CartoonProject) => {
+    setProjects(current => current.some(item => item.id === project.id)
+      ? current.map(item => item.id === project.id ? project : item)
+      : [project, ...current]);
+    setSelected(current => current?.id === project.id ? project : current);
   }, []);
+
+  function showProject(project: CartoonProject) {
+    setSelected(project);
+    updateProject(project);
+  }
 
   const loadModels = useCallback(async () => {
     const response = await api<TTSResponse>("/cartoon-studio/tts-models");
@@ -142,8 +82,16 @@ export default function CartoonStudioPage() {
       if (cancelled) return;
       setProvider(providerData);
       setProjects(projectData || []);
-      const active = (projectData || []).find((item) => item.status === "processing" || item.status === "queued");
-      if (active) setSelected(active);
+      const projects = projectData || [];
+      const initial = projects.find(isRendering) || projects.find(project => project.status === "ready");
+      if (initial) {
+        setSelected(current => current || initial);
+        if (initial.status === "ready") {
+          api<CartoonProject>("/cartoon-studio/projects/" + initial.id)
+            .then(project => { if (!cancelled && projectRequest.current === 0) updateProject(project); })
+            .catch(() => null);
+        }
+      }
       setLoading(false);
     }).catch((cause) => {
       if (!cancelled) {
@@ -152,7 +100,7 @@ export default function CartoonStudioPage() {
       }
     });
     return () => { cancelled = true; };
-  }, []);
+  }, [updateProject]);
 
   useEffect(() => {
     loadModels().catch((cause) => {
@@ -160,21 +108,31 @@ export default function CartoonStudioPage() {
     });
   }, [loadModels]);
 
+  const renderingId = projects.find(isRendering)?.id;
   useEffect(() => {
-    if (!selected || (selected.status !== "queued" && selected.status !== "processing")) return;
-    const timer = window.setInterval(() => {
-      api<CartoonProject>("/cartoon-studio/projects/" + selected.id)
-        .then(mergeProject)
-        .catch(() => null);
+    if (!renderingId) return;
+    let cancelled = false;
+    let pending = false;
+    const timer = window.setInterval(async () => {
+      if (pending) return;
+      pending = true;
+      try {
+        const project = await api<CartoonProject>("/cartoon-studio/projects/" + renderingId);
+        if (!cancelled) updateProject(project);
+      } catch {
+        // Keep showing the last known status while the connection recovers.
+      } finally {
+        pending = false;
+      }
     }, 2500);
-    return () => window.clearInterval(timer);
-  }, [selected?.id, selected?.status, mergeProject]);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [renderingId, updateProject]);
 
-  const activeCharacters = useMemo(
-    () => selected?.storyboard?.characters || [],
-    [selected?.storyboard?.characters],
-  );
-  const isRendering = selected?.status === "queued" || selected?.status === "processing";
+  const failedCount = projects.filter(project => project.status === "failed").length;
+  const visibleProjects = projects.filter(project => (project.status === "failed") === (libraryFilter === "failed"));
   const connected = Boolean(provider?.openrouter.connected);
   const selectedVoiceModel = models.find(model => model.languages?.includes(language)
     ?? (model.id === "system/edge-tts-urdu" && language === "ur"));
@@ -225,7 +183,7 @@ export default function CartoonStudioPage() {
 
   async function createCartoon(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy || providerBusy || missingProvider) return;
+    if (busy || renderingId || providerBusy || missingProvider) return;
     setCreateError("");
     if (prompt.trim().length < 8) {
       setCreateError("Describe your story in at least 8 characters.");
@@ -245,9 +203,11 @@ export default function CartoonStudioPage() {
       body.set("story_planner", projectPlanner);
       if (projectPlanner !== "nvidia" && reference) body.set("reference_video", reference);
       const project = await api<CartoonProject>("/cartoon-studio/projects", { method: "POST", body });
-      mergeProject(project);
+      projectRequest.current += 1;
+      showProject(project);
       setNotice("Your cartoon is queued. You can leave this page while it renders.");
       setReference(null);
+      if (referenceInputRef.current) referenceInputRef.current.value = "";
     } catch (cause) {
       setCreateError(cause instanceof Error ? cause.message : "Cartoon generation could not start.");
     } finally {
@@ -256,17 +216,25 @@ export default function CartoonStudioPage() {
   }
 
   async function openProject(projectId: string) {
+    const request = ++projectRequest.current;
     setError("");
     try {
       const project = await api<CartoonProject>("/cartoon-studio/projects/" + projectId);
-      mergeProject(project);
+      if (request !== projectRequest.current) return;
+      showProject(project);
+      document.getElementById("studio-current-project")?.focus();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Project details could not be loaded.");
+      if (request === projectRequest.current) setError(cause instanceof Error ? cause.message : "Project details could not be loaded.");
     }
   }
 
+  function openAdvanced() {
+    if (advancedRef.current) advancedRef.current.open = true;
+    advancedSummaryRef.current?.focus();
+  }
+
   async function retryProject() {
-    if (!selected || busy) return;
+    if (!selected || busy || renderingId) return;
     setBusy(true);
     setError("");
     try {
@@ -274,7 +242,8 @@ export default function CartoonStudioPage() {
         "/cartoon-studio/projects/" + selected.id + "/retry",
         { method: "POST" },
       );
-      mergeProject(project);
+      projectRequest.current += 1;
+      showProject(project);
       setNotice("Retry queued. Saved storyboard and completed voice files will be reused.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The project could not be retried.");
@@ -297,246 +266,204 @@ export default function CartoonStudioPage() {
   return (
     <AppShell
       title="Cartoon Studio"
-      subtitle="Create original animated stories with consistent characters and their own voices."
+      compactBalance
     >
       <div className={styles.page}>
         <div className={styles.hero}>
           <div>
             <span className={styles.eyebrow}><Sparkles size={13} /> CARTOON STUDIO · BETA</span>
             <h2>Give your story <em>a voice.</em></h2>
-            <p>Choose a story planner and describe your scene. Each character gets a saved voice, and HyperFrames builds the animation.</p>
+            <p>Turn your story into a cartoon with character voices and synced captions.</p>
           </div>
-          <div className={styles.heroMark}><Clapperboard size={32} /><span>2D<br />ANIMATION</span></div>
+          <div className={styles.heroMark} aria-hidden="true"><Clapperboard size={30} /></div>
         </div>
 
         {error && <div className={styles.alertError} role="alert"><AlertCircle size={17} />{error}<button onClick={() => setError("")} aria-label="Dismiss error">×</button></div>}
-        {notice && <div className={styles.alertSuccess} role="status"><Check size={17} />{notice}<button onClick={() => setNotice("")} aria-label="Dismiss message">×</button></div>}
+        {notice && <div className={styles.toast}>
+          <Check size={17} aria-hidden="true" />
+          <span role="status">{notice}</span>
+          <button type="button" onClick={() => setNotice("")} aria-label="Dismiss queued notification"><X size={17} aria-hidden="true" /></button>
+        </div>}
 
         <div className={styles.grid}>
-          <section className={styles.panel}>
-            <div className={styles.panelHead}>
-              <div><span className={styles.kicker}>01 · YOUR STORY</span><h3>Create a cartoon</h3></div>
-              <span className={styles.freeBadge}>No image-generation credits</span>
-            </div>
-            <form onSubmit={createCartoon} className={styles.form}>
-              <label className={styles.field}>
-                <span>What should happen in your story?</span>
-                <textarea
-                  value={prompt}
-                  onChange={(event) => setPrompt(event.target.value)}
-                  placeholder="Example: A curious little fox finds a glowing map in the forest and asks a wise owl for help..."
-                  rows={5}
-                  maxLength={3000}
-                  required
-                />
-                <small>{prompt.length}/3000 · Original, family-friendly stories work best.</small>
-              </label>
-              <div className={styles.fieldsTwo}>
-                <label className={styles.field}><span>Video length</span>
-                  <select value={duration} onChange={(event) => setDuration(Number(event.target.value))}>
-                    <option value={15}>15 seconds</option><option value={30}>30 seconds</option>
-                    <option value={45}>45 seconds</option><option value={60}>60 seconds</option>
-                  </select>
+          <div className={styles.creationColumn}>
+            <section className={styles.panel} aria-labelledby="studio-create-title">
+              <div className={styles.panelHead}><h3 id="studio-create-title">Create a cartoon</h3></div>
+              <form onSubmit={createCartoon} className={styles.form}>
+                <label className={styles.field}>
+                  <span>What should happen in your story?</span>
+                  <textarea
+                    value={prompt}
+                    onChange={(event) => setPrompt(event.target.value)}
+                    placeholder="Example: A curious little fox finds a glowing map in the forest and asks a wise owl for help..."
+                    rows={3}
+                    maxLength={3000}
+                    required
+                  />
+                  <small>{prompt.length}/3000 · Original, family-friendly stories work best.</small>
                 </label>
-                <label className={styles.field}><span>Aspect ratio</span>
-                  <select value={ratio} onChange={(event) => setRatio(event.target.value)}>
-                    <option value="9:16">9:16 · Reels / Shorts</option>
-                    <option value="16:9">16:9 · YouTube</option><option value="1:1">1:1 · Square</option>
-                    <option value="4:5">4:5 · Portrait posts</option>
-                  </select>
-                </label>
-                <label className={styles.field}><span>Animation style</span>
-                  <select value={style} onChange={(event) => {
-                    const nextStyle = event.target.value;
-                    setStyle(nextStyle);
-                    if (nextStyle === "cinematic-jannat") {
-                      setLanguage("ur");
-                    }
-                  }}>
-                    <option value="2d-cartoon">2D Cartoon</option><option value="storybook">Storybook</option>
-                    <option value="anime-inspired">Anime-inspired</option><option value="flat-vector">Flat vector</option><option value="cinematic-jannat">Jannat cinematic (reference)</option>
-                  </select>
-                  {style === "cinematic-jannat" && (
-                    <small className={styles.languageHint}>A suspense storytelling preset with consistent characters, timed movement and Urdu word-timed voices. Supports every aspect ratio.</small>
-                  )}
-                </label>
-                <label className={styles.field}><span>Story language</span>
-                  <select value={language} onChange={(event) => setLanguage(event.target.value)} disabled={style === "cinematic-jannat"}>
-                    <option value="hi">Hindi</option><option value="hinglish">Hinglish</option>
-                    <option value="en">English</option><option value="mr">Marathi</option><option value="ur">Urdu</option><option value="auto">Auto</option>
-                  </select>
-                </label>
-              </div>
-              <label className={styles.field}><span>Story planner</span>
-                <select value={projectPlanner} onChange={(event) => setProjectPlanner(event.target.value as ProjectPlanner)} disabled={busy}>
-                  <option value="free">Ling 3.2 Flash · Free planning</option>
-                  <option value="glm">GLM via OpenRouter · Paid planning</option>
-                  {nvidiaAvailable && <option value="nvidia">NVIDIA API</option>}
-                </select>
-                {projectPlanner === "free" && <small>Planning uses the free OpenRouter model.</small>}
-              </label>
-              {voiceChoices.length > 0 && <label className={styles.field}><span>Narrator / lead voice</span>
-                <select value={voiceId} onChange={(event) => setVoiceId(event.target.value)}>
-                  <option value="">Match the character automatically</option>
-                  {voiceChoices.map(voice => <option key={voice} value={voice}>{voice}</option>)}
-                </select>
-                <small>ClipKaro voices the other characters and syncs the captions automatically.</small>
-              </label>}
-              {projectPlanner !== "nvidia" && <label className={styles.fileField}>
-                <span>Optional reference video</span>
-                <input type="file" accept="video/mp4,video/quicktime,video/webm,video/x-matroska" onChange={(event) => setReference(event.target.files?.[0] || null)} />
-                <small>{reference ? reference.name : "Up to 50 MB. Used only to analyse visual style; not required."}</small>
-              </label>}
-              <button className={styles.primaryButton} type="submit" disabled={Boolean(missingProvider || busy || providerBusy)}>
-                {busy ? <Loader2 className={styles.spin} size={18} /> : <WandSparkles size={18} />}
-                {busy ? "Queuing your cartoon…" : "Create my cartoon"}
-              </button>
-              {createError && <div className={styles.alertError} role="alert"><AlertCircle size={17} />{createError}</div>}
-              {missingProvider && <a className={styles.setupLink} href="#studio-api-keys">Connect your {missingProvider} key</a>}
-            </form>
-          </section>
-
-          <div className={styles.sideColumn}>
-            <section className={styles.providerPanel} id="studio-api-keys" aria-labelledby="studio-api-keys-title">
-              <div className={styles.panelHead}>
-                <div><h3 id="studio-api-keys-title">API keys</h3><p>Connect once and use your saved keys for every cartoon.</p></div>
-                <span className={styles.keysIcon}><KeyRound size={20} aria-hidden="true" /></span>
-              </div>
-              <div className={styles.providerList}>
-                {(nvidiaAvailable ? (["openrouter", "nvidia"] as const) : (["openrouter"] as const)).map((name) => {
-                  const isNvidia = name === "nvidia";
-                  const key = isNvidia ? nvidiaKey : apiKey;
-                  const saved = provider?.[name];
-                  const feedback = providerFeedback?.provider === name ? providerFeedback : null;
-                  return (
-                    <section className={styles.providerCard} key={name} aria-labelledby={`studio-key-${name}`}>
-                      <div className={styles.providerCardHead}>
-                        <div><h4 id={`studio-key-${name}`}>{PROVIDER_NAMES[name]}</h4>
-                          <p>{isNvidia ? "Nemotron story planning" : "Ling and GLM story planning"}</p>
-                        </div>
-                        {saved?.connected && <span className={styles.savedKey}><ShieldCheck size={13} aria-hidden="true" />{isNvidia ? "Saved" : "Connected"}</span>}
-                      </div>
-                      {saved?.connected ? (
-                        <div className={styles.savedKeyRow}>
-                          <code>{saved.masked_key}</code>
-                          <button type="button" className={styles.textButton} aria-label={`Disconnect ${PROVIDER_NAMES[name]}`}
-                            onClick={() => void disconnectProvider(name)} disabled={busy || Boolean(providerBusy)}>
-                            {providerBusy === name ? "Disconnecting…" : "Disconnect"}
-                          </button>
-                        </div>
-                      ) : (
-                        <form onSubmit={(event) => void connectProvider(event, name)} className={styles.keyForm}>
-                          <label className={styles.field}><span>{isNvidia ? "NVIDIA API key" : "OpenRouter API key"}</span>
-                            <input type="password" value={key} onChange={(event) => (isNvidia ? setNvidiaKey : setApiKey)(event.target.value)}
-                              placeholder={isNvidia ? "nvapi-…" : "sk-or-v1-…"} autoComplete="off" spellCheck={false}
-                              minLength={20} maxLength={500} required disabled={Boolean(providerBusy)} />
-                          </label>
-                          <div className={styles.keyActions}>
-                            <button className={styles.secondaryButton} type="submit" disabled={!provider || busy || Boolean(providerBusy) || !key.trim()}>
-                              {providerBusy === name ? <Loader2 className={styles.spin} size={15} aria-hidden="true" /> : null}
-                              {isNvidia ? "Save key" : "Connect key"}
-                            </button>
-                            <a href={isNvidia ? "https://build.nvidia.com/nvidia/nemotron-3.5-super-vl-120b-a12b" : "https://openrouter.ai/keys"}
-                              target="_blank" rel="noreferrer">Get a key ↗</a>
-                          </div>
-                        </form>
-                      )}
-                      {isNvidia && <p className={styles.keyHelp}>NVIDIA checks access when you create. Use fictional prompts for preview evaluation.</p>}
-                      {feedback && <p className={feedback.error ? styles.keyError : styles.keyHelp}
-                        role={feedback.error ? "alert" : "status"}>{feedback.message}</p>}
-                    </section>
-                  );
-                })}
-              </div>
-              {provider?.storyboard_test_enabled && !nvidiaAvailable && <p className={styles.keyHelp}>NVIDIA key setup is unavailable on this backend.</p>}
-              <div className={styles.securityNote}><LockKeyhole size={15} aria-hidden="true" /><span>Saved keys are encrypted. Only masked values are shown here.</span></div>
-              <div className={styles.billingNote}><Volume2 size={15} aria-hidden="true" /><span>Built-in voices need no speech API key.</span></div>
+                <div className={styles.fieldsTwo}>
+                  <label className={styles.field}><span>Video length</span>
+                    <select value={duration} onChange={(event) => setDuration(Number(event.target.value))}>
+                      <option value={15}>15 seconds</option><option value={30}>30 seconds</option>
+                      <option value={45}>45 seconds</option><option value={60}>60 seconds</option>
+                    </select>
+                  </label>
+                  <label className={styles.field}><span>Aspect ratio</span>
+                    <select value={ratio} onChange={(event) => setRatio(event.target.value)}>
+                      <option value="9:16">9:16 · Vertical</option>
+                      <option value="16:9">16:9 · Wide</option><option value="1:1">1:1 · Square</option>
+                      <option value="4:5">4:5 · Portrait</option>
+                    </select>
+                  </label>
+                  <label className={styles.field}><span>Animation style</span>
+                    <span className={styles.styleControl}>
+                      <StyleArtwork style={style} className={styles.styleSwatch} />
+                      <select value={style} onChange={event => {
+                        const nextStyle = event.target.value;
+                        setStyle(nextStyle);
+                        if (nextStyle === "cinematic-jannat") setLanguage("ur");
+                      }}>
+                        {animationStyles.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
+                      </select>
+                    </span>
+                    {style === "cinematic-jannat" && <small className={styles.languageHint}>Suspense preset with Urdu voices.</small>}
+                  </label>
+                  <label className={styles.field}><span>Story language</span>
+                    <select value={language} onChange={(event) => setLanguage(event.target.value)} disabled={style === "cinematic-jannat"}>
+                      <option value="hi">Hindi</option><option value="hinglish">Hinglish</option>
+                      <option value="en">English</option><option value="mr">Marathi</option><option value="ur">Urdu</option><option value="auto">Auto</option>
+                    </select>
+                  </label>
+                </div>
+                <div className={`${styles.fieldsTwo} ${styles.plannerFields}`}>
+                  <label className={styles.field}><span>Story planner</span>
+                    <select value={projectPlanner} onChange={event => setProjectPlanner(event.target.value as ProjectPlanner)} disabled={busy}>
+                      {Object.entries(STORY_PLANNERS).filter(([value]) => value !== "nvidia" || nvidiaAvailable)
+                        .map(([value, planner]) => <option key={value} value={value}>{planner.label}</option>)}
+                    </select>
+                    <small>{STORY_PLANNERS[projectPlanner].hint}</small>
+                  </label>
+                  {voiceChoices.length > 0 && <label className={styles.field}><span>Narrator / lead voice</span>
+                    <select value={voiceId} onChange={event => setVoiceId(event.target.value)}>
+                      <option value="">Automatic</option>
+                      {voiceChoices.map(voice => <option key={voice} value={voice}>{voiceLabel(voice)}</option>)}
+                    </select>
+                  </label>}
+                </div>
+                <button className={styles.primaryButton} type="submit" disabled={Boolean(missingProvider || renderingId || busy || providerBusy)}>
+                  {busy ? <Loader2 className={styles.spin} size={18} /> : <WandSparkles size={18} />}
+                  {busy ? "Queuing your cartoon…" : renderingId ? "Cartoon rendering…" : "Create my cartoon"}
+                </button>
+                {createError && <div className={styles.alertError} role="alert"><AlertCircle size={17} />{createError}</div>}
+                {provider && missingProvider && <button className={styles.setupLink} type="button" onClick={openAdvanced}>Connect a planner key</button>}
+                {projectPlanner !== "nvidia" && <details className={styles.referencePanel}>
+                  <summary>Reference video {reference ? "added" : "(optional)"}<ChevronDown size={15} aria-hidden="true" /></summary>
+                  <label className={styles.fileField}>
+                    <span>Choose a reference video</span>
+                    <input ref={referenceInputRef} type="file" accept="video/mp4,video/quicktime,video/webm,video/x-matroska" onChange={event => setReference(event.target.files?.[0] || null)} />
+                    <small>{reference ? reference.name : "Up to 50 MB. Used to analyse visual style."}</small>
+                  </label>
+                </details>}
+              </form>
             </section>
 
+            <details ref={advancedRef} className={styles.providerPanel}>
+              <summary ref={advancedSummaryRef}>
+                <span><KeyRound size={17} aria-hidden="true" /> API Keys &amp; Advanced Settings</span>
+                <ChevronDown size={16} aria-hidden="true" />
+              </summary>
+              <div className={styles.providerContent}>
+                <div className={styles.providerList}>
+                  {(nvidiaAvailable ? (["openrouter", "nvidia"] as const) : (["openrouter"] as const)).map((name) => {
+                    const isNvidia = name === "nvidia";
+                    const key = isNvidia ? nvidiaKey : apiKey;
+                    const saved = provider?.[name];
+                    const feedback = providerFeedback?.provider === name ? providerFeedback : null;
+                    return (
+                      <section className={styles.providerCard} key={name} aria-labelledby={`studio-key-${name}`}>
+                        <div className={styles.providerCardHead}>
+                          <div><h4 id={`studio-key-${name}`}>{PROVIDER_NAMES[name]}</h4>
+                            <p>{isNvidia ? "Detailed NVIDIA planning" : "Quick and detailed planning"}</p>
+                          </div>
+                          {saved?.connected && <span className={styles.savedKey}><ShieldCheck size={13} aria-hidden="true" />{isNvidia ? "Saved" : "Connected"}</span>}
+                        </div>
+                        {saved?.connected ? (
+                          <div className={styles.savedKeyRow}>
+                            <code>{saved.masked_key}</code>
+                            <button type="button" className={styles.textButton} aria-label={`Disconnect ${PROVIDER_NAMES[name]}`}
+                              onClick={() => void disconnectProvider(name)} disabled={busy || Boolean(providerBusy)}>
+                              {providerBusy === name ? "Disconnecting…" : "Disconnect"}
+                            </button>
+                          </div>
+                        ) : (
+                          <form onSubmit={(event) => void connectProvider(event, name)} className={styles.keyForm}>
+                            <label className={styles.field}><span>{isNvidia ? "NVIDIA API key" : "OpenRouter API key"}</span>
+                              <input type="password" value={key} onChange={(event) => (isNvidia ? setNvidiaKey : setApiKey)(event.target.value)}
+                                placeholder={isNvidia ? "nvapi-…" : "sk-or-v1-…"} autoComplete="off" spellCheck={false}
+                                minLength={20} maxLength={500} required disabled={Boolean(providerBusy)} />
+                            </label>
+                            <div className={styles.keyActions}>
+                              <button className={styles.secondaryButton} type="submit" disabled={!provider || busy || Boolean(providerBusy) || !key.trim()}>
+                                {providerBusy === name ? <Loader2 className={styles.spin} size={15} aria-hidden="true" /> : null}
+                                {isNvidia ? "Save key" : "Connect key"}
+                              </button>
+                              <a href={isNvidia ? "https://build.nvidia.com/nvidia/nemotron-3.5-super-vl-120b-a12b" : "https://openrouter.ai/keys"}
+                                target="_blank" rel="noreferrer">Get a key ↗</a>
+                            </div>
+                          </form>
+                        )}
+                        {isNvidia && <p className={styles.keyHelp}>NVIDIA checks access when you create. Use fictional prompts for preview evaluation.</p>}
+                        {feedback && <p className={feedback.error ? styles.keyError : styles.keyHelp}
+                          role={feedback.error ? "alert" : "status"}>{feedback.message}</p>}
+                      </section>
+                    );
+                  })}
+                </div>
+                {provider?.storyboard_test_enabled && !nvidiaAvailable && <p className={styles.keyHelp}>NVIDIA key setup is unavailable on this backend.</p>}
+                <div className={styles.securityNote}><LockKeyhole size={15} aria-hidden="true" /><span>Saved keys are encrypted. Only masked values are shown here.</span></div>
+                <div className={styles.billingNote}><Volume2 size={15} aria-hidden="true" /><span>Built-in voices need no speech API key.</span></div>
+              </div>
+            </details>
+          </div>
+
+          <div className={styles.sideColumn}>
+            <StudioProject project={selected} busy={busy || Boolean(renderingId)} onDownload={downloadProject} onRetry={retryProject} />
+
             <section className={styles.stepsPanel}>
-              <span className={styles.kicker}>HOW IT WORKS</span>
-              <div className={styles.step}><span>1</span><div><strong>Build the characters</strong><small>Structured character designs, reusable across scenes.</small></div></div>
-              <div className={styles.step}><span>2</span><div><strong>Give each one a voice</strong><small>One saved voice ID per character, not one random voice per line.</small></div></div>
-              <div className={styles.step}><span>3</span><div><strong>Animate and export</strong><small>SVG rigs, GSAP motion, HyperFrames and FFmpeg.</small></div></div>
+              <h3>How it works</h3>
+              <div className={styles.step}><span>1</span><div><strong>Describe your story</strong><small>Add the characters, setting, and what happens next.</small></div></div>
+              <div className={styles.step}><span>2</span><div><strong>Bring it to life</strong><small>ClipKaro animates the scenes and gives each character a consistent voice.</small></div></div>
+              <div className={styles.step}><span>3</span><div><strong>Watch and download</strong><small>Preview the finished cartoon with captions or save the MP4.</small></div></div>
             </section>
           </div>
         </div>
 
-        {selected && (
-          <section className={styles.projectPanel}>
-            <div className={styles.panelHead}>
-              <div><span className={styles.kicker}>03 · CURRENT PROJECT</span><h3>{selected.storyboard?.title || selected.title}</h3>
-                {selected.text_model && <small>{PROJECT_PLANNER_NAMES[selected.text_model]}</small>}
-              </div>
-              <span className={selected.status === "ready" ? styles.statusReady : selected.status === "failed" ? styles.statusFailed : styles.statusRunning}>
-                {selected.status === "ready" ? "Ready" : selected.status === "failed" ? "Failed" : "Rendering"}
-              </span>
+        <section className={styles.recentPanel} aria-labelledby="studio-library-title">
+          <div className={styles.panelHead}>
+            <h3 id="studio-library-title">Recent cartoons</h3>
+            <div className={styles.libraryFilters} role="group" aria-label="Filter recent cartoons">
+              <button type="button" aria-pressed={libraryFilter === "recent"} onClick={() => setLibraryFilter("recent")}>Recent <span>{projects.length - failedCount}</span></button>
+              <button type="button" aria-pressed={libraryFilter === "failed"} onClick={() => setLibraryFilter("failed")}>Failed <span>{failedCount}</span></button>
             </div>
-            <p className={styles.projectPrompt}>{selected.storyboard?.summary || selected.prompt}</p>
-            {isRendering && <div className={styles.progressWrap}>
-              <div className={styles.progressLabels}><span>{STAGE_LABELS[selected.stage] || selected.stage}</span><strong>{selected.progress}%</strong></div>
-              <div className={styles.progressTrack}><span style={{ width: selected.progress + "%" }} /></div>
-              <small>Keep this tab open to watch progress, or return later from Recent projects.</small>
-            </div>}
-            {selected.error && <div className={styles.projectError}><AlertCircle size={16} />{selected.error}</div>}
-            {selected.status === "ready" && selected.line_timed_captions && (
-              <p className={styles.projectPrompt}>Some captions are synced by spoken line because word-level timing was unavailable.</p>
-            )}
-            {activeCharacters.length > 0 && <div className={styles.characters}>
-              <div className={styles.sectionTitle}><strong>Characters and their voices</strong><small>Saved voice identities</small></div>
-              <div className={styles.characterGrid}>
-                {activeCharacters.map((character) => <div className={styles.characterCard} key={character.id}>
-                  <div className={styles.characterAvatar} style={{ background: character.appearance?.shirt_color || "#e87552" }}>
-                    <span style={{ background: character.appearance?.skin_color || "#e9b58f" }} />
-                  </div>
-                  <div><strong>{character.name}</strong><small>{character.role}</small><span><Volume2 size={12} /> {character.voice_id || "Voice assigned"}</span></div>
-                </div>)}
-              </div>
-            </div>}
-            {selected.storyboard?.scenes?.length ? <div className={styles.scenes}>
-              <div className={styles.sectionTitle}><strong>Storyboard</strong><small>{selected.storyboard.scenes.length} scenes</small></div>
-              {selected.storyboard.scenes.map((scene, index) => <div className={styles.sceneRow} key={scene.id}>
-                <span className={styles.sceneNumber}>{String(index + 1).padStart(2, "0")}</span>
-                <div><strong>{scene.scene_title || scene.environment}{scene.duration ? " · " + scene.duration + "s" : ""}</strong>
-                  <small>{scene.actions?.map(action => action.start.toFixed(1) + "–" + action.end.toFixed(1) + "s: " + action.type.replaceAll("_", " ")).join(" · ") || scene.action}</small>
-                  {scene.speech?.map((line,index) => <p key={index}>{line.track === "narration" ? "Narrator" : line.speaker_id}: “{line.text}”</p>)}
-                  {!scene.speech && scene.dialogue && <p>“{scene.dialogue}”</p>}</div>
-              </div>)}
-            </div> : null}
-            <div className={styles.projectActions}>
-              {selected.status === "ready" && <button className={styles.primaryButton} type="button" onClick={downloadProject}><Download size={17} /> Download MP4</button>}
-              {selected.status === "failed" && <button className={styles.secondaryButton} type="button" onClick={retryProject} disabled={busy}><RefreshCw size={16} /> Retry project</button>}
-              {isRendering && <span><Loader2 className={styles.spin} size={15} /> Rendering in the background</span>}
+          </div>
+          {loading ? <div className={styles.loading} role="status"><Loader2 className={styles.spin} size={18} aria-hidden="true" /> Loading projects…</div>
+            : visibleProjects.length === 0 ? <div className={styles.empty}>
+              <Play size={20} aria-hidden="true" />
+              <strong>{libraryFilter === "failed" ? "No failed renders" : "No recent cartoons"}</strong>
+              {libraryFilter === "recent" && <span>Create a cartoon above to add it to your library.</span>}
             </div>
-            {selected.status === "ready" && !!selected.caption_timeline?.length && (
-              <details key={selected.id} className={styles.captionTimeline}>
-                <summary>
-                  <span><Clock3 size={17} aria-hidden="true" /> Caption Timeline</span>
-                  <ChevronDown size={16} aria-hidden="true" />
-                </summary>
-                <p>Want a different voice? Use these captions and times to add your own realistic voice to this cartoon.</p>
-                <ol>
-                  {selected.caption_timeline.map(cue => (
-                    <li key={cue.id}>
-                      <span className={styles.cueTime}>{formatCueTime(cue.start_seconds)} – {formatCueTime(cue.end_seconds)}</span>
-                      <div><strong>{cue.speaker}</strong><span dir="auto">{cue.text}</span></div>
-                    </li>
-                  ))}
-                </ol>
-              </details>
-            )}
-          </section>
-        )}
-
-        <section className={styles.recentPanel}>
-          <div className={styles.panelHead}><div><span className={styles.kicker}>YOUR LIBRARY</span><h3>Recent cartoons</h3></div><span>{projects.length} projects</span></div>
-          {loading ? <div className={styles.loading}><Loader2 className={styles.spin} /> Loading projects...</div> :
-            projects.length === 0 ? <div className={styles.empty}><Play size={20} /><strong>Your first cartoon starts here</strong><span>Create a story above to see its storyboard, voices and MP4 here.</span></div> :
-            <div className={styles.recentList}>{projects.map((project) => <button type="button" className={styles.recentItem} key={project.id} onClick={() => openProject(project.id)}>
-              <span className={styles.recentIcon}><Clapperboard size={18} /></span>
-              <span className={styles.recentCopy}><strong>{project.storyboard?.title || project.title}</strong><small>{project.duration_seconds}s · {project.aspect_ratio} · {new Date(project.created_at || Date.now()).toLocaleDateString()}</small></span>
-              <span className={project.status === "ready" ? styles.statusReady : project.status === "failed" ? styles.statusFailed : styles.statusRunning}>{project.status}</span>
-            </button>)}</div>}
+            : <div className={styles.recentList}>
+              {visibleProjects.map(project => <button type="button" className={styles.recentItem} key={project.id}
+                aria-current={selected?.id === project.id ? "true" : undefined} onClick={() => void openProject(project.id)}>
+                <StyleArtwork style={project.style} className={styles.recentArtwork} />
+                <span className={styles.recentCopy}>
+                  <strong dir="auto">{projectTitle(project)}</strong>
+                  <small>{styleLabel(project.style)} · {project.duration_seconds}s · {project.aspect_ratio}</small>
+                </span>
+                <ProjectStatus project={project} />
+              </button>)}
+            </div>}
         </section>
       </div>
     </AppShell>
