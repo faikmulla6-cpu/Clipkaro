@@ -336,6 +336,25 @@ def test_cartoon_api_connects_byok_and_queues_private_project(cartoon_api_client
     ]
 
     with patch("app.api.cartoon_studio._models", new=AsyncMock(return_value=models)) as discover:
+        for invalid in ("sk-or-test", ["sk-or-test-invalid-shape"], "sk-or-" + "a" * 501):
+            rejected = client.post(
+                "/api/v1/cartoon-studio/providers/openrouter",
+                headers=csrf,
+                json={"api_key": invalid},
+            )
+            assert rejected.status_code == 422
+            assert "sk-or-" not in rejected.text
+            assert rejected.headers["cache-control"] == "no-store"
+        for body in ({"api_key": key, "unexpected": "sk-or-test-extra-field"}, None):
+            rejected = client.post(
+                "/api/v1/cartoon-studio/providers/openrouter",
+                headers={**csrf, "Content-Type": "application/json"},
+                content=json.dumps(body) if body else '{"api_key":"sk-or-test-malformed',
+            )
+            assert rejected.status_code == 422
+            assert "sk-or-" not in rejected.text
+        discover.assert_not_awaited()
+
         connected = client.post(
             "/api/v1/cartoon-studio/providers/openrouter",
             headers=csrf,
