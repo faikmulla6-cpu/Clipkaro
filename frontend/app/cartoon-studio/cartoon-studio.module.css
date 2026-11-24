@@ -256,6 +256,7 @@
 .preview video { display: block; width: 100%; max-height: min(55vh, 430px); border-radius: 11px; background: #12372c; }
 .previewError { color: #883e32; font-size: 12px; }
 .projectActions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 12px; }
+.projectActions a { text-decoration: none; }
 .projectError { margin-top: 10px; }
 .statusReady, .statusFailed, .statusRunning {
   display: inline-flex;

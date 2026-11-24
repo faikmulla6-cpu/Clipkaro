@@ -22,8 +22,8 @@ T = TypeVar("T")
 logger = logging.getLogger("clipkaro.database")
 _LOCK_MESSAGES = ("database is locked", "database table is locked", "database schema is locked")
 _LOCK_PRIMARY_CODES = {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}
-POSTGRES_SCHEMA_REVISION = "20261122_15"
-POSTGRES_PREVIOUS_SCHEMA_REVISION = "20261121_14"
+POSTGRES_SCHEMA_REVISION = "20261125_16"
+POSTGRES_PREVIOUS_SCHEMA_REVISION = "20261122_15"
 _postgres_pool: Any = None
 
 
@@ -258,19 +258,22 @@ CREATE TABLE IF NOT EXISTS post_karo_accounts (
   FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 CREATE TABLE IF NOT EXISTS post_karo_drafts (
-  id TEXT PRIMARY KEY, user_id TEXT NOT NULL, export_id TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 1 CHECK(revision > 0),
+  id TEXT PRIMARY KEY, user_id TEXT NOT NULL, export_id TEXT, revision INTEGER NOT NULL DEFAULT 1 CHECK(revision > 0),
   instagram_enabled INTEGER NOT NULL DEFAULT 0, instagram_caption TEXT NOT NULL DEFAULT '',
   instagram_hashtags TEXT NOT NULL DEFAULT '[]', youtube_enabled INTEGER NOT NULL DEFAULT 0,
   youtube_title TEXT NOT NULL DEFAULT '', youtube_description TEXT NOT NULL DEFAULT '',
   youtube_tags TEXT NOT NULL DEFAULT '[]', youtube_visibility TEXT NOT NULL DEFAULT 'public'
     CHECK(youtube_visibility IN ('public','unlisted','private')),
   scheduled_for TEXT, timezone TEXT NOT NULL DEFAULT 'Asia/Kolkata', created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-  UNIQUE(user_id,export_id),
+  cartoon_project_id TEXT REFERENCES cartoon_projects(id) ON DELETE CASCADE,
+  youtube_audience TEXT CHECK(youtube_audience IN ('kids','general')),
+  UNIQUE(user_id,export_id), UNIQUE(user_id,cartoon_project_id),
+  CHECK((export_id IS NULL) <> (cartoon_project_id IS NULL)),
   FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
   FOREIGN KEY(export_id) REFERENCES exports(id) ON DELETE CASCADE
 );
 CREATE TABLE IF NOT EXISTS post_karo_publications (
-  id TEXT PRIMARY KEY, user_id TEXT NOT NULL, export_id TEXT NOT NULL, draft_id TEXT NOT NULL,
+  id TEXT PRIMARY KEY, user_id TEXT NOT NULL, export_id TEXT, draft_id TEXT NOT NULL,
   draft_revision INTEGER NOT NULL CHECK(draft_revision > 0), request_id TEXT NOT NULL, job_id TEXT,
   mode TEXT NOT NULL CHECK(mode IN ('now','schedule')), status TEXT NOT NULL
     CHECK(status IN ('queued','processing','scheduled','published','partial','failed')),
@@ -1006,6 +1009,35 @@ async def _open_connection() -> aiosqlite.Connection:
     return db
 
 
+async def _upgrade_sqlite_post_karo(db: Any) -> None:
+    # Rebuild both related tables in one transaction to relax export_id's NOT NULL.
+    await db.execute("PRAGMA foreign_keys = OFF")
+    try:
+        await db.execute("BEGIN IMMEDIATE")
+        columns = await (await db.execute("PRAGMA table_info(post_karo_drafts)")).fetchall()
+        if "cartoon_project_id" not in {row[1] for row in columns}:
+            tables = ("post_karo_drafts", "post_karo_publications")
+            for table in tables:
+                definition = SCHEMA.split(f"CREATE TABLE IF NOT EXISTS {table} (", 1)[1].split(");", 1)[0]
+                await db.execute(f"CREATE TABLE {table}_new (" + definition + ")")
+                old_columns = await (await db.execute(f"PRAGMA table_info({table})")).fetchall()
+                names = ",".join(row[1] for row in old_columns)
+                await db.execute(f"INSERT INTO {table}_new ({names}) SELECT {names} FROM {table}")
+            for table in reversed(tables):
+                await db.execute(f"DROP TABLE {table}")
+            for table in tables:
+                await db.execute(f"ALTER TABLE {table}_new RENAME TO {table}")
+            await db.execute(
+                "CREATE INDEX idx_post_karo_publications_user ON post_karo_publications(user_id,created_at DESC)"
+            )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+    finally:
+        await db.execute("PRAGMA foreign_keys = ON")
+
+
 async def init_db() -> None:
     settings = get_settings()
     if settings.normalized_database_backend == "postgres":
@@ -1014,8 +1046,8 @@ async def init_db() -> None:
             revision = await connection.fetchval(
                 "SELECT version_num FROM alembic_version LIMIT 1"
             )
-        # The NVIDIA credential expansion is additive. Accept the previous
-        # revision during deployment, while the save route waits for the expansion.
+        # Accept the previous revision during deployment. The cartoon publishing
+        # route checks for its source columns before creating a draft.
         if revision not in {POSTGRES_SCHEMA_REVISION, POSTGRES_PREVIOUS_SCHEMA_REVISION}:
             raise RuntimeError(
                 "PostgreSQL schema is not current. Run `alembic upgrade head` before starting ClipKaro."
@@ -1030,6 +1062,7 @@ async def init_db() -> None:
         db = await _open_connection()
         try:
             await db.executescript(SCHEMA)
+            await _upgrade_sqlite_post_karo(db)
             # Safe in-place migration for existing ClipKaro databases created before billing v2.
             columns = {row[1] for row in await (await db.execute("PRAGMA table_info(users)")).fetchall()}
             migrations = {

@@ -398,6 +398,7 @@ def _snapshot_platforms(snapshot: dict[str, Any], accounts: dict[str, dict[str, 
             "platformSpecificData": {
                 "title": str(snapshot.get("youtube_title") or "").strip(),
                 "visibility": str(snapshot.get("youtube_visibility") or "public"),
+                **({"madeForKids": snapshot["youtube_audience"] == "kids"} if snapshot.get("youtube_audience") else {}),
             },
         })
     if not targets:
@@ -455,6 +456,35 @@ def _post_response(payload: dict[str, Any]) -> tuple[str, str, list[dict[str, An
         else:
             status = "processing"
     return status, provider_post_id, results
+
+
+async def cartoon_publish_source(project_id: str, user_id: str) -> dict[str, Any]:
+    row = await fetch_one(
+        "SELECT id,title,status,aspect_ratio,output_key,output_generation FROM cartoon_projects "
+        "WHERE id=? AND user_id=?",
+        (project_id, user_id),
+    )
+    if not row:
+        raise PostKaroProviderError("Cartoon not found.", status_code=404)
+    if row["status"] != "ready" or not row.get("output_key"):
+        raise PostKaroProviderError("Wait for your cartoon to finish before posting.", status_code=409)
+    if row["aspect_ratio"] != "9:16":
+        raise PostKaroProviderError("Choose a 9:16 cartoon to post to Reels or Shorts.", status_code=422)
+    return row
+
+
+async def _materialize_cartoon(
+    cartoon: dict[str, Any], user_id: str, destination: Path, *, storage: Any | None = None,
+) -> None:
+    provider = storage or get_storage_provider()
+    key = validate_object_key(str(cartoon["output_key"]), expected_prefix=f"users/{user_id}/cartoons/{cartoon['id']}")
+    metadata = await provider.stat(key)
+    if not metadata or metadata.size <= 0:
+        raise PostKaroProviderError("This cartoon MP4 is no longer available.", status_code=410)
+    generation = str(cartoon.get("output_generation") or "")
+    if generation and metadata.generation and generation != metadata.generation:
+        raise PostKaroProviderError("This cartoon MP4 changed. Open the cartoon again before posting.", status_code=409)
+    await provider.download(key, destination, generation=generation or None)
 
 
 async def _materialize_export(
@@ -524,18 +554,11 @@ async def run_publication_job(
         "SELECT * FROM post_karo_accounts WHERE user_id=?", (publication["user_id"],)
     )
     accounts = {str(row["platform"]): row for row in accounts_list}
-    export = await fetch_one(
-        "SELECT * FROM exports WHERE id=? AND user_id=?",
-        (publication["export_id"], publication["user_id"]),
-    )
-    if not export or export.get("status") != "ready" or _expired(export.get("expires_at")):
-        raise PostKaroProviderError("This Short has expired. Export it again before using Post Karo.", status_code=410)
-
     await execute(
         "UPDATE post_karo_publications SET status='processing',error=NULL,updated_at=? WHERE id=?",
         (utcnow(), publication_id),
     )
-    await update_job(job_id, 8, "preparing", "Preparing your exact saved Short")
+    await update_job(job_id, 8, "preparing", "Preparing your saved video")
     owned_temp: tempfile.TemporaryDirectory | None = None
     try:
         if scratch is None:
@@ -544,9 +567,25 @@ async def run_publication_job(
         else:
             workdir = scratch / "post-karo"
             workdir.mkdir(parents=True, exist_ok=True)
-        media_file = workdir / f"{publication['export_id']}.mp4"
-        await _materialize_export(export, str(publication["user_id"]), media_file, storage=storage)
-        await update_job(job_id, 32, "uploading", "Sending the finished Short securely")
+        user_id = str(publication["user_id"])
+        media_file = workdir / f"{publication_id}.mp4"
+        if publication.get("export_id"):
+            export = await fetch_one(
+                "SELECT * FROM exports WHERE id=? AND user_id=?", (publication["export_id"], user_id),
+            )
+            if not export or export.get("status") != "ready" or _expired(export.get("expires_at")):
+                raise PostKaroProviderError("This Short has expired. Export it again before using Post Karo.", status_code=410)
+            await _materialize_export(export, user_id, media_file, storage=storage)
+        else:
+            draft = await fetch_one(
+                "SELECT cartoon_project_id FROM post_karo_drafts WHERE id=? AND user_id=?",
+                (publication["draft_id"], user_id),
+            )
+            if not draft or not draft.get("cartoon_project_id"):
+                raise PostKaroProviderError("This publication has no available video.", status_code=410)
+            cartoon = await cartoon_publish_source(str(draft["cartoon_project_id"]), user_id)
+            await _materialize_cartoon(cartoon, user_id, media_file, storage=storage)
+        await update_job(job_id, 32, "uploading", "Sending the finished video securely")
         client = ZernioClient(api_key)
         media_url = await client.upload_media(media_file)
         await update_job(job_id, 66, "publishing", "Handing off to your selected social accounts")

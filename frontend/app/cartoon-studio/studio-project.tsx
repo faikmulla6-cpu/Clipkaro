@@ -1,4 +1,5 @@
-import { AlertCircle, ChevronDown, Clapperboard, Clock3, Download, Loader2, Play, RefreshCw, Volume2 } from "lucide-react";
+import { AlertCircle, ChevronDown, Clapperboard, Clock3, Download, Loader2, Play, RefreshCw, Send, Volume2 } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 import { api } from "@/lib/api";
 import styles from "./cartoon-studio.module.css";
@@ -216,10 +217,16 @@ export function StudioProject({ project, busy, onDownload, onRetry }: {
           {project.error && <div className={styles.projectError}><AlertCircle size={16} aria-hidden="true" />{project.error}</div>}
           {(ready || project.status === "failed") && (
             <div className={styles.projectActions}>
-              {ready ? <button className={styles.primaryButton} type="button" onClick={onDownload}><Download size={17} aria-hidden="true" /> Download MP4</button>
+              {ready ? <>
+                {project.aspect_ratio === "9:16" && <Link className={styles.primaryButton} href={"/post-karo?cartoon=" + encodeURIComponent(project.id)}>
+                  <Send size={17} aria-hidden="true" /> Post Karo
+                </Link>}
+                <button className={styles.secondaryButton} type="button" onClick={onDownload}><Download size={17} aria-hidden="true" /> Download MP4</button>
+              </>
                 : <button className={styles.secondaryButton} type="button" onClick={onRetry} disabled={busy}><RefreshCw size={16} aria-hidden="true" /> Retry project</button>}
             </div>
           )}
+          {ready && project.aspect_ratio !== "9:16" && <p className={styles.projectMeta}>Choose 9:16 when creating a cartoon for Post Karo.</p>}
           {ready && !!captionTimeline?.length && (
             <details key={project.id + "-captions"} className={styles.captionTimeline}>
               <summary><span><Clock3 size={17} aria-hidden="true" /> Caption Timeline</span><ChevronDown size={16} aria-hidden="true" /></summary>
