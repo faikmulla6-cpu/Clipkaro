@@ -11,7 +11,6 @@ from typing import Any
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.config import get_settings
 from app.core.database import POSTGRES_SCHEMA_REVISION, distributed_advisory_lock, execute, fetch_all, fetch_one
@@ -49,11 +48,6 @@ ALLOWED_DURATIONS = {15, 30, 45, 60}
 ALLOWED_RATIOS = {"9:16", "16:9", "1:1", "4:5"}
 ALLOWED_STYLES = {"2d-cartoon", "storybook", "anime-inspired", "flat-vector", "cinematic-jannat"}
 ALLOWED_LANGUAGES = {"auto", "en", "hi", "hinglish", "mr", "ur"}
-
-
-class ProviderKeyRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    api_key: str = Field(min_length=20, max_length=500)
 
 
 def _storyboard_test_allowed(user: dict) -> bool:
@@ -293,11 +287,24 @@ async def _plan_in_request(
         raise HTTPException(502, message if exc.category == "CARTOON_STORY_BEAT_TIMING" else str(exc)) from exc
 
 
+async def _read_provider_key(request: Request, provider_label: str) -> str:
+    # Framework validation errors can include the submitted value.
+    error = f"Enter a valid {provider_label} API key."
+    try:
+        body = await request.json()
+    except (ValueError, UnicodeError):
+        raise HTTPException(422, error) from None
+    if not isinstance(body, dict) or body.keys() != {"api_key"} or not isinstance(body["api_key"], str):
+        raise HTTPException(422, error)
+    return body["api_key"]
+
+
 @router.post("/providers/openrouter")
-async def save_openrouter_key(body: ProviderKeyRequest, user: dict = Depends(current_user)) -> dict[str, Any]:
-    key = body.api_key.strip()
-    if not key.startswith("sk-or-"):
-        raise HTTPException(422, "This does not look like an OpenRouter API key.")
+async def save_openrouter_key(request: Request, user: dict = Depends(current_user)) -> dict[str, Any]:
+    supplied_key = await _read_provider_key(request, "OpenRouter")
+    key = supplied_key.strip()
+    if not 20 <= len(supplied_key) <= 500 or not key.startswith("sk-or-"):
+        raise HTTPException(422, "Enter a valid OpenRouter API key.")
     # Validate the key without making a billable generation request.
     await _models(key, "text")
     return await _save_provider_key(user["id"], "openrouter", key)
@@ -308,15 +315,9 @@ async def save_nvidia_key(request: Request, response: Response, user: dict = Dep
     if not await _nvidia_storage_ready():
         raise HTTPException(503, "NVIDIA key setup is temporarily unavailable. Try again shortly.")
     response.headers["Cache-Control"] = "no-store"
-    # Keep credentials out of automatic validation errors. NVIDIA's public
-    # catalog endpoint cannot verify credentials and saving never runs inference.
-    try:
-        body = await request.json()
-    except (ValueError, UnicodeError):
-        raise HTTPException(422, "Enter an NVIDIA API key.") from None
-    if not isinstance(body, dict) or body.keys() != {"api_key"} or not isinstance(body["api_key"], str):
-        raise HTTPException(422, "Enter an NVIDIA API key.")
-    return await _save_provider_key(user["id"], "nvidia", _validate_nvidia_key(body["api_key"]))
+    # NVIDIA's public catalog cannot verify credentials without inference.
+    key = _validate_nvidia_key(await _read_provider_key(request, "NVIDIA"))
+    return await _save_provider_key(user["id"], "nvidia", key)
 
 
 async def _save_provider_key(user_id: str, provider: str, key: str) -> dict[str, Any]:
