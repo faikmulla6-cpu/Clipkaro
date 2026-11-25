@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -12,7 +13,7 @@ from fastapi.testclient import TestClient
 from app.core.config import get_settings
 from app.core.database import execute, fetch_one
 from app.main import _auth_requests, _requests, app
-from app.services import cartoon_job
+from app.services import cartoon_job, cartoon_usage
 from app.services.cartoon_job import CartoonJobError, _apply_cinematic_jannat_storyboard, _normalize_storyboard, _tts_audio, _voice_for
 from app.services.cartoon_renderer import build_cartoon_project
 from app.services.cartoon_security import decrypt_provider_key, encrypt_provider_key
@@ -487,6 +488,93 @@ def test_regular_account_uses_saved_nvidia_key_and_can_disconnect(cartoon_api_cl
     assert not remaining["nvidia"]["connected"] and not remaining["openrouter"]["connected"]
     missing = client.post(prefix + "/projects", headers=csrf, data={**idea, "story_planner": "nvidia"})
     assert missing.status_code == 409
+
+
+def test_existing_subscription_can_claim_one_refill_after_24_hours(cartoon_api_client, monkeypatch):
+    client = cartoon_api_client
+    prefix = "/api/v1/cartoon-studio"
+    email = "existing-cartoon-subscriber@example.com"
+    assert client.post("/api/v1/auth/signup", json={
+        "name": "Existing subscriber", "email": email, "password": "Secure123",
+    }).status_code == 201
+    user = asyncio.run(fetch_one("SELECT id FROM users WHERE email=?", (email,)))
+    user_id = user["id"]
+    now = datetime.now(timezone.utc)
+    clock = [now]
+    monkeypatch.setattr(cartoon_usage, "utc_now", lambda: clock[0])
+    monkeypatch.setattr("app.api.cartoon_studio._provider_key", AsyncMock(return_value="saved-fixture"))
+    asyncio.run(execute(
+        "UPDATE users SET plan='creator',billing_reference='sub_legacy',plan_started_at=?,plan_expires_at=? WHERE id=?",
+        ((now - timedelta(days=3)).isoformat(), (now + timedelta(days=26)).isoformat(), user_id),
+    ))
+    csrf = {"X-CSRF-Token": client.cookies.get("csrf_token")}
+
+    def create(seconds):
+        response = client.post(prefix + "/projects", headers=csrf, data={
+            "prompt": "A fox finds the lost ball.", "duration_seconds": seconds, "language": "en",
+        })
+        assert response.status_code == 200, response.text
+        return response.json()["id"]
+
+    def finish(project_id, status="ready"):
+        asyncio.run(execute("UPDATE cartoon_projects SET status=?,updated_at=? WHERE id=?",
+                            (status, clock[0].isoformat(), project_id)))
+
+    for _ in range(4):
+        finish(create(60))
+    assert client.get(prefix + "/usage").json()["remaining_seconds"] == 60
+    assert client.post(prefix + "/usage/refill", headers=csrf).status_code == 409
+    queued = create(30)
+    balance = client.get(prefix + "/usage").json()
+    assert balance["remaining_seconds"] == 30 and balance["reserved_seconds"] == 30
+    assert balance["refill_available_at"] is None
+    finish(queued, "failed")
+    assert client.get(prefix + "/usage").json()["remaining_seconds"] == 60
+    assert client.post(prefix + f"/projects/{queued}/retry", headers=csrf).status_code == 200
+    finish(queued)
+    assert client.get(prefix + "/usage").json()["refill_available_at"] == (now + timedelta(hours=24)).isoformat()
+    clock[0] += timedelta(hours=23, minutes=59)
+    finish(create(15))
+    assert client.post(prefix + "/usage/refill", headers=csrf).status_code == 409
+    clock[0] += timedelta(minutes=1)
+    assert client.post(prefix + "/usage/refill").status_code == 403
+
+    async def simultaneous_claims():
+        return await asyncio.gather(cartoon_usage.claim_cartoon_refill(user_id), cartoon_usage.claim_cartoon_refill(user_id))
+
+    results = asyncio.run(simultaneous_claims())
+    assert all(result["remaining_seconds"] == 315 and result["refill_claimed"] for result in results)
+    assert client.post(prefix + "/usage/refill", headers=csrf).json()["remaining_seconds"] == 315
+    asyncio.run(execute("UPDATE users SET plan_started_at=?,plan_expires_at=? WHERE id=?",
+                        (clock[0].isoformat(), (now + timedelta(days=60)).isoformat(), user_id)))
+    renewed = client.get(prefix + "/usage").json()
+    assert renewed["remaining_seconds"] == 300 and not renewed["refill_claimed"]
+
+
+def test_free_cartoon_is_one_success_and_active_mini_pass_has_its_own_balance(cartoon_api_client, monkeypatch):
+    client = cartoon_api_client
+    prefix = "/api/v1/cartoon-studio"
+    email = "cartoon-usage-free@example.com"
+    assert client.post("/api/v1/auth/signup", json={
+        "name": "Cartoon creator", "email": email, "password": "Secure123",
+    }).status_code == 201
+    csrf = {"X-CSRF-Token": client.cookies.get("csrf_token")}
+    monkeypatch.setattr("app.api.cartoon_studio._provider_key", AsyncMock(return_value="saved-fixture"))
+    idea = {"prompt": "A fox finds the lost ball.", "duration_seconds": 45, "language": "en"}
+    assert client.post(prefix + "/projects", headers=csrf, data=idea).status_code == 409
+    idea["duration_seconds"] = 15
+    created = client.post(prefix + "/projects", headers=csrf, data=idea)
+    assert created.status_code == 200, created.text
+    asyncio.run(execute("UPDATE cartoon_projects SET status='ready' WHERE id=?", (created.json()["id"],)))
+    assert client.get(prefix + "/usage").json()["remaining_seconds"] == 0
+    assert client.post(prefix + "/projects", headers=csrf, data=idea).status_code == 409
+    expires = (datetime.now(timezone.utc) + timedelta(days=4)).isoformat()
+    asyncio.run(execute(
+        "UPDATE users SET plan='mini_pass',billing_reference='order_existing',plan_expires_at=? WHERE email=?",
+        (expires, email),
+    ))
+    assert client.get(prefix + "/usage").json()["remaining_seconds"] == 60
+    assert client.post(prefix + "/usage/refill", headers=csrf).status_code == 409
 
 
 @pytest.mark.asyncio

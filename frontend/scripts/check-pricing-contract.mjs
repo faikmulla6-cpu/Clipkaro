@@ -3,6 +3,7 @@ import fs from "node:fs";
 const load = (p) => fs.readFileSync(new URL(p, import.meta.url), "utf8");
 const bill = load("../../backend/app/services/billing.py");
 const price = load("../lib/pricing-contract.ts");
+const cartoonUsage = load("../../backend/app/services/cartoon_usage.py");
 const pricing = load("../app/pricing/PricingExperience.tsx");
 const page = load("../app/pricing/page.tsx");
 const shell = load("../components/AppShell.tsx");
@@ -30,6 +31,12 @@ for (const [key, [rupees, minutes, maximum, shorts]] of Object.entries(expectati
   assert.ok(front.includes("shorts: " + shorts));
 }
 assert.match(pricing, /Plan details are updating\. Checkout is temporarily unavailable/);
+for (const [key, seconds] of Object.entries({ free: 30, mini_pass: 60, creator: 300, growth: 900, pro: 1800, agency: 3600 })) {
+  assert.ok(cartoonUsage.includes(`"${key}": ${seconds}`));
+  assert.ok(price.includes(`${key}: ${seconds}`));
+  assert.ok(page.includes(`cartoonFeature("${key}")`));
+  assert.ok(pricing.includes(`cartoonFeature("${key}")`));
+}
 assert.match(pricing, /planFeatureMinutes\("mini_pass"\)/);
 assert.match(pricing, /planFeatureMinutes\("creator"\)/);
 assert.match(pricing, /planFeatureMinutes\("growth"\)/);

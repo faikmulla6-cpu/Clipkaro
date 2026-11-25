@@ -2,6 +2,7 @@
 
 import { AppShell } from "@/components/AppShell";
 import { api, deleteJSON, postJSON } from "@/lib/api";
+import Link from "next/link";
 import {
   AlertCircle, Check, ChevronDown, Clapperboard, KeyRound, Loader2,
   LockKeyhole, Play, ShieldCheck, Sparkles, Volume2, WandSparkles, X,
@@ -26,6 +27,29 @@ const STORY_PLANNERS: Record<ProjectPlanner, { label: string; hint: string }> = 
 };
 type TTSModel = { id: string; voices: string[]; languages: string[]; voices_by_language?: Record<string, string[]> };
 type TTSResponse = { models: TTSModel[] };
+type CartoonUsage = {
+  plan: string; base_seconds: number; remaining_seconds: number; reserved_seconds: number;
+  refill_available_at: string | null; refill_claimable: boolean; refill_claimed: boolean;
+  period_ends_at: string | null;
+};
+
+function cartoonTime(seconds: number) {
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return [minutes ? minutes + "m" : "", remainder || !minutes ? remainder + "s" : ""].filter(Boolean).join(" ");
+}
+
+function cartoonUsageNote(usage: CartoonUsage) {
+  if (usage.reserved_seconds) return cartoonTime(usage.reserved_seconds) + " reserved for your render";
+  if (usage.plan === "free") return "One free cartoon per account";
+  if (usage.plan === "mini_pass") return "One minute per Mini Pass";
+  if (usage.refill_claimable) return "Your one-time refill is ready";
+  const dateLabel = (value: string) => new Date(value).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+  if (usage.refill_available_at) return "Refill unlocks " + dateLabel(usage.refill_available_at);
+  if (usage.remaining_seconds <= 30 && usage.period_ends_at) return "Next allowance " + dateLabel(usage.period_ends_at);
+  if (usage.refill_claimed) return "Refill used this billing cycle";
+  return "One refill unlocks 24 hours after 30s or less remain";
+}
 
 export default function CartoonStudioPage() {
   const [provider, setProvider] = useState<ProviderStatus | null>(null);
@@ -49,11 +73,51 @@ export default function CartoonStudioPage() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [createError, setCreateError] = useState("");
+  const [usage, setUsage] = useState<CartoonUsage | null>(null);
+  const [claimingRefill, setClaimingRefill] = useState(false);
+  const usageRequest = useRef(0);
   const [libraryFilter, setLibraryFilter] = useState<"recent" | "failed">("recent");
   const advancedRef = useRef<HTMLDetailsElement>(null);
   const advancedSummaryRef = useRef<HTMLElement>(null);
   const referenceInputRef = useRef<HTMLInputElement>(null);
   const projectRequest = useRef(0);
+
+  const refreshUsage = useCallback(async () => {
+    const request = ++usageRequest.current;
+    try {
+      const result = await api<CartoonUsage | null>("/cartoon-studio/usage");
+      if (request === usageRequest.current) setUsage(result);
+    } catch {
+      // The API checks availability on every creation and refill request.
+    }
+  }, []);
+
+  useEffect(() => { void refreshUsage(); }, [refreshUsage]);
+
+  useEffect(() => {
+    const dates = [usage?.refill_claimable ? null : usage?.refill_available_at, usage?.period_ends_at];
+    const now = Date.now();
+    const next = Math.min(...dates.filter((value): value is string => !!value).map(value => Date.parse(value)).filter(value => value > now));
+    if (!Number.isFinite(next)) return;
+    const timer = window.setTimeout(() => void refreshUsage(), Math.min(next - now + 1000, 60000));
+    return () => window.clearTimeout(timer);
+  }, [usage, refreshUsage]);
+
+  async function claimRefill() {
+    if (!usage?.refill_claimable || claimingRefill) return;
+    setClaimingRefill(true);
+    setError("");
+    try {
+      ++usageRequest.current;
+      setUsage(await postJSON<CartoonUsage>("/cartoon-studio/usage/refill", {}));
+      setNotice("Your cartoon time has been refilled.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not claim your cartoon refill.");
+    } finally {
+      setClaimingRefill(false);
+      void refreshUsage();
+    }
+  }
 
   const updateProject = useCallback((project: CartoonProject) => {
     setProjects(current => current.some(item => item.id === project.id)
@@ -117,7 +181,10 @@ export default function CartoonStudioPage() {
       pending = true;
       try {
         const project = await api<CartoonProject>("/cartoon-studio/projects/" + renderingId);
-        if (!cancelled) updateProject(project);
+        if (!cancelled) {
+          updateProject(project);
+          if (!isRendering(project)) void refreshUsage();
+        }
       } catch {
         // Keep showing the last known status while the connection recovers.
       } finally {
@@ -128,7 +195,7 @@ export default function CartoonStudioPage() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [renderingId, updateProject]);
+  }, [renderingId, updateProject, refreshUsage]);
 
   const failedCount = projects.filter(project => project.status === "failed").length;
   const visibleProjects = projects.filter(project => (project.status === "failed") === (libraryFilter === "failed"));
@@ -142,6 +209,7 @@ export default function CartoonStudioPage() {
   const missingProvider = projectPlanner === "nvidia"
     ? (nvidiaConnected ? "" : "NVIDIA API")
     : (connected ? "" : "OpenRouter");
+  const durationExceedsBalance = usage !== null && duration > usage.remaining_seconds;
 
   async function connectProvider(event: FormEvent<HTMLFormElement>, name: PlannerProvider) {
     event.preventDefault();
@@ -182,7 +250,7 @@ export default function CartoonStudioPage() {
 
   async function createCartoon(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy || renderingId || providerBusy || missingProvider) return;
+    if (busy || renderingId || providerBusy || missingProvider || durationExceedsBalance) return;
     setCreateError("");
     if (prompt.trim().length < 8) {
       setCreateError("Describe your story in at least 8 characters.");
@@ -211,6 +279,7 @@ export default function CartoonStudioPage() {
       setCreateError(cause instanceof Error ? cause.message : "Cartoon generation could not start.");
     } finally {
       setBusy(false);
+      void refreshUsage();
     }
   }
 
@@ -248,6 +317,7 @@ export default function CartoonStudioPage() {
       setError(cause instanceof Error ? cause.message : "The project could not be retried.");
     } finally {
       setBusy(false);
+      void refreshUsage();
     }
   }
 
@@ -288,6 +358,17 @@ export default function CartoonStudioPage() {
           <div className={styles.creationColumn}>
             <section className={styles.panel} aria-labelledby="studio-create-title">
               <div className={styles.panelHead}><h3 id="studio-create-title">Create a cartoon</h3></div>
+              {usage && <div className={styles.usageBalance} aria-label="Cartoon allowance">
+                <div>
+                  <strong>{cartoonTime(usage.remaining_seconds)} of cartoon time available</strong>
+                  <small>{cartoonUsageNote(usage)}</small>
+                </div>
+                {usage.refill_available_at && !usage.refill_claimed
+                  ? <button className={styles.secondaryButton} type="button" disabled={!usage.refill_claimable || claimingRefill} onClick={claimRefill}>
+                    {claimingRefill ? "Claiming…" : "Claim one-time refill"}
+                  </button>
+                  : usage.remaining_seconds < 15 && (usage.plan === "free" || usage.plan === "mini_pass") && <Link href="/pricing">View plans</Link>}
+              </div>}
               <form onSubmit={createCartoon} className={styles.form}>
                 <label className={styles.field}>
                   <span>What should happen in your story?</span>
@@ -304,8 +385,9 @@ export default function CartoonStudioPage() {
                 <div className={styles.fieldsTwo}>
                   <label className={styles.field}><span>Video length</span>
                     <select value={duration} onChange={(event) => setDuration(Number(event.target.value))}>
-                      <option value={15}>15 seconds</option><option value={30}>30 seconds</option>
-                      <option value={45}>45 seconds</option><option value={60}>60 seconds</option>
+                      {[15, 30, 45, 60].map(seconds => <option key={seconds} value={seconds} disabled={usage !== null && seconds > usage.remaining_seconds}>
+                        {seconds} seconds
+                      </option>)}
                     </select>
                   </label>
                   <label className={styles.field}><span>Aspect ratio</span>
@@ -350,7 +432,10 @@ export default function CartoonStudioPage() {
                     </select>
                   </label>}
                 </div>
-                <button className={styles.primaryButton} type="submit" disabled={Boolean(missingProvider || renderingId || busy || providerBusy)}>
+                {durationExceedsBalance && !renderingId && <small className={styles.languageHint}>
+                  {usage.remaining_seconds >= 15 ? "Choose a shorter video to use your remaining time." : "You need at least 15 seconds of available cartoon time to start."}
+                </small>}
+                <button className={styles.primaryButton} type="submit" disabled={Boolean(missingProvider || renderingId || busy || providerBusy || durationExceedsBalance)}>
                   {busy ? <Loader2 className={styles.spin} size={18} /> : <WandSparkles size={18} />}
                   {busy ? "Queuing your cartoon…" : renderingId ? "Cartoon rendering…" : "Create my cartoon"}
                 </button>

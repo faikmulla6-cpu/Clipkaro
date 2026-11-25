@@ -1,5 +1,4 @@
 import json
-from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -136,16 +135,19 @@ async def test_project_creation_queues_selected_planner_without_exposing_keys(
     monkeypatch.setattr(studio, "_models", AsyncMock(return_value=[]))
     monkeypatch.setattr(studio, "consume_rate_limit", previous_creation_cap := AsyncMock(return_value=False))
     monkeypatch.setattr(studio, "fetch_one", AsyncMock(return_value=None))
-    monkeypatch.setattr(studio, "execute", execute := AsyncMock())
+    db = SimpleNamespace(execute=AsyncMock())
+    execute = db.execute
     monkeypatch.setattr(studio, "create_job", queue := AsyncMock(return_value="queued-job"))
     monkeypatch.setattr(studio, "dispatch_job", dispatch := AsyncMock())
     monkeypatch.setattr(studio, "_owned_project", AsyncMock(return_value={"id": "new-project"}))
 
-    @asynccontextmanager
-    async def lock(_name):
-        yield
+    async def transaction(action, **kwargs):
+        return await action(db)
 
-    monkeypatch.setattr(studio, "distributed_advisory_lock", lock)
+    monkeypatch.setattr(studio, "run_in_transaction", transaction)
+    monkeypatch.setattr(studio, "usage_schema_ready", AsyncMock(return_value=True))
+    monkeypatch.setattr(studio, "cartoon_balance", AsyncMock(return_value={"remaining_seconds": 30}))
+    monkeypatch.setattr(studio, "reserve_cartoon_period", AsyncMock(return_value="free:lifetime"))
     monkeypatch.setattr(studio, "request_storyboard", upstream := AsyncMock(return_value=httpx.Response(200, json={
         "choices": [{"finish_reason": "stop", "message": {"content": json.dumps(fixtures()["garden"])}}],
     })))
@@ -168,7 +170,7 @@ async def test_project_creation_queues_selected_planner_without_exposing_keys(
     values = execute.await_args_list[0].args[1]
     assert values[8] == planner.PROJECT_STORY_MODELS[selection]
     assert values[9] == "system/edge-tts-urdu"
-    queue.assert_awaited_once_with(user["id"], "cartoon_generate", payload={"cartoon_project_id": values[0]})
+    queue.assert_awaited_once_with(user["id"], "cartoon_generate", payload={"cartoon_project_id": values[0]}, db=db)
     dispatch.assert_awaited_once()
     assert key not in str(execute.await_args_list)
     if selection == "nvidia":

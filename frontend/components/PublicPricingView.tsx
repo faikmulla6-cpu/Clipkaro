@@ -4,6 +4,7 @@ import { PublicSiteFooter } from "@/components/PublicSiteFooter";
 import { PublicSiteNav } from "@/components/PublicSiteNav";
 import { TransitionLink } from "@/components/TransitionLink";
 import { TRUST_PROFILE } from "@/lib/legal";
+import { CARTOON_REFILL_DETAILS, CARTOON_USAGE_DETAILS } from "@/lib/pricing-contract";
 import styles from "./PublicPricingView.module.css";
 
 export type PublicPlanView = {
@@ -49,6 +50,15 @@ export function PublicPricingView({ plans }: { plans: PublicPlanView[] }) {
             </div>
           </section>
 
+
+          <section className={styles.pulseCard} data-public-reveal aria-labelledby="cartoon-allowance-heading">
+            <div>
+              <h2 id="cartoon-allowance-heading">How Cartoon Studio minutes work</h2>
+              <p>{CARTOON_REFILL_DETAILS}</p>
+              <p>{CARTOON_USAGE_DETAILS}</p>
+            </div>
+            <TransitionLink href="/cartoon-studio">Open Cartoon Studio <ArrowRight size={15}/></TransitionLink>
+          </section>
 
           <section className={styles.topupSection} data-public-reveal aria-labelledby="topup-heading">
             <div className={styles.topupHeading}>

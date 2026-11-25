@@ -12,7 +12,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.core.config import get_settings
-from app.core.database import POSTGRES_SCHEMA_REVISION, execute, fetch_all, fetch_one, run_in_transaction
+from app.core.database import POSTGRES_PREVIOUS_SCHEMA_REVISION, POSTGRES_SCHEMA_REVISION, execute, fetch_all, fetch_one, run_in_transaction
 from app.services.auth import current_user
 from app.services.jobs import create_job, dispatch_job, utcnow
 from app.services.post_karo import (
@@ -405,7 +405,7 @@ async def draft_from_cartoon(project_id: str, user: dict = Depends(current_user)
     _require_eligible(user)
     if get_settings().normalized_database_backend == "postgres":
         revision = await fetch_one("SELECT version_num FROM alembic_version LIMIT 1")
-        if not revision or revision["version_num"] != POSTGRES_SCHEMA_REVISION:
+        if not revision or revision["version_num"] not in {POSTGRES_PREVIOUS_SCHEMA_REVISION, POSTGRES_SCHEMA_REVISION}:
             raise HTTPException(503, "Cartoon publishing is temporarily unavailable. Try again later.")
     cartoon = await _cartoon_context(project_id, str(user["id"]))
     return await _prepare_draft(cartoon, user, cartoon=True)

@@ -22,6 +22,19 @@ export function planFeatureMinutes(plan: PricingPlanId): string {
     : `${p.minutes} total Karo Minutes/month · up to ${p.maxVideo} min/video`;
 }
 
+export const CARTOON_SECONDS = { free: 30, mini_pass: 60, creator: 300, growth: 900, pro: 1800, agency: 3600 } as const;
+
+export function cartoonFeature(plan: PricingPlanId): string {
+  if (plan === "free") return "Cartoon Studio · one cartoon up to 30 seconds per account";
+  if (plan === "mini_pass") return "Cartoon Studio · 1 finished minute per pass";
+  return `Cartoon Studio · ${CARTOON_SECONDS[plan] / 60} finished minutes/month + one refill`;
+}
+
+export const CARTOON_REFILL_DETAILS =
+  "Monthly plans include one extra full refill each billing cycle. When 30 seconds or less remain, the 24-hour wait starts automatically. Claim the refill in Cartoon Studio and keep any time left in that cycle. For example, Creator starts with 5 minutes and can claim another 5.";
+export const CARTOON_USAGE_DETAILS =
+  "Cartoon time is separate from Karo Minutes. Only newly finished cartoons count. Failed renders, repeat downloads and posting use no extra time. Connect your own planner API key to create. Active existing plans and Mini Passes also get their listed cartoon allowance.";
+
 /** Premium face-aware analysis has its own credits, independent of clipping. */
 export const SMART_LAYOUT_PREMIUM = {
   free: { credits: 1, daily: 1 },

@@ -73,6 +73,22 @@ async def init_cartoon_studio() -> None:
             await db.execute("INSERT INTO cartoon_projects_v3 SELECT * FROM cartoon_projects")
             await db.execute("DROP TABLE cartoon_projects")
             await db.execute("ALTER TABLE cartoon_projects_v3 RENAME TO cartoon_projects")
+        columns = await (await db.execute("PRAGMA table_info(cartoon_projects)")).fetchall()
+        if "usage_period_key" not in {row[1] for row in columns}:
+            await db.execute("ALTER TABLE cartoon_projects ADD COLUMN usage_period_key TEXT")
+        await db.execute(
+            """CREATE TABLE IF NOT EXISTS cartoon_usage_refills (
+                 user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                 period_key TEXT NOT NULL,
+                 granted_seconds INTEGER NOT NULL CHECK(granted_seconds > 0),
+                 claimed_at TEXT NOT NULL,
+                 PRIMARY KEY(user_id, period_key)
+               )"""
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_cartoon_projects_usage "
+            "ON cartoon_projects(user_id, usage_period_key) WHERE usage_period_key IS NOT NULL"
+        )
         await db.execute(
             "CREATE INDEX IF NOT EXISTS idx_cartoon_projects_user_created "
             "ON cartoon_projects(user_id, created_at DESC)"

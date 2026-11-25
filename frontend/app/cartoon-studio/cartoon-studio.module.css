@@ -257,6 +257,10 @@
 .previewError { color: #883e32; font-size: 12px; }
 .projectActions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 12px; }
 .projectActions a { text-decoration: none; }
+.usageBalance { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin-bottom: 16px; padding: 12px 14px; border: 1px solid #d4e3d0; border-radius: 12px; background: #f2f8ef; color: #20583c; }
+.usageBalance strong, .usageBalance small { display: block; }
+.usageBalance small { margin-top: 3px; line-height: 1.4; }
+.usageBalance button { min-height: 36px; padding: 6px 10px; font-size: 13px; }
 .projectError { margin-top: 10px; }
 .statusReady, .statusFailed, .statusRunning {
   display: inline-flex;
