@@ -13,12 +13,13 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 from fastapi.responses import FileResponse
 
 from app.core.config import get_settings
-from app.core.database import POSTGRES_PREVIOUS_SCHEMA_REVISION, POSTGRES_SCHEMA_REVISION, distributed_advisory_lock, execute, fetch_all, fetch_one
+from app.core.database import POSTGRES_PREVIOUS_SCHEMA_REVISION, POSTGRES_SCHEMA_REVISION, execute, fetch_all, fetch_one, run_in_transaction
 from app.services.distributed_rate_limit import consume_rate_limit
 from app.services.auth import current_user
 from app.services.cartoon_speech import SYSTEM_URDU_TTS_MODEL, built_in_voice_models, built_in_voice_selection
 from app.services.cartoon_story import resolve_cartoon_language
 from app.services.cartoon_story_render import saved_caption_timeline
+from app.services.cartoon_usage import cartoon_balance, claim_cartoon_refill, reserve_cartoon_period, usage_schema_ready
 from app.services.cartoon_story_planner import (
     NVIDIA_STORY_MODEL, OPENROUTER_ROOT, PROJECT_STORY_MODELS, STORY_MODEL, StoryboardReplyError,
     parse_storyboard_reply, planner_payload, request_storyboard, storyboard_correction_payload,
@@ -372,6 +373,20 @@ async def list_tts_models(user: dict = Depends(current_user)) -> dict[str, Any]:
     return {"models": models, "default_model": models[0]["id"]}
 
 
+@router.get("/usage")
+async def get_cartoon_usage(response: Response, user: dict = Depends(current_user)) -> dict | None:
+    response.headers["Cache-Control"] = "no-store"
+    return await cartoon_balance(str(user["id"])) if await usage_schema_ready() else None
+
+
+@router.post("/usage/refill")
+async def refill_cartoon_usage(response: Response, user: dict = Depends(current_user)) -> dict:
+    response.headers["Cache-Control"] = "no-store"
+    if not await usage_schema_ready():
+        raise HTTPException(503, "Cartoon refills are temporarily unavailable.")
+    return await claim_cartoon_refill(str(user["id"]))
+
+
 @router.post("/projects")
 async def create_cartoon_project(
     background_tasks: BackgroundTasks,
@@ -415,6 +430,9 @@ async def create_cartoon_project(
     )
     if active:
         raise HTTPException(409, "You already have a cartoon rendering. Wait for it to finish before starting another.")
+    metered = await usage_schema_ready()
+    if metered and duration_seconds > (await cartoon_balance(str(user["id"])))["remaining_seconds"]:
+        raise HTTPException(409, "This duration exceeds your available cartoon time. Choose a shorter duration or check your refill.")
     compatible_tts_model = built_in_voice_selection(tts_model, language)
     if requested_language != language or (tts_model and tts_model != compatible_tts_model):
         voice_id = ""
@@ -466,20 +484,10 @@ async def create_cartoon_project(
         finally:
             temp_path.unlink(missing_ok=True)
 
-    async with distributed_advisory_lock(f"cartoon-studio-create:{user['id']}"):
-        active = await fetch_one(
-            "SELECT id FROM cartoon_projects WHERE user_id=? AND status IN ('queued','processing') LIMIT 1",
-            (user["id"],),
-        )
-        if active:
-            if reference_key:
-                try:
-                    await get_storage_provider().delete(reference_key, generation=reference_generation)
-                except Exception:
-                    pass
-            raise HTTPException(409, "You already have a cartoon rendering. Wait for it to finish before starting another.")
-
-        await execute(
+    async def enqueue(db):
+        period = await reserve_cartoon_period(db, str(user["id"]), duration_seconds, metered=metered)
+        new_job = await create_job(user["id"], "cartoon_generate", payload={"cartoon_project_id": project_id}, db=db)
+        await db.execute(
             """INSERT INTO cartoon_projects(
                  id,user_id,title,prompt,duration_seconds,aspect_ratio,style,language,text_model,tts_model,
                  status,progress,stage,storyboard_json,assets_json,reference_key,reference_generation,
@@ -491,26 +499,23 @@ async def create_cartoon_project(
                 reference_key, reference_generation, timestamp, timestamp,
             ),
         )
-        try:
-            await execute("UPDATE cartoon_projects SET assets_json=? WHERE id=?", (json.dumps({"_preferred_voice": voice_id}), project_id))
-            job_id = await create_job(
-                user["id"], "cartoon_generate", payload={"cartoon_project_id": project_id},
-            )
-            await execute(
-                "UPDATE cartoon_projects SET job_id=?,updated_at=? WHERE id=?",
-                (job_id, timestamp, project_id),
-            )
-        except Exception as exc:
-            await execute(
-                "DELETE FROM cartoon_projects WHERE id=? AND user_id=?",
-                (project_id, user["id"]),
-            )
-            if reference_key:
-                try:
-                    await get_storage_provider().delete(reference_key, generation=reference_generation)
-                except Exception:
-                    pass
-            raise HTTPException(503, "Cartoon Studio could not queue this project. Please retry.") from exc
+        await db.execute("UPDATE cartoon_projects SET assets_json=?,job_id=? WHERE id=?",
+                         (json.dumps({"_preferred_voice": voice_id}), new_job, project_id))
+        if metered:
+            await db.execute("UPDATE cartoon_projects SET usage_period_key=? WHERE id=?", (period, project_id))
+        return new_job
+
+    try:
+        job_id = await run_in_transaction(enqueue, operation_name="queue cartoon and reserve duration")
+    except Exception as exc:
+        if reference_key:
+            try:
+                await get_storage_provider().delete(reference_key, generation=reference_generation)
+            except Exception:
+                pass
+        if isinstance(exc, HTTPException):
+            raise
+        raise HTTPException(503, "Cartoon Studio could not queue this project. Please retry.") from exc
     try:
         await dispatch_job(background_tasks, _run_media_job, job_id)
     except Exception as exc:
@@ -562,22 +567,31 @@ async def retry_cartoon_project(
             await _nvidia_key_for_request(user, "")
         elif not await _provider_key(user["id"]):
             raise HTTPException(409, "Reconnect your OpenRouter API key before retrying.")
-    async with distributed_advisory_lock(f"cartoon-studio-create:{user['id']}"):
-        active = await fetch_one(
-            "SELECT id FROM cartoon_projects WHERE user_id=? AND status IN ('queued','processing') LIMIT 1",
-            (user["id"],),
+    metered = await usage_schema_ready()
+
+    async def enqueue(db):
+        period = await reserve_cartoon_period(db, str(user["id"]), int(row["duration_seconds"]), metered=metered)
+        current = await (await db.execute(
+            "SELECT status FROM cartoon_projects WHERE id=? AND user_id=?", (project_id, user["id"]),
+        )).fetchone()
+        if not current or current[0] != "failed":
+            raise HTTPException(409, "Only a failed cartoon can be retried.")
+        new_job = await create_job(user["id"], "cartoon_generate", payload={"cartoon_project_id": project_id}, db=db)
+        await db.execute(
+            """UPDATE cartoon_projects SET job_id=?,status='queued',progress=0,stage='queued',error=NULL,updated_at=?
+               WHERE id=? AND user_id=?""",
+            (new_job, _now(), project_id, user["id"]),
         )
-        if active:
-            raise HTTPException(409, "Another cartoon is already rendering. Wait for it to finish before retrying.")
-        try:
-            job_id = await create_job(user["id"], "cartoon_generate", payload={"cartoon_project_id": project_id})
-            await execute(
-                """UPDATE cartoon_projects SET job_id=?,status='queued',progress=0,stage='queued',error=NULL,updated_at=?
-                   WHERE id=? AND user_id=?""",
-                (job_id, _now(), project_id, user["id"]),
-            )
-        except Exception as exc:
-            raise HTTPException(503, "Cartoon Studio could not queue this retry. Please try again.") from exc
+        if metered:
+            await db.execute("UPDATE cartoon_projects SET usage_period_key=? WHERE id=?", (period, project_id))
+        return new_job
+
+    try:
+        job_id = await run_in_transaction(enqueue, operation_name="retry cartoon and reserve duration")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(503, "Cartoon Studio could not queue this retry. Please try again.") from exc
     try:
         await dispatch_job(background_tasks, _run_media_job, job_id)
     except Exception as exc:

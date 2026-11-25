@@ -349,9 +349,10 @@ async def test_sqlite_ratio_migration_preserves_existing_rows(tmp_path,monkeypat
         monkeypatch.setattr(repository,"get_settings",lambda:SimpleNamespace(normalized_database_backend="sqlite"))
         monkeypatch.setattr(repository,"run_in_transaction",transaction)
         await repository.init_cartoon_studio()
-        await db.execute("INSERT INTO cartoon_projects VALUES ('new','owner','2026-11-21','4:5')")
+        await db.execute("INSERT INTO cartoon_projects(id,user_id,created_at,aspect_ratio) VALUES ('new','owner','2026-11-21','4:5')")
         rows=await (await db.execute("SELECT id,aspect_ratio FROM cartoon_projects ORDER BY id")).fetchall()
         assert rows==[("existing","16:9"),("new","4:5")]
+        assert await (await db.execute("SELECT usage_period_key FROM cartoon_projects WHERE id='existing'")).fetchone() == (None,)
 
 
 @pytest.mark.asyncio

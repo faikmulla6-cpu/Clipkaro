@@ -104,6 +104,8 @@ async def create_job(
     project_id: str | None = None,
     export_id: str | None = None,
     payload: dict[str, Any] | None = None,
+    *,
+    db=None,
 ) -> str:
     job_id, timestamp = str(uuid.uuid4()), utcnow()
     serialized = json.dumps(payload or {}, separators=(",", ":"), ensure_ascii=False)
@@ -120,7 +122,10 @@ async def create_job(
             (job_id, serialized, timestamp, timestamp),
         )
 
-    await run_in_transaction(_create, operation_name="create durable job")
+    if db is None:
+        await run_in_transaction(_create, operation_name="create durable job")
+    else:
+        await _create(db)
     return job_id
 
 
