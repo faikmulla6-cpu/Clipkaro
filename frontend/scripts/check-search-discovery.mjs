@@ -11,6 +11,7 @@ const home = read("frontend/components/HomeExperience.tsx");
 const homePage = read("frontend/app/page.tsx");
 const about = read("frontend/app/about/AboutExperience.tsx");
 const cartoonMaker = read("frontend/app/ai-cartoon-maker/page.tsx");
+const authProvider = read("frontend/components/AuthProvider.tsx");
 const layout = read("frontend/app/layout.tsx");
 const nextConfig = read("frontend/next.config.js");
 const robots = read("frontend/app/robots.ts");
@@ -67,6 +68,11 @@ requireText(nextConfig, '"/post-karo/:path*"', "authenticated Post Karo must sta
 requireText(nextConfig, '"/creator-pulse/:path*"', "authenticated Creator Pulse must stay out of the search index");
 requireText(nextConfig, '"/cartoon-studio/:path*"', "authenticated Cartoon Studio must stay out of the search index");
 const cartoonPublicPath = "/ai-cartoon-maker";
+const publicPaths = authProvider.match(/const publicPaths = \[([\s\S]*?)\];/)?.[1] ?? "";
+requireText(publicPaths, `"${cartoonPublicPath}"`, "cartoon maker must stay accessible after signed-out hydration");
+if (publicPaths.includes('"/cartoon-studio"')) {
+  throw new Error("Search discovery contract failed: Cartoon Studio workspace must require sign-in");
+}
 for (const [source, label] of [[home, "homepage"], [about, "About page"]]) {
   requireText(source, `href="${cartoonPublicPath}"`, `${label} must link to the public cartoon maker`);
 }
