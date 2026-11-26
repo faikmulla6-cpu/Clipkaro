@@ -9,6 +9,7 @@ import {
   Link2,
   Menu,
   Sparkles,
+  WandSparkles,
   X,
 } from "lucide-react";
 import { usePathname } from "next/navigation";
@@ -51,6 +52,12 @@ const products = [
     label: "Creator Studio",
     text: "Drag captions, reframe video, toggle Hook Text and control the final Short.",
     icon: Clapperboard,
+  },
+  {
+    href: "/ai-cartoon-maker",
+    label: "Cartoon Studio",
+    text: "Turn a written story into a cartoon with voices and captions.",
+    icon: WandSparkles,
   },
   {
     href: "/post-shorts-instagram-youtube",
@@ -199,6 +206,7 @@ export function PublicSiteNav({ cta = "start" }: PublicSiteNavProps) {
                         href={item.href}
                         key={item.href}
                         role="menuitem"
+                        aria-current={active ? "page" : undefined}
                         onClick={closeAll}
                         className={cn(
                           "group grid grid-cols-[42px_1fr_18px] items-center gap-3 rounded-[17px] border border-transparent p-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-emerald-900/10 hover:bg-emerald-50/80 hover:shadow-sm",
@@ -322,6 +330,7 @@ export function PublicSiteNav({ cta = "start" }: PublicSiteNavProps) {
               <TransitionLink
                 href={item.href}
                 key={item.href}
+                aria-current={active ? "page" : undefined}
                 onClick={closeAll}
                 className={cn(
                   "grid grid-cols-[44px_1fr_17px] items-center gap-3 rounded-[17px] border border-emerald-950/10 bg-white p-3 shadow-[0_7px_18px_rgba(10,48,30,0.04)] transition-all duration-200 active:scale-[0.99]",

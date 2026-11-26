@@ -73,6 +73,7 @@ for (const [source, label] of [[home, "homepage"], [about, "About page"]]) {
 requireText(cartoonMaker, `canonical: "${cartoonPublicPath}"`, "cartoon maker must have its own canonical");
 requireText(cartoonMaker, 'robots: { index: true, follow: true }', "public cartoon maker must be indexable");
 requireText(cartoonMaker, 'href="/cartoon-studio"', "public cartoon maker must have a studio CTA");
+requireText(nav, `href: "${cartoonPublicPath}",\n    label: "Cartoon Studio"`, "Product navigation must link to the public cartoon maker");
 requireText(sitemap, `"${cartoonPublicPath}"`, "sitemap must list the public cartoon maker");
 if (robots.includes(`"${cartoonPublicPath}"`) || nextConfig.includes(`"${cartoonPublicPath}/:path*"`) || sitemap.includes('"/cartoon-studio"')) {
   throw new Error("Search discovery contract failed: public cartoon maker and private studio must have separate indexing rules");
