@@ -496,7 +496,7 @@ export function AboutExperience() {
           <div>
             <h3 id="about-cartoon-studio">Cartoon Studio</h3>
             <p>Creators can turn a short written story into an animated cartoon with voices and captions, then download the finished video.</p>
-            <a href="/cartoon-studio">Explore Cartoon Studio <ArrowRight size={15} aria-hidden="true" /></a>
+            <a href="/ai-cartoon-maker">Explore Cartoon Studio <ArrowRight size={15} aria-hidden="true" /></a>
           </div>
         </article>
 

@@ -308,8 +308,8 @@ export function HomeExperience() {
                 <p>
                   Write a short story and turn it into an animated video with character voices and synced captions.
                 </p>
-                <a className={styles.cartoonCta} href="/cartoon-studio" aria-describedby="cartoon-studio-access">
-                  Try Cartoon Studio <ArrowRight size={17} aria-hidden="true" />
+                <a className={styles.cartoonCta} href="/ai-cartoon-maker" aria-describedby="cartoon-studio-access">
+                  Explore Cartoon Studio <ArrowRight size={17} aria-hidden="true" />
                 </a>
                 <p className={styles.cartoonAccess} id="cartoon-studio-access">
                   Free includes one cartoon up to 30 seconds per account. Connect your own story planner API key in Cartoon Studio to create.
