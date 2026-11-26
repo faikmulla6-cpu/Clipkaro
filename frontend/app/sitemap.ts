@@ -5,6 +5,7 @@ const routes = [
   "",
   "/youtube-channel-analyzer",
   "/about",
+  "/ai-cartoon-maker",
   "/pricing",
   "/contact",
   "/terms",
