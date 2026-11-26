@@ -300,6 +300,28 @@ export function HomeExperience() {
             </div>
           </section>
 
+          <section className={styles.cartoonSection} aria-labelledby="cartoon-studio-heading">
+            <div className={styles.cartoonPanel}>
+              <div className={styles.cartoonCopy}>
+                <div className={styles.cartoonLabel}><Clapperboard size={18} aria-hidden="true" /> Cartoon Studio</div>
+                <h2 id="cartoon-studio-heading">Turn your story into a cartoon</h2>
+                <p>
+                  Write a short story and turn it into an animated video with character voices and synced captions.
+                </p>
+                <a className={styles.cartoonCta} href="/cartoon-studio" aria-describedby="cartoon-studio-access">
+                  Try Cartoon Studio <ArrowRight size={17} aria-hidden="true" />
+                </a>
+                <p className={styles.cartoonAccess} id="cartoon-studio-access">
+                  Free includes one cartoon up to 30 seconds per account. Connect your own story planner API key in Cartoon Studio to create.
+                </p>
+              </div>
+              <ul className={styles.cartoonSteps} aria-label="Ways to use your finished cartoon">
+                <li><Download size={20} aria-hidden="true" /> Download the finished MP4</li>
+                <li><Upload size={20} aria-hidden="true" /> Or send a vertical 9:16 cartoon to Post Karo to review and publish</li>
+              </ul>
+            </div>
+          </section>
+
           <section className={styles.pricing} id="pricing">
             <div className={styles.pricingHead}><div data-public-reveal="left"><span>Extremely affordable creator pricing</span><h2>Start free. Pay for creation capacity, not every post.</h2></div><p data-public-reveal="right">Free starts at ₹0. Mini Pass is ₹59 one-time. Creator starts at ₹249/month. Every plan includes unlimited Post Karo publishing access; Karo Minutes and Short creation limits scale with the plan.</p></div>
             <div className={styles.planGrid}>

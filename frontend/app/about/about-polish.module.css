@@ -3,6 +3,49 @@
   animation:aboutEnter .72s cubic-bezier(.22,.61,.36,1) both;
 }
 
+.cartoonMention {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  max-width: 1180px;
+  margin: 24px auto;
+  padding: clamp(18px, 3vw, 28px);
+  border: 1px solid #315747;
+  border-radius: 18px;
+  background: #10281e;
+  color: #f5fbf6;
+}
+
+.cartoonMention > svg {
+  flex-shrink: 0;
+  color: #dfff57;
+}
+
+.cartoonMention h3 {
+  margin: 0;
+}
+
+.cartoonMention p {
+  margin: 6px 0;
+  color: #c8ded1;
+  line-height: 1.6;
+}
+
+.cartoonMention a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  color: #dfff57;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.cartoonMention a:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 4px;
+}
+
 .nav{
   width:min(1320px,calc(100% - 28px));
   top:12px!important;

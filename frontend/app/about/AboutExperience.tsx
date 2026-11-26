@@ -491,6 +491,15 @@ export function AboutExperience() {
           })}
         </div>
 
+        <article className={polish.cartoonMention} aria-labelledby="about-cartoon-studio">
+          <Clapperboard size={22} aria-hidden="true" />
+          <div>
+            <h3 id="about-cartoon-studio">Cartoon Studio</h3>
+            <p>Creators can turn a short written story into an animated cartoon with voices and captions, then download the finished video.</p>
+            <a href="/cartoon-studio">Explore Cartoon Studio <ArrowRight size={15} aria-hidden="true" /></a>
+          </div>
+        </article>
+
         <div className={polish.urlPromise} data-about-reveal>
           <div className={polish.urlPromiseCopy}>
             <span><Youtube size={15}/> URL-FIRST, FALLBACK-SAFE</span>
