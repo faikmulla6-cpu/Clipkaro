@@ -1,3 +1,110 @@
+.cartoonSection {
+  padding: clamp(36px, 6vw, 76px) 24px;
+  background: #f0f6ef;
+}
+
+.cartoonPanel {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(24px, 5vw, 64px);
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: clamp(22px, 4vw, 52px);
+  border: 1px solid #d9e6db;
+  border-radius: 28px;
+  background: #fbfcf9;
+  color: #112c20;
+}
+
+.cartoonLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #226746;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.cartoonCopy h2 {
+  margin: 12px 0;
+  font-size: clamp(28px, 4vw, 50px);
+  line-height: 1.08;
+  letter-spacing: -.04em;
+}
+
+.cartoonCopy p {
+  max-width: 56ch;
+  margin: 0;
+  color: #365646;
+  line-height: 1.65;
+}
+
+.cartoonCta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  margin: 22px 0 10px;
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: #125b40;
+  color: #fff;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.cartoonCta:hover {
+  background: #0b4630;
+}
+
+.cartoonCta:focus-visible {
+  outline: 2px solid #125b40;
+  outline-offset: 4px;
+}
+
+.cartoonCopy .cartoonAccess {
+  font-size: 14px;
+}
+
+.cartoonSteps {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 12px;
+  border-radius: 20px;
+  background: #113c2c;
+  color: #fff;
+  list-style: none;
+}
+
+.cartoonSteps li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  background: #1b4c39;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.cartoonSteps svg {
+  flex-shrink: 0;
+  color: #dfff57;
+}
+
+@media (max-width: 760px) {
+  .cartoonSection {
+    padding-inline: 16px;
+  }
+
+  .cartoonPanel {
+    grid-template-columns: minmax(0, 1fr);
+    border-radius: 20px;
+  }
+}
+
 .page{
   --ink:#0d1b13;
   --green:#126442;
