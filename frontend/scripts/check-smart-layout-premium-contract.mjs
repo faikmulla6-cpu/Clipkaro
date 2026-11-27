@@ -6,12 +6,16 @@ import { SMART_LAYOUT_PREMIUM, smartLayoutFeature } from "../lib/pricing-contrac
 const backend = readFileSync(new URL("../../backend/app/services/smart_layout_credits.py", import.meta.url), "utf8");
 const api = readFileSync(new URL("../../backend/app/api/smart_layout_v2.py", import.meta.url), "utf8");
 const pricing = readFileSync(new URL("../app/pricing/page.tsx", import.meta.url), "utf8");
+const publicCards = readFileSync(new URL("../lib/public-plan-cards.ts", import.meta.url), "utf8");
+const home = readFileSync(new URL("../components/HomeExperience.tsx", import.meta.url), "utf8");
 const accountPricing = readFileSync(new URL("../app/pricing/PricingExperience.tsx", import.meta.url), "utf8");
 const editor = readFileSync(new URL("../app/editor/[clipId]/page.tsx", import.meta.url), "utf8");
+assert.match(pricing, /plans=\{PUBLIC_PLAN_CARDS\}/, "public pricing renders the shared plan cards");
+assert.match(home, /PUBLIC_PLAN_CARDS\.map\(/, "homepage renders the shared plan cards");
 for (const [plan, { credits, daily }] of Object.entries(SMART_LAYOUT_PREMIUM)) {
   const pat = new RegExp('"' + plan + '"\\s*:\\s*\\(' + credits + '\\s*,\\s*' + daily + '\\)');
   assert.match(backend, pat, 'backend/frontend credit parity for ' + plan);
-  assert.ok(pricing.includes('smartLayoutFeature("' + plan + '")'), plan + ' public pricing feature');
+  assert.ok(publicCards.includes('smartLayoutFeature("' + plan + '")'), plan + ' public pricing feature');
   assert.ok(accountPricing.includes('smartLayoutFeature("' + plan + '")'), plan + ' account pricing feature');
   assert.ok(smartLayoutFeature(plan).includes(credits ? 'beta' : 'not included'));
 }
