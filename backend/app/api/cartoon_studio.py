@@ -418,8 +418,8 @@ async def create_cartoon_project(
     trial_key = None
     if story_planner == "nvidia":
         trial_key = await _nvidia_key_for_request(user, nvidia_key)
-        if reference_video is not None:
-            raise HTTPException(422, "NVIDIA planning uses a text prompt. Remove the reference video or choose another planner.")
+        if reference_video is not None and nvidia_key.strip():
+            raise HTTPException(422, "Connect your NVIDIA API key in API Keys before adding a reference video.")
     requested_language = language
     language = resolve_cartoon_language(language, prompt)
     if story_planner != "nvidia" and not await _provider_key(user["id"]):

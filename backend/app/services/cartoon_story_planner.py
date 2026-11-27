@@ -62,7 +62,12 @@ def planner_payload(prompt: str, duration: int, style: str, language: str, *,
             "Use one action per meaningful beat and one to three camera keys. "
             "Leave unused lists empty and avoid repeating actions or filling array limits."
         )
-    content = user_text if nvidia else [
+    if frames:
+        user_text += (
+            "\nUse the attached reference frames as guidance for the look of the cartoon, including color, "
+            "lighting and composition. Keep the story, dialogue and timing from the user's script."
+        )
+    content = user_text if nvidia and not frames else [
         {"type": "text", "text": user_text},
         *[{"type": "image_url", "image_url": {
             "url": "data:image/jpeg;base64," + base64.b64encode(frame.read_bytes()).decode("ascii")
