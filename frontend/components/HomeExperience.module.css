@@ -351,6 +351,10 @@
     linear-gradient(135deg, #16372a, #24543e);
 }
 .pricingHead { gap: clamp(12px, 4vw, 40px); }
+.planGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (min-width: 761px) and (max-width: 940px) {
+  .planGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 .planGrid article {
   background: rgb(249 253 248 / .95);
   border: 1px solid rgb(255 255 255 / .39);
