@@ -41,8 +41,8 @@ const features = [
   [Scissors, "AI Clip Finder", "Find strong, self-contained moments without scrubbing the whole timeline.", "timeline"],
   [Subtitles, "Smart Transcript Review", "Fix uncertain transcript lines before captions or other content use them.", "transcript"],
   [Languages, "India Quality Mode", "Hindi, Hinglish and Indian-English creator workflows.", "language"],
-  [Sparkles, "Content Pack", "Generate titles, descriptions, hashtags and social copy from selected clips.", "social"],
-  [Clapperboard, "Creator Studio", "Drag captions anywhere, resize them from 65% to 160%, align text, zoom and reframe video, toggle Hook Text, preserve source captions and export in 9:16, 4:5 or 1:1.", "studio"],
+  [Sparkles, "Content Pack", "Generate titles, descriptions, hashtags and social copy for YouTube, Instagram, X and LinkedIn from selected clips.", "social"],
+  [Clapperboard, "Creator Studio", "Drag captions anywhere, resize them from 65% to 160%, align text, zoom and reframe video, toggle Hook Text, preserve source captions, apply Brand Kit and export in 9:16, 4:5 or 1:1.", "studio"],
   [Zap, "Auto captions", "Prepare readable captions, then review the transcript before publishing.", "caption"],
   [WandSparkles, "Thumbnail & cover direction", "Turn clip context into cover text and thumbnail direction where available.", "thumbnail"],
   [Download, "Export controls", "Paid plans include unlimited exports and re-exports of the Shorts you create.", "export"],
@@ -59,7 +59,7 @@ const audiences = [
 
 const plans = [
   { name: "Free", price: "₹0", suffix: "/month", note: "Try the full create-to-publish loop.", items: ["2 AI Shorts / month", "15 source-processing minutes", "Up to 2 exports", "Source media kept 24 hours", "720p with watermark", "Unlimited Post Karo"], href: "/signup", featured: false },
-  { name: "Mini Pass", price: "₹59", suffix: "one-time", note: "5 finished AI Shorts", items: ["5 finished AI Shorts", "25 total Karo Minutes/pass", "Up to 25 minutes per source video", "Ends at Shorts/minutes exhaustion or 30 days", "Existing purchased passes retain 125 minutes", "Unlimited re-exports of finished Shorts while source is retained", "1080p · no watermark", "Unlimited Post Karo"], href: "/signup?plan=mini_pass", featured: false },
+  { name: "Mini Pass", price: "₹59", suffix: "one-time", note: "For a one-off project.", items: ["5 finished AI Shorts", "25 total Karo Minutes/pass", "Up to 25 minutes per source video", "Ends at Shorts/minutes exhaustion or 30 days", "Existing purchased passes retain 125 minutes", "Unlimited re-exports of finished Shorts while source is retained", "1080p · no watermark", "Unlimited Post Karo"], href: "/signup?plan=mini_pass", featured: false },
   { name: "Growth", price: "₹599", suffix: "/month", note: "For serious weekly creators.", items: ["50 unique finished AI Shorts / month", "300 total Karo Minutes/month", "Up to 90 minutes per source video", "Unlimited re-exports of finished Shorts", "Source media kept up to 30 days", "1080p · no watermark", "Unlimited Post Karo"], href: "/signup?plan=growth", featured: true },
   { name: "Pro", price: "₹1,299", suffix: "/month", note: "For daily creator output.", items: ["150 unique finished AI Shorts / month", "600 total Karo Minutes/month", "Up to 180 minutes per source video", "Unlimited re-exports of finished Shorts", "Source media kept up to 30 days", "1080p · no watermark", "Unlimited Post Karo"], href: "/signup?plan=pro", featured: false },
   { name: "Agency", price: "₹1,999", suffix: "/month", note: "For higher-volume client work.", items: ["500 AI Shorts / month", "1,500 source-processing minutes", "Unlimited exports & re-exports", "Source media kept up to 30 days", "1080p · no watermark", "Unlimited Post Karo"], href: "/signup?plan=agency", featured: false },
@@ -88,9 +88,9 @@ export function HomeExperience() {
             <div className={styles.heroAura} aria-hidden="true"><i/><i/><i/></div>
             <div className={styles.heroGrid}>
               <div className={styles.heroCopy} data-public-reveal="left">
-                <span className={styles.eyebrow}><Sparkles size={14}/> AI VIDEO CLIPPER FOR INDIA · CREATE → EDIT → POST</span>
-                <h1>One long video in. <span>Strong Shorts out.</span></h1>
-                <p>Turn an original video file into strong Shorts. AI finds promising moments, Creator Studio gives you control over the edit, and Post Karo gives every plan unlimited publishing access. YouTube link import is coming soon.</p>
+                <span className={styles.eyebrow}><Sparkles size={14}/> AI VIDEO CLIPPER FOR INDIA</span>
+                <h1><span className={styles.heroTitleLead}>One long video in.</span>{" "}<span>Strong Shorts out.</span></h1>
+                <p>Upload an original video and let AI find moments worth sharing. Refine them in Creator Studio, then publish the Shorts you choose with Post Karo.</p>
                 <div className={styles.heroActions}>
                   <TransitionLink href="/signup" className={styles.primary}>Try ClipKaro free <ArrowRight size={17}/></TransitionLink>
                   <a href="#youtube-url-to-shorts" className={styles.secondary}><Link2 size={15}/> See the workflow</a>
@@ -101,9 +101,9 @@ export function HomeExperience() {
                   <span><ShieldCheck size={14}/> You keep creative control</span>
                   <span><Youtube size={14}/> Unlimited Post Karo on every plan</span>
                 </div>
-                <a href="#smart-layout" className="mt-5 inline-flex max-w-full items-center gap-2 rounded-full border border-[#badbb9] bg-[#f1f8e9] px-4 py-2.5 text-left text-[11px] font-bold text-[#28583c] transition-colors hover:bg-[#e2f4d1] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#16653f]">
+                <a href="#smart-layout" className={styles.smartLayoutLink}>
                   <Sparkles size={15} className="shrink-0" aria-hidden="true" />
-                  <span><strong>New: Smart Layout</strong> · Speaker-aware vertical framing</span>
+                  <span><strong>Smart Layout</strong> · Speaker-aware vertical framing</span>
                   <ArrowRight size={14} className="shrink-0" aria-hidden="true" />
                 </a>
               </div>
@@ -158,22 +158,19 @@ export function HomeExperience() {
             <div className={styles.urlFeatureInner}>
               <div className={styles.urlCopy} data-public-reveal="left">
                 <span className={styles.urlEyebrow}><Youtube size={15}/> YOUTUBE URL IMPORT · COMING SOON</span>
-                <h2>Upload your original video.<br/><strong>URL import is coming soon.</strong></h2>
+                <h2>Upload your original video.</h2>
                 <p>
-                  YouTube link importing is temporarily paused while we improve reliability.
-                  Upload a video you own or have permission to use and create Shorts today with
-                  the same AI clip-finding, captioning, editing and export workflow.
+                  YouTube link import is temporarily paused while we improve reliability.
+                  You can create Shorts today from a video file you own or have permission to process.
                 </p>
                 <div className={styles.urlBenefits}>
-                  <span><CheckCircle2 size={15}/> Original upload works today</span>
                   <span><ShieldCheck size={15}/> Permissioned video sources</span>
-                  <span><Upload size={15}/> URL import coming soon</span>
                 </div>
                 <div className={styles.urlActions}>
                   <TransitionLink href="/upload" className={styles.urlPrimary}>Upload a video now <ArrowRight size={16}/></TransitionLink>
                   <TransitionLink href="/youtube-video-to-shorts-ai" className={styles.urlSecondary}>See what is coming</TransitionLink>
                 </div>
-                <small>YouTube URL importing is not available yet. Original-file upload is open now; no link-import job is started.</small>
+                <small>The link preview is illustrative. No link-import job is started.</small>
               </div>
 
               <div className={styles.urlGlassStage} data-public-reveal="right" aria-label="Preview of upcoming YouTube URL importing, currently coming soon">
@@ -210,32 +207,27 @@ export function HomeExperience() {
 
           <section className={styles.answerSection} id="answers">
             <div className={styles.answerLead} data-public-reveal="left">
-              <span>Clear answers for creators and search</span>
+              <span>ClipKaro at a glance</span>
               <h2>What is ClipKaro AI?</h2>
               <p>
-                ClipKaro AI is an India-first creator workflow for turning long videos into Shorts. Start from
-                an original video file, review AI-ranked moments, refine the edit in Creator Studio,
-                then publish finished Shorts with unlimited Post Karo access on every plan.
+                ClipKaro AI is an India-first AI video clipper for Hindi, Hinglish and English creators.
+                Here’s what you can do with a recording you already have.
               </p>
             </div>
             <div className={styles.answerGrid} data-public-reveal="right">
               <article>
-                <span>01</span>
                 <h3>What does ClipKaro do?</h3>
                 <p>ClipKaro turns authorised long videos into ranked short-form moments, then lets you refine captions and framing before exporting or publishing the finished Short.</p>
               </article>
               <article>
-                <span>02</span>
                 <h3>Is ClipKaro an affordable AI clipper with unlimited posting?</h3>
                 <p>Yes. ClipKaro starts free at ₹0, offers a ₹59 one-time Mini Pass and Creator from ₹249/month. Every plan includes unlimited Post Karo publishing access with no ClipKaro per-post quota; creation limits and connected-platform rules still apply.</p>
               </article>
               <article>
-                <span>03</span>
                 <h3>Is Post Karo unlimited?</h3>
                 <p>Yes—ClipKaro applies no per-post Post Karo quota. Unlimited publishing access is included on every plan; you review each post and Instagram or YouTube provider rules can still apply.</p>
               </article>
               <article>
-                <span>04</span>
                 <h3>What can Creator Studio edit?</h3>
                 <p>Drag and resize captions, control text alignment, reframe and zoom video, choose output ratios, turn Hook Text on or off, preserve source captions and apply Brand Kit settings.</p>
               </article>
@@ -246,8 +238,8 @@ export function HomeExperience() {
             <div className={styles.pulseGlow} aria-hidden="true" />
             <div className={styles.pulseInner}>
               <div className={styles.pulseCopy} data-public-reveal="left">
-                <span><Activity size={14}/> Creator Pulse · know before you create</span>
-                <h2>Stop guessing. <strong>Know what to create next.</strong></h2>
+                <span><Activity size={14}/> Creator Pulse</span>
+                <h2>Find your next <strong>video idea.</strong></h2>
                 <p>Creator Pulse compares verified public YouTube evidence, shows recent momentum and turns it into one focused next-video recommendation with a title, reason, angle, opening hook and downloadable thumbnail when generation is available.</p>
                 <div className={styles.pulseChecks}><span><Check size={14}/> Public YouTube evidence</span><span><Check size={14}/> No guessed private metrics</span><span><Check size={14}/> One clear next move</span></div>
                 <TransitionLink href="/youtube-channel-analyzer" className={styles.limeButton}>Explore Creator Pulse · ₹1 <ArrowRight size={16}/></TransitionLink>
@@ -268,8 +260,7 @@ export function HomeExperience() {
           </section>
 
           <section className={styles.workflowSection} id="workflow">
-            <div className={styles.workflowLead} data-public-reveal="left"><span>Simple process. Powerful results.</span><h2>From long video to creator-ready output.</h2></div>
-            <p className={styles.workflowIntro} data-public-reveal="right">Upload an original video file and let ClipKaro analyse it, then review the suggested clips, captions and framing before you publish. YouTube URL import is coming soon.</p>
+            <div className={styles.workflowLead} data-public-reveal="left"><h2>From recording to finished Short.</h2></div>
             <div className={styles.workflowGrid}>
               {workflow.map(([Icon,title,text],index)=><article key={title} data-public-reveal="scale"><span>{index+1}</span><i><Icon size={21}/></i><div><b>{title}</b><p>{text}</p></div>{index<workflow.length-1&&<ArrowRight className={styles.stepArrow} size={18}/>}</article>)}
             </div>
@@ -278,15 +269,15 @@ export function HomeExperience() {
           <FeatureSection />
 
           <section className={styles.featureStage} id="features">
-            <div className={styles.featureLead} data-public-reveal="left"><span>A complete creator toolkit</span><h2>More than just clipping.<br/>Everything you need to grow.</h2></div>
-            <div className={styles.featureAside} data-public-reveal="right"><p>From transcripts to publishing copy, ClipKaro keeps the creator workflow connected instead of scattering it across unrelated tools.</p><TransitionLink href="/shorts-video-editor-ai">Explore Creator Studio <ArrowRight size={14}/></TransitionLink></div>
+            <div className={styles.featureLead} data-public-reveal="left"><h2>Tools for every step of the edit.</h2></div>
+            <div className={styles.featureAside} data-public-reveal="right"><TransitionLink href="/shorts-video-editor-ai">Explore Creator Studio <ArrowRight size={14}/></TransitionLink></div>
             <div className={styles.featureGrid}>
               {features.map(([Icon,title,text,kind])=><article key={title} className={styles.featureCard} data-kind={kind} data-public-reveal="scale">{kind==="publish"&&<em className={styles.featureBadge}>UNLIMITED · EVERY PLAN</em>}<div className={styles.featureTitle}><i><Icon size={18}/></i><b>{title}</b></div><div className={styles.featureVisual} aria-hidden="true">{kind==="timeline"&&<><span/><span/><span/><b/></>}{kind==="transcript"&&<><p>Review uncertain transcript line</p><p>Creator-approved wording</p></>}{kind==="language"&&<strong>ये बात बहुत important है</strong>}{kind==="social"&&<div><i>YT</i><i>IG</i><i>X</i><i>LI</i></div>}{kind==="studio"&&<><span/><span/><span/></>}{kind==="caption"&&<strong>This changed everything</strong>}{kind==="thumbnail"&&<div className={styles.miniThumb}><img src="/assets/creator-demo.jpg" alt=""/><b>THE NEXT MOVE</b></div>}{kind==="export"&&<div className={styles.ratios}><i>9:16</i><i>1:1</i><i>16:9</i></div>}{kind==="publish"&&<strong>Instagram + YouTube</strong>}</div><p>{text}</p></article>)}
             </div>
           </section>
 
           <section className={styles.audienceSection} id="use-cases">
-            <div className={styles.audienceHead}><div data-public-reveal="left"><span>Built for real creator workflows</span><h2>Different creators. Same workflow. Bigger possibilities.</h2></div><p data-public-reveal="right">Whether you teach, entertain, build or share — ClipKaro adapts to the content you already record.</p></div>
+            <div className={styles.audienceHead}><div data-public-reveal="left"><h2>Make more of what you already record.</h2></div></div>
             <div className={styles.audienceGrid}>
               {audiences.map(({Icon,title,text,image})=><article key={title} data-public-reveal="scale"><div className={styles.audiencePhoto}><img src={image} alt={`Illustrative ${title.toLowerCase()} creator workflow`}/><span><Icon size={18}/></span></div><div><b>{title}</b><p>{text}</p></div></article>)}
             </div>
@@ -323,11 +314,11 @@ export function HomeExperience() {
           </section>
 
           <section className={styles.pricing} id="pricing">
-            <div className={styles.pricingHead}><div data-public-reveal="left"><span>Extremely affordable creator pricing</span><h2>Start free. Pay for creation capacity, not every post.</h2></div><p data-public-reveal="right">Free starts at ₹0. Mini Pass is ₹59 one-time. Creator starts at ₹249/month. Every plan includes unlimited Post Karo publishing access; Karo Minutes and Short creation limits scale with the plan.</p></div>
+            <div className={styles.pricingHead}><div data-public-reveal="left"><h2>Plans for every editing schedule.</h2></div><p data-public-reveal="right">Choose the Karo Minutes and Short creation allowance you need. Every plan includes unlimited Post Karo publishing access.</p></div>
             <div className={styles.planGrid}>
               {plans.map((plan)=><article key={plan.name} className={plan.featured?styles.planFeatured:""} data-public-reveal="scale">{plan.featured&&<span className={styles.popular}>MOST POPULAR</span>}<h3>{plan.name}</h3><p>{plan.note}</p><div className={styles.planPrice}>{plan.price}<small>{plan.suffix}</small></div><ul>{plan.items.map((item)=><li key={item}><Check size={14}/>{item}</li>)}</ul><TransitionLink href={plan.href} className={plan.featured?styles.planPrimary:styles.planSecondary}>{plan.name==="Free"?"Start free":plan.name==="Mini Pass"?"Get Mini Pass":`Choose ${plan.name}`} <ArrowRight size={14}/></TransitionLink></article>)}
             </div>
-            <div className={styles.pricingFoot} data-public-reveal="scale"><span>Free ₹0 · Mini Pass ₹59 one-time · Creator ₹249/month · unlimited Post Karo access on every plan.</span><TransitionLink href="/pricing">Compare every plan <ArrowRight size={14}/></TransitionLink></div>
+            <div className={styles.pricingFoot} data-public-reveal="scale"><span>Creator is also available from ₹249/month.</span><TransitionLink href="/pricing">Compare every plan <ArrowRight size={14}/></TransitionLink></div>
           </section>
 
           <section className={styles.creatorStory}>
@@ -339,11 +330,11 @@ export function HomeExperience() {
           </section>
 
           <section className={styles.faqSection}>
-            <div className={styles.faqHead} data-public-reveal="left"><span>Common questions</span><h2>You ask. We answer.</h2></div>
+            <div className={styles.faqHead} data-public-reveal="left"><h2>Common questions</h2></div>
             <div className={styles.faqGrid} data-public-reveal="right">{questions.map(([question,answer])=><details key={question}><summary>{question}<span>+</span></summary><p>{answer}</p></details>)}</div>
           </section>
 
-          <section className={styles.finalCta} data-public-reveal="scale"><div><span><Sparkles size={14}/> START WITH ONE VIDEO</span><h2>Create the Short. Edit it. Post it. Keep moving.</h2><p>Create a free account, upload content you own, review the AI suggestions, then publish finished Shorts to Instagram or YouTube with Post Karo. YouTube link import is coming soon.</p></div><TransitionLink href="/signup" className={styles.limeButton}>Create my first Short free <ArrowRight size={16}/></TransitionLink></section>
+          <section className={styles.finalCta} data-public-reveal="scale"><div><h2>Make your first Short.</h2><p>Start with an original recording you own or have permission to use.</p></div><TransitionLink href="/signup" className={styles.limeButton}>Create my first Short free <ArrowRight size={16}/></TransitionLink></section>
         </main>
 
         <PublicSiteFooter />
