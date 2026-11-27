@@ -5,19 +5,10 @@ import { PublicSiteNav } from "@/components/PublicSiteNav";
 import { TransitionLink } from "@/components/TransitionLink";
 import { TRUST_PROFILE } from "@/lib/legal";
 import { CARTOON_REFILL_DETAILS, CARTOON_USAGE_DETAILS } from "@/lib/pricing-contract";
+import type { PublicPlanView } from "@/lib/public-plan-cards";
 import styles from "./PublicPricingView.module.css";
 
-export type PublicPlanView = {
-  id: string;
-  name: string;
-  price: string;
-  suffix: string;
-  tagline: string;
-  features: string[];
-  popular?: boolean;
-};
-
-export function PublicPricingView({ plans }: { plans: PublicPlanView[] }) {
+export function PublicPricingView({ plans }: { plans: readonly PublicPlanView[] }) {
   return (
     <PublicMotionShell>
       <div className={styles.page}>

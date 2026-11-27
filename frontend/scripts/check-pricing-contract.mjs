@@ -6,6 +6,8 @@ const price = load("../lib/pricing-contract.ts");
 const cartoonUsage = load("../../backend/app/services/cartoon_usage.py");
 const pricing = load("../app/pricing/PricingExperience.tsx");
 const page = load("../app/pricing/page.tsx");
+const publicCards = load("../lib/public-plan-cards.ts");
+const home = load("../components/HomeExperience.tsx");
 const shell = load("../components/AppShell.tsx");
 const youtube = load("../components/UploadStudio.tsx");
 const terms = load("../app/terms/page.tsx");
@@ -34,7 +36,9 @@ assert.match(pricing, /Plan details are updating\. Checkout is temporarily unava
 for (const [key, seconds] of Object.entries({ free: 30, mini_pass: 60, creator: 300, growth: 900, pro: 1800, agency: 3600 })) {
   assert.ok(cartoonUsage.includes(`"${key}": ${seconds}`));
   assert.ok(price.includes(`${key}: ${seconds}`));
-  assert.ok(page.includes(`cartoonFeature("${key}")`));
+  assert.ok(publicCards.includes(`cartoonFeature("${key}")`));
+  assert.ok(publicCards.includes(`smartLayoutFeature("${key}")`));
+  assert.ok(publicCards.includes(`planPriceLabel("${key}")`));
   assert.ok(pricing.includes(`cartoonFeature("${key}")`));
 }
 assert.match(pricing, /planFeatureMinutes\("mini_pass"\)/);
@@ -50,7 +54,9 @@ assert.match(youtube, /source_video_limit_minutes/);
 assert.match(terms, /Previously purchased Mini Pass entitlements/);
 assert.match(legal, /Existing Mini Pass purchases retain their original 125-minute allowance/);
 assert.match(policy, /Creator costs ₹249\/month/);
-const staticPublic = [pricing, page, load("../components/HomeExperience.tsx"), load("../components/PublicPricingView.tsx"), legal, policy];
+assert.match(page, /plans=\{PUBLIC_PLAN_CARDS\}/);
+assert.match(home, /PUBLIC_PLAN_CARDS\.map\(/);
+const staticPublic = [pricing, page, home, publicCards, load("../components/PublicPricingView.tsx"), legal, policy];
 for (const [i, file] of staticPublic.entries()) {
   assert.ok(!/₹199\/month|₹399\/month|₹799\/month|Creator from ₹199/.test(file), "Stale price shown in public pricing surface #" + i);
 }

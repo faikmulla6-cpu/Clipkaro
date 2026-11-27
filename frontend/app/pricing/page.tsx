@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
-import { PublicPricingView, type PublicPlanView } from "@/components/PublicPricingView";
+import { PublicPricingView } from "@/components/PublicPricingView";
 import { PricingExperience } from "./PricingExperience";
-import { cartoonFeature, PUBLIC_PRICING, planFeatureMinutes, planPriceLabel, smartLayoutFeature } from "@/lib/pricing-contract";
+import { PUBLIC_PRICING } from "@/lib/pricing-contract";
+import { PUBLIC_PLAN_CARDS } from "@/lib/public-plan-cards";
 
 const title = "ClipKaro Pricing — AI Shorts with Unlimited Paid Exports";
 const description = "Affordable AI clipping: start free, try a ₹59 Mini Pass or subscribe. Eligible monthly plans offer optional top-ups at ₹3 per Karo Minute (10-minute minimum) and ₹2 per extra AI Short.";
@@ -13,15 +14,6 @@ export const metadata: Metadata = {
   openGraph: { type: "website", url: "/pricing", siteName: "ClipKaro AI", title, description, images: [{ url: "/assets/clipkaro-icon.png", width: 1024, height: 1024, alt: "ClipKaro AI" }] },
   twitter: { card: "summary_large_image", title, description, images: ["/assets/clipkaro-icon.png"] },
 };
-
-const publicPlans: PublicPlanView[] = [
-  { id: "free", name: "Free", price: "₹0", suffix: "/month", tagline: "Try ClipKaro before paying", features: [cartoonFeature("free"), smartLayoutFeature("free"), "2 AI Shorts / month", "15 total source-processing minutes / month", "Up to 2 exports / month", "Source media kept 24 hours", "720p with ClipKaro watermark", "Unlimited Post Karo · Instagram + YouTube"] },
-  { id: "mini_pass", name: "Mini Pass", price: planPriceLabel("mini_pass"), suffix: " one-time", tagline: "5 finished AI Shorts", features: [cartoonFeature("mini_pass"), smartLayoutFeature("mini_pass"), "5 finished AI Shorts", planFeatureMinutes("mini_pass"), "Creation ends at 5 Shorts, 25 total minutes, or 30 days", "Previously purchased passes retain their 125-minute allowance", "Unlimited re-exports of finished Shorts with retained source media", "1080p · no watermark", "Unlimited Post Karo · Instagram + YouTube"] },
-  { id: "creator", name: "Creator", price: planPriceLabel("creator"), suffix: "/month", tagline: "For new creators building consistency", features: [cartoonFeature("creator"), smartLayoutFeature("creator"), "15 unique finished AI Shorts / month", planFeatureMinutes("creator"), "Unlimited re-exports of finished Shorts", "Paid source media kept up to 30 days", "1080p · no watermark", "Full AI clip quality", "Unlimited Post Karo · Instagram + YouTube"] },
-  { id: "growth", name: "Growth", price: planPriceLabel("growth"), suffix: "/month", tagline: "For serious creators publishing every week", features: [cartoonFeature("growth"), smartLayoutFeature("growth"), "50 unique finished AI Shorts / month", planFeatureMinutes("growth"), "Unlimited re-exports of finished Shorts", "Paid source media kept up to 30 days", "1080p · no watermark", "Brand kit + creator workflow", "Unlimited Post Karo · Instagram + YouTube"], popular: true },
-  { id: "pro", name: "Pro", price: planPriceLabel("pro"), suffix: "/month", tagline: "For daily creators and growing channels", features: [cartoonFeature("pro"), smartLayoutFeature("pro"), "150 unique finished AI Shorts / month", planFeatureMinutes("pro"), "Unlimited re-exports of finished Shorts", "Paid source media kept up to 30 days", "1080p · no watermark", "Priority creator workflow", "Unlimited Post Karo · Instagram + YouTube"] },
-  { id: "agency", name: "Agency", price: "₹1,999", suffix: "/month", tagline: "For client work and high-volume teams", features: [cartoonFeature("agency"), smartLayoutFeature("agency"), "500 AI Shorts / month", "1,500 total source-processing minutes / month", "Unlimited exports & re-exports", "Paid source media kept up to 30 days", "1080p · no watermark", "Agency-scale usage", "Unlimited Post Karo · Instagram + YouTube"] },
-];
 
 const pricingStructuredData = {
   "@context": "https://schema.org",
@@ -46,7 +38,7 @@ export default function PricingPage() {
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(pricingStructuredData) }} />
-      <PricingExperience publicFallback={<PublicPricingView plans={publicPlans} />} />
+      <PricingExperience publicFallback={<PublicPricingView plans={PUBLIC_PLAN_CARDS} />} />
     </>
   );
 }
